@@ -152,10 +152,10 @@ preimage, and its predecessor payout is materialized one height later. A
 bounded fork-local fee queue separates transaction collection from the future
 PoW winner receiving those fees; its root and matured award are part of the
 payload commitment. This reduces the incentive to mine a private high-fee
-payload while preserving exact conservation. Active storage, wire, and CLI
-remain on version 0. An isolated activation router now supplies the explicit
-block-version boundary and cross-version fork-choice suite without enabling it
-in those paths.
+payload while preserving exact conservation. Active storage, chain sessions,
+and CLI remain on version 0. An isolated activation router now supplies the
+explicit block-version boundary and cross-version fork-choice suite without
+enabling it in those paths.
 
 The router accepts v0 only below the configured activation height and v1 only
 at or above it. Every known v0 node at height `H-1` can independently seed a v1
@@ -166,6 +166,14 @@ extends one activation base, then reorganizes through a different base with
 more hard work. Both versions receive the same explicit local admission-time
 sample. Canonical encodings remain unchanged and a strict leading-version
 decoder rejects a format on the wrong side of `H`.
+
+The strict block and header unions live below networking in `core/chainblock`.
+The wire package has appended, inactive version-1 envelopes for one union block
+and for a length-delimited contiguous union-header batch that may cross v0→v1.
+This does not enlarge the active reader's 8 MiB ceiling: a versioned session
+must opt into the WorkGraph maximum explicitly. Status negotiation, locator
+requests, sync handlers, persistence routing, and CLI activation are still
+missing, so the codec alone cannot place a v1 block on the live chain.
 
 The isolated version-1 coordinator exercises each routed tree:
 it derives branch-local MTP, targets, fee queues, states, and prior earnings and
@@ -186,8 +194,8 @@ branch reaching a configurable cutoff, then atomically removes only complete
 stale subtrees while decrementing the exact logical history counter. Its default
 window is 4,096 heights, zero disables it, and it never creates local PoW
 finality by pruning canonical history. Broader filesystem-fault soaks and
-multi-base persistence plus chain-session/CLI routing for the already isolated
-negotiated WorkGraph session also remain. The libp2p adapter carries that
+multi-base persistence plus versioned chain-session/CLI routing for the already
+isolated negotiated WorkGraph session also remain. The libp2p adapter carries that
 session under a separate opt-in protocol ID and resource scope, while default
 hosts and the active CLI leave it disabled.
 The current integration test kills a separate process immediately before and

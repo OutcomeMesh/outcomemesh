@@ -122,8 +122,9 @@ The CLI wallet is for development only.
 ## Repository map
 
 - `core/`: deterministic consensus objects and pure execution;
-- `core/workgraph/`, `core/workblock/`: inactive WorkGraph kernel and isolated
-  version-1 activation/codec/replay prototype;
+- `core/chainblock/`, `core/workgraph/`, `core/workblock/`: strict cross-version
+  block/header unions plus the inactive WorkGraph kernel and isolated version-1
+  activation/codec/replay prototype;
 - `storage/`: atomic persistent and in-memory ledger stores;
 - `node/chain/`: optimistic mining, validation, and commit coordination;
 - `node/activation/`: inactive strict v0/v1 boundary and cumulative-work fork

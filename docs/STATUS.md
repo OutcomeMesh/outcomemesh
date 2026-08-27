@@ -294,13 +294,21 @@ Implemented in an isolated, not-yet-activated consensus package:
   v0 base, proving activation does not freeze the first canonical parent. Both
   validators consume one explicit admission-time sample, and the routed decoder
   is a fuzz target.
+- strict block/header version dispatch now lives in consensus-pure
+  `core/chainblock`, shared by the activation router and an inactive chain wire
+  codec. Appended `VersionedBlock` and `VersionedHeaders` envelopes preserve the
+  unchanged inner encodings; a 128-header batch can cross v0→v1 but cannot
+  reverse version or break parent/height continuity. The active reader retains
+  its 8 MiB ceiling, while a future versioned session must explicitly opt into
+  the larger WorkGraph-block ceiling before allocation. Union and frame decoders
+  are fuzzed; versioned status, locators, and session handlers remain absent.
 
 No WorkGraph field has entered a version-0 block yet. The isolated v1 store and
 opt-in QUIC session remain disconnected from the active chain/CLI routing path;
-multi-base persistence, a versioned chain-session codec, history-anchored
-archival pruning, extended filesystem-fault/soak campaigns, production gossip-
-budget calibration, and finer/adaptive economic-strategy analysis remain before
-activation.
+multi-base persistence, versioned chain-session negotiation/handlers,
+history-anchored archival pruning, extended filesystem-fault/soak campaigns,
+production gossip-budget calibration, and finer/adaptive economic-strategy
+analysis remain before activation.
 
 ## Milestones 6–10 — not integrated
 

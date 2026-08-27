@@ -83,20 +83,28 @@ func (router *Router) Submit(candidate Block) (storage.Tip, error) {
 	if err := candidate.Validate(router.config.Work.ActivationHeight); err != nil {
 		return storage.Tip{}, err
 	}
-	switch candidate.version {
+	switch candidate.Version() {
 	case legacyblock.Version0:
-		if _, err := router.legacy.SubmitAt(candidate.legacy, router.config.Now()); err != nil {
+		legacy, ok := candidate.LegacyBlock()
+		if !ok {
+			return storage.Tip{}, ErrEncoding
+		}
+		if _, err := router.legacy.SubmitAt(legacy, router.config.Now()); err != nil {
 			return storage.Tip{}, err
 		}
 	case workblock.Version1:
-		tree, baseID, err := router.treeForWorkLocked(candidate.work)
+		work, ok := candidate.WorkBlock()
+		if !ok {
+			return storage.Tip{}, ErrEncoding
+		}
+		tree, baseID, err := router.treeForWorkLocked(work)
 		if err != nil {
 			return storage.Tip{}, err
 		}
-		if _, _, err := tree.Commit(candidate.work, router.config.Now()); err != nil {
+		if _, _, err := tree.Commit(work, router.config.Now()); err != nil {
 			return storage.Tip{}, err
 		}
-		id, _ := candidate.work.Header.ID()
+		id, _ := work.Header.ID()
 		router.workBases[id] = baseID
 	default:
 		return storage.Tip{}, ErrEncoding

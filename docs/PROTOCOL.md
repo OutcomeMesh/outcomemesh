@@ -359,6 +359,17 @@ best tip from every such tree and the pre-activation ledger by cumulative hard
 proof of work, followed by the common lexicographic ID tie-break. Thus activation
 does not turn the first observed boundary parent into an implicit checkpoint.
 
+The inactive chain-protocol-v1 codec carries this same tagged union in appended
+`VersionedBlock` and `VersionedHeaders` message types. Each object remains in
+its unchanged consensus encoding; length-delimited headers allow one contiguous
+batch to cross from v0 to v1. The codec checks basic syntax, ancestry, height,
+and forbids a v1-to-v0 reversal, but it deliberately does not choose an
+activation height. That stateful rule remains the activation router's job.
+The ordinary chain reader retains its 8 MiB v0 payload ceiling. A future
+versioned session must explicitly opt into the larger WorkGraph-block ceiling,
+and the frame prefix is checked against that ceiling before allocation.
+Versioned requests, status negotiation, and session routing are not active yet.
+
 The next hard target is known before mining and is independent of the current
 candidate timestamp:
 

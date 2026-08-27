@@ -56,6 +56,20 @@ table. Active chain sessions still have no in-band version upgrade: an older
 peer rejects an unknown type and disconnects. This is an explicit development
 compatibility decision, not a silent reinterpretation of an old message.
 
+Two further inactive message IDs, 20 and 21, encode `VersionedBlock` and
+`VersionedHeaders`. Both require wire version 1. The block envelope contains
+one length-delimited v0 or v1 canonical block. The header envelope contains up
+to 128 individually length-delimited v0/v1 headers, requires contiguous parent
+IDs and heights, and permits only the forward v0-to-v1 transition. Activation
+height validation is intentionally outside the framing layer.
+
+`ReadMessage` still rejects a body above the original 8 MiB block ceiling from
+its length prefix. Only an explicit `ReadMessageLimit` opt-in can admit the
+larger maximum required by a WorkGraph block, and per-message payload ceilings
+are rechecked after the type byte is available. No active `Status`, locator
+request, sync loop, or session handler advertises or consumes these new chain
+messages yet.
+
 ## Handshake and synchronization
 
 The initiator sends `Status`; the responder validates network and genesis before
@@ -101,8 +115,9 @@ unbounded request loop. The libp2p QUIC adapter exposes the separate
 `/outcomemesh/workgraph/1` protocol only after an explicit handler is installed;
 without that call negotiation fails. Active CLI nodes do not install it and no
 activation-height routing is connected to the chain session. The isolated
-in-process block router exists, but multi-base persistence and versioned block/
-header chain messages remain prerequisites for network activation.
+in-process block router and versioned block/header codecs exist, but multi-base
+persistence, versioned status/requests, and handler integration remain
+prerequisites for network activation.
 
 ## Signed peer advertisements
 

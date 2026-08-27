@@ -11,11 +11,13 @@ import (
 	"testing"
 
 	"github.com/outcomemesh/outcomemesh/core/block"
+	"github.com/outcomemesh/outcomemesh/core/chainblock"
 	"github.com/outcomemesh/outcomemesh/core/codec"
 	"github.com/outcomemesh/outcomemesh/core/outcome"
 	"github.com/outcomemesh/outcomemesh/core/resource"
 	"github.com/outcomemesh/outcomemesh/core/state"
 	"github.com/outcomemesh/outcomemesh/core/types"
+	"github.com/outcomemesh/outcomemesh/core/workblock"
 	"github.com/outcomemesh/outcomemesh/core/workgraph"
 	"github.com/outcomemesh/outcomemesh/wallet"
 )
@@ -53,10 +55,25 @@ func TestMessageRoundTripsAndSupportsShortWrites(t *testing.T) {
 		MaxShareBodies: MaxSharesPerMessage,
 	}
 	shareResult := ShareResult{Version: Version1, Context: shareContext, Accepted: 1}
+	legacyValue, err := chainblock.Legacy(blockMessage.Value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyID, _ := legacyValue.ID()
+	workValue, err := chainblock.Work(testWorkBlock(t, blockMessage.Value.Header.Height+1, legacyID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	workID, _ := workValue.ID()
+	versionedLegacy := VersionedBlock{Version: Version1, Value: legacyValue}
+	versionedWork := VersionedBlock{Version: Version1, Value: workValue}
+	versionedHeaders := VersionedHeaders{
+		Version: Version1, Values: []chainblock.Header{legacyValue.Header(), workValue.Header()}, TipID: workID,
+	}
 	messages := []Message{
 		status, request, headerRequest, headerBatch, blockMessage, transactionMessage, done, result,
 		getPeers, peers, getSnapshot, manifest, chunk, snapshotDone, inventory, getShares, shares,
-		hello, shareResult,
+		hello, shareResult, versionedLegacy, versionedWork, versionedHeaders,
 	}
 
 	var storage bytes.Buffer
@@ -102,6 +119,30 @@ func TestReadMessageLimitRejectsBeforeAllocatingBody(t *testing.T) {
 	}
 }
 
+func TestVersionedFrameCeilingIsExplicitlyOptIn(t *testing.T) {
+	t.Parallel()
+
+	if MaxVersionedFrameBodyBytes <= MaxFrameBodyBytes {
+		t.Fatal("versioned frame ceiling did not reserve room for WorkGraph blocks")
+	}
+	var header [4]byte
+	binary.BigEndian.PutUint32(header[:], uint32(MaxFrameBodyBytes+1))
+	if _, err := ReadMessage(bytes.NewReader(header[:])); !errors.Is(err, ErrFrameSize) {
+		t.Fatalf("default reader error = %v", err)
+	}
+	if _, err := ReadMessageLimit(bytes.NewReader(header[:]), uint32(MaxVersionedFrameBodyBytes)); !errors.Is(err, io.EOF) {
+		t.Fatalf("opt-in reader error = %v, want body read attempt", err)
+	}
+	if _, err := ReadMessageLimit(bytes.NewReader(nil), uint32(MaxVersionedFrameBodyBytes+1)); !errors.Is(err, ErrFrameSize) {
+		t.Fatalf("above-global-ceiling error = %v", err)
+	}
+	oversizeHeaders := make([]byte, MaxVersionedHeadersPayloadBytes+2)
+	oversizeHeaders[0] = byte(TypeVersionedHeaders)
+	if _, err := DecodeFrameBody(oversizeHeaders); !errors.Is(err, ErrFrameSize) {
+		t.Fatalf("per-message header ceiling error = %v", err)
+	}
+}
+
 func TestRejectsUnknownTypeTrailingBytesAndDuplicateLocators(t *testing.T) {
 	t.Parallel()
 
@@ -144,6 +185,90 @@ func TestHeadersRejectDiscontinuityAndOversizeRequest(t *testing.T) {
 	id := types.DomainHash("test/wire/header-locator")
 	if err := (GetHeaders{Version: Version0, Locators: []types.Hash{id}, Limit: MaxHeadersPerRequest + 1}).Validate(); !errors.Is(err, ErrMessage) {
 		t.Fatalf("oversize header request error = %v", err)
+	}
+}
+
+func TestVersionedHeadersCrossBoundaryAndRejectInvalidTransitions(t *testing.T) {
+	t.Parallel()
+
+	legacyBlock := testBlock(t)
+	legacy, err := chainblock.Legacy(legacyBlock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyID, _ := legacy.ID()
+	work, err := chainblock.Work(testWorkBlock(t, legacy.Height()+1, legacyID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	workID, _ := work.ID()
+	batch := VersionedHeaders{
+		Version: Version1, Values: []chainblock.Header{legacy.Header(), work.Header()}, TipID: workID,
+	}
+	if err := batch.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	payload, err := encodePayload(batch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := DecodeFrameBody(append([]byte{byte(TypeVersionedHeaders)}, payload...))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := decoded.(VersionedHeaders)
+	if len(got.Values) != 2 || got.Values[0].Version() != block.Version0 || got.Values[1].Version() != workblock.Version1 {
+		t.Fatal("mixed header versions changed during decoding")
+	}
+
+	wrongParent, err := chainblock.WorkHeader(testWorkBlock(t, legacy.Height()+1, types.DomainHash("test/wire/wrong-versioned-parent")).Header)
+	if err != nil {
+		t.Fatal(err)
+	}
+	batch.Values[1] = wrongParent
+	if err := batch.Validate(); !errors.Is(err, ErrMessage) {
+		t.Fatalf("discontinuous versioned batch error = %v", err)
+	}
+	reverseLegacyHeader := legacyBlock.Header
+	reverseLegacyHeader.Height = work.Height() + 1
+	reverseLegacyHeader.Parent = workID
+	reverseLegacy, err := chainblock.LegacyHeader(reverseLegacyHeader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reverse := VersionedHeaders{
+		Version: Version1, Values: []chainblock.Header{work.Header(), reverseLegacy}, TipID: workID,
+	}
+	if err := reverse.Validate(); !errors.Is(err, ErrMessage) {
+		t.Fatalf("reverse version transition error = %v", err)
+	}
+}
+
+func TestVersionedMessagesRejectWrongEnvelopeAndTrailingBytes(t *testing.T) {
+	t.Parallel()
+
+	legacy, err := chainblock.Legacy(testBlock(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	message := VersionedBlock{Version: Version1, Value: legacy}
+	payload, err := encodePayload(message)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := DecodeFrameBody(append(append([]byte{byte(TypeVersionedBlock)}, payload...), 0)); !errors.Is(err, codec.ErrTrailingBytes) {
+		t.Fatalf("trailing-byte error = %v", err)
+	}
+	message.Version = Version0
+	if err := message.Validate(); !errors.Is(err, ErrUnsupported) {
+		t.Fatalf("wrong versioned-block envelope error = %v", err)
+	}
+	payload[1] = 0
+	if _, err := DecodeFrameBody(append([]byte{byte(TypeVersionedBlock)}, payload...)); !errors.Is(err, ErrUnsupported) {
+		t.Fatalf("decoded wrong-envelope error = %v", err)
+	}
+	if err := (VersionedHeaders{Version: Version0, TipID: types.DomainHash("test/wire/versioned-tip")}).Validate(); !errors.Is(err, ErrUnsupported) {
+		t.Fatalf("wrong versioned-headers envelope error = %v", err)
 	}
 }
 
@@ -295,6 +420,15 @@ func FuzzDecodeFrameBodyNeverPanics(f *testing.F) {
 		f.Fatal(err)
 	}
 	f.Add(append([]byte{byte(TypeStatus)}, payload...))
+	legacy, err := chainblock.Legacy(testBlock(f))
+	if err != nil {
+		f.Fatal(err)
+	}
+	versionedPayload, err := encodePayload(VersionedBlock{Version: Version1, Value: legacy})
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Add(append([]byte{byte(TypeVersionedBlock)}, versionedPayload...))
 	f.Add([]byte{})
 	f.Add([]byte{0xff})
 	f.Fuzz(func(t *testing.T, input []byte) {
@@ -407,6 +541,44 @@ func testWorkShare(t testing.TB) workgraph.Share {
 		Target: target, PayloadRoot: types.DomainHash("test/wire/share/payload"),
 		Miner: types.Address(types.DomainHash("test/wire/share/miner")), InclusionRoot: inclusion,
 	}
+}
+
+func testWorkBlock(t testing.TB, height uint64, parent types.Hash) workblock.Block {
+	t.Helper()
+	txRoot, err := block.TransactionRoot(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	receiptRoot, err := block.ReceiptRoot(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	queue, err := workgraph.NewFeeQueue(3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	queueRoot, err := queue.Root()
+	if err != nil {
+		t.Fatal(err)
+	}
+	payloadRoot, err := workgraph.PayloadCommitmentV1(
+		txRoot, receiptRoot, state.Empty().Root(), workgraph.EmptyRoot(), queueRoot, 0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seal := testWorkShare(t)
+	seal.Height = height
+	seal.AnchorParent = parent
+	seal.PayloadRoot = payloadRoot
+	value := workblock.Block{Header: workblock.Header{
+		Version: workblock.Version1, Seal: seal, TxRoot: txRoot, ReceiptRoot: receiptRoot,
+		StateRoot: state.Empty().Root(), PreviousWorkRoot: workgraph.EmptyRoot(), FeeQueueRoot: queueRoot,
+	}}
+	if err := value.ValidateBasic(); err != nil {
+		t.Fatal(err)
+	}
+	return value
 }
 
 func contextFromTestShare(share workgraph.Share) ShareContext {

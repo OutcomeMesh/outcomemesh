@@ -7,6 +7,7 @@ import (
 	"io"
 
 	"github.com/outcomemesh/outcomemesh/core/block"
+	"github.com/outcomemesh/outcomemesh/core/chainblock"
 	"github.com/outcomemesh/outcomemesh/core/codec"
 	"github.com/outcomemesh/outcomemesh/core/outcome"
 	"github.com/outcomemesh/outcomemesh/core/types"
@@ -15,21 +16,24 @@ import (
 )
 
 const (
-	Version0                 uint16 = 0
-	Version1                 uint16 = 1
-	MaxLocators                     = 32
-	MaxBlocksPerRequest             = 128
-	MaxHeadersPerRequest            = 128
-	MaxPeerRecords                  = 64
-	MaxPeerRecordBytes              = 2_048
-	MaxSnapshotManifestBytes        = 128
-	MaxSnapshotChunkBytes           = 128 * 1024
-	MaxShareInventoryIDs            = 1_024
-	MaxSharesPerMessage             = 256
-	MinWorkFrameBodyBytes           = 512
-	MaxWorkFrameBodyBytes           = 96 * 1024
-	MaxPayloadBytes                 = block.MaxCanonicalBytes
-	MaxFrameBodyBytes               = MaxPayloadBytes + 1
+	Version0                        uint16 = 0
+	Version1                        uint16 = 1
+	MaxLocators                            = 32
+	MaxBlocksPerRequest                    = 128
+	MaxHeadersPerRequest                   = 128
+	MaxPeerRecords                         = 64
+	MaxPeerRecordBytes                     = 2_048
+	MaxSnapshotManifestBytes               = 128
+	MaxSnapshotChunkBytes                  = 128 * 1024
+	MaxShareInventoryIDs                   = 1_024
+	MaxSharesPerMessage                    = 256
+	MinWorkFrameBodyBytes                  = 512
+	MaxWorkFrameBodyBytes                  = 96 * 1024
+	MaxPayloadBytes                        = block.MaxCanonicalBytes
+	MaxFrameBodyBytes                      = MaxPayloadBytes + 1
+	MaxVersionedBlockPayloadBytes          = 2 + binary.MaxVarintLen64 + chainblock.MaxCanonicalBytes
+	MaxVersionedHeadersPayloadBytes        = 2 + binary.MaxVarintLen64 + MaxHeadersPerRequest*(binary.MaxVarintLen64+chainblock.MaxHeaderCanonicalBytes) + types.HashSize
+	MaxVersionedFrameBodyBytes             = MaxVersionedBlockPayloadBytes + 1
 )
 
 const WorkFeatureShareRelayV1 uint64 = 1 << 0
@@ -64,6 +68,8 @@ const (
 	TypeShares
 	TypeWorkHello
 	TypeShareResult
+	TypeVersionedBlock
+	TypeVersionedHeaders
 )
 
 type ResultCode uint16
@@ -121,6 +127,25 @@ type Block struct {
 }
 
 func (Block) messageType() Type { return TypeBlock }
+
+// VersionedBlock is an inactive chain-protocol-v1 envelope. Its inner block
+// keeps the unchanged consensus encoding selected by its own leading version.
+type VersionedBlock struct {
+	Version uint16
+	Value   chainblock.Block
+}
+
+func (VersionedBlock) messageType() Type { return TypeVersionedBlock }
+
+// VersionedHeaders can cross one v0-to-v1 activation boundary because every
+// header is length-delimited and dispatches from its consensus version.
+type VersionedHeaders struct {
+	Version uint16
+	Values  []chainblock.Header
+	TipID   types.Hash
+}
+
+func (VersionedHeaders) messageType() Type { return TypeVersionedHeaders }
 
 type Transaction struct {
 	Value outcome.Transaction
@@ -253,7 +278,7 @@ func WriteMessage(writer io.Writer, message Message) error {
 	if err != nil {
 		return err
 	}
-	if len(payload) > MaxPayloadBytes {
+	if len(payload) > messagePayloadLimit(message) {
 		return ErrFrameSize
 	}
 	bodyLength := 1 + len(payload)
@@ -271,10 +296,10 @@ func ReadMessage(reader io.Reader) (Message, error) {
 }
 
 // ReadMessageLimit rejects a frame from its four-byte header before allocating
-// its body. Subprotocols use this to negotiate limits below the global block
-// frame ceiling.
+// its body. Subprotocols use this to negotiate an explicit limit no larger than
+// the inactive versioned-block ceiling.
 func ReadMessageLimit(reader io.Reader, maximum uint32) (Message, error) {
-	if maximum == 0 || maximum > uint32(MaxFrameBodyBytes) {
+	if maximum == 0 || maximum > uint32(MaxVersionedFrameBodyBytes) {
 		return nil, ErrFrameSize
 	}
 	var lengthBytes [4]byte
@@ -295,10 +320,13 @@ func ReadMessageLimit(reader io.Reader, maximum uint32) (Message, error) {
 // DecodeFrameBody decodes the bytes after the four-byte frame length and is
 // exported so the exact untrusted parser surface can be fuzzed.
 func DecodeFrameBody(body []byte) (Message, error) {
-	if len(body) == 0 || len(body) > MaxFrameBodyBytes {
+	if len(body) == 0 || len(body) > MaxVersionedFrameBodyBytes {
 		return nil, ErrFrameSize
 	}
 	payload := body[1:]
+	if len(payload) > payloadLimitForType(Type(body[0])) {
+		return nil, ErrFrameSize
+	}
 	switch Type(body[0]) {
 	case TypeStatus:
 		return decodeStatus(payload)
@@ -346,6 +374,10 @@ func DecodeFrameBody(body []byte) (Message, error) {
 		return decodeWorkHello(payload)
 	case TypeShareResult:
 		return decodeShareResult(payload)
+	case TypeVersionedBlock:
+		return decodeVersionedBlock(payload)
+	case TypeVersionedHeaders:
+		return decodeVersionedHeaders(payload)
 	default:
 		return nil, fmt.Errorf("%w: %d", ErrMessageType, body[0])
 	}
@@ -408,6 +440,27 @@ func encodePayload(message Message) ([]byte, error) {
 			return nil, err
 		}
 		return value.Value.CanonicalBytes(), nil
+	case VersionedBlock:
+		if err := value.Validate(); err != nil {
+			return nil, err
+		}
+		encoded := value.Value.CanonicalBytes()
+		encoder := codec.NewEncoder(2 + binary.MaxVarintLen64 + len(encoded))
+		encoder.U16(value.Version)
+		encoder.BytesField(encoded)
+		return encoder.Bytes(), nil
+	case VersionedHeaders:
+		if err := value.Validate(); err != nil {
+			return nil, err
+		}
+		encoder := codec.NewEncoder(2 + binary.MaxVarintLen64 + len(value.Values)*(binary.MaxVarintLen64+chainblock.MaxHeaderCanonicalBytes) + types.HashSize)
+		encoder.U16(value.Version)
+		encoder.Uvarint(uint64(len(value.Values)))
+		for _, header := range value.Values {
+			encoder.BytesField(header.CanonicalBytes())
+		}
+		encoder.Fixed(value.TipID[:])
+		return encoder.Bytes(), nil
 	case Transaction:
 		if err := value.Value.ValidateBasic(); err != nil {
 			return nil, err
@@ -538,6 +591,21 @@ func encodePayload(message Message) ([]byte, error) {
 	}
 }
 
+func messagePayloadLimit(message Message) int {
+	return payloadLimitForType(message.messageType())
+}
+
+func payloadLimitForType(messageType Type) int {
+	switch messageType {
+	case TypeVersionedBlock:
+		return MaxVersionedBlockPayloadBytes
+	case TypeVersionedHeaders:
+		return MaxVersionedHeadersPayloadBytes
+	default:
+		return MaxPayloadBytes
+	}
+}
+
 func (status Status) Validate() error {
 	if status.Version != Version0 {
 		return ErrUnsupported
@@ -598,6 +666,37 @@ func (headers Headers) Validate() error {
 			if err != nil || header.Parent != parentID || header.Height != headers.Values[index-1].Height+1 {
 				return ErrMessage
 			}
+		}
+	}
+	return nil
+}
+
+func (message VersionedBlock) Validate() error {
+	if message.Version != Version1 {
+		return ErrUnsupported
+	}
+	return message.Value.ValidateBasic()
+}
+
+func (headers VersionedHeaders) Validate() error {
+	if headers.Version != Version1 {
+		return ErrUnsupported
+	}
+	if len(headers.Values) > MaxHeadersPerRequest || headers.TipID.IsZero() {
+		return ErrMessage
+	}
+	for index, header := range headers.Values {
+		if err := header.ValidateBasic(); err != nil {
+			return err
+		}
+		if index == 0 {
+			continue
+		}
+		previous := headers.Values[index-1]
+		parentID, err := previous.ID()
+		if err != nil || previous.Height() == ^uint64(0) || header.Height() != previous.Height()+1 ||
+			header.ParentID() != parentID || header.Version() < previous.Version() {
+			return ErrMessage
 		}
 	}
 	return nil
@@ -904,6 +1003,67 @@ func decodeHeaders(payload []byte) (Headers, error) {
 	copy(result.TipID[:], id)
 	if err := decoder.Finish(); err != nil {
 		return Headers{}, err
+	}
+	return result, result.Validate()
+}
+
+func decodeVersionedBlock(payload []byte) (VersionedBlock, error) {
+	decoder := codec.NewDecoder(payload)
+	version, err := decoder.U16()
+	if err != nil {
+		return VersionedBlock{}, err
+	}
+	if version != Version1 {
+		return VersionedBlock{}, ErrUnsupported
+	}
+	encoded, err := decoder.BytesField(chainblock.MaxCanonicalBytes)
+	if err != nil {
+		return VersionedBlock{}, err
+	}
+	value, err := chainblock.DecodeAny(encoded)
+	if err != nil {
+		return VersionedBlock{}, err
+	}
+	if err := decoder.Finish(); err != nil {
+		return VersionedBlock{}, err
+	}
+	result := VersionedBlock{Version: version, Value: value}
+	return result, result.Validate()
+}
+
+func decodeVersionedHeaders(payload []byte) (VersionedHeaders, error) {
+	decoder := codec.NewDecoder(payload)
+	var result VersionedHeaders
+	var err error
+	result.Version, err = decoder.U16()
+	if err != nil {
+		return VersionedHeaders{}, err
+	}
+	if result.Version != Version1 {
+		return VersionedHeaders{}, ErrUnsupported
+	}
+	count, err := decoder.ListLength(MaxHeadersPerRequest)
+	if err != nil {
+		return VersionedHeaders{}, err
+	}
+	result.Values = make([]chainblock.Header, count)
+	for index := range result.Values {
+		encoded, err := decoder.BytesField(chainblock.MaxHeaderCanonicalBytes)
+		if err != nil {
+			return VersionedHeaders{}, err
+		}
+		result.Values[index], err = chainblock.DecodeHeaderAny(encoded)
+		if err != nil {
+			return VersionedHeaders{}, err
+		}
+	}
+	id, err := decoder.Fixed(types.HashSize)
+	if err != nil {
+		return VersionedHeaders{}, err
+	}
+	copy(result.TipID[:], id)
+	if err := decoder.Finish(); err != nil {
+		return VersionedHeaders{}, err
 	}
 	return result, result.Validate()
 }

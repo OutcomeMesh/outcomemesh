@@ -27,6 +27,7 @@ test-fuzz-smoke:
 	$(GO) test ./core/execution -run '^$$' -fuzz '^FuzzApplyNeverMutatesPreState$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./core/genesis -run '^$$' -fuzz '^FuzzDecodeNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./core/block -run '^$$' -fuzz '^FuzzDecodeNeverPanics$$' -fuzztime=$(FUZZTIME)
+	$(GO) test ./core/chainblock -run '^$$' -fuzz '^FuzzDecodeAnyNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./core/workgraph -run '^$$' -fuzz '^FuzzDecodeNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./core/workgraph -run '^$$' -fuzz '^FuzzDecodeSharesNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./core/workgraph -run '^$$' -fuzz '^FuzzDecodeFeeQueueNeverPanics$$' -fuzztime=$(FUZZTIME)

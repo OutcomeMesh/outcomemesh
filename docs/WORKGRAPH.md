@@ -264,7 +264,11 @@ canonical encodings by their leading version, rejects v0 at/above `H` and v1
 below `H`, and compares cumulative hard work across independent v1 trees rooted
 at every known v0 node on `H-1`. This avoids implicit finality at the initially
 selected boundary parent. Multi-base persistence and the active wire/CLI path
-are not yet enabled.
+are not yet enabled. The shared wire package now also has inactive, appended
+version-1 envelopes for either canonical block version and for a contiguous
+mixed header batch. They preserve the old chain reader's 8 MiB default and
+require explicit opt-in to the larger WorkGraph block ceiling. Status/locator
+negotiation and session routing do not use them yet.
 
 The transport-independent codec and an isolated finite session implement
 inventory-first WorkGraph relay: 1,024 sorted IDs per announcement and at most
