@@ -97,8 +97,10 @@ unknown IDs, at most once and at most the negotiated body count per batch. Each
 response remains ID-sorted and is passed through the local pool's full PoW and
 DAG admission. A final accepted/rejected receipt accounts for returned invalid
 bodies and advertised bodies the peer withheld. One stream cannot become an
-unbounded request loop. Actual QUIC protocol registration and activation-height
-routing remain disabled.
+unbounded request loop. The libp2p QUIC adapter exposes the separate
+`/outcomemesh/workgraph/1` protocol only after an explicit handler is installed;
+without that call negotiation fails. Active CLI nodes do not install it and no
+activation-height routing exists yet.
 
 ## Signed peer advertisements
 
@@ -230,7 +232,16 @@ derives the same OutcomeMesh peer ID from the authenticated remote Ed25519 key,
 accepts only exact IP/UDP/QUIC-v1 address stacks, supports independent peer-ID
 pinning, disables relay, and configures hard
 connection, stream, file-descriptor, and memory scopes plus connection-manager
-watermarks. The session protocol runs unchanged over a multiplexed stream.
+watermarks. The chain session runs unchanged over a multiplexed stream. The
+optional WorkGraph protocol has its own protocol/peer scope (one concurrent
+stream per peer by default, hard implementation maximum four), so enabling it
+does not silently expand the chain-session allowance. A fixed-window gate also
+defaults to eight accepted WorkGraph streams per peer and 512 globally per
+minute (hard configurable maxima 60 and 4,096). With the exact 630,258-byte
+worst-case application relay, the defaults cap admitted WorkGraph framing at
+about 82.1 KiB/s per peer and 5.13 MiB/s globally averaged over the window.
+Window-boundary bursts, QUIC/IP overhead, and retransmissions are separate
+capacity concerns.
 
 QUIC-v1 authentication is performed by libp2p's built-in TLS 1.3 identity
 handshake. Noise is registered in the libp2p security configuration but is not
@@ -244,6 +255,13 @@ run with short writes, delay, whole-session duplication, loss, connection
 churn, and asymmetric reachability. An opt-in process harness additionally runs
 three by default (up to 100) mine/server-start/sync/replay/SIGTERM/restart cycles
 against two real Pebble directories.
+
+A separate two-host QUIC integration fixture explicitly enables WorkGraph v1,
+pins the authenticated OutcomeMesh peer ID, negotiates a 512-byte receiver
+frame, relays an out-of-order parent/child DAG in two body batches, and verifies
+full pool admission. Negative fixtures reject a different payload context,
+refuse negotiation when no WorkGraph handler is installed, and enforce its
+independent one-stream-per-peer scope.
 
 Milestone 4's written devnet gates are closed: convergence, fail-closed resource
 bounds, and trustless full-history bootstrap are reproducibly tested. A public

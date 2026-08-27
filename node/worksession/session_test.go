@@ -45,6 +45,14 @@ func TestRelayNegotiatesAndResolvesOutOfOrderDAG(t *testing.T) {
 	}
 }
 
+func TestMaximumRelayApplicationByteBudget(t *testing.T) {
+	t.Parallel()
+
+	if got := MaximumRelayApplicationBytes(); got != 630_258 {
+		t.Fatalf("maximum relay application bytes=%d", got)
+	}
+}
+
 func TestRelayClampsBatchesToNegotiatedFrame(t *testing.T) {
 	t.Parallel()
 

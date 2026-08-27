@@ -132,8 +132,17 @@ missing-parent children against the same limits, owns all admitted slices, and
 reserves an anchor identity slot. Hard-target work is never admitted as an
 ordinary paid share. Pending cycles or nonexistent parents can consume only
 the published count/byte/edge bounds and still require valid proof of work.
-The stream is not yet registered on the production QUIC host, so none of these
-messages can activate version-1 consensus accidentally.
+The libp2p adapter registers the stream only through an explicit handler under
+`/outcomemesh/workgraph/1`; default hosts and active CLI commands leave it
+unhandled. Its separate protocol/peer resource scope defaults to one concurrent
+stream and has a hard maximum of four. Thus transport testing cannot activate
+version-1 consensus accidentally or consume the chain session's allowance.
+Sequential churn is bounded by fixed-window defaults of eight WorkGraph streams
+per peer and 512 globally per minute. Since one full relay has an exact
+630,258-byte application maximum, admitted averages are bounded to about 82.1
+KiB/s per peer and 5.13 MiB/s globally. A fixed-window boundary can double the
+short burst and QUIC retransmission is outside this application accounting;
+operators still require physical bandwidth monitoring and peer bans.
 
 The isolated WorkGraph Pebble schema stores one activation checkpoint and
 immutable per-block resource deltas rather than attacker-amplified full branch

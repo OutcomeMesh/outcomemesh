@@ -267,8 +267,21 @@ context. A version-1 capability handshake intersects counts and frame sizes,
 then clamps body batches against worst-case encoding. Oversized frames are
 rejected before allocation, each unknown ID is requested once, invalid or
 withheld bodies receive a bounded result, and all returned shares still pass
-the full local pool validator. Registration on the production QUIC host remains
-disabled until activation routing exists.
+the full local pool validator. The libp2p adapter exposes it under the distinct
+`/outcomemesh/workgraph/1` ID only when an operator installs a handler; default
+hosts and the active CLI cannot negotiate it. Two-host QUIC tests cover peer-ID
+pinning, a negotiated 512-byte frame, parent/child relay, context rejection, and
+an independent one-stream-per-peer resource scope. Activation routing remains
+disabled.
+
+One maximal 1,024-ID relay is bounded to exactly 630,258 bytes of bidirectional
+application framing when a peer forces one maximum-size body per batch. The
+QUIC adapter's fixed-window defaults admit eight such streams per peer and 512
+globally per minute: approximately 82.1 KiB/s per peer and 5.13 MiB/s for the
+node averaged across a window. Boundary bursts can be twice that average, and
+transport headers/retransmission are outside the application counter. These
+ceilings close unbounded sequential-stream admission; simulation still governs
+the much lower target operating rate needed for fair propagation.
 
 The corresponding local pool is also implemented but inactive. It verifies
 weak PoW and exact context before storage, owns detached bodies, accepts bounded

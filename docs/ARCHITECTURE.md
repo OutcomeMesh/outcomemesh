@@ -167,7 +167,10 @@ synchronous batch. Reopen reconstructs parent-first states and verifies every
 stored root and ancestry link. Schema 2 fails closed on the earlier pre-alpha
 full-snapshot layout; replay is the migration policy. Production activation
 still requires periodic checkpoint/pruning policy, broader filesystem-fault
-soaks, and registration of the already isolated negotiated WorkGraph session.
+soaks, and activation routing for the already isolated negotiated WorkGraph
+session. The libp2p adapter now carries that session under a separate opt-in
+protocol ID and resource scope, while default hosts and the active CLI leave it
+disabled.
 The current integration test kills a separate process immediately before and
 after the synchronous Pebble batch and verifies old-or-new recovery.
 

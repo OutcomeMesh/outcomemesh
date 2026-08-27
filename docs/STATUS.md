@@ -225,8 +225,16 @@ Implemented in an isolated, not-yet-activated consensus package:
   batch. Its finite inventory/request/body/result state machine requests each
   unknown ID once, rejects unsolicited or repeated work, counts withheld and
   invalid bodies, enforces frame size before allocation, and sends every body
-  through full pool PoW/DAG admission. Production QUIC registration remains
-  deliberately disabled.
+  through full pool PoW/DAG admission.
+- the libp2p adapter now offers WorkGraph only as an explicitly installed
+  `/outcomemesh/workgraph/1` handler, disabled by default and absent from the
+  active CLI. A real two-host QUIC test authenticates peer IDs, negotiates a
+  512-byte receiver frame, relays a parent/child DAG in two batches, rejects a
+  different payload context, and enforces a separate one-stream-per-peer scope.
+  An exact worst-case relay is 630,258 application bytes; fixed-window defaults
+  of 8 streams/peer/minute and 512 streams/node/minute bound averages to about
+  82.1 KiB/s per peer and 5.13 MiB/s globally, excluding QUIC overhead and
+  retransmission.
 - an inactive concurrency-safe local WorkGraph pool now performs weak-PoW and
   context validation before bounded storage, resolves out-of-order parent DAGs,
   reserves one reward-miner slot for the future anchor, selects four tips
@@ -257,7 +265,7 @@ Implemented in an isolated, not-yet-activated consensus package:
   Strict metadata, checkpoint, and delta decoders are fuzz targets.
 
 No WorkGraph field has entered a version-0 block yet. The isolated v1 store and
-session remain disconnected from the production chain/QUIC routing path;
+opt-in QUIC session remain disconnected from the active chain/CLI routing path;
 periodic checkpoint/pruning policy, extended filesystem-fault/soak campaigns,
 production gossip-budget calibration, and expanded economic/strategy analysis
 remain before activation.

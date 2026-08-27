@@ -64,6 +64,31 @@ type negotiated struct {
 	bodies     int
 }
 
+// MaximumRelayApplicationBytes is the exact worst-case bidirectional wire
+// framing for one full 1,024-ID relay. The maximum occurs when negotiation
+// permits one maximum-size share body per request, maximizing frame overhead.
+// QUIC/IP headers and transport retransmissions are outside this value.
+func MaximumRelayApplicationBytes() int {
+	const (
+		framePrefixBytes  = 4
+		messageTypeBytes  = 1
+		versionBytes      = 2
+		shareContextBytes = 4 + 8 + 3*types.HashSize
+		helloFieldsBytes  = 8 + 4 + 2 + 2
+		largeCountBytes   = 2
+		singleCountBytes  = 1
+	)
+	hello := framePrefixBytes + messageTypeBytes + versionBytes + shareContextBytes + helloFieldsBytes
+	inventory := framePrefixBytes + messageTypeBytes + versionBytes + shareContextBytes +
+		largeCountBytes + wire.MaxShareInventoryIDs*types.HashSize
+	singleRequest := framePrefixBytes + messageTypeBytes + versionBytes + shareContextBytes +
+		singleCountBytes + types.HashSize
+	singleResponse := framePrefixBytes + messageTypeBytes + versionBytes + shareContextBytes +
+		singleCountBytes + workgraph.MaxShareCanonicalBytes
+	result := framePrefixBytes + messageTypeBytes + versionBytes + shareContextBytes + 2 + 2
+	return 2*hello + inventory + wire.MaxShareInventoryIDs*(singleRequest+singleResponse) + result
+}
+
 func New(pool *workpool.Pool, config Config) (*Node, error) {
 	if pool == nil {
 		return nil, ErrConfiguration

@@ -156,6 +156,21 @@ not a production bandwidth recommendation: framing, inventory announcements,
 signatures, retransmission, anchors, and transaction traffic must be added to
 the final budget.
 
+The implemented inventory-first session now supplies a separate hard admission
+envelope. One complete relay can announce at most 1,024 IDs. Its exact maximum
+bidirectional application framing is 630,258 bytes; the worst case is a peer
+negotiating one maximum-size share per response, which repeats request/response
+headers 1,024 times. The QUIC adapter defaults to one concurrent WorkGraph
+stream, eight accepted WorkGraph streams per peer per fixed minute, and 512
+accepted WorkGraph streams globally per fixed minute. Therefore its default
+admission ceiling is 5,042,064 application bytes/minute per peer (about 82.1
+KiB/s averaged over the window) and 322,692,096 bytes/minute globally (about
+5.13 MiB/s). Fixed-window boundary bursts can approach twice the average;
+QUIC/IP headers and retransmissions are not included. These are hard prototype
+ceilings, not a recommendation to provision links at the ceiling. The topology
+results above show that useful steady-state gossip should be far lower and that
+deduplication, not allowed maximum traffic, determines fairness.
+
 ## PoW scenarios
 
 The committed tests cover:

@@ -26,14 +26,18 @@ import (
 
 const (
 	SessionProtocol    protocol.ID = "/outcomemesh/session/0"
+	WorkGraphProtocol  protocol.ID = "/outcomemesh/workgraph/1"
 	maxListenAddresses             = 8
 	maxAddressBytes                = 256
 	// MaxConnectionLimit and MaxStreamsPerPeerLimit are hard implementation
 	// bounds. Callers may choose lower operational limits, but cannot silently
 	// expand the resource-manager scopes past these values.
-	MaxConnectionLimit     = 1_024
-	MaxStreamsPerPeerLimit = 32
-	MaxFileDescriptorLimit = 4_096
+	MaxConnectionLimit                 = 1_024
+	MaxStreamsPerPeerLimit             = 32
+	MaxWorkStreamsPerPeerLimit         = 4
+	MaxWorkStreamsPerMinuteLimit       = 60
+	MaxWorkStreamsGlobalPerMinuteLimit = 4_096
+	MaxFileDescriptorLimit             = 4_096
 )
 
 var (
@@ -46,30 +50,43 @@ var (
 type Handler func(context.Context, types.Hash, network.Stream)
 
 type Config struct {
-	Listen             []string
-	MaxConnections     int
-	MaxStreamsPerPeer  int
-	MemoryBytes        int64
-	MaxFileDescriptors int
-	GracePeriod        time.Duration
+	Listen                        []string
+	MaxConnections                int
+	MaxStreamsPerPeer             int
+	MaxWorkStreamsPerPeer         int
+	MaxWorkStreamsPerMinute       int
+	MaxWorkStreamsGlobalPerMinute int
+	MemoryBytes                   int64
+	MaxFileDescriptors            int
+	GracePeriod                   time.Duration
 }
 
 func DefaultConfig() Config {
 	return Config{
-		Listen:             []string{"/ip4/127.0.0.1/udp/0/quic-v1"},
-		MaxConnections:     64,
-		MaxStreamsPerPeer:  4,
-		MemoryBytes:        64 << 20,
-		MaxFileDescriptors: 128,
-		GracePeriod:        30 * time.Second,
+		Listen:                        []string{"/ip4/127.0.0.1/udp/0/quic-v1"},
+		MaxConnections:                64,
+		MaxStreamsPerPeer:             4,
+		MaxWorkStreamsPerPeer:         1,
+		MaxWorkStreamsPerMinute:       8,
+		MaxWorkStreamsGlobalPerMinute: 512,
+		MemoryBytes:                   64 << 20,
+		MaxFileDescriptors:            128,
+		GracePeriod:                   30 * time.Second,
 	}
 }
 
 type Host struct {
-	inner  host.Host
-	id     types.Hash
-	cancel context.CancelFunc
-	once   sync.Once
+	inner                         host.Host
+	id                            types.Hash
+	context                       context.Context
+	cancel                        context.CancelFunc
+	once                          sync.Once
+	workMu                        sync.Mutex
+	workWindowStart               time.Time
+	workGlobalCount               int
+	workPeerCounts                map[types.Hash]int
+	maxWorkStreamsPerMinute       int
+	maxGlobalWorkStreamsPerMinute int
 }
 
 func New(ctx context.Context, privateKey ed25519.PrivateKey, config Config, handler Handler) (*Host, error) {
@@ -114,16 +131,56 @@ func New(ctx context.Context, privateKey ed25519.PrivateKey, config Config, hand
 		_ = resourceManager.Close()
 		return nil, err
 	}
-	result := &Host{inner: inner, id: id, cancel: cancel}
-	inner.SetStreamHandler(SessionProtocol, func(stream network.Stream) {
+	result := &Host{
+		inner: inner, id: id, context: hostContext, cancel: cancel,
+		workPeerCounts:                make(map[types.Hash]int),
+		maxWorkStreamsPerMinute:       config.MaxWorkStreamsPerMinute,
+		maxGlobalWorkStreamsPerMinute: config.MaxWorkStreamsGlobalPerMinute,
+	}
+	result.setHandler(SessionProtocol, handler)
+	return result, nil
+}
+
+// SetWorkGraphHandler explicitly enables the isolated version-1 WorkGraph
+// stream. Hosts that never call it do not negotiate the prototype protocol.
+func (value *Host) SetWorkGraphHandler(handler Handler) error {
+	if value == nil || value.inner == nil || handler == nil {
+		return ErrConfiguration
+	}
+	value.setHandler(WorkGraphProtocol, handler)
+	return nil
+}
+
+func (value *Host) setHandler(protocolID protocol.ID, handler Handler) {
+	value.inner.SetStreamHandler(protocolID, func(stream network.Stream) {
 		remoteID, err := outcomeIDFromPublicKey(stream.Conn().RemotePublicKey())
 		if err != nil || handler == nil {
 			_ = stream.Reset()
 			return
 		}
-		handler(hostContext, remoteID, stream)
+		if protocolID == WorkGraphProtocol && !value.allowWorkStream(remoteID, time.Now()) {
+			_ = stream.Reset()
+			return
+		}
+		handler(value.context, remoteID, stream)
 	})
-	return result, nil
+}
+
+func (value *Host) allowWorkStream(remoteID types.Hash, now time.Time) bool {
+	value.workMu.Lock()
+	defer value.workMu.Unlock()
+	if value.workWindowStart.IsZero() || now.Sub(value.workWindowStart) >= time.Minute || now.Before(value.workWindowStart) {
+		value.workWindowStart = now
+		value.workGlobalCount = 0
+		clear(value.workPeerCounts)
+	}
+	if value.workGlobalCount >= value.maxGlobalWorkStreamsPerMinute ||
+		value.workPeerCounts[remoteID] >= value.maxWorkStreamsPerMinute {
+		return false
+	}
+	value.workGlobalCount++
+	value.workPeerCounts[remoteID]++
+	return true
 }
 
 func (value *Host) ID() types.Hash { return value.id }
@@ -154,6 +211,21 @@ func (value *Host) Addresses() []string {
 }
 
 func (value *Host) OpenStream(ctx context.Context, address string, expected *types.Hash) (network.Stream, types.Hash, error) {
+	return value.openStream(ctx, address, expected, SessionProtocol)
+}
+
+// OpenWorkGraphStream opens only the explicitly versioned WorkGraph protocol.
+// Peer pinning and direct-QUIC checks are identical to the chain session.
+func (value *Host) OpenWorkGraphStream(ctx context.Context, address string, expected *types.Hash) (network.Stream, types.Hash, error) {
+	return value.openStream(ctx, address, expected, WorkGraphProtocol)
+}
+
+func (value *Host) openStream(
+	ctx context.Context,
+	address string,
+	expected *types.Hash,
+	protocolID protocol.ID,
+) (network.Stream, types.Hash, error) {
 	if value == nil || value.inner == nil || len(address) == 0 || len(address) > maxAddressBytes {
 		return nil, types.Hash{}, ErrAddress
 	}
@@ -176,7 +248,7 @@ func (value *Host) OpenStream(ctx context.Context, address string, expected *typ
 	if err := value.inner.Connect(ctx, *info); err != nil {
 		return nil, types.Hash{}, err
 	}
-	stream, err := value.inner.NewStream(ctx, info.ID, SessionProtocol)
+	stream, err := value.inner.NewStream(ctx, info.ID, protocolID)
 	if err != nil {
 		return nil, types.Hash{}, err
 	}
@@ -271,6 +343,10 @@ func validateConfig(ctx context.Context, privateKey ed25519.PrivateKey, config C
 		len(config.Listen) == 0 || len(config.Listen) > maxListenAddresses ||
 		config.MaxConnections <= 0 || config.MaxConnections > MaxConnectionLimit ||
 		config.MaxStreamsPerPeer <= 0 || config.MaxStreamsPerPeer > MaxStreamsPerPeerLimit ||
+		config.MaxWorkStreamsPerPeer <= 0 || config.MaxWorkStreamsPerPeer > MaxWorkStreamsPerPeerLimit ||
+		config.MaxWorkStreamsPerMinute <= 0 || config.MaxWorkStreamsPerMinute > MaxWorkStreamsPerMinuteLimit ||
+		config.MaxWorkStreamsGlobalPerMinute < config.MaxWorkStreamsPerMinute ||
+		config.MaxWorkStreamsGlobalPerMinute > MaxWorkStreamsGlobalPerMinuteLimit ||
 		config.MemoryBytes < 16<<20 || config.MemoryBytes > 2<<30 ||
 		config.MaxFileDescriptors < config.MaxConnections || config.MaxFileDescriptors > MaxFileDescriptorLimit ||
 		config.GracePeriod < 0 {
@@ -293,7 +369,7 @@ func newResourceManager(config Config) (network.ResourceManager, error) {
 	// peer scope reserves room for those, while the OutcomeMesh protocol scope
 	// below enforces the exact application-stream limit.
 	const internalStreamsPerPeer = 8
-	peerStreams := config.MaxStreamsPerPeer + internalStreamsPerPeer
+	peerStreams := config.MaxStreamsPerPeer + config.MaxWorkStreamsPerPeer + internalStreamsPerPeer
 	totalStreams := config.MaxConnections * peerStreams
 	system := rcmgr.ResourceLimits{
 		Streams:         rcmgr.LimitVal(totalStreams),
@@ -321,6 +397,12 @@ func newResourceManager(config Config) (network.ResourceManager, error) {
 		StreamsOutbound: rcmgr.LimitVal(config.MaxStreamsPerPeer),
 		Memory:          4 << 20,
 	}
+	workGraphPerPeer := rcmgr.ResourceLimits{
+		Streams:         rcmgr.LimitVal(config.MaxWorkStreamsPerPeer),
+		StreamsInbound:  rcmgr.LimitVal(config.MaxWorkStreamsPerPeer),
+		StreamsOutbound: rcmgr.LimitVal(config.MaxWorkStreamsPerPeer),
+		Memory:          512 << 10,
+	}
 	partial := rcmgr.PartialLimitConfig{
 		System:      system,
 		Transient:   system,
@@ -332,9 +414,16 @@ func newResourceManager(config Config) (network.ResourceManager, error) {
 				StreamsOutbound: rcmgr.LimitVal(config.MaxConnections * config.MaxStreamsPerPeer),
 				Memory:          rcmgr.LimitVal64(config.MemoryBytes / 2),
 			},
+			WorkGraphProtocol: {
+				Streams:         rcmgr.LimitVal(config.MaxConnections * config.MaxWorkStreamsPerPeer),
+				StreamsInbound:  rcmgr.LimitVal(config.MaxConnections * config.MaxWorkStreamsPerPeer),
+				StreamsOutbound: rcmgr.LimitVal(config.MaxConnections * config.MaxWorkStreamsPerPeer),
+				Memory:          rcmgr.LimitVal64(config.MemoryBytes / 8),
+			},
 		},
 		ProtocolPeer: map[protocol.ID]rcmgr.ResourceLimits{
-			SessionProtocol: applicationPerPeer,
+			SessionProtocol:   applicationPerPeer,
+			WorkGraphProtocol: workGraphPerPeer,
 		},
 		Conn: rcmgr.ResourceLimits{
 			Conns: 1, ConnsInbound: 1, ConnsOutbound: 1, FD: 1, Memory: 4 << 20,
