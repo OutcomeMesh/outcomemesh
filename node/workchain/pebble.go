@@ -17,32 +17,56 @@ import (
 )
 
 const (
-	workSchemaVersion      uint16 = 1
+	workSchemaVersion      uint16 = 2
 	maxNodeMetadataBytes          = 64 << 10
 	maxPersistedStateBytes        = 256 << 20
+	maxStateDeltaBytes            = 256 << 20
+	DefaultMaxHistoryBytes uint64 = 64 << 30
 )
 
 var (
-	workKeySchema = []byte{0x01, 0x01}
-	workKeyConfig = []byte{0x01, 0x02}
-	workKeyTip    = []byte{0x01, 0x03}
+	workKeySchema  = []byte{0x01, 0x01}
+	workKeyConfig  = []byte{0x01, 0x02}
+	workKeyTip     = []byte{0x01, 0x03}
+	workKeyHistory = []byte{0x01, 0x04}
 )
 
 const (
 	workNodePrefix  byte = 0x10
 	workBlockPrefix byte = 0x11
 	workStatePrefix byte = 0x12
+	workDeltaPrefix byte = 0x13
 )
 
+type Policy struct {
+	// MaxHistoryBytes counts immutable logical node, block, checkpoint, and
+	// resource-delta key/value bytes. Pebble WAL/LSM overhead is separate.
+	MaxHistoryBytes uint64
+}
+
+// DefaultPolicy returns the local 64-GiB immutable-history admission budget.
+func DefaultPolicy() Policy { return Policy{MaxHistoryBytes: DefaultMaxHistoryBytes} }
+
 type workPersistence struct {
-	db         *pebble.DB
-	commitHook func() error
+	db           *pebble.DB
+	policy       Policy
+	historyBytes uint64
+	commitHook   func() error
 }
 
 // Open creates or reopens the isolated version-1 Pebble coordinator. All
-// branch metadata, block bytes, resource state, fee queue, and canonical-tip
-// movement for one commit use a single synchronous batch.
+// branch metadata, block bytes, resource delta, fee queue, logical history,
+// and canonical-tip movement for one commit use a single synchronous batch.
 func Open(path string, base Base, parameters workblock.Parameters) (*Store, error) {
+	return OpenWithPolicy(path, base, parameters, DefaultPolicy())
+}
+
+// OpenWithPolicy opens the isolated store with an explicit local history
+// budget. The policy is not a consensus input and may change across restarts.
+func OpenWithPolicy(path string, base Base, parameters workblock.Parameters, policy Policy) (*Store, error) {
+	if policy.MaxHistoryBytes == 0 {
+		return nil, storage.ErrHistoryLimit
+	}
 	store, err := New(base, parameters)
 	if err != nil {
 		return nil, err
@@ -51,7 +75,7 @@ func Open(path string, base Base, parameters workblock.Parameters) (*Store, erro
 	if err != nil {
 		return nil, err
 	}
-	persistence := &workPersistence{db: db}
+	persistence := &workPersistence{db: db, policy: policy}
 	if err := persistence.initializeOrLoad(store, base); err != nil {
 		_ = db.Close()
 		return nil, err
@@ -95,43 +119,76 @@ func (persistence *workPersistence) initialize(base *chainNode, config types.Has
 	defer batch.Close()
 	var schema [2]byte
 	binary.BigEndian.PutUint16(schema[:], workSchemaVersion)
+	baseNodeKey := workNodeKey(base.tip.ID)
+	baseStateKey := workStateKey(base.tip.ID)
+	historyBytes, err := checkedHistoryBytes(
+		uint64(len(baseNodeKey)+len(metadata)), uint64(len(baseStateKey)+len(stateBytes)),
+	)
+	if err != nil || historyBytes > persistence.policy.MaxHistoryBytes {
+		return storage.ErrHistoryLimit
+	}
+	var history [8]byte
+	binary.BigEndian.PutUint64(history[:], historyBytes)
 	for _, item := range []struct {
 		key   []byte
 		value []byte
 	}{
 		{workKeySchema, schema[:]}, {workKeyConfig, config[:]}, {workKeyTip, tipID[:]},
-		{workNodeKey(base.tip.ID), metadata}, {workStateKey(base.tip.ID), stateBytes},
+		{workKeyHistory, history[:]}, {baseNodeKey, metadata}, {baseStateKey, stateBytes},
 	} {
 		if err := batch.Set(item.key, item.value, nil); err != nil {
 			return err
 		}
 	}
-	return batch.Commit(pebble.Sync)
+	if err := batch.Commit(pebble.Sync); err != nil {
+		return err
+	}
+	persistence.historyBytes = historyBytes
+	return nil
 }
 
-func (persistence *workPersistence) commitNode(node *chainNode, canonicalTip types.Hash) error {
-	if node == nil || node.block == nil || node.result.FeeQueue == nil {
+func (persistence *workPersistence) commitNode(parent, node *chainNode, canonicalTip types.Hash) error {
+	if parent == nil || parent.state == nil || node == nil || node.block == nil || node.result.FeeQueue == nil {
 		return storage.ErrCorrupt
 	}
 	metadata, err := encodeNodeMetadata(node)
 	if err != nil {
 		return err
 	}
-	stateBytes, err := encodePersistedState(node.state)
+	delta, err := buildStateDelta(parent.state, node.state)
+	if err != nil {
+		return err
+	}
+	deltaBytes, err := encodeStateDelta(delta)
 	if err != nil {
 		return err
 	}
 	blockBytes := node.block.CanonicalBytes()
+	nodeKey := workNodeKey(node.tip.ID)
+	blockKey := workBlockKey(node.tip.ID)
+	deltaKey := workDeltaKey(node.tip.ID)
+	increment, err := checkedHistoryBytes(
+		uint64(len(nodeKey)+len(metadata)), uint64(len(blockKey)+len(blockBytes)),
+		uint64(len(deltaKey)+len(deltaBytes)),
+	)
+	if err != nil || increment > persistence.policy.MaxHistoryBytes ||
+		persistence.historyBytes > persistence.policy.MaxHistoryBytes-increment {
+		return storage.ErrHistoryLimit
+	}
+	nextHistory := persistence.historyBytes + increment
+	var history [8]byte
+	binary.BigEndian.PutUint64(history[:], nextHistory)
 	batch := persistence.db.NewBatch()
 	defer batch.Close()
 	for _, item := range []struct {
 		key   []byte
 		value []byte
 	}{
-		{workNodeKey(node.tip.ID), metadata},
-		{workBlockKey(node.tip.ID), blockBytes},
-		{workStateKey(node.tip.ID), stateBytes},
+		{nodeKey, metadata},
+		{blockKey, blockBytes},
+		{deltaKey, deltaBytes},
 		{workKeyTip, canonicalTip[:]},
+		{workKeyHistory, history[:]},
 	} {
 		if err := batch.Set(item.key, item.value, nil); err != nil {
 			return err
@@ -142,7 +199,11 @@ func (persistence *workPersistence) commitNode(node *chainNode, canonicalTip typ
 			return err
 		}
 	}
-	return batch.Commit(pebble.Sync)
+	if err := batch.Commit(pebble.Sync); err != nil {
+		return err
+	}
+	persistence.historyBytes = nextHistory
+	return nil
 }
 
 func (persistence *workPersistence) load(store *Store, base Base) error {
@@ -166,14 +227,6 @@ func (persistence *workPersistence) load(store *Store, base Base) error {
 		if err != nil || node.tip.ID != id {
 			return storage.ErrCorrupt
 		}
-		stateBytes, err := persistence.get(workStateKey(id))
-		if err != nil {
-			return err
-		}
-		node.state, err = decodePersistedState(stateBytes)
-		if err != nil || node.state.Root() != node.tip.StateRoot {
-			return storage.ErrCorrupt
-		}
 		if id != store.baseID {
 			blockBytes, err := persistence.get(workBlockKey(id))
 			if err != nil {
@@ -193,7 +246,6 @@ func (persistence *workPersistence) load(store *Store, base Base) error {
 				return storage.ErrCorrupt
 			}
 			node.block = &candidate
-			node.result.State = node.state
 			node.result.FeeAward = candidate.Header.FeeAward
 		}
 		if _, exists := nodes[id]; exists {
@@ -207,6 +259,14 @@ func (persistence *workPersistence) load(store *Store, base Base) error {
 	baseNode, exists := nodes[store.baseID]
 	if !exists || baseNode.block != nil || baseNode.result.FeeQueue != nil ||
 		!storage.EqualTips(baseNode.tip, base.Tip) || !equalTimestamps(baseNode.history, store.nodes[store.baseID].history) {
+		return storage.ErrCorrupt
+	}
+	baseStateBytes, err := persistence.get(workStateKey(store.baseID))
+	if err != nil {
+		return storage.ErrCorrupt
+	}
+	baseNode.state, err = decodePersistedState(baseStateBytes)
+	if err != nil || baseNode.state.Root() != baseNode.tip.StateRoot {
 		return storage.ErrCorrupt
 	}
 	order := make([]*chainNode, 0, len(nodes))
@@ -239,6 +299,19 @@ func (persistence *workPersistence) load(store *Store, base Base) error {
 		if !equalTimestamps(expectedHistory, node.history) {
 			return storage.ErrCorrupt
 		}
+		deltaBytes, err := persistence.get(workDeltaKey(node.tip.ID))
+		if err != nil {
+			return storage.ErrCorrupt
+		}
+		delta, err := decodeStateDelta(deltaBytes)
+		if err != nil {
+			return storage.ErrCorrupt
+		}
+		node.state, err = applyStateDelta(parent.state, delta)
+		if err != nil || node.state.Root() != node.tip.StateRoot {
+			return storage.ErrCorrupt
+		}
+		node.result.State = node.state
 	}
 	tipBytes, err := persistence.get(workKeyTip)
 	if err != nil || len(tipBytes) != types.HashSize {
@@ -254,6 +327,15 @@ func (persistence *workPersistence) load(store *Store, base Base) error {
 			return storage.ErrCorrupt
 		}
 	}
+	storedHistory, err := persistence.get(workKeyHistory)
+	if err != nil || len(storedHistory) != 8 {
+		return storage.ErrCorrupt
+	}
+	historyBytes, err := persistence.historyUsage(nodes, store.baseID)
+	if err != nil || binary.BigEndian.Uint64(storedHistory) != historyBytes {
+		return storage.ErrCorrupt
+	}
+	persistence.historyBytes = historyBytes
 	store.nodes = nodes
 	store.tipID = tipID
 	return nil
@@ -375,6 +457,157 @@ func decodePersistedState(input []byte) (*state.Memory, error) {
 	return state.New(resources)
 }
 
+type stateDelta struct {
+	deleted []types.ResourceID
+	created []resource.Resource
+}
+
+func buildStateDelta(before, after *state.Memory) (stateDelta, error) {
+	if before == nil || after == nil {
+		return stateDelta{}, storage.ErrCorrupt
+	}
+	left := before.Resources()
+	right := after.Resources()
+	result := stateDelta{}
+	for leftIndex, rightIndex := 0, 0; leftIndex < len(left) || rightIndex < len(right); {
+		if leftIndex == len(left) {
+			result.created = append(result.created, right[rightIndex:]...)
+			break
+		}
+		if rightIndex == len(right) {
+			for _, item := range left[leftIndex:] {
+				result.deleted = append(result.deleted, item.ID)
+			}
+			break
+		}
+		switch types.CompareResourceID(left[leftIndex].ID, right[rightIndex].ID) {
+		case -1:
+			result.deleted = append(result.deleted, left[leftIndex].ID)
+			leftIndex++
+		case 1:
+			result.created = append(result.created, right[rightIndex])
+			rightIndex++
+		default:
+			if !bytes.Equal(left[leftIndex].CanonicalBytes(), right[rightIndex].CanonicalBytes()) {
+				return stateDelta{}, storage.ErrCorrupt
+			}
+			leftIndex++
+			rightIndex++
+		}
+	}
+	return result, nil
+}
+
+func encodeStateDelta(delta stateDelta) ([]byte, error) {
+	for index, id := range delta.deleted {
+		if id.IsZero() || (index > 0 && types.CompareResourceID(delta.deleted[index-1], id) >= 0) {
+			return nil, storage.ErrCorrupt
+		}
+	}
+	for index, item := range delta.created {
+		if err := item.Validate(); err != nil ||
+			(index > 0 && types.CompareResourceID(delta.created[index-1].ID, item.ID) >= 0) {
+			return nil, storage.ErrCorrupt
+		}
+	}
+	deleted := make(map[types.ResourceID]struct{}, len(delta.deleted))
+	for _, id := range delta.deleted {
+		deleted[id] = struct{}{}
+	}
+	for _, item := range delta.created {
+		if _, exists := deleted[item.ID]; exists {
+			return nil, storage.ErrCorrupt
+		}
+	}
+	encoder := codec.NewEncoder(20 + len(delta.deleted)*types.ResourceIDSize + len(delta.created)*resource.CanonicalSize)
+	encoder.Uvarint(uint64(len(delta.deleted)))
+	for _, id := range delta.deleted {
+		encoder.Fixed(id[:])
+	}
+	encoder.Uvarint(uint64(len(delta.created)))
+	for _, item := range delta.created {
+		item.EncodeTo(encoder)
+	}
+	if encoder.Len() > maxStateDeltaBytes {
+		return nil, storage.ErrHistoryLimit
+	}
+	return encoder.Bytes(), nil
+}
+
+func decodeStateDelta(input []byte) (stateDelta, error) {
+	if len(input) == 0 || len(input) > maxStateDeltaBytes {
+		return stateDelta{}, storage.ErrCorrupt
+	}
+	decoder := codec.NewDecoder(input)
+	deletedCount, err := decoder.ListLength(uint64(len(input)/types.ResourceIDSize + 1))
+	if err != nil {
+		return stateDelta{}, err
+	}
+	result := stateDelta{deleted: make([]types.ResourceID, deletedCount)}
+	for index := range result.deleted {
+		encoded, err := decoder.Fixed(types.ResourceIDSize)
+		if err != nil {
+			return stateDelta{}, err
+		}
+		copy(result.deleted[index][:], encoded)
+		if result.deleted[index].IsZero() ||
+			(index > 0 && types.CompareResourceID(result.deleted[index-1], result.deleted[index]) >= 0) {
+			return stateDelta{}, storage.ErrCorrupt
+		}
+	}
+	createdCount, err := decoder.ListLength(uint64(len(input)/resource.CanonicalSize + 1))
+	if err != nil {
+		return stateDelta{}, err
+	}
+	result.created = make([]resource.Resource, createdCount)
+	for index := range result.created {
+		result.created[index], err = resource.Decode(decoder)
+		if err != nil || (index > 0 && types.CompareResourceID(result.created[index-1].ID, result.created[index].ID) >= 0) {
+			return stateDelta{}, storage.ErrCorrupt
+		}
+	}
+	if err := decoder.Finish(); err != nil {
+		return stateDelta{}, err
+	}
+	deleted := make(map[types.ResourceID]struct{}, len(result.deleted))
+	for _, id := range result.deleted {
+		deleted[id] = struct{}{}
+	}
+	for _, item := range result.created {
+		if _, exists := deleted[item.ID]; exists {
+			return stateDelta{}, storage.ErrCorrupt
+		}
+	}
+	return result, nil
+}
+
+func applyStateDelta(before *state.Memory, delta stateDelta) (*state.Memory, error) {
+	if before == nil {
+		return nil, storage.ErrCorrupt
+	}
+	resources := make(map[types.ResourceID]resource.Resource, before.Len()+len(delta.created))
+	for _, item := range before.Resources() {
+		resources[item.ID] = item
+	}
+	for _, id := range delta.deleted {
+		if _, exists := resources[id]; !exists {
+			return nil, storage.ErrCorrupt
+		}
+		delete(resources, id)
+	}
+	for _, item := range delta.created {
+		if _, exists := resources[item.ID]; exists {
+			return nil, storage.ErrCorrupt
+		}
+		resources[item.ID] = item
+	}
+	values := make([]resource.Resource, 0, len(resources))
+	for _, item := range resources {
+		values = append(values, item)
+	}
+	return state.New(values)
+}
+
 func workConfigHash(base Base, parameters workblock.Parameters) types.Hash {
 	encoder := codec.NewEncoder(512)
 	encoder.BytesField(base.Tip.CanonicalBytes())
@@ -397,6 +630,7 @@ func workConfigHash(base Base, parameters workblock.Parameters) types.Hash {
 func workNodeKey(id types.Hash) []byte  { return workIDKey(workNodePrefix, id) }
 func workBlockKey(id types.Hash) []byte { return workIDKey(workBlockPrefix, id) }
 func workStateKey(id types.Hash) []byte { return workIDKey(workStatePrefix, id) }
+func workDeltaKey(id types.Hash) []byte { return workIDKey(workDeltaPrefix, id) }
 
 func workIDKey(prefix byte, id types.Hash) []byte {
 	result := make([]byte, 1+types.HashSize)
@@ -412,6 +646,61 @@ func (persistence *workPersistence) get(key []byte) ([]byte, error) {
 	}
 	defer closer.Close()
 	return append([]byte(nil), value...), nil
+}
+
+func (persistence *workPersistence) historyUsage(nodes map[types.Hash]*chainNode, baseID types.Hash) (uint64, error) {
+	iterator, err := persistence.db.NewIter(&pebble.IterOptions{
+		LowerBound: []byte{workNodePrefix}, UpperBound: []byte{workDeltaPrefix + 1},
+	})
+	if err != nil {
+		return 0, err
+	}
+	defer iterator.Close()
+	var total uint64
+	for valid := iterator.First(); valid; valid = iterator.Next() {
+		key := iterator.Key()
+		if len(key) != 1+types.HashSize {
+			return 0, storage.ErrCorrupt
+		}
+		var id types.Hash
+		copy(id[:], key[1:])
+		node, exists := nodes[id]
+		if !exists {
+			return 0, storage.ErrCorrupt
+		}
+		switch key[0] {
+		case workNodePrefix:
+		case workStatePrefix:
+			if id != baseID {
+				return 0, storage.ErrCorrupt
+			}
+		case workBlockPrefix, workDeltaPrefix:
+			if id == baseID || node.block == nil {
+				return 0, storage.ErrCorrupt
+			}
+		default:
+			return 0, storage.ErrCorrupt
+		}
+		total, err = checkedHistoryBytes(total, uint64(len(key)+len(iterator.Value())))
+		if err != nil {
+			return 0, err
+		}
+	}
+	if err := iterator.Error(); err != nil {
+		return 0, err
+	}
+	return total, nil
+}
+
+func checkedHistoryBytes(values ...uint64) (uint64, error) {
+	var result uint64
+	for _, value := range values {
+		if result > ^uint64(0)-value {
+			return 0, storage.ErrHistoryLimit
+		}
+		result += value
+	}
+	return result, nil
 }
 
 func (persistence *workPersistence) close() error { return persistence.db.Close() }

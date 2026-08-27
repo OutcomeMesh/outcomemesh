@@ -244,18 +244,21 @@ Implemented in an isolated, not-yet-activated consensus package:
   and proved that the abandoned branch's delayed payout was absent; weak shares
   never contributed fork weight.
 - the coordinator now has an isolated schema-versioned Pebble store. Each
-  accepted v1 block atomically persists its canonical bytes, branch-local state,
-  timestamp history, fee queue, cumulative hard work, and selected tip in one
-  synchronous batch. Restart tests recover the canonical tip and a competing
-  side branch, reject consensus-configuration changes, continue mining after
-  reopen, and inject a pre-commit failure to prove that neither memory nor disk
-  observes a partial block. Strict metadata/state decoders are fuzz targets.
+  accepted v1 block atomically persists its canonical bytes, immutable resource
+  delta, timestamp history, fee queue, cumulative hard work, logical-history
+  counter, and selected tip in one synchronous batch. A single activation-base
+  checkpoint replaces the former full-state-per-branch layout. Restart walks
+  parent deltas and verifies every state root, recovering the canonical tip and
+  competing side branches. Tests reject consensus-configuration and old-schema
+  changes, corrupted deltas, and over-budget commits; injected pre-commit failure
+  proves that neither memory nor disk observes a partial block. Strict metadata,
+  checkpoint, and delta decoders are fuzz targets.
 
-No WorkGraph field has entered a version-0 block yet. The isolated v1 store
-materializes a full state per branch as a correctness-first prototype; a
-delta/checkpoint history budget, session version negotiation, production
-gossip-budget design, and expanded economic/strategy analysis remain before
-activation.
+No WorkGraph field has entered a version-0 block yet. The isolated v1 store and
+session remain disconnected from the production chain/QUIC routing path;
+periodic checkpoint/pruning policy, process-crash campaigns, production
+gossip-budget calibration, and expanded economic/strategy analysis remain
+before activation.
 
 ## Milestones 6–10 — not integrated
 

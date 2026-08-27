@@ -135,6 +135,16 @@ the published count/byte/edge bounds and still require valid proof of work.
 The stream is not yet registered on the production QUIC host, so none of these
 messages can activate version-1 consensus accidentally.
 
+The isolated WorkGraph Pebble schema stores one activation checkpoint and
+immutable per-block resource deltas rather than attacker-amplified full branch
+snapshots. Immutable node/block/delta key/value bytes are counted against a
+persisted atomic logical history counter with a 64-GiB default local limit.
+Exhaustion rejects before batch commit while reads and reopen remain available.
+Every restart reapplies deltas parent-first and verifies state roots, ancestry,
+fee-queue roots, cumulative hard work, selected tip, and the recomputed byte
+counter. WAL/LSM amplification and filesystem free space remain separate
+operator limits; pruning and real process-kill campaigns are still required.
+
 ## Consensus coding rules
 
 - Never serialize a Go map.

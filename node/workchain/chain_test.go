@@ -6,6 +6,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/cockroachdb/pebble/v2"
+	"github.com/outcomemesh/outcomemesh/core/resource"
 	"github.com/outcomemesh/outcomemesh/core/state"
 	"github.com/outcomemesh/outcomemesh/core/types"
 	"github.com/outcomemesh/outcomemesh/core/workblock"
@@ -267,6 +269,28 @@ func FuzzDecodePersistedStateNeverPanics(f *testing.F) {
 	})
 }
 
+func FuzzDecodeStateDeltaNeverPanics(f *testing.F) {
+	seed, err := encodeStateDelta(stateDelta{})
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Add(seed)
+	f.Add([]byte{})
+	f.Fuzz(func(t *testing.T, input []byte) {
+		decoded, err := decodeStateDelta(input)
+		if err != nil {
+			return
+		}
+		encoded, err := encodeStateDelta(decoded)
+		if err != nil {
+			t.Fatalf("accepted delta cannot be encoded: %v", err)
+		}
+		if !bytes.Equal(input, encoded) {
+			t.Fatal("accepted delta was not canonical")
+		}
+	})
+}
+
 func TestPebbleRejectsConsensusConfigurationMismatch(t *testing.T) {
 	t.Parallel()
 
@@ -283,6 +307,153 @@ func TestPebbleRejectsConsensusConfigurationMismatch(t *testing.T) {
 	parameters.FeeDelay++
 	if _, err := Open(path, base, parameters); !errors.Is(err, ErrConfiguration) {
 		t.Fatalf("configuration mismatch error=%v", err)
+	}
+}
+
+func TestPebbleStoresBaseCheckpointAndPerBlockDelta(t *testing.T) {
+	t.Parallel()
+
+	parameters := testParameters()
+	base := testBaseWithResources(t, parameters, 256)
+	store, err := Open(t.TempDir(), base, parameters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	block, _ := mineChild(t, store, base.Tip.ID, base.Tip.Timestamp+60, "delta-activation")
+	if _, _, err := store.Commit(block, block.Header.Seal.Timestamp); err != nil {
+		t.Fatal(err)
+	}
+	blockID, _ := block.Header.ID()
+	if _, err := store.persistence.get(workStateKey(blockID)); !errors.Is(err, pebble.ErrNotFound) {
+		t.Fatalf("non-base full snapshot exists: %v", err)
+	}
+	deltaBytes, err := store.persistence.get(workDeltaKey(blockID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	delta, err := decodeStateDelta(deltaBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(delta.deleted) != 0 || len(delta.created) != 0 || !bytes.Equal(deltaBytes, []byte{0, 0}) {
+		t.Fatalf("unchanged activation delta deleted=%d created=%d bytes=%d",
+			len(delta.deleted), len(delta.created), len(deltaBytes))
+	}
+	fullState, err := encodePersistedState(base.State)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(deltaBytes)*1_000 >= len(fullState) {
+		t.Fatalf("delta=%d full-state=%d does not demonstrate proportional storage", len(deltaBytes), len(fullState))
+	}
+}
+
+func TestPebbleRejectsCorruptStateDeltaOnReopen(t *testing.T) {
+	t.Parallel()
+
+	parameters := testParameters()
+	base := testBase(t, parameters)
+	path := t.TempDir()
+	store, err := Open(path, base, parameters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, _ := mineChild(t, store, base.Tip.ID, base.Tip.Timestamp+60, "corrupt-delta")
+	if _, _, err := store.Commit(block, block.Header.Seal.Timestamp); err != nil {
+		t.Fatal(err)
+	}
+	blockID, _ := block.Header.ID()
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	database, err := pebble.Open(path, &pebble.Options{FormatMajorVersion: pebble.FormatNewest})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Set(workDeltaKey(blockID), []byte{0, 0, 0}, pebble.Sync); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(path, base, parameters); !errors.Is(err, storage.ErrCorrupt) {
+		t.Fatalf("corrupt delta error=%v", err)
+	}
+}
+
+func TestPebbleHistoryBudgetRejectsCommitAtomically(t *testing.T) {
+	t.Parallel()
+
+	parameters := testParameters()
+	base := testBase(t, parameters)
+	path := t.TempDir()
+	store, err := Open(path, base, parameters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	usage, _, err := store.HistoryUsage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	store, err = OpenWithPolicy(path, base, parameters, Policy{MaxHistoryBytes: usage})
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, _ := mineChild(t, store, base.Tip.ID, base.Tip.Timestamp+60, "history-limit")
+	blockID, _ := block.Header.ID()
+	if _, _, err := store.Commit(block, block.Header.Seal.Timestamp); !errors.Is(err, storage.ErrHistoryLimit) {
+		t.Fatalf("history limit error=%v", err)
+	}
+	tip, err := store.Tip()
+	if err != nil || tip.ID != base.Tip.ID {
+		t.Fatalf("tip after history rejection=%s err=%v", tip.ID, err)
+	}
+	afterUsage, limit, err := store.HistoryUsage()
+	if err != nil || afterUsage != usage || limit != usage {
+		t.Fatalf("history after rejection=%d/%d want=%d err=%v", afterUsage, limit, usage, err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(path, base, parameters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	if _, err := reopened.BlockByID(blockID); !errors.Is(err, ErrParent) {
+		t.Fatalf("budget-rejected block reached disk: %v", err)
+	}
+}
+
+func TestPebbleRejectsOldWorkSchema(t *testing.T) {
+	t.Parallel()
+
+	parameters := testParameters()
+	base := testBase(t, parameters)
+	path := t.TempDir()
+	store, err := Open(path, base, parameters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	database, err := pebble.Open(path, &pebble.Options{FormatMajorVersion: pebble.FormatNewest})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Set(workKeySchema, []byte{0, 1}, pebble.Sync); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(path, base, parameters); !errors.Is(err, storage.ErrCorrupt) {
+		t.Fatalf("old schema error=%v", err)
 	}
 }
 
@@ -320,6 +491,34 @@ func testBase(t testing.TB, parameters workblock.Parameters) Base {
 	return Base{
 		Tip: storage.Tip{
 			ID: types.DomainHash("test/workchain/base"), Height: parameters.ActivationHeight - 1,
+			Timestamp: parameters.DifficultyAnchorTimestamp, Target: parameters.DifficultyAnchorTarget,
+			StateRoot: initial.Root(),
+		},
+		State: initial, RecentTimestamps: []uint64{parameters.DifficultyAnchorTimestamp},
+	}
+}
+
+func testBaseWithResources(t testing.TB, parameters workblock.Parameters, count int) Base {
+	t.Helper()
+	resources := make([]resource.Resource, count)
+	for index := range resources {
+		resources[index] = resource.Resource{
+			Version: resource.Version0,
+			ID: types.ResourceID(types.DomainHash(
+				"test/workchain/base-resource", []byte{byte(index >> 8), byte(index)},
+			)),
+			Owner:  testAddress("base-owner"),
+			Asset:  types.NativeAssetID(),
+			Amount: uint64(index + 1),
+		}
+	}
+	initial, err := state.New(resources)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return Base{
+		Tip: storage.Tip{
+			ID: types.DomainHash("test/workchain/resource-base"), Height: parameters.ActivationHeight - 1,
 			Timestamp: parameters.DifficultyAnchorTimestamp, Target: parameters.DifficultyAnchorTarget,
 			StateRoot: initial.Root(),
 		},

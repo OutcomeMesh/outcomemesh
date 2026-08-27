@@ -287,13 +287,15 @@ state, the last 11 timestamps, lagged target, fee queue, and predecessor earning
 only hard-target work is added to cumulative fork weight. Competing activation
 anchors, equal-work tie-breaking, a higher-work side-branch reorganization, and
 branch-local delayed rewards are executable tests. Its isolated Pebble schema
-persists canonical block bytes, full branch-local state, history, fee queues,
-cumulative work, and selected tip in one synchronous batch. Reopen tests retain
-side branches and continue validation; an injected pre-commit failure leaves
-both memory and disk unchanged. The current full-state-per-node representation
-is intentionally correctness-first: production integration still requires
-resource deltas/checkpoints, an explicit logical history budget, migrations,
-and crash/process fault campaigns.
+persists canonical block bytes, immutable resource deltas, history, fee queues,
+cumulative work, a checked logical-history counter, and selected tip in one
+synchronous batch. Only the activation base is a full checkpoint. Reopen
+reconstructs every branch in parent order and verifies each state root; tests
+retain side branches, reject corrupted deltas and old schema 1, enforce a 64-GiB
+default logical budget before batch creation, and leave memory/disk unchanged on
+an injected pre-commit failure. Pre-alpha schema 1 fails closed and is rebuilt
+by replay rather than silently migrated. Periodic checkpoints/pruning and
+process-crash fault campaigns still precede production activation.
 
 ## Milestone-5 evidence required
 

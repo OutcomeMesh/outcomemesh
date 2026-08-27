@@ -215,7 +215,7 @@ func (store *Store) Commit(
 		if better {
 			canonicalTip = next.ID
 		}
-		if err := store.persistence.commitNode(node, canonicalTip); err != nil {
+		if err := store.persistence.commitNode(parent, node, canonicalTip); err != nil {
 			return storage.Tip{}, workblock.Result{}, err
 		}
 	}
@@ -224,6 +224,23 @@ func (store *Store) Commit(
 		store.tipID = next.ID
 	}
 	return cloneTip(store.nodes[store.tipID].tip), result, nil
+}
+
+// HistoryUsage reports immutable logical WorkGraph history bytes and the local
+// admission limit. In-memory stores report zero values.
+func (store *Store) HistoryUsage() (uint64, uint64, error) {
+	if store == nil {
+		return 0, 0, ErrConfiguration
+	}
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+	if store.closed {
+		return 0, 0, storage.ErrClosed
+	}
+	if store.persistence == nil {
+		return 0, 0, nil
+	}
+	return store.persistence.historyBytes, store.persistence.policy.MaxHistoryBytes, nil
 }
 
 func (store *Store) Close() error {

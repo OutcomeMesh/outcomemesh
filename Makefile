@@ -41,6 +41,7 @@ test-fuzz-smoke:
 	$(GO) test ./node/snapshot -run '^$$' -fuzz '^FuzzDecodeChunkNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/workchain -run '^$$' -fuzz '^FuzzDecodeNodeMetadataNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/workchain -run '^$$' -fuzz '^FuzzDecodePersistedStateNeverPanics$$' -fuzztime=$(FUZZTIME)
+	$(GO) test ./node/workchain -run '^$$' -fuzz '^FuzzDecodeStateDeltaNeverPanics$$' -fuzztime=$(FUZZTIME)
 
 test-process:
 	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessQUICRestartSoak$$' -count=1 -timeout=10m

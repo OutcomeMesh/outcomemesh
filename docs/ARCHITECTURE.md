@@ -160,12 +160,14 @@ An isolated version-1 coordinator already exercises that boundary:
 it derives branch-local MTP, targets, fee queues, states, and prior earnings and
 uses only hard WorkSeal difficulty in cumulative-work fork choice. It is test
 scaffolding, not an alternate consensus authority. Its schema-versioned Pebble
-backend writes each block, full branch-local state, history, fee queue, and tip
-change in one synchronous batch and verifies every stored root and ancestry link
-on reopen. This is a correctness oracle, not the final storage layout: production
-activation still requires delta/checkpoint compaction, a logical history budget,
-schema migration policy, process-crash fault campaigns, and a negotiated session
-path.
+backend keeps one activation-base checkpoint and an immutable create/delete
+resource delta per v1 block. The block, delta, branch history, fee queue,
+cumulative work, logical-history counter, and selected tip change in one
+synchronous batch. Reopen reconstructs parent-first states and verifies every
+stored root and ancestry link. Schema 2 fails closed on the earlier pre-alpha
+full-snapshot layout; replay is the migration policy. Production activation
+still requires periodic checkpoint/pruning policy, process-crash fault campaigns,
+and registration of the already isolated negotiated WorkGraph session.
 
 The later committee provides preconfirmations. It does not define the canonical
 chain and cannot make an invalid transition valid. A full node independently

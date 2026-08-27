@@ -96,11 +96,12 @@ single loop.
 
 Gossip is inventory-first: up to 1,024 sorted IDs are announced, at most 256
 missing bodies are requested at once, and every response is tied to one exact
-network/height/parent/target/payload context. These codecs and the local pool
-exist, but session negotiation and CLI activation do not.
+network/height/parent/target/payload context. An isolated version-1 stream now
+negotiates that context and its frame/count limits, but production QUIC routing
+and CLI activation remain disabled.
 
 ## Gates before public mining
 
 - external PoW review and hash-rate simulations;
 - production calibration of fee delay, share gossip queues, and miner strategy;
-- activation-boundary storage/reorg tests and negotiated multi-node sessions.
+- process-crash storage campaigns and negotiated multi-node QUIC sessions.
