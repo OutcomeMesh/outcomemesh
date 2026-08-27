@@ -244,6 +244,14 @@ most the current best-parent round, rechecks the parent after preparation with
 three bounded attempts, and replaces the entire pool on an anchor or reorg.
 In-flight handlers may finish against the detached old round, but those shares
 can never enter the replacement payload or persistent block state.
+
+`work-mine-quic` attaches a bounded unpublished-ID queue to that round. The
+miner callback performs no consensus mutation: it batches locally admitted IDs,
+opens only the exact WorkGraph protocol, and removes precisely the prefix that
+the negotiated relay reports as announced. Failed attempts retain the suffix;
+hard-PoW search continues because network publication is best-effort. The same
+host accepts reciprocal share sessions and serves chain-v1, but automatic peer
+routing and background chain-tip interruption are not implemented yet.
 The current integration test kills a separate process immediately before and
 after the synchronous Pebble batch and verifies old-or-new recovery.
 

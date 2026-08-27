@@ -133,8 +133,9 @@ reserves an anchor identity slot. Hard-target work is never admitted as an
 ordinary paid share. Pending cycles or nonexistent parents can consume only
 the published count/byte/edge bounds and still require valid proof of work.
 The libp2p adapter registers the stream only through an explicit handler under
-`/outcomemesh/workgraph/1`; default hosts and active CLI commands leave it
-unhandled. Its separate protocol/peer resource scope defaults to one concurrent
+`/outcomemesh/workgraph/1`; default hosts and ordinary CLI commands leave it
+unhandled, while the explicit work server and QUIC miner install it. Its
+separate protocol/peer resource scope defaults to one concurrent
 stream and has a hard maximum of four. Thus transport testing cannot activate
 version-1 consensus accidentally or consume the chain session's allowance.
 Sequential churn is bounded by fixed-window defaults of eight WorkGraph streams
@@ -176,6 +177,15 @@ may finish only against its detached old pool, which cannot be attached to the
 new payload. Full share PoW, timestamp, context, DAG, identity-count, canonical
 byte, stream, and peer-byte limits still apply before an anchor can reference a
 share.
+
+Outbound cooperative mining is fail-soft with respect to networking. The
+publisher queues only IDs already admitted to its local pool, caps one selected
+announcement at 1,024 IDs, and removes only the negotiated announced prefix.
+A dial, timeout, resource, or context failure retains unpublished IDs but does
+not reject a subsequently found hard anchor. Honest context mismatch caused by
+a changed tip is scored as stale data rather than an invalid-message attack.
+The current command has one explicit peer, so it does not claim Sybil-resistant
+peer selection or production gossip coverage.
 
 Optional multi-base recovery uses no mutable global-tip catalog. A schema-1
 forest root contains only its fsynced manifest and canonical lowercase

@@ -156,8 +156,18 @@ the current best-parent round, performs full pool admission, and reports the
 bounded pool totals. The pool is replaced rather than migrated when the parent
 changes. A real process fixture chain-syncs two Pebble nodes, then relays two
 fresh weak shares through the independently authenticated protocol. Automatic
-peer discovery, outbound miner publication, and production activation remain
-separate gates.
+peer discovery, multi-peer routing, and production activation remain separate
+gates.
+
+`work-mine-quic` is the first explicit outbound path. One configured and
+optionally OutcomeMesh-ID-pinned peer receives sorted unpublished subsets.
+`RelayInventory` proves every selected ID belongs to the local pool before
+opening the application exchange. If the peer advertises a smaller inventory
+limit, only that prefix is counted as announced and the tail remains queued.
+The command uses the same peer byte accounting, fixed-window WorkGraph stream
+limits, exact-context handshake, and separate chain-v1 handler as the server.
+It does not yet discover peers, fan out, or poll the peer for a winning anchor
+while a local round is hashing.
 
 ## Signed peer advertisements
 

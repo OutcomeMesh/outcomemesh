@@ -343,7 +343,7 @@ Implemented in an isolated, not-yet-activated consensus package:
   after exact genesis confirmation, target/reward compatibility checks, a
   future boundary, and forest validation. Final or pending markers block every
   ordinary command that could mutate or report stale v0-only state. Separate
-  `work-mine/status/balance/verify/serve-quic/sync-quic` commands cross the
+  `work-mine/mine-quic/status/balance/verify/serve-quic/sync-quic` commands cross the
   boundary without changing v0 defaults. A real two-process Pebble fixture
   enables two nodes, mines height 1 as v0 and heights 2–5 as v1, authenticates
   and synchronizes `/outcomemesh/chain/1`, replay-verifies the mixed ancestry,
@@ -360,11 +360,18 @@ Implemented in an isolated, not-yet-activated consensus package:
   scoped WorkGraph handler as well as chain-v1. The process fixture now relays
   and fully admits two weak shares after mixed-chain synchronization; default
   hosts remain unable to negotiate the protocol.
+- `work-mine-quic` now publishes locally admitted weak shares to one explicit
+  peer while mining the hard anchor, accepts reciprocal round shares, and serves
+  chain-v1. A selected-inventory API checks local ownership and reports the
+  exact negotiated prefix, allowing the bounded unpublished queue to retain
+  only its unsent suffix. Network failure is recorded but does not invalidate
+  hard work. The process fixture mines height 6 through this path, then syncs it
+  back over chain-v1 and replay-verifies both persistent nodes.
 
 No WorkGraph field has entered a version-0 block yet. The v1 store and opt-in
 QUIC session remain isolated from every ordinary v0 chain/CLI path and are
 reachable only through the explicitly marked experimental commands;
-automatic versioned discovery/routing, outbound WorkGraph share publication,
+automatic versioned discovery/routing and multi-peer share fanout/tip watching,
 history-anchored archival pruning, extended filesystem-fault/soak campaigns,
 production gossip-budget calibration, and finer/adaptive economic-strategy
 analysis remain before activation.

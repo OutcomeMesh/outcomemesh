@@ -491,3 +491,10 @@ exact best parent. Parent stability is rechecked after construction; at most
 three builds are attempted during chain churn. A new parent or explicit local
 anchor invalidates the entire round, so no uncommitted share is migrated across
 payload contexts. The round itself is not consensus or persistent state.
+
+An initiator may select a strict sorted subset of at most 1,024 locally owned
+IDs instead of the pool's default first page. Selection is checked against the
+pool before the stream exchange. Negotiation may reduce the announcement to a
+prefix; relay statistics return its exact length so an outbound queue can drop
+only attempted IDs and retain the suffix. This is local transport progress
+accounting and does not alter `ShareInventoryV1` encoding or consensus.

@@ -126,6 +126,9 @@ genesis ID (the default 12-bit development target supports the required exact
   --listen /ip4/127.0.0.1/udp/9845/quic-v1
 ./bin/omd work-sync-quic --data ./data/work-b --key node-b.key \
   --peer <multiaddress> --peer-id <outcomemesh-peer-id>
+./bin/omd work-mine-quic --data ./data/work-b --key node-b.key \
+  --peer <multiaddress> --peer-id <outcomemesh-peer-id> \
+  --count 1 --relay-every 128
 ```
 
 `work-enable` writes an immutable, fsynced profile binding network, genesis,
@@ -134,9 +137,13 @@ that marker exists, ordinary v0 status/balance/verify/mining and networking
 commands refuse the directory; only explicit `work-*` commands can open its
 mixed chain. `work-mine` currently builds empty development payloads, but its
 v1 loop mines weak shares and the hard anchor in one nonce space, commits the
-bounded canonical share DAG, and reports both share counts. Network share
-relay, transactions on the experimental path, migration tooling, and public
-activation remain gated.
+bounded canonical share DAG, and reports both share counts. `work-mine-quic`
+adds authenticated, best-effort publication to one explicit peer while also
+accepting reciprocal shares and serving chain-v1. Successfully announced
+negotiated prefixes leave its bounded queue; failures retain the unpublished
+suffix and never invalidate objective hard-PoW progress. Automatic peer
+discovery/tip watching, transactions on the experimental path, migration
+tooling, and public activation remain gated.
 
 `balance` reports total, spendable at the next height, and maturity-locked
 amounts separately.

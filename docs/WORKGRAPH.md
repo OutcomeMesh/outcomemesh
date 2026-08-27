@@ -293,7 +293,7 @@ payloads, then runs the unified miner against a bounded per-context pool. Weak
 shares update the selected DAG parents and the eventual hard WorkSeal commits
 their canonical closure in the exact same nonce space. The opt-in QUIC server
 now admits remote shares into the same kind of round; outbound miner publication
-is not yet wired into the CLI path.
+is available through the separate single-peer `work-mine-quic` experiment.
 
 The transport-independent codec and an isolated finite session implement
 inventory-first WorkGraph relay: 1,024 sorted IDs per announcement and at most
@@ -316,6 +316,14 @@ its own per-peer/global concurrency and admission scopes. Its multiple
 activation trees are durably reopened and re-indexed by the optional
 catalog-free forest.
 
+For outbound relay, a round can announce an explicit sorted subset after
+proving every ID is locally owned. The remote negotiated inventory limit may
+shorten it; returned statistics identify the exact announced prefix. The QUIC
+miner therefore keeps a bounded unpublished-ID queue, drops only successful
+prefixes, and retries the suffix without invalidating hard-PoW progress. It also
+installs the inbound round and chain-v1 handlers. Automatic peer discovery,
+multi-peer fanout, and background interruption when a peer wins remain gated.
+
 One maximal 1,024-ID relay is bounded to exactly 630,258 bytes of bidirectional
 application framing when a peer forces one maximum-size body per batch. The
 QUIC adapter's fixed-window defaults admit eight such streams per peer and 512
@@ -325,7 +333,7 @@ transport headers/retransmission are outside the application counter. These
 ceilings close unbounded sequential-stream admission; simulation still governs
 the much lower target operating rate needed for fair propagation.
 
-The corresponding local pool is also implemented but inactive. It verifies
+The corresponding local pool implementation verifies
 weak PoW and exact context before storage, owns detached bodies, accepts bounded
 out-of-order children, resolves them only after all parents are accepted, and
 caps count/bytes at the consensus batch limits. It admits at most 255 distinct

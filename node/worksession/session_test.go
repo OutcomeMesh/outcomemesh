@@ -79,6 +79,45 @@ func TestRelayClampsBatchesToNegotiatedFrame(t *testing.T) {
 	}
 }
 
+func TestRelaySelectedInventoryReportsNegotiatedPrefix(t *testing.T) {
+	validation := testContext()
+	sourcePool, _ := workpool.New(validation)
+	destinationPool, _ := workpool.New(validation)
+	for index := 0; index < 3; index++ {
+		share := mineWeak(t, testShare(validation, string(rune('k'+index)), nil), true)
+		if _, err := sourcePool.Add(share); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ids := sourcePool.Inventory(3)
+	source := newNode(t, sourcePool, DefaultConfig())
+	destinationConfig := DefaultConfig()
+	destinationConfig.MaxInventory = 2
+	destination := newNode(t, destinationPool, destinationConfig)
+	client, server := net.Pipe()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	served := make(chan error, 1)
+	go func() { served <- destination.Serve(ctx, server) }()
+	stats, err := source.RelayInventory(ctx, client, ids)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := <-served; err != nil {
+		t.Fatal(err)
+	}
+	if stats.Announced != 2 || stats.Accepted != 2 || destinationPool.Status().Shares != 2 {
+		t.Fatalf("selected relay stats=%+v pool=%+v", stats, destinationPool.Status())
+	}
+	unknown := append([]types.Hash(nil), ids[:1]...)
+	unknown[0] = types.DomainHash("test/worksession/unknown-selection")
+	left, right := net.Pipe()
+	defer right.Close()
+	if _, err := source.RelayInventory(ctx, left, unknown); !errors.Is(err, workpool.ErrUnknownParent) {
+		t.Fatalf("unknown selected inventory error=%v", err)
+	}
+}
+
 func TestHandshakeRejectsDifferentMiningContext(t *testing.T) {
 	t.Parallel()
 

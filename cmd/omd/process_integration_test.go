@@ -103,17 +103,30 @@ func TestProcessWorkGraphActivationQUICRestart(t *testing.T) {
 		"work-sync-quic", "--data", dataB, "--key", keyB, "--peer", address, "--peer-id", peerID,
 	)
 	relayProcessWorkShares(t, dataB, keyB, address, peerID, 2)
+	minedQUIC := runProcessCommand(t, 40*time.Second,
+		"work-mine-quic", "--data", dataB, "--key", keyB, "--peer", address,
+		"--peer-id", peerID, "--count", "1", "--relay-every", "128",
+	)
+	if fields := outputFields(minedQUIC, "work_mined_quic"); fields["height"] != "6" || fields["relayed_shares"] == "" || fields["pending_relay"] == "" {
+		t.Fatalf("cooperative miner output is incomplete: %s", minedQUIC)
+	}
 	stopQUICServerProcess(t, server)
 	if output := server.stderr.String(); !strings.Contains(output, "work_relay") || !strings.Contains(output, "accepted=2") {
 		t.Fatalf("versioned server did not admit relayed mining shares: %s", output)
 	}
 	runProcessCommand(t, 20*time.Second, "work-verify", "--data", dataB)
+	serverB, peerIDB, addressB := startWorkQUICServerProcess(t, dataB, keyB)
+	runProcessCommand(t, 30*time.Second,
+		"work-sync-quic", "--data", dataA, "--key", keyA, "--peer", addressB, "--peer-id", peerIDB,
+	)
+	stopQUICServerProcess(t, serverB)
+	runProcessCommand(t, 20*time.Second, "work-verify", "--data", dataA)
 
 	statusA := runProcessCommand(t, 20*time.Second, "work-status", "--data", dataA)
 	statusB := runProcessCommand(t, 20*time.Second, "work-status", "--data", dataB)
 	fieldsA := outputFields(statusA, "work_status")
 	fieldsB := outputFields(statusB, "work_status")
-	if fieldsA["height"] != "5" || fieldsB["height"] != "5" || fieldsA["tip"] == "" ||
+	if fieldsA["height"] != "6" || fieldsB["height"] != "6" || fieldsA["tip"] == "" ||
 		fieldsA["tip"] != fieldsB["tip"] || fieldsA["state"] != fieldsB["state"] ||
 		fieldsA["cumulative_work"] != fieldsB["cumulative_work"] {
 		t.Fatalf("versioned process nodes did not converge\nnode-a: %s\nnode-b: %s", statusA, statusB)

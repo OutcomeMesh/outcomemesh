@@ -154,6 +154,26 @@ func (pool *Pool) Inventory(limit int) []types.Hash {
 	return ids
 }
 
+// Known validates that a sorted bounded inventory names shares owned by this
+// pool. It lets a relay advertise an explicit unpublished subset without
+// trusting caller-supplied IDs or copying share bodies up front.
+func (pool *Pool) Known(ids []types.Hash) error {
+	if pool == nil || len(ids) == 0 || len(ids) > 1_024 {
+		return ErrCapacity
+	}
+	if err := validateSortedIDs(ids); err != nil {
+		return err
+	}
+	pool.mu.RLock()
+	defer pool.mu.RUnlock()
+	for _, id := range ids {
+		if _, exists := pool.entries[id]; !exists {
+			return ErrUnknownParent
+		}
+	}
+	return nil
+}
+
 // Missing filters a sorted peer inventory down to unknown IDs.
 func (pool *Pool) Missing(ids []types.Hash, limit int) ([]types.Hash, error) {
 	if pool == nil || limit <= 0 || limit > 256 || len(ids) > 1_024 {

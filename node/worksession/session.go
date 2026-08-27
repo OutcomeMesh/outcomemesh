@@ -123,6 +123,28 @@ func New(pool *workpool.Pool, config Config) (*Node, error) {
 // Relay announces the caller's bounded inventory and serves only bodies the
 // negotiated peer explicitly requests. One stream carries one finite relay.
 func (node *Node) Relay(ctx context.Context, stream Stream) (Stats, error) {
+	return node.relay(ctx, stream, nil)
+}
+
+// RelayInventory announces only the caller-selected, locally owned IDs. The
+// negotiated peer limit may shorten the prefix; Stats.Announced tells the
+// caller exactly how many input IDs were attempted so it can retain the tail.
+func (node *Node) RelayInventory(ctx context.Context, stream Stream, ids []types.Hash) (Stats, error) {
+	if node == nil || node.pool == nil || stream == nil || len(ids) == 0 {
+		if stream != nil {
+			_ = stream.Close()
+		}
+		return Stats{}, ErrConfiguration
+	}
+	selected := append([]types.Hash(nil), ids...)
+	if err := node.pool.Known(selected); err != nil {
+		_ = stream.Close()
+		return Stats{}, err
+	}
+	return node.relay(ctx, stream, selected)
+}
+
+func (node *Node) relay(ctx context.Context, stream Stream, selected []types.Hash) (Stats, error) {
 	if node == nil || stream == nil {
 		return Stats{}, ErrConfiguration
 	}
@@ -131,7 +153,12 @@ func (node *Node) Relay(ctx context.Context, stream Stream) (Stats, error) {
 	if err != nil {
 		return Stats{}, err
 	}
-	ids := node.pool.Inventory(limits.inventory)
+	ids := selected
+	if len(ids) == 0 {
+		ids = node.pool.Inventory(limits.inventory)
+	} else if len(ids) > limits.inventory {
+		ids = ids[:limits.inventory]
+	}
 	stats := Stats{Announced: len(ids)}
 	if len(ids) == 0 {
 		return stats, nil

@@ -445,7 +445,7 @@ func runWorkServeQUIC(arguments []string) error {
 		}
 		limited := &peerLimitedStream{Stream: stream, manager: peerManager, peerID: peerID}
 		sessionErr := round.Serve(handlerContext, limited)
-		recordPeerSession(peerManager, peerID, sessionErr)
+		recordWorkPeerSession(peerManager, peerID, sessionErr)
 		if sessionErr != nil {
 			if handlerContext.Err() == nil {
 				fmt.Fprintf(os.Stderr, "WorkGraph QUIC peer session %s: %v\n", peerID, sessionErr)
@@ -464,6 +464,18 @@ func runWorkServeQUIC(arguments []string) error {
 		host.ID(), host.Libp2pID(), document.NetworkID, profile.ActivationHeight, strings.Join(host.Addresses(), ","))
 	<-ctx.Done()
 	return nil
+}
+
+func recordWorkPeerSession(manager *peers.Manager, peerID types.Hash, sessionErr error) {
+	if sessionErr == nil {
+		_ = manager.Record(peerID, peers.EventValidMessage)
+	} else if errors.Is(sessionErr, worksession.ErrContext) {
+		_ = manager.Record(peerID, peers.EventStaleData)
+	} else if networkError, ok := sessionErr.(interface{ Timeout() bool }); ok && networkError.Timeout() {
+		_ = manager.Record(peerID, peers.EventTimeout)
+	} else {
+		_ = manager.Record(peerID, peers.EventInvalidMessage)
+	}
 }
 
 func runWorkSyncQUIC(arguments []string) error {

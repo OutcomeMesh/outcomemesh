@@ -107,8 +107,14 @@ uses the unified miner and bounded pool: every weak share and the hard anchor
 come from the same evolving nonce space, and the anchor commits the canonical
 share closure. The opt-in QUIC server now admits authenticated inbound share
 inventories into a parent-scoped round that is discarded on parent change.
-Automatic outbound publication from the CLI miner and public consensus
-activation remain disabled.
+The ordinary `work-mine` remains local-only. The separate `work-mine-quic`
+experiment publishes to one explicit peer: it accumulates locally admitted,
+not-yet-announced IDs, sorts at the relay boundary, and lets negotiation shorten
+the prefix. Exact progress accounting removes that prefix and retains the rest.
+Transport/context failure cannot invalidate hard mining; attempts have bounded
+deadlines and the queue remains capped by the 8,192-share round. The command
+also admits reciprocal shares into its live pool. Automatic multi-peer fanout,
+background tip cancellation, and public activation remain disabled.
 
 ## Gates before public mining
 

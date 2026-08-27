@@ -114,6 +114,17 @@ func (round *Round) Relay(ctx context.Context, stream worksession.Stream) (works
 	return round.session.Relay(ctx, stream)
 }
 
+func (round *Round) RelayInventory(
+	ctx context.Context,
+	stream worksession.Stream,
+	ids []types.Hash,
+) (worksession.Stats, error) {
+	if round == nil || round.session == nil {
+		return worksession.Stats{}, ErrConfiguration
+	}
+	return round.session.RelayInventory(ctx, stream, ids)
+}
+
 func (round *Round) Serve(ctx context.Context, stream worksession.Stream) error {
 	if round == nil || round.session == nil {
 		return ErrConfiguration
