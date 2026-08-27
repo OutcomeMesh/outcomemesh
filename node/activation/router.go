@@ -19,12 +19,35 @@ import (
 var (
 	ErrConfiguration = errors.New("invalid activation router configuration")
 	ErrParent        = errors.New("unknown routed block parent")
+	ErrTreeLimit     = errors.New("activation tree limit reached")
+)
+
+const (
+	DefaultMaxWorkTrees = 64
+	MaxWorkTreesLimit   = 1_024
 )
 
 type Config struct {
 	Legacy legacyblock.Parameters
 	Work   workblock.Parameters
 	Now    func() uint64
+	// WorkRoot enables the catalog-free persistent v1 forest. Empty keeps the
+	// router in memory. WorkPolicy.MaxHistoryBytes is a forest-wide logical
+	// ceiling split evenly across MaxWorkTrees, not a per-tree allowance.
+	WorkRoot     string
+	WorkPolicy   workchain.Policy
+	MaxWorkTrees int
+}
+
+// ForestStatus reports bounded local v1 persistence without treating local
+// retention policy as consensus state.
+type ForestStatus struct {
+	Persistent      bool
+	Trees           uint32
+	Nodes           uint64
+	HistoryBytes    uint64
+	MaxHistoryBytes uint64
+	MaxTrees        uint32
 }
 
 // Router is the sole block-version admission boundary. Each distinct v0 node
@@ -37,9 +60,16 @@ type Router struct {
 	config    Config
 	trees     map[types.Hash]*workchain.Store
 	workBases map[types.Hash]types.Hash
+	closed    bool
 }
 
 func New(ledger storage.Ledger, config Config) (*Router, error) {
+	if config.MaxWorkTrees == 0 {
+		config.MaxWorkTrees = DefaultMaxWorkTrees
+	}
+	if config.WorkRoot != "" && config.WorkPolicy == (workchain.Policy{}) {
+		config.WorkPolicy = workchain.DefaultPolicy()
+	}
 	if ledger == nil || !validConfig(config) {
 		return nil, ErrConfiguration
 	}
@@ -54,10 +84,17 @@ func New(ledger storage.Ledger, config Config) (*Router, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Router{
+	result := &Router{
 		ledger: ledger, legacy: legacy, config: config,
 		trees: make(map[types.Hash]*workchain.Store), workBases: make(map[types.Hash]types.Hash),
-	}, nil
+	}
+	if config.WorkRoot != "" {
+		if err := result.openPersistentTrees(); err != nil {
+			_ = result.closeTreesLocked()
+			return nil, err
+		}
+	}
+	return result, nil
 }
 
 func validConfig(config Config) bool {
@@ -71,7 +108,10 @@ func validConfig(config Config) bool {
 		legacy.AnchorTarget == work.DifficultyAnchorTarget &&
 		legacy.TargetSpacing == work.TargetSpacing && legacy.ASERTHalfLife == work.ASERTHalfLife &&
 		workgraph.ExactShareRatio(work.DifficultyAnchorTarget) && rewardErr == nil &&
-		work.FeeDelay > 0 && work.FeeDelay <= workgraph.MaxFeeDelay
+		work.FeeDelay > 0 && work.FeeDelay <= workgraph.MaxFeeDelay &&
+		config.MaxWorkTrees > 0 && config.MaxWorkTrees <= MaxWorkTreesLimit &&
+		((config.WorkRoot == "" && config.WorkPolicy == (workchain.Policy{})) ||
+			(config.WorkRoot != "" && config.WorkPolicy.MaxHistoryBytes >= uint64(config.MaxWorkTrees)))
 }
 
 func (router *Router) Submit(candidate Block) (storage.Tip, error) {
@@ -80,6 +120,9 @@ func (router *Router) Submit(candidate Block) (storage.Tip, error) {
 	}
 	router.mu.Lock()
 	defer router.mu.Unlock()
+	if router.closed {
+		return storage.Tip{}, storage.ErrClosed
+	}
 	if err := candidate.Validate(router.config.Work.ActivationHeight); err != nil {
 		return storage.Tip{}, err
 	}
@@ -122,6 +165,9 @@ func (router *Router) Tip() (storage.Tip, error) {
 	}
 	router.mu.Lock()
 	defer router.mu.Unlock()
+	if router.closed {
+		return storage.Tip{}, storage.ErrClosed
+	}
 	tip, _, err := router.bestLocked()
 	return tip, err
 }
@@ -133,6 +179,9 @@ func (router *Router) TipByID(id types.Hash) (storage.Tip, error) {
 	}
 	router.mu.Lock()
 	defer router.mu.Unlock()
+	if router.closed {
+		return storage.Tip{}, storage.ErrClosed
+	}
 	if baseID, exists := router.workBases[id]; exists {
 		tree := router.trees[baseID]
 		if tree == nil {
@@ -151,6 +200,9 @@ func (router *Router) Parameters() (legacyblock.Parameters, workblock.Parameters
 	}
 	router.mu.Lock()
 	defer router.mu.Unlock()
+	if router.closed {
+		return legacyblock.Parameters{}, workblock.Parameters{}, storage.ErrClosed
+	}
 	return router.config.Legacy, router.config.Work, nil
 }
 
@@ -161,7 +213,44 @@ func (router *Router) AdmissionTime() (uint64, error) {
 	}
 	router.mu.Lock()
 	defer router.mu.Unlock()
+	if router.closed {
+		return 0, storage.ErrClosed
+	}
 	return router.config.Now(), nil
+}
+
+func (router *Router) WorkForestStatus() (ForestStatus, error) {
+	if router == nil {
+		return ForestStatus{}, ErrConfiguration
+	}
+	router.mu.Lock()
+	defer router.mu.Unlock()
+	if router.closed {
+		return ForestStatus{}, storage.ErrClosed
+	}
+	result := ForestStatus{
+		Persistent: router.config.WorkRoot != "", Trees: uint32(len(router.trees)),
+		MaxTrees: uint32(router.config.MaxWorkTrees),
+	}
+	if result.Persistent {
+		result.MaxHistoryBytes = router.config.WorkPolicy.MaxHistoryBytes
+	}
+	for _, tree := range router.trees {
+		ids, err := tree.NodeIDs()
+		if err != nil || uint64(len(ids)) > ^uint64(0)-result.Nodes {
+			return ForestStatus{}, storage.ErrCorrupt
+		}
+		result.Nodes += uint64(len(ids))
+		usage, _, err := tree.HistoryUsage()
+		if err != nil || usage > ^uint64(0)-result.HistoryBytes {
+			return ForestStatus{}, storage.ErrCorrupt
+		}
+		result.HistoryBytes += usage
+	}
+	if result.Persistent && result.HistoryBytes > result.MaxHistoryBytes {
+		return ForestStatus{}, storage.ErrCorrupt
+	}
+	return result, nil
 }
 
 func (router *Router) Snapshot() (*state.Memory, error) {
@@ -170,6 +259,9 @@ func (router *Router) Snapshot() (*state.Memory, error) {
 	}
 	router.mu.Lock()
 	defer router.mu.Unlock()
+	if router.closed {
+		return nil, storage.ErrClosed
+	}
 	tip, tree, err := router.bestLocked()
 	if err != nil {
 		return nil, err
@@ -190,6 +282,9 @@ func (router *Router) PrepareLegacy(
 	}
 	router.mu.Lock()
 	defer router.mu.Unlock()
+	if router.closed {
+		return Block{}, storage.ErrClosed
+	}
 	tip, err := router.ledger.Tip()
 	if err != nil {
 		return Block{}, err
@@ -214,6 +309,9 @@ func (router *Router) PrepareWork(
 	}
 	router.mu.Lock()
 	defer router.mu.Unlock()
+	if router.closed {
+		return nil, workblock.Position{}, storage.ErrClosed
+	}
 	tree, err := router.treeForParentLocked(parentID)
 	if err != nil {
 		return nil, workblock.Position{}, err
@@ -227,6 +325,9 @@ func (router *Router) BlockByID(id types.Hash) (Block, error) {
 	}
 	router.mu.Lock()
 	defer router.mu.Unlock()
+	if router.closed {
+		return Block{}, storage.ErrClosed
+	}
 	if baseID, exists := router.workBases[id]; exists {
 		candidate, err := router.trees[baseID].BlockByID(id)
 		if err != nil {
@@ -239,6 +340,40 @@ func (router *Router) BlockByID(id types.Hash) (Block, error) {
 		return Block{}, err
 	}
 	return Legacy(candidate, router.config.Work.ActivationHeight)
+}
+
+// Close releases every v1 tree owned by the router. The caller retains
+// ownership of the version-0 ledger and must close it separately.
+func (router *Router) Close() error {
+	if router == nil {
+		return ErrConfiguration
+	}
+	router.mu.Lock()
+	defer router.mu.Unlock()
+	if router.closed {
+		return storage.ErrClosed
+	}
+	router.closed = true
+	return router.closeTreesLocked()
+}
+
+func (router *Router) closeTreesLocked() error {
+	ids := make([]types.Hash, 0, len(router.trees))
+	for id := range router.trees {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(left, right int) bool {
+		return types.CompareHash(ids[left], ids[right]) < 0
+	})
+	var failures []error
+	for _, id := range ids {
+		if tree := router.trees[id]; tree != nil {
+			if err := tree.Close(); err != nil {
+				failures = append(failures, err)
+			}
+		}
+	}
+	return errors.Join(failures...)
 }
 
 func (router *Router) treeForWorkLocked(candidate workblock.Block) (*workchain.Store, types.Hash, error) {
@@ -274,29 +409,56 @@ func (router *Router) treeForBoundaryLocked(baseID types.Hash) (*workchain.Store
 	if tree := router.trees[baseID]; tree != nil {
 		return tree, nil
 	}
-	baseTip, err := router.ledger.TipByID(baseID)
-	if err != nil {
-		return nil, ErrParent
-	}
-	if baseTip.Height == ^uint64(0) || baseTip.Height+1 != router.config.Work.ActivationHeight {
-		return nil, ErrBoundary
-	}
-	baseState, err := router.ledger.SnapshotAt(baseID)
+	base, err := router.workBase(baseID)
 	if err != nil {
 		return nil, err
 	}
-	history, err := router.recentLegacyTimestampsLocked(baseTip)
+	if len(router.trees) >= router.config.MaxWorkTrees {
+		return nil, ErrTreeLimit
+	}
+	tree, err := router.openWorkTree(base)
 	if err != nil {
 		return nil, err
 	}
-	tree, err := workchain.New(workchain.Base{
-		Tip: baseTip, State: baseState, RecentTimestamps: history,
-	}, router.config.Work)
-	if err != nil {
+	if err := router.registerTreeLocked(baseID, tree); err != nil {
+		_ = tree.Close()
 		return nil, err
+	}
+	return tree, nil
+}
+
+func (router *Router) registerTreeLocked(baseID types.Hash, tree *workchain.Store) error {
+	if tree == nil || router.trees[baseID] != nil {
+		return storage.ErrCorrupt
+	}
+	storedBase, err := tree.BaseID()
+	if err != nil || storedBase != baseID {
+		return storage.ErrCorrupt
+	}
+	ids, err := tree.NodeIDs()
+	if err != nil || len(ids) == 0 {
+		return storage.ErrCorrupt
+	}
+	foundBase := false
+	for _, id := range ids {
+		if id == baseID {
+			foundBase = true
+			continue
+		}
+		if existing, exists := router.workBases[id]; exists && existing != baseID {
+			return storage.ErrCorrupt
+		}
+	}
+	if !foundBase {
+		return storage.ErrCorrupt
+	}
+	for _, id := range ids {
+		if id != baseID {
+			router.workBases[id] = baseID
+		}
 	}
 	router.trees[baseID] = tree
-	return tree, nil
+	return nil
 }
 
 func (router *Router) recentLegacyTimestampsLocked(tip storage.Tip) ([]uint64, error) {

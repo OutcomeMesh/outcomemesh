@@ -327,13 +327,23 @@ Implemented in an isolated, not-yet-activated consensus package:
   concurrent stream per peer/four globally and four admitted streams per
   peer/128 globally per minute; tests exhaust every scope while proving a held
   versioned stream does not consume the v0 session allowance.
+- the activation router now optionally persists all v1 trees as a catalog-free
+  forest: one schema-1 root manifest and one base-hash directory per independently
+  verified schema-3 WorkChain database. Reopen resolves each base against the
+  v0 ledger, rebuilds block ownership only after full tree verification, and
+  recomputes the global hard-work tip. A 64-tree default cap (hard maximum
+  1,024) and static partitions of one forest-wide history budget bound aggregate
+  storage without cross-database transactions. Real Pebble restart tests recover
+  two activation bases, extend the recovered losing branch through a reorg, and
+  recover it again. Empty crash-boundary directories are safe; pending/corrupt
+  manifests, unknown or swapped bases, reduced budgets, and excess trees fail
+  closed.
 
 No WorkGraph field has entered a version-0 block yet. The isolated v1 store and
 opt-in QUIC session remain disconnected from the active chain/CLI routing path;
-multi-base persistence, opt-in versioned CLI routing,
-history-anchored archival pruning, extended filesystem-fault/soak campaigns,
-production gossip-budget calibration, and finer/adaptive economic-strategy
-analysis remain before activation.
+opt-in versioned CLI routing, history-anchored archival pruning, extended
+filesystem-fault/soak campaigns, production gossip-budget calibration, and
+finer/adaptive economic-strategy analysis remain before activation.
 
 ## Milestones 6–10 — not integrated
 

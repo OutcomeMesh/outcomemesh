@@ -101,8 +101,8 @@ hard-work fork choice takes over. The completed tip must match the hello's ID,
 height, state root, and cumulative work. A deterministic test uses two-block
 batches, keeps the first remote prefix as a losing side branch, then crosses
 v0→v1 and reorganizes through a different activation base. The session remains
-an opt-in prototype until multi-base persistence and an explicit CLI activation
-path exist.
+an opt-in prototype until an explicit CLI activation path exists; its router
+can now recover every activation-base tree from the optional persistent forest.
 
 ## Handshake and synchronization
 
@@ -149,9 +149,8 @@ unbounded request loop. The libp2p QUIC adapter exposes the separate
 `/outcomemesh/workgraph/1` protocol only after an explicit handler is installed;
 without that call negotiation fails. Active CLI nodes do not install it. The
 share stream remains separate from the isolated activation chain session. The
-in-process block router, versioned codecs, and opt-in QUIC chain sync exist, but
-multi-base persistence and CLI integration remain prerequisites for network
-activation.
+multi-base persistent router, versioned codecs, and opt-in QUIC chain sync now
+exist, but CLI integration remains a prerequisite for network activation.
 
 ## Signed peer advertisements
 

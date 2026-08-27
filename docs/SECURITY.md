@@ -164,8 +164,23 @@ advertise it. Its independent resource scope defaults to one concurrent stream
 per peer and four globally, while a separate minute window admits four per peer
 and 128 globally. The hard configurable maxima are two/64 concurrent and
 30/1,024 per minute. These gates do not replace the protocol's frame and
-message budgets. Multi-base durable router recovery is still an activation
-blocker.
+message budgets.
+
+Optional multi-base recovery uses no mutable global-tip catalog. A schema-1
+forest root contains only its fsynced manifest and canonical lowercase
+activation-base hash directories. Unknown names, files, symlinks, bases absent
+from the v0 ledger, wrong boundary heights, and a database moved under another
+base name all fail closed. A complete pending manifest is finalized after a
+crash; an empty but fsynced tree directory is safely initialized. Each nonempty
+database must independently pass the WorkChain schema/config/history verifier
+before any block ID is indexed or any tip enters global fork choice.
+
+The forest defaults to 64 trees with a hard maximum of 1,024. Its configured
+logical history budget is divided by that maximum and applied to every tree,
+so aggregate admitted history cannot exceed the forest ceiling without a
+cross-database counter. Reopen rejects a tree already above its newly assigned
+partition. Pebble/WAL physical amplification, free space, directory ownership,
+and archival policy remain separate operator concerns.
 
 The isolated WorkGraph Pebble schema stores one activation checkpoint and, for
 each later block, exactly one parent delta or bounded full-state replay

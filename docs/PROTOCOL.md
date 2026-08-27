@@ -387,6 +387,12 @@ root, and cumulative work must equal the hello. The QUIC adapter registers the
 loop only through the opt-in `/outcomemesh/chain/1` handler; default hosts and
 the active CLI do not install it.
 
+The optional local activation forest does not add a consensus field. It stores
+each v1 tree below the canonical hash of its v0 activation base, fully verifies
+every child database on reopen, rebuilds block ownership, and recomputes the
+winner by the fork-choice rule above. There is deliberately no persisted global
+tip requiring an atomic commit across databases.
+
 The next hard target is known before mining and is independent of the current
 candidate timestamp:
 

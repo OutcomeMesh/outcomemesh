@@ -114,6 +114,43 @@ func (store *Store) Tip() (storage.Tip, error) {
 	return cloneTip(store.nodes[store.tipID].tip), nil
 }
 
+// BaseID returns the immutable version-0 activation parent anchoring this
+// tree. It lets a multi-tree coordinator bind a reopened database to its
+// directory identity without exposing internal nodes.
+func (store *Store) BaseID() (types.Hash, error) {
+	if store == nil {
+		return types.Hash{}, ErrConfiguration
+	}
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+	if store.closed {
+		return types.Hash{}, storage.ErrClosed
+	}
+	return store.baseID, nil
+}
+
+// NodeIDs returns a sorted detached inventory including the activation base.
+// Reopening coordinators use it to rebuild their block-to-tree index only
+// after the store has verified every persisted node and state transition.
+func (store *Store) NodeIDs() ([]types.Hash, error) {
+	if store == nil {
+		return nil, ErrConfiguration
+	}
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+	if store.closed {
+		return nil, storage.ErrClosed
+	}
+	result := make([]types.Hash, 0, len(store.nodes))
+	for id := range store.nodes {
+		result = append(result, id)
+	}
+	sort.Slice(result, func(left, right int) bool {
+		return types.CompareHash(result[left], result[right]) < 0
+	})
+	return result, nil
+}
+
 // TipByID returns detached fork metadata for header-first continuation without
 // making that node the selected tip.
 func (store *Store) TipByID(id types.Hash) (storage.Tip, error) {

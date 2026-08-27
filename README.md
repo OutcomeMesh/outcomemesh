@@ -127,8 +127,8 @@ The CLI wallet is for development only.
   activation/codec/replay prototype;
 - `storage/`: atomic persistent and in-memory ledger stores;
 - `node/chain/`: optimistic mining, validation, and commit coordination;
-- `node/activation/`: inactive strict v0/v1 boundary and cumulative-work fork
-  choice across multiple activation bases;
+- `node/activation/`: inactive strict v0/v1 boundary, cumulative-work fork
+  choice, and catalog-free Pebble recovery across multiple activation bases;
 - `node/chainsession/`: inactive negotiated, header-first cross-version sync
   through the activation router;
 - `node/workpool/`, `node/workminer/`, `node/worksession/`: inactive bounded

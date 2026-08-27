@@ -263,14 +263,23 @@ dispatches unchanged
 canonical encodings by their leading version, rejects v0 at/above `H` and v1
 below `H`, and compares cumulative hard work across independent v1 trees rooted
 at every known v0 node on `H-1`. This avoids implicit finality at the initially
-selected boundary parent. Multi-base persistence and the active wire/CLI path
-are not yet enabled. The shared wire package now also has inactive, appended
-version-1 envelopes for either canonical block version and for a contiguous
+selected boundary parent. Multi-base persistence is now optional and verified;
+the active wire/CLI path is not enabled. The shared wire package now also has
+inactive, appended version-1 envelopes for either canonical block version and for a contiguous
 mixed header batch. They preserve the old chain reader's 8 MiB default and
 require explicit opt-in to the larger WorkGraph block ceiling. A separate
 in-process versioned chain session now uses their status/locator grammar and the
 activation router. The QUIC adapter can carry it under the explicit
 `/outcomemesh/chain/1` protocol; default hosts and active CLI routing do not.
+
+The persistent router uses a schema-1 forest root and one canonical base-hash
+directory per schema-3 WorkChain database, not a mutable global-tip catalog.
+After restart it resolves every base against the v0 ledger, fully verifies each
+tree, rebuilds block ownership, and recomputes global fork choice. The default
+64-tree cap (hard maximum 1,024) and static division of the forest-wide history
+budget bound aggregate storage without a cross-database counter. Interrupted
+manifest creation and empty first-admission directories recover safely;
+unknown, swapped, over-budget, or corrupt trees fail closed.
 
 The transport-independent codec and an isolated finite session implement
 inventory-first WorkGraph relay: 1,024 sorted IDs per announcement and at most
@@ -287,8 +296,8 @@ an independent one-stream-per-peer resource scope. The in-process block router
 remains disconnected from this share-relay stream, but now backs a separate
 header-first versioned chain session. That session has an isolated, opt-in QUIC
 handler with its own per-peer/global concurrency and admission scopes, but no
-CLI registration; its multiple activation trees are not durably reopened as
-one router yet.
+CLI registration. Its multiple activation trees are durably reopened and
+re-indexed by the optional catalog-free forest.
 
 One maximal 1,024-ID relay is bounded to exactly 630,258 bytes of bidirectional
 application framing when a peer forces one maximum-size body per batch. The

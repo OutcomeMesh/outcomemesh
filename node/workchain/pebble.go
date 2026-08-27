@@ -496,6 +496,9 @@ func (persistence *workPersistence) load(store *Store, base Base) error {
 	if err != nil {
 		return err
 	}
+	if historyBytes > persistence.policy.MaxHistoryBytes {
+		return storage.ErrHistoryLimit
+	}
 	if _, exists := checkpoints[store.baseID]; !exists {
 		return storage.ErrCorrupt
 	}

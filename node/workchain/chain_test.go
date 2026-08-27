@@ -666,6 +666,31 @@ func TestPebbleHistoryBudgetRejectsCommitAtomically(t *testing.T) {
 	}
 }
 
+func TestPebbleReopenRejectsHistoryAboveReducedPolicy(t *testing.T) {
+	parameters := testParameters()
+	base := testBase(t, parameters)
+	path := t.TempDir()
+	store, err := Open(path, base, parameters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	usage, _, err := store.HistoryUsage()
+	if err != nil || usage < 2 {
+		t.Fatalf("initial history usage=%d err=%v", usage, err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := OpenWithPolicy(path, base, parameters, Policy{MaxHistoryBytes: usage - 1}); !errors.Is(err, storage.ErrHistoryLimit) {
+		t.Fatalf("reduced reopen budget error=%v", err)
+	}
+	reopened, err := OpenWithPolicy(path, base, parameters, Policy{MaxHistoryBytes: usage})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+}
+
 func TestPebblePrunesOnlyStaleForkSubtreesAtomically(t *testing.T) {
 	parameters := testParameters()
 	base := testBase(t, parameters)

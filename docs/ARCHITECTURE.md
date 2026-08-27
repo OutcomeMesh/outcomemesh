@@ -167,6 +167,24 @@ more hard work. Both versions receive the same explicit local admission-time
 sample. Canonical encodings remain unchanged and a strict leading-version
 decoder rejects a format on the wrong side of `H`.
 
+Optional router persistence composes those independent Pebble trees as a
+catalog-free forest. The forest root has a synchronous schema-1 manifest and
+one canonical lowercase base-hash directory per tree. Creating a directory is
+fsynced before its database is opened, so an interrupted first admission leaves
+either no directory, a recoverable empty tree, or a complete WorkChain batch.
+On reopen, every directory must resolve to a known v0 node at `H-1`; the child
+database then revalidates its base/config binding and complete state history
+before the router rebuilds `block ID → base ID`. The global tip is recomputed
+from verified tree tips rather than stored in a cross-database catalog, avoiding
+a multi-DB commit point.
+
+The local forest defaults to at most 64 trees (hard maximum 1,024). Its 64 GiB
+logical history ceiling is statically partitioned across that maximum, yielding
+a hard aggregate bound without distributed counters between Pebble databases.
+Lowering a partition below already stored history fails reopen. Operators can
+inspect aggregate tree/node/history usage through the router. This layout is
+still inactive unless an absolute forest root is supplied explicitly.
+
 The strict block and header unions live below networking in `core/chainblock`.
 The wire package has appended, inactive version-1 envelopes for one union block
 and for a length-delimited contiguous union-header batch that may cross v0→v1.
@@ -204,10 +222,9 @@ maintenance already marks canonical ancestry and every side
 branch reaching a configurable cutoff, then atomically removes only complete
 stale subtrees while decrementing the exact logical history counter. Its default
 window is 4,096 heights, zero disables it, and it never creates local PoW
-finality by pruning canonical history. Broader filesystem-fault soaks and
-multi-base persistence plus CLI registration of the versioned chain session
-also remain. The libp2p adapter carries both the versioned chain and separate
-WorkGraph share sessions under distinct opt-in protocol IDs and resource
+finality by pruning canonical history. Broader filesystem-fault soaks and CLI
+registration of the versioned chain session remain. The libp2p adapter carries
+both the versioned chain and separate WorkGraph share sessions under distinct opt-in protocol IDs and resource
 scopes, while default hosts and the active CLI leave both disabled.
 The current integration test kills a separate process immediately before and
 after the synchronous Pebble batch and verifies old-or-new recovery.
