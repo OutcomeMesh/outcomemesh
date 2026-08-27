@@ -162,9 +162,10 @@ The CLI wallet is for development only.
   choice, and catalog-free Pebble recovery across multiple activation bases;
 - `node/chainsession/`: inactive negotiated, header-first cross-version sync
   through the activation router;
-- `node/workpool/`, `node/workminer/`, `node/worksession/`: inactive bounded
-  WorkGraph gossip state, unified weak-share/hard-anchor mining, and explicitly
-  negotiated inventory-first relay;
+- `node/workpool/`, `node/workminer/`, `node/workround/`, `node/worksession/`:
+  bounded WorkGraph gossip state, unified weak-share/hard-anchor mining,
+  parent-scoped round lifecycle, and explicitly negotiated inventory-first
+  relay;
 - `node/workchain/`: inactive fork-aware v1 coordinator with atomic Pebble
   delta/checkpoint rotation, stale-fork pruning, logical history budget,
   restart, and reorg verification;

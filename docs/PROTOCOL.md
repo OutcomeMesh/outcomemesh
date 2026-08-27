@@ -484,3 +484,10 @@ body through full weak-PoW/context/DAG validation, and terminates with
 `ShareResultV1 { accepted, rejected }`. Advertised-but-withheld bodies count as
 rejected and are not requested forever. Repeated requests, unsolicited IDs,
 mixed contexts, extra messages, and lack of progress close the stream.
+
+The opt-in CLI receiver binds the session to one ephemeral mining round. That
+round owns the prepared payload, pool, miner surface, and relay node for one
+exact best parent. Parent stability is rechecked after construction; at most
+three builds are attempted during chain churn. A new parent or explicit local
+anchor invalidates the entire round, so no uncommitted share is migrated across
+payload contexts. The round itself is not consensus or persistent state.

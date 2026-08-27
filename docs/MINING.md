@@ -105,8 +105,10 @@ version 0, while explicit `work-enable`, `work-mine`, and versioned QUIC command
 exercise the transition on a marked development directory. The v1 CLI miner now
 uses the unified miner and bounded pool: every weak share and the hard anchor
 come from the same evolving nonce space, and the anchor commits the canonical
-share closure. Network share relay and public consensus activation remain
-disabled.
+share closure. The opt-in QUIC server now admits authenticated inbound share
+inventories into a parent-scoped round that is discarded on parent change.
+Automatic outbound publication from the CLI miner and public consensus
+activation remain disabled.
 
 ## Gates before public mining
 

@@ -231,12 +231,19 @@ maintenance already marks canonical ancestry and every side
 branch reaching a configurable cutoff, then atomically removes only complete
 stale subtrees while decrementing the exact logical history counter. Its default
 window is 4,096 heights, zero disables it, and it never creates local PoW
-finality by pruning canonical history. Broader filesystem-fault soaks and full
-share-relay/miner coordination remain. The libp2p adapter carries both the
+finality by pruning canonical history. Broader filesystem-fault soaks and
+outbound share publication remain. The libp2p adapter carries both the
 versioned chain and separate WorkGraph share sessions under distinct opt-in
-protocol IDs and resource scopes. Ordinary CLI hosts leave both disabled; the
-experimental `work-*`
-commands enable only the versioned chain session, not share relay.
+protocol IDs and resource scopes. Ordinary CLI hosts leave both disabled. The
+experimental `work-serve-quic` command enables both handlers, while
+`work-sync-quic` still dials only the versioned chain protocol.
+
+`node/workround` owns one immutable `(height, parent, target, payload)` context,
+its bounded pool, unified miner, and finite relay session. A manager caches at
+most the current best-parent round, rechecks the parent after preparation with
+three bounded attempts, and replaces the entire pool on an anchor or reorg.
+In-flight handlers may finish against the detached old round, but those shares
+can never enter the replacement payload or persistent block state.
 The current integration test kills a separate process immediately before and
 after the synchronous Pebble batch and verifies old-or-new recovery.
 

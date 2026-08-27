@@ -149,11 +149,15 @@ DAG admission. A final accepted/rejected receipt accounts for returned invalid
 bodies and advertised bodies the peer withheld. One stream cannot become an
 unbounded request loop. The libp2p QUIC adapter exposes the separate
 `/outcomemesh/workgraph/1` protocol only after an explicit handler is installed;
-without that call negotiation fails. Active CLI nodes do not install it. The
-share stream remains separate from the isolated activation chain session. The
-multi-base persistent router, versioned codecs, and explicit experimental QUIC
-chain commands now exist. Automatic discovery/routing, WorkGraph share relay,
-and production activation remain separate gates.
+without that call negotiation fails. Ordinary CLI nodes do not install it; the
+experimental `work-serve-quic` command installs both this handler and the
+separate activation chain handler. On each incoming share stream it resolves
+the current best-parent round, performs full pool admission, and reports the
+bounded pool totals. The pool is replaced rather than migrated when the parent
+changes. A real process fixture chain-syncs two Pebble nodes, then relays two
+fresh weak shares through the independently authenticated protocol. Automatic
+peer discovery, outbound miner publication, and production activation remain
+separate gates.
 
 ## Signed peer advertisements
 

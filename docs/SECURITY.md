@@ -160,13 +160,22 @@ a long losing side branch can advance without unbounded prefix retries. The
 final replayed ID, height, state root, and cumulative work must match the hello.
 The QUIC adapter exposes the session only through an explicitly installed
 `/outcomemesh/chain/1` handler; default hosts and ordinary CLI commands do not
-advertise it. The experimental `work-serve-quic` command installs only this
-handler, and `work-sync-quic` cannot fall back to `/outcomemesh/session/0`.
+advertise it. The experimental `work-serve-quic` command installs this chain
+handler plus the separately scoped `/outcomemesh/workgraph/1` share handler;
+`work-sync-quic` cannot fall back to `/outcomemesh/session/0`.
 Its independent resource scope defaults to one concurrent stream
 per peer and four globally, while a separate minute window admits four per peer
 and 128 globally. The hard configurable maxima are two/64 concurrent and
 30/1,024 per minute. These gates do not replace the protocol's frame and
 message budgets.
+
+Inbound WorkGraph shares terminate in an ephemeral best-parent round, never
+directly in Pebble. Round construction rechecks the selected parent with three
+bounded attempts. A parent change replaces the pool; an in-flight old session
+may finish only against its detached old pool, which cannot be attached to the
+new payload. Full share PoW, timestamp, context, DAG, identity-count, canonical
+byte, stream, and peer-byte limits still apply before an anchor can reference a
+share.
 
 Optional multi-base recovery uses no mutable global-tip catalog. A schema-1
 forest root contains only its fsynced manifest and canonical lowercase

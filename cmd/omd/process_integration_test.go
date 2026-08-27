@@ -17,6 +17,10 @@ import (
 	"time"
 
 	"github.com/outcomemesh/outcomemesh/core/types"
+	"github.com/outcomemesh/outcomemesh/core/workgraph"
+	libp2ptransport "github.com/outcomemesh/outcomemesh/node/transport/libp2p"
+	"github.com/outcomemesh/outcomemesh/node/workround"
+	"github.com/outcomemesh/outcomemesh/node/worksession"
 )
 
 const helperProcessEnvironment = "OUTCOMEMESH_TEST_HELPER_PROCESS"
@@ -98,7 +102,11 @@ func TestProcessWorkGraphActivationQUICRestart(t *testing.T) {
 	runProcessCommand(t, 30*time.Second,
 		"work-sync-quic", "--data", dataB, "--key", keyB, "--peer", address, "--peer-id", peerID,
 	)
+	relayProcessWorkShares(t, dataB, keyB, address, peerID, 2)
 	stopQUICServerProcess(t, server)
+	if output := server.stderr.String(); !strings.Contains(output, "work_relay") || !strings.Contains(output, "accepted=2") {
+		t.Fatalf("versioned server did not admit relayed mining shares: %s", output)
+	}
 	runProcessCommand(t, 20*time.Second, "work-verify", "--data", dataB)
 
 	statusA := runProcessCommand(t, 20*time.Second, "work-status", "--data", dataA)
@@ -116,6 +124,85 @@ func TestProcessWorkGraphActivationQUICRestart(t *testing.T) {
 	statusAfterRestart := runProcessCommand(t, 20*time.Second, "work-status", "--data", dataB)
 	if fields := outputFields(statusAfterRestart, "work_status"); fields["tip"] != fieldsA["tip"] || fields["trees"] == "0/4" {
 		t.Fatalf("versioned restart lost forest state: %s", statusAfterRestart)
+	}
+}
+
+func relayProcessWorkShares(
+	t testing.TB,
+	data string,
+	key string,
+	peerAddress string,
+	peerIDText string,
+	count int,
+) {
+	t.Helper()
+	_, store, router, _, err := openWorkNode(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	defer router.Close()
+	manager, err := workround.NewManager(router, unixNow, worksession.DefaultConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	round, err := manager.Current()
+	if err != nil {
+		t.Fatal(err)
+	}
+	inclusion, err := workgraph.InclusionRoot(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	miner := types.Address(types.DomainHash("test/omd/process-work-relay-miner"))
+	for index := 0; index < count; index++ {
+		template, err := round.Template(miner, inclusion)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for nonce := uint64(0); ; {
+			share, _, err := workgraph.Mine(context.Background(), template, nonce)
+			if err != nil {
+				t.Fatal(err)
+			}
+			hard, err := workgraph.MeetsAnchor(share)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !hard {
+				if _, err := round.Add(share); err != nil {
+					t.Fatal(err)
+				}
+				break
+			}
+			nonce = share.Nonce + 1
+		}
+	}
+	privateKey, err := loadPrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	host, err := libp2ptransport.New(ctx, privateKey, libp2ptransport.DefaultConfig(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer host.Close()
+	expected, err := parseHash(peerIDText)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream, remote, err := host.OpenWorkGraphStream(ctx, peerAddress, &expected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stats, err := round.Relay(ctx, stream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if remote != expected || stats.Accepted != count || stats.Rejected != 0 {
+		t.Fatalf("WorkGraph process relay remote=%s stats=%+v", remote, stats)
 	}
 }
 

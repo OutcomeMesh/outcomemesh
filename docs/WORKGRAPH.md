@@ -291,8 +291,9 @@ v0 command that could mutate or misreport the mixed state. Separate
 boundary and reopen through the same router. The development miner builds empty
 payloads, then runs the unified miner against a bounded per-context pool. Weak
 shares update the selected DAG parents and the eventual hard WorkSeal commits
-their canonical closure in the exact same nonce space. Remote share relay is
-not yet wired into this CLI path.
+their canonical closure in the exact same nonce space. The opt-in QUIC server
+now admits remote shares into the same kind of round; outbound miner publication
+is not yet wired into the CLI path.
 
 The transport-independent codec and an isolated finite session implement
 inventory-first WorkGraph relay: 1,024 sorted IDs per announcement and at most
@@ -303,14 +304,17 @@ rejected before allocation, each unknown ID is requested once, invalid or
 withheld bodies receive a bounded result, and all returned shares still pass
 the full local pool validator. The libp2p adapter exposes it under the distinct
 `/outcomemesh/workgraph/1` ID only when an operator installs a handler; default
-hosts and the active CLI cannot negotiate it. Two-host QUIC tests cover peer-ID
-pinning, a negotiated 512-byte frame, parent/child relay, context rejection, and
-an independent one-stream-per-peer resource scope. The in-process block router
-remains disconnected from this share-relay stream, but now backs a separate
-header-first versioned chain session. That session has an isolated, opt-in QUIC
-handler with its own per-peer/global concurrency and admission scopes plus
-explicit experimental CLI registration. Its multiple activation trees are
-durably reopened and re-indexed by the optional catalog-free forest.
+hosts and ordinary CLI commands cannot negotiate it. `work-serve-quic`
+explicitly installs it alongside, but independently from, chain-v1. Two-host
+QUIC tests cover peer-ID pinning, a negotiated 512-byte frame, parent/child
+relay, context rejection, and an independent one-stream-per-peer resource
+scope. The parent-scoped round manager prepares through the in-process block
+router and replaces its pool whenever the best parent changes. Shares remain
+ephemeral until a hard anchor commits their closure; relay alone never writes
+them to the chain forest. The separate header-first versioned chain session has
+its own per-peer/global concurrency and admission scopes. Its multiple
+activation trees are durably reopened and re-indexed by the optional
+catalog-free forest.
 
 One maximal 1,024-ID relay is bounded to exactly 630,258 bytes of bidirectional
 application framing when a peer forces one maximum-size body per batch. The

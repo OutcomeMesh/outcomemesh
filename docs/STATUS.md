@@ -234,7 +234,7 @@ Implemented in an isolated, not-yet-activated consensus package:
   through full pool PoW/DAG admission.
 - the libp2p adapter now offers WorkGraph only as an explicitly installed
   `/outcomemesh/workgraph/1` handler, disabled by default and absent from the
-  active CLI. A real two-host QUIC test authenticates peer IDs, negotiates a
+  ordinary CLI. A real two-host QUIC test authenticates peer IDs, negotiates a
   512-byte receiver frame, relays a parent/child DAG in two batches, rejects a
   different payload context, and enforces a separate one-stream-per-peer scope.
   An exact worst-case relay is 630,258 application bytes; fixed-window defaults
@@ -353,11 +353,18 @@ Implemented in an isolated, not-yet-activated consensus package:
   parent tips, are committed in canonical topological order by the hard seal,
   and become delayed rewards during the following transition. Mining output
   exposes discovered, included, and capacity-rejected share counts.
+- `node/workround` now binds one prepared payload to its bounded pool, unified
+  miner, hard-solution finalizer, and finite share session. Its manager caches
+  at most one best-parent round, bounds rebuilds during chain churn, and drops
+  the whole pool on parent change. `work-serve-quic` installs the independently
+  scoped WorkGraph handler as well as chain-v1. The process fixture now relays
+  and fully admits two weak shares after mixed-chain synchronization; default
+  hosts remain unable to negotiate the protocol.
 
 No WorkGraph field has entered a version-0 block yet. The v1 store and opt-in
 QUIC session remain isolated from every ordinary v0 chain/CLI path and are
 reachable only through the explicitly marked experimental commands;
-automatic versioned discovery/routing, network WorkGraph share-relay integration,
+automatic versioned discovery/routing, outbound WorkGraph share publication,
 history-anchored archival pruning, extended filesystem-fault/soak campaigns,
 production gossip-budget calibration, and finer/adaptive economic-strategy
 analysis remain before activation.

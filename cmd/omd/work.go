@@ -27,8 +27,8 @@ import (
 	"github.com/outcomemesh/outcomemesh/node/peers"
 	libp2ptransport "github.com/outcomemesh/outcomemesh/node/transport/libp2p"
 	"github.com/outcomemesh/outcomemesh/node/workchain"
-	"github.com/outcomemesh/outcomemesh/node/workminer"
-	"github.com/outcomemesh/outcomemesh/node/workpool"
+	"github.com/outcomemesh/outcomemesh/node/workround"
+	"github.com/outcomemesh/outcomemesh/node/worksession"
 	"github.com/outcomemesh/outcomemesh/storage"
 )
 
@@ -292,6 +292,10 @@ func runWorkMine(arguments []string) error {
 	}
 	defer store.Close()
 	defer router.Close()
+	roundManager, err := workround.NewManager(router, unixNow, worksession.DefaultConfig())
+	if err != nil {
+		return err
+	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	for index := uint64(0); index < *count; index++ {
@@ -327,31 +331,15 @@ func runWorkMine(arguments []string) error {
 				tip.Height, id, candidate.Header.Nonce, time.Since(started).Round(time.Millisecond), tip.StateRoot)
 			continue
 		}
-		payload, position, err := router.PrepareWork(parent.ID, timestamp, nil)
-		if err != nil {
-			return err
-		}
 		inclusion, err := workgraph.InclusionRoot(nil)
 		if err != nil {
 			return err
 		}
-		template, err := payload.SealTemplate(miner, inclusion, nil)
+		round, err := roundManager.Current()
 		if err != nil {
 			return err
 		}
-		pool, err := workpool.New(workgraph.Context{
-			NetworkID: template.NetworkID, Height: template.Height, AnchorParent: template.AnchorParent,
-			AnchorTarget: template.Target, PayloadRoot: template.PayloadRoot,
-			AnchorTimestamp: template.Timestamp, MedianTimePast: position.MedianTimePast,
-		})
-		if err != nil {
-			return err
-		}
-		minerLoop, err := workminer.New(payload, pool, miner, inclusion, nil)
-		if err != nil {
-			return err
-		}
-		mined, err := minerLoop.Mine(ctx, *startNonce)
+		mined, err := round.Mine(ctx, miner, inclusion, *startNonce, nil)
 		if err != nil {
 			return err
 		}
@@ -361,6 +349,9 @@ func runWorkMine(arguments []string) error {
 		}
 		tip, err := router.Submit(routed)
 		if err != nil {
+			return err
+		}
+		if err := roundManager.Invalidate(); err != nil {
 			return err
 		}
 		id, err := mined.Block.Header.ID()
@@ -405,6 +396,10 @@ func runWorkServeQUIC(arguments []string) error {
 	if err != nil {
 		return err
 	}
+	roundManager, err := workround.NewManager(router, unixNow, worksession.DefaultConfig())
+	if err != nil {
+		return err
+	}
 	peerManager, err := peers.New(peers.DefaultPolicy(), nil)
 	if err != nil {
 		return err
@@ -437,7 +432,35 @@ func runWorkServeQUIC(arguments []string) error {
 	}); err != nil {
 		return err
 	}
-	fmt.Printf("serving_work_quic peer_id=%s libp2p_id=%s network=%d activation_height=%d listen=%s\n",
+	if err := host.SetWorkGraphHandler(func(handlerContext context.Context, peerID types.Hash, stream libp2pnetwork.Stream) {
+		if err := peerManager.Acquire(peerID); err != nil {
+			_ = stream.Reset()
+			return
+		}
+		defer peerManager.Release(peerID)
+		round, err := roundManager.Current()
+		if err != nil {
+			_ = stream.Reset()
+			return
+		}
+		limited := &peerLimitedStream{Stream: stream, manager: peerManager, peerID: peerID}
+		sessionErr := round.Serve(handlerContext, limited)
+		recordPeerSession(peerManager, peerID, sessionErr)
+		if sessionErr != nil {
+			if handlerContext.Err() == nil {
+				fmt.Fprintf(os.Stderr, "WorkGraph QUIC peer session %s: %v\n", peerID, sessionErr)
+			}
+			return
+		}
+		status, err := round.Status()
+		if err == nil {
+			fmt.Fprintf(os.Stderr, "work_relay peer_id=%s accepted=%d pending=%d shares=%d\n",
+				peerID, status.Accepted, status.Pending, status.Shares)
+		}
+	}); err != nil {
+		return err
+	}
+	fmt.Printf("serving_work_quic peer_id=%s libp2p_id=%s network=%d activation_height=%d protocols=chain-v1,workgraph-v1 listen=%s\n",
 		host.ID(), host.Libp2pID(), document.NetworkID, profile.ActivationHeight, strings.Join(host.Addresses(), ","))
 	<-ctx.Done()
 	return nil

@@ -95,6 +95,24 @@ type Payload struct {
 	result       Result
 }
 
+// MiningContext returns the exact immutable context shared by weak shares and
+// the hard anchor for this prepared payload. The returned context deliberately
+// has no anchor miner: each participant chooses its own reward address while
+// mining the same payload.
+func (payload *Payload) MiningContext() (workgraph.Context, error) {
+	if payload == nil {
+		return workgraph.Context{}, ErrParameters
+	}
+	context := contextFromSeal(payload.header.Seal, payload.position.MedianTimePast)
+	context.AnchorMiner = types.Address{}
+	if context.NetworkID == 0 || context.Height == 0 || context.AnchorParent.IsZero() ||
+		context.AnchorTarget.IsZero() || context.PayloadRoot.IsZero() || context.AnchorTimestamp == 0 ||
+		context.MedianTimePast == 0 || context.AnchorTimestamp <= context.MedianTimePast {
+		return workgraph.Context{}, ErrPosition
+	}
+	return context, nil
+}
+
 func PreparePayload(
 	preState *state.Memory,
 	position Position,
