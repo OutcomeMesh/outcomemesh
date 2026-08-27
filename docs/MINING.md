@@ -102,8 +102,11 @@ it under an explicit opt-in protocol handler and passes a real two-host QUIC
 relay. The isolated block router now enforces the activation-height version
 boundary across multiple possible v0 bases. Ordinary CLI/session routing remains
 version 0, while explicit `work-enable`, `work-mine`, and versioned QUIC commands
-exercise the transition on a marked development directory. Weak-share relay and
-public consensus activation remain disabled.
+exercise the transition on a marked development directory. The v1 CLI miner now
+uses the unified miner and bounded pool: every weak share and the hard anchor
+come from the same evolving nonce space, and the anchor commits the canonical
+share closure. Network share relay and public consensus activation remain
+disabled.
 
 ## Gates before public mining
 

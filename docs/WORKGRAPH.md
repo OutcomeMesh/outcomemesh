@@ -288,9 +288,11 @@ target/reward compatibility checks, a boundary above the current v0 tip, and
 successful forest validation. A final or pending profile blocks every ordinary
 v0 command that could mutate or misreport the mixed state. Separate
 `work-mine`, `work-status`, `work-balance`, and `work-verify` commands cross the
-boundary and reopen through the same router. The development miner currently
-builds empty payloads and hard WorkSeals; unified weak-share mining and relay
-are not yet wired into this CLI path.
+boundary and reopen through the same router. The development miner builds empty
+payloads, then runs the unified miner against a bounded per-context pool. Weak
+shares update the selected DAG parents and the eventual hard WorkSeal commits
+their canonical closure in the exact same nonce space. Remote share relay is
+not yet wired into this CLI path.
 
 The transport-independent codec and an isolated finite session implement
 inventory-first WorkGraph relay: 1,024 sorted IDs per announcement and at most

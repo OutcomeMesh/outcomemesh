@@ -27,6 +27,8 @@ import (
 	"github.com/outcomemesh/outcomemesh/node/peers"
 	libp2ptransport "github.com/outcomemesh/outcomemesh/node/transport/libp2p"
 	"github.com/outcomemesh/outcomemesh/node/workchain"
+	"github.com/outcomemesh/outcomemesh/node/workminer"
+	"github.com/outcomemesh/outcomemesh/node/workpool"
 	"github.com/outcomemesh/outcomemesh/storage"
 )
 
@@ -325,7 +327,7 @@ func runWorkMine(arguments []string) error {
 				tip.Height, id, candidate.Header.Nonce, time.Since(started).Round(time.Millisecond), tip.StateRoot)
 			continue
 		}
-		payload, _, err := router.PrepareWork(parent.ID, timestamp, nil)
+		payload, position, err := router.PrepareWork(parent.ID, timestamp, nil)
 		if err != nil {
 			return err
 		}
@@ -337,15 +339,23 @@ func runWorkMine(arguments []string) error {
 		if err != nil {
 			return err
 		}
-		seal, id, err := workgraph.MineAnchor(ctx, template, *startNonce)
+		pool, err := workpool.New(workgraph.Context{
+			NetworkID: template.NetworkID, Height: template.Height, AnchorParent: template.AnchorParent,
+			AnchorTarget: template.Target, PayloadRoot: template.PayloadRoot,
+			AnchorTimestamp: template.Timestamp, MedianTimePast: position.MedianTimePast,
+		})
 		if err != nil {
 			return err
 		}
-		candidate, _, err := payload.Finalize(seal, nil)
+		minerLoop, err := workminer.New(payload, pool, miner, inclusion, nil)
 		if err != nil {
 			return err
 		}
-		routed, err := activation.Work(candidate, profile.ActivationHeight)
+		mined, err := minerLoop.Mine(ctx, *startNonce)
+		if err != nil {
+			return err
+		}
+		routed, err := activation.Work(mined.Block, profile.ActivationHeight)
 		if err != nil {
 			return err
 		}
@@ -353,8 +363,13 @@ func runWorkMine(arguments []string) error {
 		if err != nil {
 			return err
 		}
-		fmt.Printf("work_mined version=1 height=%d id=%s nonce=%d elapsed=%s state=%s\n",
-			tip.Height, id, seal.Nonce, time.Since(started).Round(time.Millisecond), tip.StateRoot)
+		id, err := mined.Block.Header.ID()
+		if err != nil {
+			return err
+		}
+		fmt.Printf("work_mined version=1 height=%d id=%s nonce=%d weak_shares=%d included_shares=%d capacity_rejections=%d elapsed=%s state=%s\n",
+			tip.Height, id, mined.WinningNonce, mined.WeakShares, len(mined.Block.Shares),
+			mined.CapacityRejections, time.Since(started).Round(time.Millisecond), tip.StateRoot)
 	}
 	return nil
 }

@@ -132,9 +132,11 @@ genesis ID (the default 12-bit development target supports the required exact
 activation height, fee delay, tree cap, and forest-wide history budget. Once
 that marker exists, ordinary v0 status/balance/verify/mining and networking
 commands refuse the directory; only explicit `work-*` commands can open its
-mixed chain. `work-mine` currently mines empty v0/v1 development blocks. Weak
-share relay, transactions on the experimental path, migration tooling, and
-public activation remain gated.
+mixed chain. `work-mine` currently builds empty development payloads, but its
+v1 loop mines weak shares and the hard anchor in one nonce space, commits the
+bounded canonical share DAG, and reports both share counts. Network share
+relay, transactions on the experimental path, migration tooling, and public
+activation remain gated.
 
 `balance` reports total, spendable at the next height, and maturity-locked
 amounts separately.

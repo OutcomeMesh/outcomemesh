@@ -348,11 +348,16 @@ Implemented in an isolated, not-yet-activated consensus package:
   enables two nodes, mines height 1 as v0 and heights 2–5 as v1, authenticates
   and synchronizes `/outcomemesh/chain/1`, replay-verifies the mixed ancestry,
   rejects legacy mining, and reopens the same receiver tip after shutdown.
+- the explicit v1 CLI miner now uses the bounded WorkGraph pool and unified
+  weak-share/hard-anchor nonce loop. Locally admitted shares form deterministic
+  parent tips, are committed in canonical topological order by the hard seal,
+  and become delayed rewards during the following transition. Mining output
+  exposes discovered, included, and capacity-rejected share counts.
 
 No WorkGraph field has entered a version-0 block yet. The v1 store and opt-in
 QUIC session remain isolated from every ordinary v0 chain/CLI path and are
 reachable only through the explicitly marked experimental commands;
-automatic versioned discovery/routing, WorkGraph share-relay/miner integration,
+automatic versioned discovery/routing, network WorkGraph share-relay integration,
 history-anchored archival pruning, extended filesystem-fault/soak campaigns,
 production gossip-budget calibration, and finer/adaptive economic-strategy
 analysis remain before activation.
