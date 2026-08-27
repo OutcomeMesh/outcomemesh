@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"sort"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -92,13 +93,14 @@ func runWorkMineQUIC(arguments []string) error {
 		return err
 	}
 	defer host.Close()
-	if err := installWorkMiningHandlers(host, chainSession, roundManager, peerManager); err != nil {
+	roundControl := new(workMiningRoundControl)
+	if err := installWorkMiningHandlers(host, chainSession, roundManager, peerManager, roundControl); err != nil {
 		return err
 	}
 	fmt.Printf("mining_work_quic peer_id=%s libp2p_id=%s network=%d activation_height=%d relay_every=%d listen=%s\n",
 		host.ID(), host.Libp2pID(), document.NetworkID, profile.ActivationHeight, *relayEvery,
 		strings.Join(host.Addresses(), ","))
-	for index := uint64(0); index < *count; index++ {
+	for minedCount := uint64(0); minedCount < *count; {
 		round, err := roundManager.Current()
 		if err != nil {
 			return err
@@ -111,9 +113,20 @@ func runWorkMineQUIC(arguments []string) error {
 			ctx: ctx, round: round, host: host, peerManager: peerManager,
 			peerAddress: *peerAddress, expectedPeer: expectedPeer, relayEvery: *relayEvery,
 		}
-		started := time.Now()
-		mined, err := round.Mine(ctx, miner, inclusion, *startNonce, publisher.Publish)
+		miningContext, err := round.Context()
 		if err != nil {
+			return err
+		}
+		roundContext, finishRound := roundControl.Begin(ctx, miningContext.AnchorParent)
+		started := time.Now()
+		mined, err := round.Mine(roundContext, miner, inclusion, *startNonce, publisher.Publish)
+		finishRound()
+		if err != nil {
+			if errors.Is(err, context.Canceled) && ctx.Err() == nil {
+				_ = roundManager.Invalidate()
+				fmt.Fprintln(os.Stderr, "restart WorkGraph mining on notified chain tip")
+				continue
+			}
 			return err
 		}
 		publisher.Flush()
@@ -132,10 +145,15 @@ func runWorkMineQUIC(arguments []string) error {
 		if err != nil {
 			return err
 		}
-		fmt.Printf("work_mined_quic height=%d id=%s nonce=%d weak_shares=%d included_shares=%d relayed_shares=%d relay_rejected=%d relay_failures=%d pending_relay=%d elapsed=%s state=%s\n",
+		notified := false
+		if selected.ID == id {
+			notified = notifyWorkAnchor(ctx, host, chainSession, peerManager, *peerAddress, expectedPeer)
+		}
+		fmt.Printf("work_mined_quic height=%d id=%s nonce=%d weak_shares=%d included_shares=%d relayed_shares=%d relay_rejected=%d relay_failures=%d pending_relay=%d anchor_notified=%t elapsed=%s state=%s\n",
 			selected.Height, id, mined.WinningNonce, mined.WeakShares, len(mined.Block.Shares),
 			publisher.relayed, publisher.rejected, publisher.failures, len(publisher.pending),
-			time.Since(started).Round(time.Millisecond), selected.StateRoot)
+			notified, time.Since(started).Round(time.Millisecond), selected.StateRoot)
+		minedCount++
 	}
 	return nil
 }
@@ -145,8 +163,9 @@ func installWorkMiningHandlers(
 	chainSession *chainsession.Node,
 	roundManager *workround.Manager,
 	peerManager *peers.Manager,
+	roundControl *workMiningRoundControl,
 ) error {
-	if host == nil || chainSession == nil || roundManager == nil || peerManager == nil {
+	if host == nil || chainSession == nil || roundManager == nil || peerManager == nil || roundControl == nil {
 		return errors.New("invalid cooperative mining handlers")
 	}
 	if err := host.SetVersionedChainHandler(func(handlerContext context.Context, peerID types.Hash, stream libp2pnetwork.Stream) {
@@ -164,7 +183,7 @@ func installWorkMiningHandlers(
 	}); err != nil {
 		return err
 	}
-	return host.SetWorkGraphHandler(func(handlerContext context.Context, peerID types.Hash, stream libp2pnetwork.Stream) {
+	if err := host.SetWorkGraphHandler(func(handlerContext context.Context, peerID types.Hash, stream libp2pnetwork.Stream) {
 		if err := peerManager.Acquire(peerID); err != nil {
 			_ = stream.Reset()
 			return
@@ -181,7 +200,94 @@ func installWorkMiningHandlers(
 		if sessionErr != nil && handlerContext.Err() == nil {
 			fmt.Fprintf(os.Stderr, "WorkGraph QUIC peer session %s: %v\n", peerID, sessionErr)
 		}
+	}); err != nil {
+		return err
+	}
+	return host.SetChainNotifyHandler(func(handlerContext context.Context, peerID types.Hash, stream libp2pnetwork.Stream) {
+		if err := peerManager.Acquire(peerID); err != nil {
+			_ = stream.Reset()
+			return
+		}
+		defer peerManager.Release(peerID)
+		limited := &peerLimitedStream{Stream: stream, manager: peerManager, peerID: peerID}
+		selected, sessionErr := chainSession.Synchronize(handlerContext, limited)
+		recordPeerSession(peerManager, peerID, sessionErr)
+		if sessionErr != nil {
+			if handlerContext.Err() == nil {
+				fmt.Fprintf(os.Stderr, "chain notification from %s: %v\n", peerID, sessionErr)
+			}
+			return
+		}
+		_ = roundManager.Invalidate()
+		roundControl.Advance(selected.ID)
 	})
+}
+
+func notifyWorkAnchor(
+	ctx context.Context,
+	host *libp2ptransport.Host,
+	chainSession *chainsession.Node,
+	peerManager *peers.Manager,
+	peerAddress string,
+	expectedPeer *types.Hash,
+) bool {
+	stream, peerID, err := host.OpenChainNotifyStream(ctx, peerAddress, expectedPeer)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "notify WorkGraph anchor: %v\n", err)
+		return false
+	}
+	if err := peerManager.Acquire(peerID); err != nil {
+		_ = stream.Reset()
+		return false
+	}
+	limited := &peerLimitedStream{Stream: stream, manager: peerManager, peerID: peerID}
+	sessionErr := chainSession.Serve(ctx, limited)
+	peerManager.Release(peerID)
+	recordPeerSession(peerManager, peerID, sessionErr)
+	if sessionErr != nil {
+		if ctx.Err() == nil {
+			fmt.Fprintf(os.Stderr, "notify WorkGraph anchor to %s: %v\n", peerID, sessionErr)
+		}
+		return false
+	}
+	return true
+}
+
+type workMiningRoundControl struct {
+	mu         sync.Mutex
+	generation uint64
+	parent     types.Hash
+	cancel     context.CancelFunc
+}
+
+func (control *workMiningRoundControl) Begin(parent context.Context, parentID types.Hash) (context.Context, func()) {
+	control.mu.Lock()
+	if control.cancel != nil {
+		control.cancel()
+	}
+	control.generation++
+	generation := control.generation
+	result, cancel := context.WithCancel(parent)
+	control.parent = parentID
+	control.cancel = cancel
+	control.mu.Unlock()
+	return result, func() {
+		cancel()
+		control.mu.Lock()
+		defer control.mu.Unlock()
+		if control.generation == generation {
+			control.parent = types.Hash{}
+			control.cancel = nil
+		}
+	}
+}
+
+func (control *workMiningRoundControl) Advance(parentID types.Hash) {
+	control.mu.Lock()
+	defer control.mu.Unlock()
+	if control.cancel != nil && control.parent != parentID {
+		control.cancel()
+	}
 }
 
 type workSharePublisher struct {
@@ -193,6 +299,7 @@ type workSharePublisher struct {
 	expectedPeer *types.Hash
 	relayEvery   int
 	pending      []types.Hash
+	sinceAttempt int
 	relayed      uint64
 	rejected     uint64
 	failures     uint64
@@ -204,7 +311,9 @@ func (publisher *workSharePublisher) Publish(share workgraph.Share) error {
 		return err
 	}
 	publisher.pending = append(publisher.pending, id)
-	if len(publisher.pending) >= publisher.relayEvery {
+	publisher.sinceAttempt++
+	if publisher.sinceAttempt >= publisher.relayEvery {
+		publisher.sinceAttempt = 0
 		publisher.Flush()
 	}
 	return nil
@@ -239,7 +348,7 @@ func (publisher *workSharePublisher) Flush() {
 		limited := &peerLimitedStream{Stream: stream, manager: publisher.peerManager, peerID: peerID}
 		stats, sessionErr := publisher.round.RelayInventory(publisher.ctx, limited, selected)
 		publisher.peerManager.Release(peerID)
-		recordWorkPeerSession(publisher.peerManager, peerID, sessionErr)
+		recordWorkRelayAttempt(publisher.peerManager, peerID, sessionErr)
 		if sessionErr != nil || stats.Announced <= 0 || stats.Announced > len(selected) {
 			publisher.failures++
 			if sessionErr != nil && publisher.ctx.Err() == nil {
@@ -251,4 +360,16 @@ func (publisher *workSharePublisher) Flush() {
 		publisher.rejected += uint64(stats.Rejected)
 		publisher.pending = publisher.pending[stats.Announced:]
 	}
+}
+
+func recordWorkRelayAttempt(manager *peers.Manager, peerID types.Hash, sessionErr error) {
+	if sessionErr == nil {
+		_ = manager.Record(peerID, peers.EventValidMessage)
+	} else if errors.Is(sessionErr, worksession.ErrContext) {
+		_ = manager.Record(peerID, peers.EventStaleData)
+	} else if networkError, ok := sessionErr.(interface{ Timeout() bool }); ok && networkError.Timeout() {
+		_ = manager.Record(peerID, peers.EventTimeout)
+	}
+	// A reset can be the remote transport's resource/rate limiter. It is not
+	// evidence that the authenticated peer sent an invalid protocol object.
 }

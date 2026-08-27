@@ -28,6 +28,7 @@ const (
 	SessionProtocol        protocol.ID = "/outcomemesh/session/0"
 	WorkGraphProtocol      protocol.ID = "/outcomemesh/workgraph/1"
 	VersionedChainProtocol protocol.ID = "/outcomemesh/chain/1"
+	ChainNotifyProtocol    protocol.ID = "/outcomemesh/chain-notify/1"
 	maxListenAddresses                 = 8
 	maxAddressBytes                    = 256
 	// MaxConnectionLimit and MaxStreamsPerPeerLimit are hard implementation
@@ -183,6 +184,18 @@ func (value *Host) SetVersionedChainHandler(handler Handler) error {
 	return nil
 }
 
+// SetChainNotifyHandler enables an inverted versioned-chain stream: the
+// inbound side runs the existing synchronizer while the dialing winner serves
+// its fully validated header/body history. It is only a prompt, never a trusted
+// block push.
+func (value *Host) SetChainNotifyHandler(handler Handler) error {
+	if value == nil || value.inner == nil || handler == nil {
+		return ErrConfiguration
+	}
+	value.setHandler(ChainNotifyProtocol, handler)
+	return nil
+}
+
 func (value *Host) setHandler(protocolID protocol.ID, handler Handler) {
 	value.inner.SetStreamHandler(protocolID, func(stream network.Stream) {
 		remoteID, err := outcomeIDFromPublicKey(stream.Conn().RemotePublicKey())
@@ -194,7 +207,8 @@ func (value *Host) setHandler(protocolID protocol.ID, handler Handler) {
 			_ = stream.Reset()
 			return
 		}
-		if protocolID == VersionedChainProtocol && !value.allowVersionedChainStream(remoteID, time.Now()) {
+		if (protocolID == VersionedChainProtocol || protocolID == ChainNotifyProtocol) &&
+			!value.allowVersionedChainStream(remoteID, time.Now()) {
 			_ = stream.Reset()
 			return
 		}
@@ -278,6 +292,11 @@ func (value *Host) OpenWorkGraphStream(ctx context.Context, address string, expe
 // It cannot fall back to the active version-0 session on negotiation failure.
 func (value *Host) OpenVersionedChainStream(ctx context.Context, address string, expected *types.Hash) (network.Stream, types.Hash, error) {
 	return value.openStream(ctx, address, expected, VersionedChainProtocol)
+}
+
+// OpenChainNotifyStream opens only the inverted chain-notification protocol.
+func (value *Host) OpenChainNotifyStream(ctx context.Context, address string, expected *types.Hash) (network.Stream, types.Hash, error) {
+	return value.openStream(ctx, address, expected, ChainNotifyProtocol)
 }
 
 func (value *Host) openStream(
@@ -438,9 +457,9 @@ func newResourceManager(config Config) (network.ResourceManager, error) {
 	// below enforces the exact application-stream limit.
 	const internalStreamsPerPeer = 8
 	peerStreams := config.MaxStreamsPerPeer + config.MaxWorkStreamsPerPeer +
-		config.MaxVersionedChainStreamsPerPeer + internalStreamsPerPeer
+		2*config.MaxVersionedChainStreamsPerPeer + internalStreamsPerPeer
 	totalStreams := config.MaxConnections*(config.MaxStreamsPerPeer+config.MaxWorkStreamsPerPeer+internalStreamsPerPeer) +
-		config.MaxVersionedChainStreams
+		2*config.MaxVersionedChainStreams
 	system := rcmgr.ResourceLimits{
 		Streams:         rcmgr.LimitVal(totalStreams),
 		StreamsInbound:  rcmgr.LimitVal(totalStreams),
@@ -502,11 +521,18 @@ func newResourceManager(config Config) (network.ResourceManager, error) {
 				StreamsOutbound: rcmgr.LimitVal(config.MaxVersionedChainStreams),
 				Memory:          rcmgr.LimitVal64(config.MemoryBytes / 2),
 			},
+			ChainNotifyProtocol: {
+				Streams:         rcmgr.LimitVal(config.MaxVersionedChainStreams),
+				StreamsInbound:  rcmgr.LimitVal(config.MaxVersionedChainStreams),
+				StreamsOutbound: rcmgr.LimitVal(config.MaxVersionedChainStreams),
+				Memory:          rcmgr.LimitVal64(config.MemoryBytes / 2),
+			},
 		},
 		ProtocolPeer: map[protocol.ID]rcmgr.ResourceLimits{
 			SessionProtocol:        applicationPerPeer,
 			WorkGraphProtocol:      workGraphPerPeer,
 			VersionedChainProtocol: versionedChainPerPeer,
+			ChainNotifyProtocol:    versionedChainPerPeer,
 		},
 		Conn: rcmgr.ResourceLimits{
 			Conns: 1, ConnsInbound: 1, ConnsOutbound: 1, FD: 1, Memory: 4 << 20,

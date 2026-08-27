@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -126,6 +127,28 @@ func TestWorkEnableRejectsInexactGenesisTarget(t *testing.T) {
 	if _, statErr := os.Stat(filepath.Join(directory, workActivationFilename)); !errors.Is(statErr, os.ErrNotExist) {
 		t.Fatalf("failed activation left a profile: %v", statErr)
 	}
+}
+
+func TestWorkMiningRoundControlCancelsOnlyChangedParent(t *testing.T) {
+	control := new(workMiningRoundControl)
+	parentA := types.DomainHash("test/omd/round-parent-a")
+	parentB := types.DomainHash("test/omd/round-parent-b")
+	ctx, finish := control.Begin(context.Background(), parentA)
+	control.Advance(parentA)
+	if err := ctx.Err(); err != nil {
+		t.Fatalf("unchanged parent canceled round: %v", err)
+	}
+	control.Advance(parentB)
+	if !errors.Is(ctx.Err(), context.Canceled) {
+		t.Fatalf("changed parent did not cancel round: %v", ctx.Err())
+	}
+	finish()
+	second, finishSecond := control.Begin(context.Background(), parentB)
+	finish()
+	if err := second.Err(); err != nil {
+		t.Fatalf("old generation finish canceled new round: %v", err)
+	}
+	finishSecond()
 }
 
 func TestStoragePolicyRoundTripControlsLedgerHistoryBudget(t *testing.T) {

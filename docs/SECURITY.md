@@ -187,6 +187,15 @@ a changed tip is scored as stale data rather than an invalid-message attack.
 The current command has one explicit peer, so it does not claim Sybil-resistant
 peer selection or production gossip coverage.
 
+Anchor notification is separated from ordinary chain pull at the libp2p
+protocol ID, but deliberately reuses its verified session. The remote winner
+cannot send an unsolicited block: it waits while the receiver sends hello and
+bounded requests. The receiver performs cumulative-work comparison, all header
+and body checks, replay, and router admission. Chain and notification protocols
+have separate concurrent resource scopes but share the same inbound fixed-window
+counter; total system/peer stream limits account for both. Neither handler is
+installed on default hosts.
+
 Optional multi-base recovery uses no mutable global-tip catalog. A schema-1
 forest root contains only its fsynced manifest and canonical lowercase
 activation-base hash directories. Unknown names, files, symlinks, bases absent

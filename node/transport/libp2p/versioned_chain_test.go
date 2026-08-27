@@ -99,6 +99,51 @@ func TestQUICVersionedChainSynchronizesDivergentActivationFork(t *testing.T) {
 	}
 }
 
+func TestQUICChainNotificationInvertsOnlySessionRoles(t *testing.T) {
+	source := newVersionedChainFixture(t, 719, 2, chainsession.DefaultSessionConfig())
+	destination := newVersionedChainFixture(t, 719, 2, chainsession.DefaultSessionConfig())
+	extendVersionedChain(t, source, "notify-source", 4)
+	extendVersionedChain(t, destination, "notify-destination", 2)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	synchronized := make(chan error, 1)
+	receiver, err := libp2ptransport.New(ctx, testKey("chain-notify-receiver"), libp2ptransport.DefaultConfig(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer receiver.Close()
+	if err := receiver.SetChainNotifyHandler(func(handlerContext context.Context, _ types.Hash, stream network.Stream) {
+		_, syncErr := destination.node.Synchronize(handlerContext, stream)
+		synchronized <- syncErr
+	}); err != nil {
+		t.Fatal(err)
+	}
+	winner, err := libp2ptransport.New(ctx, testKey("chain-notify-winner"), libp2ptransport.DefaultConfig(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer winner.Close()
+	expected := receiver.ID()
+	stream, remote, err := winner.OpenChainNotifyStream(ctx, receiver.Addresses()[0], &expected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if remote != expected || stream.Protocol() != libp2ptransport.ChainNotifyProtocol {
+		t.Fatalf("notify remote=%s protocol=%q", remote, stream.Protocol())
+	}
+	if err := source.node.Serve(ctx, stream); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-synchronized; err != nil {
+		t.Fatal(err)
+	}
+	sourceTip, _ := source.router.Tip()
+	destinationTip, _ := destination.router.Tip()
+	if !storage.EqualTips(sourceTip, destinationTip) {
+		t.Fatal("chain notification did not trigger verified pull synchronization")
+	}
+}
+
 func TestQUICVersionedChainProtocolIsDisabledUntilHandlerInstalled(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -114,6 +159,9 @@ func TestQUICVersionedChainProtocolIsDisabledUntilHandlerInstalled(t *testing.T)
 	defer client.Close()
 	if _, _, err := client.OpenVersionedChainStream(ctx, server.Addresses()[0], nil); err == nil {
 		t.Fatal("versioned chain protocol negotiated without an explicit handler")
+	}
+	if _, _, err := client.OpenChainNotifyStream(ctx, server.Addresses()[0], nil); err == nil {
+		t.Fatal("chain notification protocol negotiated without an explicit handler")
 	}
 }
 

@@ -142,8 +142,11 @@ adds authenticated, best-effort publication to one explicit peer while also
 accepting reciprocal shares and serving chain-v1. Successfully announced
 negotiated prefixes leave its bounded queue; failures retain the unpublished
 suffix and never invalidate objective hard-PoW progress. Automatic peer
-discovery/tip watching, transactions on the experimental path, migration
-tooling, and public activation remain gated.
+discovery and multi-peer routing remain gated. When this miner wins, the
+separate chain-notify-v1 prompt makes its configured peer initiate the existing
+trustless header-first pull immediately; it is not a trusted block push.
+Transactions on the experimental path, migration tooling, and public activation
+also remain gated.
 
 `balance` reports total, spendable at the next height, and maturity-locked
 amounts separately.

@@ -366,12 +366,20 @@ Implemented in an isolated, not-yet-activated consensus package:
   exact negotiated prefix, allowing the bounded unpublished queue to retain
   only its unsent suffix. Network failure is recorded but does not invalidate
   hard work. The process fixture mines height 6 through this path, then syncs it
-  back over chain-v1 and replay-verifies both persistent nodes.
+  back through the notified peer's chain-v1 state machine and replay-verifies
+  both persistent nodes.
+- the distinct opt-in `/outcomemesh/chain-notify/1` protocol now reverses only
+  chain session roles: a winning dialer serves, while the receiver initiates
+  the same cumulative-work/header-first/full-replay synchronization. A selected
+  tip change invalidates the ephemeral round and cancels its stale hash loop.
+  Ten consecutive two-process runs covered share rate exhaustion, notification,
+  restart, and convergence. Transport resets no longer create a retry storm or
+  count remote rate limiting as an invalid protocol message.
 
 No WorkGraph field has entered a version-0 block yet. The v1 store and opt-in
 QUIC session remain isolated from every ordinary v0 chain/CLI path and are
 reachable only through the explicitly marked experimental commands;
-automatic versioned discovery/routing and multi-peer share fanout/tip watching,
+automatic versioned discovery/routing and multi-peer share fanout,
 history-anchored archival pruning, extended filesystem-fault/soak campaigns,
 production gossip-budget calibration, and finer/adaptive economic-strategy
 analysis remain before activation.

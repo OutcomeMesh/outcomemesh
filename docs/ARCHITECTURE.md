@@ -251,7 +251,15 @@ opens only the exact WorkGraph protocol, and removes precisely the prefix that
 the negotiated relay reports as announced. Failed attempts retain the suffix;
 hard-PoW search continues because network publication is best-effort. The same
 host accepts reciprocal share sessions and serves chain-v1, but automatic peer
-routing and background chain-tip interruption are not implemented yet.
+routing is not implemented yet.
+
+Anchor propagation uses a third opt-in protocol role without a second sync
+grammar. On `/outcomemesh/chain-notify/1` the winning dialer runs the existing
+versioned responder and the notified node runs the existing synchronizer. The
+receiver still compares cumulative hard work, requests headers before bodies,
+and submits through the activation router. A changed selected tip invalidates
+the round manager and cancels its active hash loop; an unchanged notification
+does neither.
 The current integration test kills a separate process immediately before and
 after the synchronous Pebble batch and verifies old-or-new recovery.
 

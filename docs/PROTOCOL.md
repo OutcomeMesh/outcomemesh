@@ -498,3 +498,11 @@ pool before the stream exchange. Negotiation may reduce the announcement to a
 prefix; relay statistics return its exact length so an outbound queue can drop
 only attempted IDs and retain the suffix. This is local transport progress
 accounting and does not alter `ShareInventoryV1` encoding or consensus.
+
+The opt-in `/outcomemesh/chain-notify/1` protocol adds no message type and no
+consensus rule. It reverses only stream roles: the node that found a selected
+anchor dials and runs `ChainNode.Serve`, while the receiver runs
+`ChainNode.Synchronize`. The receiver sends `ChainHelloV1`, independently
+decides whether the advertised cumulative work is better, and if so performs
+the same bounded header-first/body-second pull over the stream. A losing or
+equal notification transfers no blocks. Default hosts cannot negotiate it.

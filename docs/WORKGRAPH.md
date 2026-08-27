@@ -322,7 +322,10 @@ shorten it; returned statistics identify the exact announced prefix. The QUIC
 miner therefore keeps a bounded unpublished-ID queue, drops only successful
 prefixes, and retries the suffix without invalidating hard-PoW progress. It also
 installs the inbound round and chain-v1 handlers. Automatic peer discovery,
-multi-peer fanout, and background interruption when a peer wins remain gated.
+and multi-peer fanout remain gated. A selected local anchor uses the separate
+chain-notify-v1 protocol to make the configured peer initiate normal verified
+chain synchronization. If that changes the peer's selected parent, its round is
+invalidated and the stale hashing context is canceled.
 
 One maximal 1,024-ID relay is bounded to exactly 630,258 bytes of bidirectional
 application framing when a peer forces one maximum-size body per batch. The

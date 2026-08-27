@@ -460,7 +460,30 @@ func runWorkServeQUIC(arguments []string) error {
 	}); err != nil {
 		return err
 	}
-	fmt.Printf("serving_work_quic peer_id=%s libp2p_id=%s network=%d activation_height=%d protocols=chain-v1,workgraph-v1 listen=%s\n",
+	if err := host.SetChainNotifyHandler(func(handlerContext context.Context, peerID types.Hash, stream libp2pnetwork.Stream) {
+		if err := peerManager.Acquire(peerID); err != nil {
+			_ = stream.Reset()
+			return
+		}
+		defer peerManager.Release(peerID)
+		before, beforeErr := router.Tip()
+		limited := &peerLimitedStream{Stream: stream, manager: peerManager, peerID: peerID}
+		selected, sessionErr := chainSession.Synchronize(handlerContext, limited)
+		recordPeerSession(peerManager, peerID, sessionErr)
+		if sessionErr != nil {
+			if handlerContext.Err() == nil {
+				fmt.Fprintf(os.Stderr, "chain notification from %s: %v\n", peerID, sessionErr)
+			}
+			return
+		}
+		if beforeErr == nil && selected.ID != before.ID {
+			_ = roundManager.Invalidate()
+		}
+		fmt.Fprintf(os.Stderr, "chain_notification peer_id=%s height=%d tip=%s\n", peerID, selected.Height, selected.ID)
+	}); err != nil {
+		return err
+	}
+	fmt.Printf("serving_work_quic peer_id=%s libp2p_id=%s network=%d activation_height=%d protocols=chain-v1,chain-notify-v1,workgraph-v1 listen=%s\n",
 		host.ID(), host.Libp2pID(), document.NetworkID, profile.ActivationHeight, strings.Join(host.Addresses(), ","))
 	<-ctx.Done()
 	return nil

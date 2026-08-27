@@ -114,7 +114,10 @@ the prefix. Exact progress accounting removes that prefix and retains the rest.
 Transport/context failure cannot invalidate hard mining; attempts have bounded
 deadlines and the queue remains capped by the 8,192-share round. The command
 also admits reciprocal shares into its live pool. Automatic multi-peer fanout,
-background tip cancellation, and public activation remain disabled.
+discovery, and public activation remain disabled. A winning local anchor opens
+chain-notify-v1 to the configured peer. That peer becomes the initiator of the
+normal header-first verification; only a successfully selected new hard-work
+tip invalidates its round and cancels stale hashing.
 
 ## Gates before public mining
 

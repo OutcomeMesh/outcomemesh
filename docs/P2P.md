@@ -166,8 +166,16 @@ opening the application exchange. If the peer advertises a smaller inventory
 limit, only that prefix is counted as announced and the tail remains queued.
 The command uses the same peer byte accounting, fixed-window WorkGraph stream
 limits, exact-context handshake, and separate chain-v1 handler as the server.
-It does not yet discover peers, fan out, or poll the peer for a winning anchor
-while a local round is hashing.
+It does not yet discover peers or fan out.
+
+`/outcomemesh/chain-notify/1` reuses the complete chain-v1 wire and validation
+state machine with inverted connection roles. The winning dialer serves; the
+inbound handler synchronizes. Thus a notification grants no block authority and
+cannot bypass cumulative-work comparison, header-first validation, body/header
+identity, replay, or activation routing. It has its own libp2p protocol scope
+and shares the versioned-chain fixed-window admission counter. Default hosts do
+not register it. A notified cooperative miner cancels its current round only
+after the selected tip actually changes.
 
 ## Signed peer advertisements
 

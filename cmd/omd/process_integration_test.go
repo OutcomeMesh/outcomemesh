@@ -107,19 +107,16 @@ func TestProcessWorkGraphActivationQUICRestart(t *testing.T) {
 		"work-mine-quic", "--data", dataB, "--key", keyB, "--peer", address,
 		"--peer-id", peerID, "--count", "1", "--relay-every", "128",
 	)
-	if fields := outputFields(minedQUIC, "work_mined_quic"); fields["height"] != "6" || fields["relayed_shares"] == "" || fields["pending_relay"] == "" {
+	if fields := outputFields(minedQUIC, "work_mined_quic"); fields["height"] != "6" || fields["relayed_shares"] == "" ||
+		fields["pending_relay"] == "" || fields["anchor_notified"] != "true" {
 		t.Fatalf("cooperative miner output is incomplete: %s", minedQUIC)
 	}
 	stopQUICServerProcess(t, server)
-	if output := server.stderr.String(); !strings.Contains(output, "work_relay") || !strings.Contains(output, "accepted=2") {
-		t.Fatalf("versioned server did not admit relayed mining shares: %s", output)
+	if output := server.stderr.String(); !strings.Contains(output, "work_relay") || !strings.Contains(output, "accepted=2") ||
+		!strings.Contains(output, "chain_notification") || !strings.Contains(output, "height=6") {
+		t.Fatalf("versioned server did not admit shares and the notified anchor: %s", output)
 	}
 	runProcessCommand(t, 20*time.Second, "work-verify", "--data", dataB)
-	serverB, peerIDB, addressB := startWorkQUICServerProcess(t, dataB, keyB)
-	runProcessCommand(t, 30*time.Second,
-		"work-sync-quic", "--data", dataA, "--key", keyA, "--peer", addressB, "--peer-id", peerIDB,
-	)
-	stopQUICServerProcess(t, serverB)
 	runProcessCommand(t, 20*time.Second, "work-verify", "--data", dataA)
 
 	statusA := runProcessCommand(t, 20*time.Second, "work-status", "--data", dataA)
