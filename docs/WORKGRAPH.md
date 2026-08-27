@@ -221,11 +221,12 @@ height-`h` WorkSeal does not depend on a WorkGraph root containing itself.
   removes the direct pool-stealing gain but not a relative-revenue or censorship
   motive.
 - A miner may withhold a near-anchor share or publish anchors strategically.
-  The fixed-seed multi-round model finds no gain for the tested 25%/zero-tie-
-  adoption attacker, but a gain for the tested 35%/50%-tie-adoption attacker.
-  WorkGraph does not remove the classic selfish-mining threshold; broader
-  strategy sweeps and network calibration remain mandatory before parameter
-  freeze.
+  The multi-seed 7 × 5 sweep places the first conservatively profitable tested
+  point at 35% attacker hash for 0–25% honest tie adoption, 25% attacker hash
+  for 50–75% tie adoption, and no higher than the grid's 15% floor under full
+  adoption. WorkGraph does not remove the classic selfish-mining threshold;
+  finer boundary search, richer adaptive strategies, and network calibration
+  remain mandatory before parameter freeze.
 - Sybil identities do not create weight without proof of work, but can consume
   the distinct-miner cap. Selection policy and propagation tests must cover it.
 - Shares add bandwidth. All decode, batch, parent, miner, and byte limits are
@@ -321,5 +322,6 @@ new chain, never a partial node/delta/tip combination.
   and remain bounded at every allowed batch size;
 - duplicate/cycle/missing-parent/non-canonical-order negative tests;
 - simulations for honest proportionality, propagation delay, withholding,
-  orphan anchors, competing forks, selfish strategies, and bandwidth;
+  orphan anchors, competing forks, a multi-seed selfish-strategy grid, and
+  bandwidth;
 - an explicit block-version activation and reorg test proving no double payout.

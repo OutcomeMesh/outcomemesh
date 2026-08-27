@@ -197,6 +197,12 @@ Implemented in an isolated, not-yet-activated consensus package:
   hash and 50% tie adoption it raised the share from 35.2656% to 40.9857%; this
   records, rather than assumes away, the remaining classic selfish-mining
   threshold;
+- a deterministic 7 × 5 profitability grid now pairs honest publication and
+  withholding over three common seeds per point. Requiring at least 5,000 ppm
+  aggregate advantage and a win on every seed puts the first profitable tested
+  point at 35% attacker hash for 0–25% tie adoption, 25% for 50–75%, and 15%
+  at full adoption; all 35 reward shares and per-seed outcomes are golden
+  regression values rather than one-run estimates;
 - the same fork corpus proves deliberate omission does not increase the
   winner's absolute fixed-rate reward, although it lowers honest rewards and
   total issuance and therefore retains a relative-revenue/censorship motive.
@@ -267,8 +273,8 @@ Implemented in an isolated, not-yet-activated consensus package:
 No WorkGraph field has entered a version-0 block yet. The isolated v1 store and
 opt-in QUIC session remain disconnected from the active chain/CLI routing path;
 periodic checkpoint/pruning policy, extended filesystem-fault/soak campaigns,
-production gossip-budget calibration, and expanded economic/strategy analysis
-remain before activation.
+production gossip-budget calibration, and finer/adaptive economic-strategy
+analysis remain before activation.
 
 ## Milestones 6–10 — not integrated
 

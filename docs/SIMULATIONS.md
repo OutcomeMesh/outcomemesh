@@ -98,8 +98,32 @@ exceed total discovered shares. In 10,000 fixed-seed hard discoveries:
   remove direct theft from omission, but cannot remove its relative-revenue
   and censorship motive.
 
+The reproducible profitability sweep replaces inference from those two points
+with a 7 × 5 parameter grid. It tests attacker hash shares from 15% through 45%
+in five-point increments, tie adoption from 0% through 100% in 25-point
+increments, and pairs immediate publication with withholding over three common
+random seeds and 2,000 hard discoveries per seed. A grid point is labelled
+profitable only when aggregate reward-share advantage is at least 5,000 ppm
+(0.5 percentage point) and withholding beats immediate publication on all
+three seeds. The first profitable tested points are:
+
+| Honest miners adopting attacker's tie | First profitable attacker hash | Advantage at boundary | Orphan-anchor rate |
+| ---: | ---: | ---: | ---: |
+| 0% | 35% | +23,367 ppm | 250,666 ppm |
+| 25% | 35% | +47,327 ppm | 250,666 ppm |
+| 50% | 25% | +8,191 ppm | 185,166 ppm |
+| 75% | 25% | +25,121 ppm | 185,166 ppm |
+| 100% | 15% | +9,147 ppm | 117,500 ppm |
+
+All 35 aggregate reward shares, per-seed win counts, orphan rates, and boundary
+values are exact golden-test inputs. These are discrete grid observations, not
+closed-form thresholds: for example, the true boundary between 30% and 35% at
+zero tie adoption is not identified by this corpus.
+
 WorkGraph therefore does not eliminate the classic selfish-mining threshold;
-the result is a protocol limit, not a failed invariant. The model still needs
+the result is a measured protocol limit, not a failed invariant. The sweep also
+shows that relay topology and tie adoption are security parameters rather than
+mere performance details. The model still needs finer boundary calibration and
 richer adaptive network strategies before Milestone 5 closes. Template
 convergence and relative-revenue omission are explicit centralization risks,
 not assumed away.
