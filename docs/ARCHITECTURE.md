@@ -161,13 +161,16 @@ it derives branch-local MTP, targets, fee queues, states, and prior earnings and
 uses only hard WorkSeal difficulty in cumulative-work fork choice. It is test
 scaffolding, not an alternate consensus authority. Its schema-versioned Pebble
 backend keeps one activation-base checkpoint and an immutable create/delete
-resource delta per v1 block. The block, delta, branch history, fee queue,
-cumulative work, logical-history counter, and selected tip change in one
-synchronous batch. Reopen reconstructs parent-first states and verifies every
-stored root and ancestry link. Schema 2 fails closed on the earlier pre-alpha
-full-snapshot layout; replay is the migration policy. Production activation
-still requires canonical replay checkpoints and history-anchored archival
-pruning. Local maintenance already marks canonical ancestry and every side
+resource delta per v1 block. Schema 3 permits a bounded replay checkpoint to
+replace that node's delta, but requires exactly one representation. Maintenance
+defaults to a 2,048-height selected-ancestry interval and four non-base full
+states. Checkpoint creation and eviction are one synchronous batch; eviction
+reconstructs the displaced node's exact delta from its still-validated parent
+and state. Reopen verifies the XOR representation invariant, roots, ancestry,
+fee queues, cumulative work, selected tip, and logical byte count. Schema 2
+fails closed and replay is the migration policy. Production activation still
+requires an independently history-anchored archival pruning rule. Local
+maintenance already marks canonical ancestry and every side
 branch reaching a configurable cutoff, then atomically removes only complete
 stale subtrees while decrementing the exact logical history counter. Its default
 window is 4,096 heights, zero disables it, and it never creates local PoW

@@ -37,6 +37,17 @@ type PruneReport struct {
 	ReleasedHistoryBytes uint64
 }
 
+// CheckpointReport describes one completed replay-checkpoint maintenance pass.
+type CheckpointReport struct {
+	CheckpointID         types.Hash
+	CheckpointHeight     uint64
+	Created              bool
+	RetiredCheckpoints   uint32
+	CheckpointCount      uint32
+	AddedHistoryBytes    uint64
+	ReleasedHistoryBytes uint64
+}
+
 type chainNode struct {
 	tip      storage.Tip
 	state    *state.Memory
@@ -310,6 +321,56 @@ func (store *Store) PruneStaleForks() (PruneReport, error) {
 		CutoffHeight: cutoff, RemovedNodes: uint64(len(remove)),
 		RetainedNodes: uint64(len(store.nodes)), ReleasedHistoryBytes: released,
 	}, nil
+}
+
+// CreateReplayCheckpoint atomically replaces the selected tip's resource delta
+// with a full-state checkpoint after the configured interval. The bounded
+// checkpoint set is rotated in the same batch: retired full states are turned
+// back into their exact parent deltas. This is local recovery policy and does
+// not change fork choice or prune canonical blocks.
+func (store *Store) CreateReplayCheckpoint() (CheckpointReport, error) {
+	if store == nil {
+		return CheckpointReport{}, ErrConfiguration
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if store.closed {
+		return CheckpointReport{}, storage.ErrClosed
+	}
+	if store.persistence == nil || store.persistence.policy.CheckpointEvery == 0 ||
+		store.persistence.policy.CheckpointKeep == 0 {
+		return CheckpointReport{}, nil
+	}
+	checkpointCount := uint32(max(0, len(store.persistence.checkpoints)-1))
+	tip := store.nodes[store.tipID]
+	if tip == nil {
+		return CheckpointReport{}, storage.ErrCorrupt
+	}
+	cursor := tip
+	for {
+		if _, checkpoint := store.persistence.checkpoints[cursor.tip.ID]; checkpoint {
+			if tip.tip.Height < cursor.tip.Height {
+				return CheckpointReport{}, storage.ErrCorrupt
+			}
+			if tip.tip.ID == cursor.tip.ID ||
+				tip.tip.Height-cursor.tip.Height < store.persistence.policy.CheckpointEvery {
+				return CheckpointReport{
+					CheckpointID: cursor.tip.ID, CheckpointHeight: cursor.tip.Height,
+					CheckpointCount: checkpointCount,
+				}, nil
+			}
+			break
+		}
+		if cursor.block == nil {
+			return CheckpointReport{}, storage.ErrCorrupt
+		}
+		parent := store.nodes[cursor.block.Header.Seal.AnchorParent]
+		if parent == nil {
+			return CheckpointReport{}, storage.ErrCorrupt
+		}
+		cursor = parent
+	}
+	return store.persistence.rotateCheckpoint(store.nodes, store.tipID)
 }
 
 func (store *Store) Close() error {

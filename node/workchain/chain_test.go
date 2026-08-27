@@ -349,6 +349,206 @@ func TestPebbleStoresBaseCheckpointAndPerBlockDelta(t *testing.T) {
 	}
 }
 
+func TestPebbleRotatesBoundedReplayCheckpointsAtomically(t *testing.T) {
+	parameters := testParameters()
+	base := testBase(t, parameters)
+	path := t.TempDir()
+	policy := Policy{
+		MaxHistoryBytes: DefaultMaxHistoryBytes,
+		CheckpointEvery: 2,
+		CheckpointKeep:  2,
+	}
+	store, err := OpenWithPolicy(path, base, parameters, policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := make([]types.Hash, 0, 6)
+	parentID := base.Tip.ID
+	timestamp := base.Tip.Timestamp
+	for height := 1; height <= 6; height++ {
+		timestamp += parameters.TargetSpacing
+		block, _ := mineChild(t, store, parentID, timestamp, "checkpoint-"+string(rune('0'+height)))
+		if _, _, err := store.Commit(block, block.Header.Seal.Timestamp); err != nil {
+			t.Fatal(err)
+		}
+		parentID, _ = block.Header.ID()
+		ids = append(ids, parentID)
+		if height == 1 {
+			report, err := store.CreateReplayCheckpoint()
+			if err != nil || report.Created || report.CheckpointID != base.Tip.ID {
+				t.Fatalf("early checkpoint report=%+v err=%v", report, err)
+			}
+		}
+		if height%2 != 0 {
+			continue
+		}
+		usageBefore, _, err := store.HistoryUsage()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if height == 2 {
+			injected := errors.New("injected checkpoint failure")
+			store.persistence.commitHook = func() error { return injected }
+			if _, err := store.CreateReplayCheckpoint(); !errors.Is(err, injected) {
+				t.Fatalf("failed checkpoint error=%v", err)
+			}
+			store.persistence.commitHook = nil
+			usageAfterFailure, _, err := store.HistoryUsage()
+			if err != nil || usageAfterFailure != usageBefore {
+				t.Fatalf("failed checkpoint history=%d want=%d err=%v",
+					usageAfterFailure, usageBefore, err)
+			}
+			if _, err := store.persistence.get(workStateKey(parentID)); !errors.Is(err, pebble.ErrNotFound) {
+				t.Fatalf("failed checkpoint wrote state: %v", err)
+			}
+			if _, err := store.persistence.get(workDeltaKey(parentID)); err != nil {
+				t.Fatalf("failed checkpoint removed delta: %v", err)
+			}
+		}
+		report, err := store.CreateReplayCheckpoint()
+		if err != nil {
+			t.Fatal(err)
+		}
+		wantRetired := uint32(0)
+		if height == 6 {
+			wantRetired = 1
+		}
+		if !report.Created || report.CheckpointID != parentID ||
+			report.CheckpointHeight != uint64(height) || report.RetiredCheckpoints != wantRetired ||
+			report.CheckpointCount != uint32(min(height/2, 2)) {
+			t.Fatalf("checkpoint height=%d report=%+v", height, report)
+		}
+		usageAfter, _, err := store.HistoryUsage()
+		if err != nil || usageBefore < report.ReleasedHistoryBytes ||
+			usageAfter != usageBefore-report.ReleasedHistoryBytes+report.AddedHistoryBytes {
+			t.Fatalf("checkpoint history before=%d after=%d report=%+v err=%v",
+				usageBefore, usageAfter, report, err)
+		}
+		if _, err := store.persistence.get(workStateKey(parentID)); err != nil {
+			t.Fatalf("checkpoint state missing: %v", err)
+		}
+		if _, err := store.persistence.get(workDeltaKey(parentID)); !errors.Is(err, pebble.ErrNotFound) {
+			t.Fatalf("checkpoint retained delta: %v", err)
+		}
+	}
+	if _, err := store.persistence.get(workStateKey(ids[1])); !errors.Is(err, pebble.ErrNotFound) {
+		t.Fatalf("retired checkpoint state survived: %v", err)
+	}
+	if _, err := store.persistence.get(workDeltaKey(ids[1])); err != nil {
+		t.Fatalf("retired checkpoint delta missing: %v", err)
+	}
+	for _, index := range []int{3, 5} {
+		if _, err := store.persistence.get(workStateKey(ids[index])); err != nil {
+			t.Fatalf("retained checkpoint %d missing: %v", index, err)
+		}
+	}
+	beforeTip, _ := store.Tip()
+	beforeState, _ := store.Snapshot()
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := OpenWithPolicy(path, base, parameters, policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterTip, _ := reopened.Tip()
+	afterState, _ := reopened.Snapshot()
+	if !storage.EqualTips(beforeTip, afterTip) || beforeState.Root() != afterState.Root() ||
+		len(reopened.persistence.checkpoints) != 3 {
+		t.Fatalf("checkpoint restart tip/state/checkpoints=%+v/%s/%d want=%+v/%s/3",
+			afterTip, afterState.Root(), len(reopened.persistence.checkpoints), beforeTip, beforeState.Root())
+	}
+	extension, _ := mineChild(
+		t, reopened, beforeTip.ID, beforeTip.Timestamp+parameters.TargetSpacing, "checkpoint-extension",
+	)
+	if _, _, err := reopened.Commit(extension, extension.Header.Seal.Timestamp); err != nil {
+		t.Fatalf("post-checkpoint restart extension: %v", err)
+	}
+	if err := reopened.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	database, err := pebble.Open(path, &pebble.Options{FormatMajorVersion: pebble.FormatNewest})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Set(workStateKey(ids[5]), []byte{0}, pebble.Sync); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := OpenWithPolicy(path, base, parameters, policy); !errors.Is(err, storage.ErrCorrupt) {
+		t.Fatalf("corrupt replay checkpoint error=%v", err)
+	}
+}
+
+func TestPebblePrunesAStaleCheckpointCarrier(t *testing.T) {
+	parameters := testParameters()
+	base := testBase(t, parameters)
+	path := t.TempDir()
+	policy := Policy{
+		MaxHistoryBytes: DefaultMaxHistoryBytes,
+		ForkRetention:   1,
+		CheckpointEvery: 1,
+		CheckpointKeep:  2,
+	}
+	store, err := OpenWithPolicy(path, base, parameters, policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	staleRoot, _ := mineChild(t, store, base.Tip.ID, base.Tip.Timestamp+60, "stale-checkpoint-1")
+	if _, _, err := store.Commit(staleRoot, staleRoot.Header.Seal.Timestamp); err != nil {
+		t.Fatal(err)
+	}
+	staleRootID, _ := staleRoot.Header.ID()
+	staleTip, _ := mineChild(t, store, staleRootID, staleRoot.Header.Seal.Timestamp+60, "stale-checkpoint-2")
+	if _, _, err := store.Commit(staleTip, staleTip.Header.Seal.Timestamp); err != nil {
+		t.Fatal(err)
+	}
+	staleTipID, _ := staleTip.Header.ID()
+	report, err := store.CreateReplayCheckpoint()
+	if err != nil || !report.Created || report.CheckpointID != staleTipID {
+		t.Fatalf("stale branch checkpoint report=%+v err=%v", report, err)
+	}
+
+	parentID := base.Tip.ID
+	timestamp := base.Tip.Timestamp
+	for height := 1; height <= 4; height++ {
+		timestamp += parameters.TargetSpacing
+		block, _ := mineChild(t, store, parentID, timestamp, "winning-checkpoint-"+string(rune('0'+height)))
+		if _, _, err := store.Commit(block, block.Header.Seal.Timestamp); err != nil {
+			t.Fatal(err)
+		}
+		parentID, _ = block.Header.ID()
+	}
+	pruned, err := store.PruneStaleForks()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pruned.RemovedNodes != 2 || len(store.persistence.checkpoints) != 1 {
+		t.Fatalf("checkpoint prune report=%+v checkpoints=%d", pruned, len(store.persistence.checkpoints))
+	}
+	if _, err := store.persistence.get(workStateKey(staleTipID)); !errors.Is(err, pebble.ErrNotFound) {
+		t.Fatalf("stale checkpoint state survived: %v", err)
+	}
+	if _, err := store.BlockByID(staleRootID); !errors.Is(err, ErrParent) {
+		t.Fatalf("stale checkpoint ancestry survived: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := OpenWithPolicy(path, base, parameters, policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	if _, err := reopened.BlockByID(staleTipID); !errors.Is(err, ErrParent) {
+		t.Fatalf("restart restored stale checkpoint carrier: %v", err)
+	}
+}
+
 func TestPebbleRejectsCorruptStateDeltaOnReopen(t *testing.T) {
 	t.Parallel()
 
@@ -379,6 +579,43 @@ func TestPebbleRejectsCorruptStateDeltaOnReopen(t *testing.T) {
 	}
 	if _, err := Open(path, base, parameters); !errors.Is(err, storage.ErrCorrupt) {
 		t.Fatalf("corrupt delta error=%v", err)
+	}
+}
+
+func TestPebbleRejectsCheckpointAndDeltaForOneNode(t *testing.T) {
+	t.Parallel()
+
+	parameters := testParameters()
+	base := testBase(t, parameters)
+	path := t.TempDir()
+	store, err := Open(path, base, parameters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, result := mineChild(t, store, base.Tip.ID, base.Tip.Timestamp+60, "duplicate-recovery")
+	if _, _, err := store.Commit(block, block.Header.Seal.Timestamp); err != nil {
+		t.Fatal(err)
+	}
+	blockID, _ := block.Header.ID()
+	stateBytes, err := encodePersistedState(result.State)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	database, err := pebble.Open(path, &pebble.Options{FormatMajorVersion: pebble.FormatNewest})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Set(workStateKey(blockID), stateBytes, pebble.Sync); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(path, base, parameters); !errors.Is(err, storage.ErrCorrupt) {
+		t.Fatalf("duplicate recovery representation error=%v", err)
 	}
 }
 
@@ -550,7 +787,7 @@ func TestPebblePrunesOnlyStaleForkSubtreesAtomically(t *testing.T) {
 	}
 }
 
-func TestPebbleRejectsOldWorkSchema(t *testing.T) {
+func TestPebbleRejectsSchemaTwoWorkStore(t *testing.T) {
 	t.Parallel()
 
 	parameters := testParameters()
@@ -567,7 +804,7 @@ func TestPebbleRejectsOldWorkSchema(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := database.Set(workKeySchema, []byte{0, 1}, pebble.Sync); err != nil {
+	if err := database.Set(workKeySchema, []byte{0, 2}, pebble.Sync); err != nil {
 		t.Fatal(err)
 	}
 	if err := database.Close(); err != nil {

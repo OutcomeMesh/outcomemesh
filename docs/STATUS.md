@@ -261,9 +261,10 @@ Implemented in an isolated, not-yet-activated consensus package:
   accepted v1 block atomically persists its canonical bytes, immutable resource
   delta, timestamp history, fee queue, cumulative hard work, logical-history
   counter, and selected tip in one synchronous batch. A single activation-base
-  checkpoint replaces the former full-state-per-branch layout. Restart walks
-  parent deltas and verifies every state root, recovering the canonical tip and
-  competing side branches. Tests reject consensus-configuration and old-schema
+  checkpoint plus one recovery record per later node replaces the former
+  full-state-per-branch layout. Restart walks the available parent deltas or
+  verified replay checkpoints, recovering the canonical tip and competing side
+  branches. Tests reject consensus-configuration and old-schema
   changes, corrupted deltas, and over-budget commits; injected pre-commit failure
   proves that neither memory nor disk observes a partial block. A separate
   process-kill test stops immediately before the durable batch and immediately
@@ -276,12 +277,20 @@ Implemented in an isolated, not-yet-activated consensus package:
   side branch after restart, removes a two-block stale subtree, and proves an
   injected pre-sync failure changes neither memory nor disk. It does not prune
   canonical PoW history or introduce local finality.
+- WorkChain schema 3 adds bounded replay-checkpoint rotation without duplicating
+  state storage. Every non-base node has exactly one delta or full-state
+  checkpoint; after 2,048 selected-branch heights maintenance swaps the tip's
+  delta for a checkpoint and keeps at most four. Eviction reconstructs the old
+  node's exact parent delta in the same synchronous batch. Tests cover
+  delta→checkpoint→delta rotation, exact byte accounting, pre-sync failure,
+  corrupt checkpoint rejection, restart/extension, and pruning a checkpoint
+  carried by a stale fork. Schema 2 fails closed and requires replay.
 
 No WorkGraph field has entered a version-0 block yet. The isolated v1 store and
 opt-in QUIC session remain disconnected from the active chain/CLI routing path;
-canonical replay checkpoints and history-anchored archival pruning, extended
-filesystem-fault/soak campaigns, production gossip-budget calibration, and
-finer/adaptive economic-strategy analysis remain before activation.
+history-anchored archival pruning, extended filesystem-fault/soak campaigns,
+production gossip-budget calibration, and finer/adaptive economic-strategy
+analysis remain before activation.
 
 ## Milestones 6–10 — not integrated
 

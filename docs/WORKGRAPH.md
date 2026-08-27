@@ -303,20 +303,24 @@ anchors, equal-work tie-breaking, a higher-work side-branch reorganization, and
 branch-local delayed rewards are executable tests. Its isolated Pebble schema
 persists canonical block bytes, immutable resource deltas, history, fee queues,
 cumulative work, a checked logical-history counter, and selected tip in one
-synchronous batch. Only the activation base is a full checkpoint. Reopen
-reconstructs every branch in parent order and verifies each state root; tests
-retain side branches, reject corrupted deltas and old schema 1, enforce a 64-GiB
-default logical budget before batch creation, and leave memory/disk unchanged on
-an injected pre-commit failure. Pre-alpha schema 1 fails closed and is rebuilt
-by replay rather than silently migrated. Explicit maintenance can atomically
+synchronous batch. Schema 3 requires every non-base node to carry exactly one
+recovery representation: an immutable parent delta or a full-state replay
+checkpoint, never both. Explicit maintenance creates a checkpoint only after
+2,048 selected-ancestry heights by default and retains at most four non-base
+checkpoints. Creation atomically replaces that node's delta; rotation turns an
+evicted checkpoint back into its exact parent delta in the same batch. Reopen
+reconstructs every branch parent-first, verifies each delta/checkpoint root and
+the exclusive representation rule, and rejects corrupted checkpoints. Pre-alpha
+schema 2 fails closed and is rebuilt by replay rather than silently migrated.
+The 64-GiB logical budget covers both representations, and an injected pre-sync
+failure leaves memory and disk unchanged. Explicit maintenance can atomically
 remove only side-fork subtrees whose highest node is behind a local retention
 window (4,096 heights by default). It retains the entire canonical path plus
 every ancestor of a side branch at the boundary, updates the logical byte
 counter in the same synchronous batch, and is disabled by a zero local setting.
 Canonical history is deliberately not pruned without a separately designed
-history-anchored checkpoint rule. Canonical replay checkpoints, archival
-pruning, and extended filesystem-fault/soak campaigns still precede production
-activation.
+history-anchor rule. History-anchored archival pruning and extended filesystem-
+fault/soak campaigns still precede production activation.
 The integration suite also kills a real subprocess on both sides of the
 synchronous batch boundary and proves reopen yields the complete old or complete
 new chain, never a partial node/delta/tip combination.

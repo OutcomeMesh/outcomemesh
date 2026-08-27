@@ -130,7 +130,8 @@ The CLI wallet is for development only.
   WorkGraph gossip state, unified weak-share/hard-anchor mining, and explicitly
   negotiated inventory-first relay;
 - `node/workchain/`: inactive fork-aware v1 coordinator with atomic Pebble
-  deltas, logical history budget, restart, and reorg verification;
+  delta/checkpoint rotation, stale-fork pruning, logical history budget,
+  restart, and reorg verification;
 - `node/mempool/`, `node/wire/`, `node/syncer/`, `node/session/`: bounded peer
   admission and transport-independent fork synchronization;
 - `node/discovery/`, `node/peers/`: signed peer advertisements, bounded

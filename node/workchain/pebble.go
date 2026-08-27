@@ -17,12 +17,14 @@ import (
 )
 
 const (
-	workSchemaVersion      uint16 = 2
+	workSchemaVersion      uint16 = 3
 	maxNodeMetadataBytes          = 64 << 10
 	maxPersistedStateBytes        = 256 << 20
 	maxStateDeltaBytes            = 256 << 20
 	DefaultMaxHistoryBytes uint64 = 64 << 30
 	DefaultForkRetention   uint64 = 4_096
+	DefaultCheckpointEvery uint64 = 2_048
+	DefaultCheckpointKeep  uint32 = 4
 )
 
 var (
@@ -46,19 +48,29 @@ type Policy struct {
 	// ForkRetention is the number of heights behind the selected tip within
 	// which every side branch is retained. Zero disables side-fork pruning.
 	ForkRetention uint64
+	// CheckpointEvery is the minimum height distance between replay checkpoints
+	// on the selected ancestry. Zero disables checkpoint creation.
+	CheckpointEvery uint64
+	// CheckpointKeep bounds non-base full-state replay checkpoints. Zero disables
+	// checkpoint creation. The activation-base checkpoint is not counted.
+	CheckpointKeep uint32
 }
 
-// DefaultPolicy returns the local 64-GiB history budget and a 4,096-height
-// side-fork retention window. Pruning still requires an explicit maintenance
-// call and never removes canonical history.
+// DefaultPolicy returns bounded history, side-fork retention, and replay
+// checkpoint defaults. Maintenance remains explicit and never removes
+// canonical history.
 func DefaultPolicy() Policy {
-	return Policy{MaxHistoryBytes: DefaultMaxHistoryBytes, ForkRetention: DefaultForkRetention}
+	return Policy{
+		MaxHistoryBytes: DefaultMaxHistoryBytes, ForkRetention: DefaultForkRetention,
+		CheckpointEvery: DefaultCheckpointEvery, CheckpointKeep: DefaultCheckpointKeep,
+	}
 }
 
 type workPersistence struct {
 	db              *pebble.DB
 	policy          Policy
 	historyBytes    uint64
+	checkpoints     map[types.Hash]struct{}
 	commitHook      func() error
 	afterCommitHook func()
 }
@@ -85,7 +97,9 @@ func OpenWithPolicy(path string, base Base, parameters workblock.Parameters, pol
 	if err != nil {
 		return nil, err
 	}
-	persistence := &workPersistence{db: db, policy: policy}
+	persistence := &workPersistence{
+		db: db, policy: policy, checkpoints: make(map[types.Hash]struct{}),
+	}
 	if err := persistence.initializeOrLoad(store, base); err != nil {
 		_ = db.Close()
 		return nil, err
@@ -154,6 +168,7 @@ func (persistence *workPersistence) initialize(base *chainNode, config types.Has
 		return err
 	}
 	persistence.historyBytes = historyBytes
+	persistence.checkpoints[base.tip.ID] = struct{}{}
 	return nil
 }
 
@@ -231,7 +246,11 @@ func (persistence *workPersistence) pruneNodes(nodes map[types.Hash]*chainNode, 
 		if node == nil || node.block == nil {
 			return 0, storage.ErrCorrupt
 		}
-		for _, key := range [][]byte{workNodeKey(id), workBlockKey(id), workDeltaKey(id)} {
+		stateKey := workDeltaKey(id)
+		if _, checkpoint := persistence.checkpoints[id]; checkpoint {
+			stateKey = workStateKey(id)
+		}
+		for _, key := range [][]byte{workNodeKey(id), workBlockKey(id), stateKey} {
 			value, err := persistence.get(key)
 			if errors.Is(err, pebble.ErrNotFound) {
 				return 0, storage.ErrCorrupt
@@ -266,10 +285,156 @@ func (persistence *workPersistence) pruneNodes(nodes map[types.Hash]*chainNode, 
 		return 0, err
 	}
 	persistence.historyBytes = nextHistory
+	for _, id := range ids {
+		delete(persistence.checkpoints, id)
+	}
 	if persistence.afterCommitHook != nil {
 		persistence.afterCommitHook()
 	}
 	return released, nil
+}
+
+func (persistence *workPersistence) rotateCheckpoint(
+	nodes map[types.Hash]*chainNode,
+	tipID types.Hash,
+) (CheckpointReport, error) {
+	tip := nodes[tipID]
+	if tip == nil || tip.block == nil || tip.state == nil || persistence.policy.CheckpointKeep == 0 {
+		return CheckpointReport{}, storage.ErrCorrupt
+	}
+	if _, exists := persistence.checkpoints[tipID]; exists {
+		return CheckpointReport{
+			CheckpointID: tipID, CheckpointHeight: tip.tip.Height,
+			CheckpointCount: uint32(max(0, len(persistence.checkpoints)-1)),
+		}, nil
+	}
+	stateBytes, err := encodePersistedState(tip.state)
+	if err != nil {
+		return CheckpointReport{}, err
+	}
+	deltaKey := workDeltaKey(tipID)
+	oldDelta, err := persistence.get(deltaKey)
+	if errors.Is(err, pebble.ErrNotFound) {
+		return CheckpointReport{}, storage.ErrCorrupt
+	}
+	if err != nil {
+		return CheckpointReport{}, err
+	}
+	candidates := make([]types.Hash, 0, len(persistence.checkpoints))
+	for id := range persistence.checkpoints {
+		node := nodes[id]
+		if node == nil {
+			return CheckpointReport{}, storage.ErrCorrupt
+		}
+		if node.block != nil {
+			candidates = append(candidates, id)
+		}
+	}
+	candidates = append(candidates, tipID)
+	sort.Slice(candidates, func(left, right int) bool {
+		return storage.BetterTip(nodes[candidates[left]].tip, nodes[candidates[right]].tip)
+	})
+	keep := len(candidates)
+	if uint64(keep) > uint64(persistence.policy.CheckpointKeep) {
+		keep = int(persistence.policy.CheckpointKeep)
+	}
+	retired := append([]types.Hash(nil), candidates[keep:]...)
+	if keep == 0 || candidates[0] != tipID {
+		return CheckpointReport{}, storage.ErrCorrupt
+	}
+
+	batch := persistence.db.NewBatch()
+	defer batch.Close()
+	stateKey := workStateKey(tipID)
+	if err := batch.Delete(deltaKey, nil); err != nil {
+		return CheckpointReport{}, err
+	}
+	if err := batch.Set(stateKey, stateBytes, nil); err != nil {
+		return CheckpointReport{}, err
+	}
+	released, err := checkedHistoryBytes(uint64(len(deltaKey) + len(oldDelta)))
+	if err != nil {
+		return CheckpointReport{}, err
+	}
+	added, err := checkedHistoryBytes(uint64(len(stateKey) + len(stateBytes)))
+	if err != nil {
+		return CheckpointReport{}, err
+	}
+	for _, id := range retired {
+		node := nodes[id]
+		if node == nil || node.block == nil || node.state == nil {
+			return CheckpointReport{}, storage.ErrCorrupt
+		}
+		parent := nodes[node.block.Header.Seal.AnchorParent]
+		if parent == nil || parent.state == nil {
+			return CheckpointReport{}, storage.ErrCorrupt
+		}
+		delta, err := buildStateDelta(parent.state, node.state)
+		if err != nil {
+			return CheckpointReport{}, err
+		}
+		deltaBytes, err := encodeStateDelta(delta)
+		if err != nil {
+			return CheckpointReport{}, err
+		}
+		oldStateKey := workStateKey(id)
+		oldState, err := persistence.get(oldStateKey)
+		if errors.Is(err, pebble.ErrNotFound) {
+			return CheckpointReport{}, storage.ErrCorrupt
+		}
+		if err != nil {
+			return CheckpointReport{}, err
+		}
+		newDeltaKey := workDeltaKey(id)
+		if err := batch.Delete(oldStateKey, nil); err != nil {
+			return CheckpointReport{}, err
+		}
+		if err := batch.Set(newDeltaKey, deltaBytes, nil); err != nil {
+			return CheckpointReport{}, err
+		}
+		released, err = checkedHistoryBytes(released, uint64(len(oldStateKey)+len(oldState)))
+		if err != nil {
+			return CheckpointReport{}, err
+		}
+		added, err = checkedHistoryBytes(added, uint64(len(newDeltaKey)+len(deltaBytes)))
+		if err != nil {
+			return CheckpointReport{}, err
+		}
+	}
+	if released > persistence.historyBytes {
+		return CheckpointReport{}, storage.ErrCorrupt
+	}
+	nextHistory, err := checkedHistoryBytes(persistence.historyBytes-released, added)
+	if err != nil || nextHistory > persistence.policy.MaxHistoryBytes {
+		return CheckpointReport{}, storage.ErrHistoryLimit
+	}
+	var history [8]byte
+	binary.BigEndian.PutUint64(history[:], nextHistory)
+	if err := batch.Set(workKeyHistory, history[:], nil); err != nil {
+		return CheckpointReport{}, err
+	}
+	if persistence.commitHook != nil {
+		if err := persistence.commitHook(); err != nil {
+			return CheckpointReport{}, err
+		}
+	}
+	if err := batch.Commit(pebble.Sync); err != nil {
+		return CheckpointReport{}, err
+	}
+	persistence.historyBytes = nextHistory
+	persistence.checkpoints[tipID] = struct{}{}
+	for _, id := range retired {
+		delete(persistence.checkpoints, id)
+	}
+	if persistence.afterCommitHook != nil {
+		persistence.afterCommitHook()
+	}
+	return CheckpointReport{
+		CheckpointID: tipID, CheckpointHeight: tip.tip.Height, Created: true,
+		RetiredCheckpoints: uint32(len(retired)),
+		CheckpointCount:    uint32(max(0, len(persistence.checkpoints)-1)),
+		AddedHistoryBytes:  added, ReleasedHistoryBytes: released,
+	}, nil
 }
 
 func (persistence *workPersistence) load(store *Store, base Base) error {
@@ -327,6 +492,13 @@ func (persistence *workPersistence) load(store *Store, base Base) error {
 		!storage.EqualTips(baseNode.tip, base.Tip) || !equalTimestamps(baseNode.history, store.nodes[store.baseID].history) {
 		return storage.ErrCorrupt
 	}
+	historyBytes, checkpoints, err := persistence.historyUsage(nodes, store.baseID)
+	if err != nil {
+		return err
+	}
+	if _, exists := checkpoints[store.baseID]; !exists {
+		return storage.ErrCorrupt
+	}
 	baseStateBytes, err := persistence.get(workStateKey(store.baseID))
 	if err != nil {
 		return storage.ErrCorrupt
@@ -365,17 +537,28 @@ func (persistence *workPersistence) load(store *Store, base Base) error {
 		if !equalTimestamps(expectedHistory, node.history) {
 			return storage.ErrCorrupt
 		}
-		deltaBytes, err := persistence.get(workDeltaKey(node.tip.ID))
-		if err != nil {
-			return storage.ErrCorrupt
-		}
-		delta, err := decodeStateDelta(deltaBytes)
-		if err != nil {
-			return storage.ErrCorrupt
-		}
-		node.state, err = applyStateDelta(parent.state, delta)
-		if err != nil || node.state.Root() != node.tip.StateRoot {
-			return storage.ErrCorrupt
+		if _, checkpoint := checkpoints[node.tip.ID]; checkpoint {
+			stateBytes, err := persistence.get(workStateKey(node.tip.ID))
+			if err != nil {
+				return storage.ErrCorrupt
+			}
+			node.state, err = decodePersistedState(stateBytes)
+			if err != nil || node.state.Root() != node.tip.StateRoot {
+				return storage.ErrCorrupt
+			}
+		} else {
+			deltaBytes, err := persistence.get(workDeltaKey(node.tip.ID))
+			if err != nil {
+				return storage.ErrCorrupt
+			}
+			delta, err := decodeStateDelta(deltaBytes)
+			if err != nil {
+				return storage.ErrCorrupt
+			}
+			node.state, err = applyStateDelta(parent.state, delta)
+			if err != nil || node.state.Root() != node.tip.StateRoot {
+				return storage.ErrCorrupt
+			}
 		}
 		node.result.State = node.state
 	}
@@ -397,11 +580,11 @@ func (persistence *workPersistence) load(store *Store, base Base) error {
 	if err != nil || len(storedHistory) != 8 {
 		return storage.ErrCorrupt
 	}
-	historyBytes, err := persistence.historyUsage(nodes, store.baseID)
-	if err != nil || binary.BigEndian.Uint64(storedHistory) != historyBytes {
+	if binary.BigEndian.Uint64(storedHistory) != historyBytes {
 		return storage.ErrCorrupt
 	}
 	persistence.historyBytes = historyBytes
+	persistence.checkpoints = checkpoints
 	store.nodes = nodes
 	store.tipID = tipID
 	return nil
@@ -714,48 +897,70 @@ func (persistence *workPersistence) get(key []byte) ([]byte, error) {
 	return append([]byte(nil), value...), nil
 }
 
-func (persistence *workPersistence) historyUsage(nodes map[types.Hash]*chainNode, baseID types.Hash) (uint64, error) {
+func (persistence *workPersistence) historyUsage(
+	nodes map[types.Hash]*chainNode,
+	baseID types.Hash,
+) (uint64, map[types.Hash]struct{}, error) {
 	iterator, err := persistence.db.NewIter(&pebble.IterOptions{
 		LowerBound: []byte{workNodePrefix}, UpperBound: []byte{workDeltaPrefix + 1},
 	})
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 	defer iterator.Close()
 	var total uint64
+	seenNodes := make(map[types.Hash]struct{}, len(nodes))
+	seenBlocks := make(map[types.Hash]struct{}, len(nodes))
+	checkpoints := make(map[types.Hash]struct{})
+	deltas := make(map[types.Hash]struct{}, len(nodes))
 	for valid := iterator.First(); valid; valid = iterator.Next() {
 		key := iterator.Key()
 		if len(key) != 1+types.HashSize {
-			return 0, storage.ErrCorrupt
+			return 0, nil, storage.ErrCorrupt
 		}
 		var id types.Hash
 		copy(id[:], key[1:])
 		node, exists := nodes[id]
 		if !exists {
-			return 0, storage.ErrCorrupt
+			return 0, nil, storage.ErrCorrupt
 		}
 		switch key[0] {
 		case workNodePrefix:
+			seenNodes[id] = struct{}{}
 		case workStatePrefix:
-			if id != baseID {
-				return 0, storage.ErrCorrupt
-			}
-		case workBlockPrefix, workDeltaPrefix:
+			checkpoints[id] = struct{}{}
+		case workBlockPrefix:
 			if id == baseID || node.block == nil {
-				return 0, storage.ErrCorrupt
+				return 0, nil, storage.ErrCorrupt
 			}
+			seenBlocks[id] = struct{}{}
+		case workDeltaPrefix:
+			if id == baseID || node.block == nil {
+				return 0, nil, storage.ErrCorrupt
+			}
+			deltas[id] = struct{}{}
 		default:
-			return 0, storage.ErrCorrupt
+			return 0, nil, storage.ErrCorrupt
 		}
 		total, err = checkedHistoryBytes(total, uint64(len(key)+len(iterator.Value())))
 		if err != nil {
-			return 0, err
+			return 0, nil, err
 		}
 	}
 	if err := iterator.Error(); err != nil {
-		return 0, err
+		return 0, nil, err
 	}
-	return total, nil
+	for id, node := range nodes {
+		_, hasNode := seenNodes[id]
+		_, hasBlock := seenBlocks[id]
+		_, hasCheckpoint := checkpoints[id]
+		_, hasDelta := deltas[id]
+		if !hasNode || (id == baseID && (!hasCheckpoint || hasBlock || hasDelta)) ||
+			(id != baseID && (node.block == nil || !hasBlock || hasCheckpoint == hasDelta)) {
+			return 0, nil, storage.ErrCorrupt
+		}
+	}
+	return total, checkpoints, nil
 }
 
 func checkedHistoryBytes(values ...uint64) (uint64, error) {

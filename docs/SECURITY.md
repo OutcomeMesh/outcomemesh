@@ -144,10 +144,14 @@ KiB/s per peer and 5.13 MiB/s globally. A fixed-window boundary can double the
 short burst and QUIC retransmission is outside this application accounting;
 operators still require physical bandwidth monitoring and peer bans.
 
-The isolated WorkGraph Pebble schema stores one activation checkpoint and
-immutable per-block resource deltas rather than attacker-amplified full branch
-snapshots. Immutable node/block/delta key/value bytes are counted against a
-persisted atomic logical history counter with a 64-GiB default local limit.
+The isolated WorkGraph Pebble schema stores one activation checkpoint and, for
+each later block, exactly one parent delta or bounded full-state replay
+checkpoint. It never stores both for one node. Explicit maintenance defaults to
+a 2,048-height interval and four retained non-base checkpoints; rotation swaps
+the new checkpoint in while rebuilding an evicted checkpoint's parent delta in
+the same synchronous batch. Immutable node/block/recovery key/value bytes are
+counted against a persisted atomic logical history counter with a 64-GiB default
+local limit.
 Exhaustion rejects before batch commit while reads and reopen remain available.
 Every restart reapplies deltas parent-first and verifies state roots, ancestry,
 fee-queue roots, cumulative hard work, selected tip, and the recomputed byte
@@ -156,9 +160,10 @@ operator limits. A real subprocess is killed before and after the synchronous
 batch boundary and recovers only the old or new chain. Explicit maintenance can
 atomically delete a complete stale side-fork subtree only after every canonical
 node and every branch reaching the local retention window have been marked.
-The default window is 4,096 heights and zero disables this local operation.
-Canonical history remains intact: history-anchored checkpoints, archival
-pruning, and broader filesystem fault/long-soak campaigns are still required.
+The default fork window is 4,096 heights and zero disables this local operation.
+Canonical history remains intact: an independently history-anchored archival
+pruning rule and broader filesystem fault/long-soak campaigns are still
+required.
 
 ## Consensus coding rules
 
