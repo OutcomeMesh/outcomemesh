@@ -266,10 +266,13 @@ Implemented in an isolated, not-yet-activated consensus package:
   verified replay checkpoints, recovering the canonical tip and competing side
   branches. Tests reject consensus-configuration and old-schema
   changes, corrupted deltas, and over-budget commits; injected pre-commit failure
-  proves that neither memory nor disk observes a partial block. A separate
-  process-kill test stops immediately before the durable batch and immediately
-  after its synchronous commit; reopen observes exactly the old or new chain.
-  Strict metadata, checkpoint, and delta decoders are fuzz targets.
+  proves that neither memory nor disk observes a partial block. The process
+  fault matrix now kills immediately before and after ordinary commit,
+  checkpoint rotation, and stale-fork pruning batches. Every reopen must equal
+  an independently built exact old/new fixture across tip, state root,
+  cumulative work, history bytes, node IDs, and checkpoint IDs, then accept a
+  fresh child. Ten repeated six-boundary runs passed. Strict metadata,
+  checkpoint, and delta decoders are fuzz targets.
 - explicit stale-fork maintenance now uses a 4,096-height default local window.
   It marks the canonical ancestry and every side branch reaching the window,
   then atomically deletes only unmarked complete subtrees together with an exact

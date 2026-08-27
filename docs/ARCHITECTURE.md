@@ -260,8 +260,11 @@ receiver still compares cumulative hard work, requests headers before bodies,
 and submits through the activation router. A changed selected tip invalidates
 the round manager and cancels its active hash loop; an unchanged notification
 does neither.
-The current integration test kills a separate process immediately before and
-after the synchronous Pebble batch and verifies old-or-new recovery.
+The process fault suite kills a separate process immediately before and after
+the synchronous Pebble batch for ordinary block commit, replay-checkpoint
+creation/rotation, and stale-fork pruning. Reopen must match the complete old or
+complete new tip, state root, cumulative work, logical history, node inventory,
+and checkpoint inventory, then accept a fresh extension.
 
 The later committee provides preconfirmations. It does not define the canonical
 chain and cannot make an invalid transition valid. A full node independently

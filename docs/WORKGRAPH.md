@@ -371,11 +371,12 @@ window (4,096 heights by default). It retains the entire canonical path plus
 every ancestor of a side branch at the boundary, updates the logical byte
 counter in the same synchronous batch, and is disabled by a zero local setting.
 Canonical history is deliberately not pruned without a separately designed
-history-anchor rule. History-anchored archival pruning and extended filesystem-
-fault/soak campaigns still precede production activation.
-The integration suite also kills a real subprocess on both sides of the
-synchronous batch boundary and proves reopen yields the complete old or complete
-new chain, never a partial node/delta/tip combination.
+history-anchor rule. History-anchored archival pruning and broader physical
+disk/filesystem campaigns still precede production activation. The integration
+suite kills a real subprocess on both sides of ordinary node commit,
+checkpoint-rotation, and stale-prune synchronous batches. Each recovery is
+compared with independently built exact old/new fixtures across tip, state,
+work, history, nodes, and checkpoints, then extended with another valid block.
 
 ## Milestone-5 evidence required
 

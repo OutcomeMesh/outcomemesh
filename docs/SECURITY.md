@@ -230,6 +230,14 @@ the new checkpoint in while rebuilding an evicted checkpoint's parent delta in
 the same synchronous batch. Immutable node/block/recovery key/value bytes are
 counted against a persisted atomic logical history counter with a 64-GiB default
 local limit.
+
+Process-level crash injection covers both sides of all three synchronous batch
+classes: node commit, replay-checkpoint rotation, and stale-fork pruning. Each
+case is compared against independently built exact old/new fixtures using tip,
+state root, cumulative work, logical history, node IDs, and checkpoint IDs.
+Every recovered database must also accept a new valid child. This proves batch
+atomicity at those hooks; it does not model torn hardware writes outside
+Pebble/filesystem durability guarantees or physical disk exhaustion.
 Exhaustion rejects before batch commit while reads and reopen remain available.
 Every restart reapplies deltas parent-first and verifies state roots, ancestry,
 fee-queue roots, cumulative hard work, selected tip, and the recomputed byte

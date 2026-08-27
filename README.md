@@ -58,7 +58,8 @@ make build
 
 `test-process` runs three real v0 QUIC server restart/sync/replay cycles, a
 separate v0→v1 WorkGraph enable/mine/QUIC-sync/restart cycle, and kills the
-WorkGraph Pebble process on both sides of its durable batch boundary. Raise the
+WorkGraph Pebble process on both sides of commit, replay-checkpoint rotation,
+and stale-fork pruning durability boundaries. Raise the
 v0 QUIC soak length with, for example,
 `OUTCOMEMESH_SOAK_CYCLES=25 make test-process` (hard cap: 100 cycles).
 
