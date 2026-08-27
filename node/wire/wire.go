@@ -16,6 +16,7 @@ import (
 
 const (
 	Version0                 uint16 = 0
+	Version1                 uint16 = 1
 	MaxLocators                     = 32
 	MaxBlocksPerRequest             = 128
 	MaxHeadersPerRequest            = 128
@@ -25,9 +26,13 @@ const (
 	MaxSnapshotChunkBytes           = 128 * 1024
 	MaxShareInventoryIDs            = 1_024
 	MaxSharesPerMessage             = 256
+	MinWorkFrameBodyBytes           = 512
+	MaxWorkFrameBodyBytes           = 96 * 1024
 	MaxPayloadBytes                 = block.MaxCanonicalBytes
 	MaxFrameBodyBytes               = MaxPayloadBytes + 1
 )
+
+const WorkFeatureShareRelayV1 uint64 = 1 << 0
 
 var (
 	ErrFrameSize        = errors.New("invalid wire frame size")
@@ -57,6 +62,8 @@ const (
 	TypeShareInventory
 	TypeGetShares
 	TypeShares
+	TypeWorkHello
+	TypeShareResult
 )
 
 type ResultCode uint16
@@ -217,6 +224,30 @@ type Shares struct {
 
 func (Shares) messageType() Type { return TypeShares }
 
+// WorkHello negotiates the isolated WorkGraph relay protocol. Both peers must
+// advertise the same mining context; count and frame limits are intersected.
+type WorkHello struct {
+	Version        uint16
+	Context        ShareContext
+	Features       uint64
+	MaxFrameBytes  uint32
+	MaxInventory   uint16
+	MaxShareBodies uint16
+}
+
+func (WorkHello) messageType() Type { return TypeWorkHello }
+
+// ShareResult terminates one inventory relay and accounts for every requested
+// unknown body, including bodies withheld or rejected by full pool admission.
+type ShareResult struct {
+	Version  uint16
+	Context  ShareContext
+	Accepted uint16
+	Rejected uint16
+}
+
+func (ShareResult) messageType() Type { return TypeShareResult }
+
 func WriteMessage(writer io.Writer, message Message) error {
 	payload, err := encodePayload(message)
 	if err != nil {
@@ -236,12 +267,22 @@ func WriteMessage(writer io.Writer, message Message) error {
 }
 
 func ReadMessage(reader io.Reader) (Message, error) {
+	return ReadMessageLimit(reader, MaxFrameBodyBytes)
+}
+
+// ReadMessageLimit rejects a frame from its four-byte header before allocating
+// its body. Subprotocols use this to negotiate limits below the global block
+// frame ceiling.
+func ReadMessageLimit(reader io.Reader, maximum uint32) (Message, error) {
+	if maximum == 0 || maximum > uint32(MaxFrameBodyBytes) {
+		return nil, ErrFrameSize
+	}
 	var lengthBytes [4]byte
 	if _, err := io.ReadFull(reader, lengthBytes[:]); err != nil {
 		return nil, err
 	}
 	length := binary.BigEndian.Uint32(lengthBytes[:])
-	if length == 0 || length > MaxFrameBodyBytes {
+	if length == 0 || length > maximum {
 		return nil, ErrFrameSize
 	}
 	body := make([]byte, int(length))
@@ -301,6 +342,10 @@ func DecodeFrameBody(body []byte) (Message, error) {
 		return decodeGetShares(payload)
 	case TypeShares:
 		return decodeShares(payload)
+	case TypeWorkHello:
+		return decodeWorkHello(payload)
+	case TypeShareResult:
+		return decodeShareResult(payload)
 	default:
 		return nil, fmt.Errorf("%w: %d", ErrMessageType, body[0])
 	}
@@ -466,6 +511,28 @@ func encodePayload(message Message) ([]byte, error) {
 			share.EncodeTo(encoder)
 		}
 		return encoder.Bytes(), nil
+	case WorkHello:
+		if err := value.Validate(); err != nil {
+			return nil, err
+		}
+		encoder := codec.NewEncoder(128)
+		encoder.U16(value.Version)
+		encodeShareContext(encoder, value.Context)
+		encoder.U64(value.Features)
+		encoder.U32(value.MaxFrameBytes)
+		encoder.U16(value.MaxInventory)
+		encoder.U16(value.MaxShareBodies)
+		return encoder.Bytes(), nil
+	case ShareResult:
+		if err := value.Validate(); err != nil {
+			return nil, err
+		}
+		encoder := codec.NewEncoder(116)
+		encoder.U16(value.Version)
+		encodeShareContext(encoder, value.Context)
+		encoder.U16(value.Accepted)
+		encoder.U16(value.Rejected)
+		return encoder.Bytes(), nil
 	default:
 		return nil, ErrMessageType
 	}
@@ -630,7 +697,7 @@ func (request GetShares) Validate() error {
 }
 
 func (shares Shares) Validate() error {
-	if shares.Version != Version0 {
+	if shares.Version != Version1 {
 		return ErrUnsupported
 	}
 	if err := shares.Context.validate(); err != nil || len(shares.Values) == 0 ||
@@ -653,6 +720,31 @@ func (shares Shares) Validate() error {
 	return nil
 }
 
+func (hello WorkHello) Validate() error {
+	if hello.Version != Version1 {
+		return ErrUnsupported
+	}
+	if err := hello.Context.validate(); err != nil ||
+		hello.Features&WorkFeatureShareRelayV1 == 0 ||
+		hello.MaxFrameBytes < MinWorkFrameBodyBytes || hello.MaxFrameBytes > MaxWorkFrameBodyBytes ||
+		hello.MaxInventory == 0 || hello.MaxInventory > MaxShareInventoryIDs ||
+		hello.MaxShareBodies == 0 || hello.MaxShareBodies > MaxSharesPerMessage {
+		return ErrMessage
+	}
+	return nil
+}
+
+func (result ShareResult) Validate() error {
+	if result.Version != Version1 {
+		return ErrUnsupported
+	}
+	if err := result.Context.validate(); err != nil ||
+		uint32(result.Accepted)+uint32(result.Rejected) > MaxShareInventoryIDs {
+		return ErrMessage
+	}
+	return nil
+}
+
 func (context ShareContext) validate() error {
 	if context.NetworkID == 0 || context.Height == 0 || context.AnchorParent.IsZero() ||
 		context.AnchorTarget.IsZero() || context.PayloadRoot.IsZero() ||
@@ -663,7 +755,7 @@ func (context ShareContext) validate() error {
 }
 
 func validateShareIDs(version uint16, context ShareContext, ids []types.Hash, maximum int) error {
-	if version != Version0 {
+	if version != Version1 {
 		return ErrUnsupported
 	}
 	if err := context.validate(); err != nil || len(ids) == 0 || len(ids) > maximum {
@@ -1043,6 +1135,67 @@ func decodeShares(payload []byte) (Shares, error) {
 		return Shares{}, err
 	}
 	result := Shares{Version: version, Context: context, Values: values}
+	return result, result.Validate()
+}
+
+func decodeWorkHello(payload []byte) (WorkHello, error) {
+	decoder := codec.NewDecoder(payload)
+	version, err := decoder.U16()
+	if err != nil {
+		return WorkHello{}, err
+	}
+	context, err := decodeShareContext(decoder)
+	if err != nil {
+		return WorkHello{}, err
+	}
+	features, err := decoder.U64()
+	if err != nil {
+		return WorkHello{}, err
+	}
+	maxFrameBytes, err := decoder.U32()
+	if err != nil {
+		return WorkHello{}, err
+	}
+	maxInventory, err := decoder.U16()
+	if err != nil {
+		return WorkHello{}, err
+	}
+	maxShareBodies, err := decoder.U16()
+	if err != nil {
+		return WorkHello{}, err
+	}
+	if err := decoder.Finish(); err != nil {
+		return WorkHello{}, err
+	}
+	result := WorkHello{
+		Version: version, Context: context, Features: features, MaxFrameBytes: maxFrameBytes,
+		MaxInventory: maxInventory, MaxShareBodies: maxShareBodies,
+	}
+	return result, result.Validate()
+}
+
+func decodeShareResult(payload []byte) (ShareResult, error) {
+	decoder := codec.NewDecoder(payload)
+	version, err := decoder.U16()
+	if err != nil {
+		return ShareResult{}, err
+	}
+	context, err := decodeShareContext(decoder)
+	if err != nil {
+		return ShareResult{}, err
+	}
+	accepted, err := decoder.U16()
+	if err != nil {
+		return ShareResult{}, err
+	}
+	rejected, err := decoder.U16()
+	if err != nil {
+		return ShareResult{}, err
+	}
+	if err := decoder.Finish(); err != nil {
+		return ShareResult{}, err
+	}
+	result := ShareResult{Version: version, Context: context, Accepted: accepted, Rejected: rejected}
 	return result, result.Validate()
 }
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/ed25519"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"io"
 	"sort"
@@ -43,12 +44,19 @@ func TestMessageRoundTripsAndSupportsShortWrites(t *testing.T) {
 	share := testWorkShare(t)
 	shareID, _ := share.ID()
 	shareContext := contextFromTestShare(share)
-	inventory := ShareInventory{Version: Version0, Context: shareContext, IDs: []types.Hash{shareID}}
-	getShares := GetShares{Version: Version0, Context: shareContext, IDs: []types.Hash{shareID}}
-	shares := Shares{Version: Version0, Context: shareContext, Values: []workgraph.Share{share}}
+	inventory := ShareInventory{Version: Version1, Context: shareContext, IDs: []types.Hash{shareID}}
+	getShares := GetShares{Version: Version1, Context: shareContext, IDs: []types.Hash{shareID}}
+	shares := Shares{Version: Version1, Context: shareContext, Values: []workgraph.Share{share}}
+	hello := WorkHello{
+		Version: Version1, Context: shareContext, Features: WorkFeatureShareRelayV1,
+		MaxFrameBytes: MaxWorkFrameBodyBytes, MaxInventory: MaxShareInventoryIDs,
+		MaxShareBodies: MaxSharesPerMessage,
+	}
+	shareResult := ShareResult{Version: Version1, Context: shareContext, Accepted: 1}
 	messages := []Message{
 		status, request, headerRequest, headerBatch, blockMessage, transactionMessage, done, result,
 		getPeers, peers, getSnapshot, manifest, chunk, snapshotDone, inventory, getShares, shares,
+		hello, shareResult,
 	}
 
 	var storage bytes.Buffer
@@ -81,6 +89,16 @@ func TestReadRejectsOversizeBeforeReadingPayload(t *testing.T) {
 	binary.BigEndian.PutUint32(header[:], uint32(MaxFrameBodyBytes+1))
 	if _, err := ReadMessage(bytes.NewReader(header[:])); !errors.Is(err, ErrFrameSize) {
 		t.Fatalf("got %v, want frame-size rejection", err)
+	}
+}
+
+func TestReadMessageLimitRejectsBeforeAllocatingBody(t *testing.T) {
+	t.Parallel()
+
+	var header [4]byte
+	binary.BigEndian.PutUint32(header[:], MinWorkFrameBodyBytes+1)
+	if _, err := ReadMessageLimit(bytes.NewReader(header[:]), MinWorkFrameBodyBytes); !errors.Is(err, ErrFrameSize) {
+		t.Fatalf("got %v, want negotiated frame-size rejection", err)
 	}
 }
 
@@ -173,7 +191,7 @@ func TestWorkShareMessagesEnforceInventoryFirstBounds(t *testing.T) {
 	}
 	context := contextFromTestShare(share)
 	if err := (ShareInventory{
-		Version: Version0, Context: context, IDs: []types.Hash{shareID, shareID},
+		Version: Version1, Context: context, IDs: []types.Hash{shareID, shareID},
 	}).Validate(); !errors.Is(err, ErrMessage) {
 		t.Fatalf("duplicate inventory error=%v", err)
 	}
@@ -182,13 +200,13 @@ func TestWorkShareMessagesEnforceInventoryFirstBounds(t *testing.T) {
 		tooMany[index] = types.DomainHash("test/wire/share/request", []byte{byte(index >> 8), byte(index)})
 	}
 	sort.Slice(tooMany, func(left, right int) bool { return types.CompareHash(tooMany[left], tooMany[right]) < 0 })
-	if err := (GetShares{Version: Version0, Context: context, IDs: tooMany}).Validate(); !errors.Is(err, ErrMessage) {
+	if err := (GetShares{Version: Version1, Context: context, IDs: tooMany}).Validate(); !errors.Is(err, ErrMessage) {
 		t.Fatalf("oversize share request error=%v", err)
 	}
 	mismatch := share
 	mismatch.PayloadRoot = types.DomainHash("test/wire/share/other-payload")
 	if err := (Shares{
-		Version: Version0, Context: context, Values: []workgraph.Share{mismatch},
+		Version: Version1, Context: context, Values: []workgraph.Share{mismatch},
 	}).Validate(); !errors.Is(err, ErrMessage) {
 		t.Fatalf("mixed payload response error=%v", err)
 	}
@@ -203,7 +221,7 @@ func TestWorkShareMessagesEnforceInventoryFirstBounds(t *testing.T) {
 		rightID, _ := values[right].ID()
 		return types.CompareHash(leftID, rightID) < 0
 	})
-	batch := Shares{Version: Version0, Context: context, Values: values}
+	batch := Shares{Version: Version1, Context: context, Values: values}
 	payload, err := encodePayload(batch)
 	if err != nil {
 		t.Fatal(err)
@@ -217,6 +235,57 @@ func TestWorkShareMessagesEnforceInventoryFirstBounds(t *testing.T) {
 	}
 	if got := decoded.(Shares); len(got.Values) != MaxSharesPerMessage {
 		t.Fatalf("decoded shares=%d", len(got.Values))
+	}
+}
+
+func TestWorkHelloAndResultRejectUnnegotiatedOrOversizeValues(t *testing.T) {
+	t.Parallel()
+
+	context := contextFromTestShare(testWorkShare(t))
+	hello := WorkHello{
+		Version: Version1, Context: context, Features: WorkFeatureShareRelayV1,
+		MaxFrameBytes: MaxWorkFrameBodyBytes, MaxInventory: MaxShareInventoryIDs,
+		MaxShareBodies: MaxSharesPerMessage,
+	}
+	if err := hello.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	hello.Version = Version0
+	if err := hello.Validate(); !errors.Is(err, ErrUnsupported) {
+		t.Fatalf("legacy hello error=%v", err)
+	}
+	hello.Version = Version1
+	hello.MaxFrameBytes = MinWorkFrameBodyBytes - 1
+	if err := hello.Validate(); !errors.Is(err, ErrMessage) {
+		t.Fatalf("small frame error=%v", err)
+	}
+	if err := (ShareResult{
+		Version: Version1, Context: context, Accepted: MaxShareInventoryIDs, Rejected: 1,
+	}).Validate(); !errors.Is(err, ErrMessage) {
+		t.Fatalf("oversize result error=%v", err)
+	}
+	if err := (ShareInventory{
+		Version: Version0, Context: context, IDs: []types.Hash{types.DomainHash("test/wire/v0-share")},
+	}).Validate(); !errors.Is(err, ErrUnsupported) {
+		t.Fatalf("unnegotiated inventory error=%v", err)
+	}
+}
+
+func TestWorkHelloGoldenFrame(t *testing.T) {
+	t.Parallel()
+
+	hello := WorkHello{
+		Version: Version1, Context: contextFromTestShare(testWorkShare(t)),
+		Features: WorkFeatureShareRelayV1, MaxFrameBytes: MaxWorkFrameBodyBytes,
+		MaxInventory: MaxShareInventoryIDs, MaxShareBodies: MaxSharesPerMessage,
+	}
+	var frame bytes.Buffer
+	if err := WriteMessage(&frame, hello); err != nil {
+		t.Fatal(err)
+	}
+	const want = "0000007f1200010000005b0000000000000005f2ee6638d996e281afb71491418b5da2c148422e715b2b872dfb2008025f719c007fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe3803b3afdc3629f6673d43cf2c0b630edf7dee3afbb6286dc29bf7eb52596e400000000000000010001800004000100"
+	if got := hex.EncodeToString(frame.Bytes()); got != want {
+		t.Fatalf("WorkHello frame=%s", got)
 	}
 }
 

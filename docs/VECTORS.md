@@ -128,6 +128,21 @@ anchor_subsidy = 5,110
 share_reward   = 10
 ```
 
+## WorkGraph relay hello version 1
+
+`TestWorkHelloGoldenFrame` fixes the complete length-prefixed frame for message
+type `0x12` (`WorkHello`). It advertises wire version 1, the test mining
+context, `share_relay_v1`, a 98,304-byte frame ceiling, 1,024 inventory IDs,
+and 256 share bodies:
+
+```text
+frame_bytes = 131
+frame = 0000007f1200010000005b0000000000000005f2ee6638d996e281afb71491418b5da2c148422e715b2b872dfb2008025f719c007fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe3803b3afdc3629f6673d43cf2c0b630edf7dee3afbb6286dc29bf7eb52596e400000000000000010001800004000100
+```
+
+The four-byte prefix `0000007f` is the 127-byte frame body length and is
+checked against the negotiated WorkGraph ceiling before allocation.
+
 ## Delayed fee queue
 
 `TestFeeQueueEncodingRoundTripAndDetachedSlots` fixes a three-slot queue after

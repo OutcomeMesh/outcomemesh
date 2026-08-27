@@ -1,5 +1,5 @@
 // Package wire defines the bounded, transport-independent OutcomeMesh devnet
 // stream protocol. It is deliberately separate from consensus serialization.
-// Experimental WorkGraph inventory/request/body messages are codec-only until
-// version-1 session negotiation and activation are enabled.
+// Experimental WorkGraph messages are consumed only by the isolated version-1
+// worksession package until production transport routing and activation exist.
 package wire

@@ -125,8 +125,9 @@ The CLI wallet is for development only.
   version-1 activation/codec/replay prototype;
 - `storage/`: atomic persistent and in-memory ledger stores;
 - `node/chain/`: optimistic mining, validation, and commit coordination;
-- `node/workpool/`, `node/workminer/`: inactive bounded WorkGraph gossip state
-  and unified weak-share/hard-anchor mining loop;
+- `node/workpool/`, `node/workminer/`, `node/worksession/`: inactive bounded
+  WorkGraph gossip state, unified weak-share/hard-anchor mining, and explicitly
+  negotiated inventory-first relay;
 - `node/workchain/`: inactive fork-aware v1 coordinator and isolated atomic
   Pebble restart/reorg prototype;
 - `node/mempool/`, `node/wire/`, `node/syncer/`, `node/session/`: bounded peer

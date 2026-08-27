@@ -52,10 +52,9 @@ and oversize frames fail closed. The frame-body parser has a native Go fuzz
 target.
 
 The two header message type IDs were appended to the pre-alpha version-0 wire
-table. There is intentionally no backward-compatibility negotiation yet: an
-older peer rejects the unknown type and disconnects. This is an explicit
-development compatibility decision, not a silent reinterpretation of an old
-message.
+table. Active chain sessions still have no in-band version upgrade: an older
+peer rejects an unknown type and disconnects. This is an explicit development
+compatibility decision, not a silent reinterpretation of an old message.
 
 ## Handshake and synchronization
 
@@ -78,6 +77,28 @@ caps plus a no-progress disconnect.
 
 This works across divergent branches: the receiver stores the remote branch and
 atomically reorganizes only when its cumulative work wins.
+
+## Isolated WorkGraph relay
+
+The inactive WorkGraph prototype uses a separate finite stream and wire version
+1. Types 15–17 are `ShareInventory`, `GetShares`, and `Shares`; types 18–19 are
+`WorkHello` and `ShareResult`. They are never accepted by the active version-0
+session handler.
+
+Both endpoints first send `WorkHello` with one exact
+network/height/anchor/target/payload context, a `share_relay_v1` capability, and
+bounded frame, inventory, and body counts. Context mismatch or absence of the
+capability closes the stream. Limits are intersected and reduced against the
+worst-case encoded share size; the negotiated frame ceiling is enforced from
+the four-byte prefix before allocation.
+
+The sender announces at most 1,024 sorted IDs. The receiver requests only
+unknown IDs, at most once and at most the negotiated body count per batch. Each
+response remains ID-sorted and is passed through the local pool's full PoW and
+DAG admission. A final accepted/rejected receipt accounts for returned invalid
+bodies and advertised bodies the peer withheld. One stream cannot become an
+unbounded request loop. Actual QUIC protocol registration and activation-height
+routing remain disabled.
 
 ## Signed peer advertisements
 

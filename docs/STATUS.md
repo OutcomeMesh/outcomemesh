@@ -219,7 +219,14 @@ Implemented in an isolated, not-yet-activated consensus package:
 - the shared wire codec now has inactive inventory-first WorkGraph messages:
   1,024 sorted IDs per announcement and 256 requested/returned bodies per
   frame, with exact mining-context checks, strict decoding, and the existing
-  wire fuzz surface; session relay remains intentionally unnegotiated.
+  wire fuzz surface.
+- an isolated version-1 WorkGraph session now negotiates the exact mining
+  context, capability, frame ceiling, inventory count, and worst-case-safe body
+  batch. Its finite inventory/request/body/result state machine requests each
+  unknown ID once, rejects unsolicited or repeated work, counts withheld and
+  invalid bodies, enforces frame size before allocation, and sends every body
+  through full pool PoW/DAG admission. Production QUIC registration remains
+  deliberately disabled.
 - an inactive concurrency-safe local WorkGraph pool now performs weak-PoW and
   context validation before bounded storage, resolves out-of-order parent DAGs,
   reserves one reward-miner slot for the future anchor, selects four tips

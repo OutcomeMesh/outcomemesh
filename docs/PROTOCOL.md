@@ -335,9 +335,9 @@ timestamp simulations remain mandatory before a networked devnet.
 ## Experimental block version 1: WorkGraph activation
 
 This section specifies an implemented, isolated prototype. It is not accepted
-by active version-0 storage or session handlers. The shared wire codec already
-reserves bounded experimental WorkGraph inventory/request/body messages, but
-nodes do not negotiate or relay them before activation.
+by active version-0 storage or session handlers. A separate version-1
+WorkGraph stream negotiates and relays shares only between explicitly compatible
+prototype peers; it does not reinterpret the version-0 chain session.
 
 Activation occurs at one configured non-zero height. That first version-1 block
 does not create a delayed WorkGraph payout because its version-0 parent already
@@ -411,3 +411,19 @@ at most 81,664 bytes of raw share bodies before its bounded context/framing
 overhead. The codec checks versions, counts, order, duplicates, exact context,
 and canonical share syntax; the receiving WorkGraph pool must still verify PoW,
 timestamp, DAG parents, and current-chain context before admission.
+
+All three share messages require wire version 1. A WorkGraph stream begins with
+a symmetric `WorkHelloV1` exchange carrying the exact share context, the
+`share_relay_v1` capability bit, and the peer's frame/inventory/body maxima.
+Contexts must be byte-identical and the negotiated limits are the intersection
+of both advertisements, additionally clamped so a worst-case body batch fits
+the negotiated frame. The reader rejects an oversized length prefix before body
+allocation. A legacy version-0 peer therefore fails closed on the appended
+message type instead of accidentally accepting WorkGraph data.
+
+One stream carries one finite inventory relay. The receiver requests each
+previously unknown ID at most once in bounded batches, admits every returned
+body through full weak-PoW/context/DAG validation, and terminates with
+`ShareResultV1 { accepted, rejected }`. Advertised-but-withheld bodies count as
+rejected and are not requested forever. Repeated requests, unsolicited IDs,
+mixed contexts, extra messages, and lack of progress close the stream.

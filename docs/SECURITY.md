@@ -121,12 +121,19 @@ non-canonical encodings fail closed. This reduces fee internalization but does
 not guarantee transaction inclusion or eliminate censorship; those remain
 economic and availability gates.
 
-Experimental share gossip is inventory-first and inactive. Its local pool does
+Experimental share gossip is inventory-first and inactive. Its isolated
+version-1 stream requires an exact-context/capability handshake and intersects
+frame/count limits before accepting an inventory. Frames exceeding that
+negotiated ceiling are rejected from their length prefix before allocation;
+unknown IDs are requested once, and withheld or invalid bodies end in a bounded
+rejection receipt rather than a retry loop. Its local pool does
 full weak-PoW/context validation before bounded storage, counts pending
 missing-parent children against the same limits, owns all admitted slices, and
 reserves an anchor identity slot. Hard-target work is never admitted as an
 ordinary paid share. Pending cycles or nonexistent parents can consume only
 the published count/byte/edge bounds and still require valid proof of work.
+The stream is not yet registered on the production QUIC host, so none of these
+messages can activate version-1 consensus accidentally.
 
 ## Consensus coding rules
 

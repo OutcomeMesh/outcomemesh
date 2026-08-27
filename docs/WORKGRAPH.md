@@ -260,10 +260,15 @@ The prototype now has isolated schema-versioned persistent storage; session
 negotiation and a production storage budget remain mandatory before it can
 become active.
 
-The transport-independent codec already defines inventory-first WorkGraph
-messages: 1,024 sorted IDs per announcement and 256 sorted IDs/bodies per
-request or response, all tied to one exact mining context. Session handlers
-remain disabled until version negotiation and activation exist.
+The transport-independent codec and an isolated finite session implement
+inventory-first WorkGraph relay: 1,024 sorted IDs per announcement and at most
+256 sorted IDs/bodies per request or response, all tied to one exact mining
+context. A version-1 capability handshake intersects counts and frame sizes,
+then clamps body batches against worst-case encoding. Oversized frames are
+rejected before allocation, each unknown ID is requested once, invalid or
+withheld bodies receive a bounded result, and all returned shares still pass
+the full local pool validator. Registration on the production QUIC host remains
+disabled until activation routing exists.
 
 The corresponding local pool is also implemented but inactive. It verifies
 weak PoW and exact context before storage, owns detached bodies, accepts bounded
