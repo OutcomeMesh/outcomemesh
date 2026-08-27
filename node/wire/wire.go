@@ -320,6 +320,15 @@ type ShareResult struct {
 func (ShareResult) messageType() Type { return TypeShareResult }
 
 func WriteMessage(writer io.Writer, message Message) error {
+	return WriteMessageLimit(writer, message, uint32(MaxVersionedFrameBodyBytes))
+}
+
+// WriteMessageLimit applies a negotiated frame-body ceiling before writing any
+// bytes. It complements ReadMessageLimit for isolated subprotocols.
+func WriteMessageLimit(writer io.Writer, message Message, maximum uint32) error {
+	if maximum == 0 || maximum > uint32(MaxVersionedFrameBodyBytes) {
+		return ErrFrameSize
+	}
 	payload, err := encodePayload(message)
 	if err != nil {
 		return err
@@ -328,6 +337,9 @@ func WriteMessage(writer io.Writer, message Message) error {
 		return ErrFrameSize
 	}
 	bodyLength := 1 + len(payload)
+	if uint32(bodyLength) > maximum {
+		return ErrFrameSize
+	}
 	var header [5]byte
 	binary.BigEndian.PutUint32(header[:4], uint32(bodyLength))
 	header[4] = byte(message.messageType())

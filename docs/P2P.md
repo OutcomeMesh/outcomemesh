@@ -78,8 +78,30 @@ match the first three values exactly and advertise `versioned_sync_v1`; the
 usable frame limit is the smaller advertisement. Locator requests retain the
 32-locator/128-object bounds and duplicate rejection of v0 under distinct
 message IDs, so an active handler cannot reinterpret them accidentally. The
-isolated negotiator exists, but the router-backed request state machine is the
-next integration step.
+isolated router-backed state machine now serves and downloads those messages,
+but no active transport protocol or CLI path registers it.
+
+The isolated versioned chain session uses the negotiated maximum for both reads
+and writes. It admits at most 64 header/body batches by default, with separate
+64-request responder budgets and the existing 4,096-message ceiling. Headers
+are validated before bodies across both versions: requested parent, height,
+activation boundary, network, MTP, future time, lagged target, PoW, and
+contiguous IDs all fail closed. Bodies must reproduce the exact header bytes
+and pass full activation-router execution. The responder pins one emitted
+header batch and accepts only the matching locator/count body request next;
+body-first, repeated-header, or substituted-locator requests close the stream.
+Blocks are not fragmented: if one valid block exceeds the negotiated ceiling,
+that synchronization attempt closes with a frame-size error.
+
+A continuation locator records the last downloaded remote block even while a
+long divergent branch has not yet beaten the local selected tip. This avoids
+requesting the same prefix forever; once the branch wins, ordinary global
+hard-work fork choice takes over. The completed tip must match the hello's ID,
+height, state root, and cumulative work. A deterministic test uses two-block
+batches, keeps the first remote prefix as a losing side branch, then crosses
+v0→v1 and reorganizes through a different activation base. The session remains
+in-process only until multi-base persistence and an opt-in transport handler
+exist.
 
 ## Handshake and synchronization
 
@@ -124,10 +146,10 @@ DAG admission. A final accepted/rejected receipt accounts for returned invalid
 bodies and advertised bodies the peer withheld. One stream cannot become an
 unbounded request loop. The libp2p QUIC adapter exposes the separate
 `/outcomemesh/workgraph/1` protocol only after an explicit handler is installed;
-without that call negotiation fails. Active CLI nodes do not install it and no
-activation-height routing is connected to the chain session. The isolated
-in-process block router and versioned block/header codecs exist, but multi-base
-persistence, versioned status/requests, and handler integration remain
+without that call negotiation fails. Active CLI nodes do not install it. The
+share stream remains separate from the isolated activation chain session. The
+in-process block router, versioned codecs, and isolated chain sync exist, but
+multi-base persistence and transport/CLI handler integration remain
 prerequisites for network activation.
 
 ## Signed peer advertisements

@@ -40,6 +40,10 @@ func TestRouterReorganizesAcrossDistinctActivationBases(t *testing.T) {
 	workB2 := mineWorkOn(t, router, baseBID, baseB.Header.Timestamp+60, "work-b-2")
 	idA2 := submitWork(t, router, workA2, config.Work.ActivationHeight)
 	idB2 := submitWork(t, router, workB2, config.Work.ActivationHeight)
+	duplicateA2, _ := Work(workA2, config.Work.ActivationHeight)
+	if _, err := router.Submit(duplicateA2); !errors.Is(err, storage.ErrBlockExists) {
+		t.Fatalf("duplicate routed v1 block error=%v", err)
+	}
 	tip, err := router.Tip()
 	if err != nil {
 		t.Fatal(err)

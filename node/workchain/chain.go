@@ -114,6 +114,24 @@ func (store *Store) Tip() (storage.Tip, error) {
 	return cloneTip(store.nodes[store.tipID].tip), nil
 }
 
+// TipByID returns detached fork metadata for header-first continuation without
+// making that node the selected tip.
+func (store *Store) TipByID(id types.Hash) (storage.Tip, error) {
+	if store == nil {
+		return storage.Tip{}, ErrConfiguration
+	}
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+	if store.closed {
+		return storage.Tip{}, storage.ErrClosed
+	}
+	node, exists := store.nodes[id]
+	if !exists {
+		return storage.Tip{}, storage.ErrNodeNotFound
+	}
+	return cloneTip(node.tip), nil
+}
+
 func (store *Store) Snapshot() (*state.Memory, error) {
 	if store == nil {
 		return nil, ErrConfiguration

@@ -35,6 +35,9 @@ func TestBlockAndHeaderUnionsPreserveCanonicalEncodings(t *testing.T) {
 			t.Fatal("block union changed its version-specific representation")
 		}
 		header := candidate.Header()
+		if header.NetworkID() != 37 || header.Timestamp() == 0 || header.Target().IsZero() || header.StateRoot().IsZero() {
+			t.Fatal("header union lost shared validation metadata")
+		}
 		decodedHeader, err := DecodeHeaderAny(header.CanonicalBytes())
 		if err != nil {
 			t.Fatal(err)

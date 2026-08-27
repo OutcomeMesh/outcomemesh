@@ -267,8 +267,9 @@ selected boundary parent. Multi-base persistence and the active wire/CLI path
 are not yet enabled. The shared wire package now also has inactive, appended
 version-1 envelopes for either canonical block version and for a contiguous
 mixed header batch. They preserve the old chain reader's 8 MiB default and
-require explicit opt-in to the larger WorkGraph block ceiling. Status/locator
-negotiation and session routing do not use them yet.
+require explicit opt-in to the larger WorkGraph block ceiling. A separate
+in-process versioned chain session now uses their status/locator grammar and the
+activation router; active transport and CLI routing do not.
 
 The transport-independent codec and an isolated finite session implement
 inventory-first WorkGraph relay: 1,024 sorted IDs per announcement and at most
@@ -282,7 +283,10 @@ the full local pool validator. The libp2p adapter exposes it under the distinct
 hosts and the active CLI cannot negotiate it. Two-host QUIC tests cover peer-ID
 pinning, a negotiated 512-byte frame, parent/child relay, context rejection, and
 an independent one-stream-per-peer resource scope. The in-process block router
-remains disconnected from this chain session.
+remains disconnected from this share-relay stream, but now backs a separate
+header-first versioned chain session. That session has no transport/CLI
+registration, and its multiple activation trees are not durably reopened as
+one router yet.
 
 One maximal 1,024-ID relay is bounded to exactly 630,258 bytes of bidirectional
 application framing when a peer forces one maximum-size body per batch. The

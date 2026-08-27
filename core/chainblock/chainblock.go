@@ -305,6 +305,46 @@ func (candidate Header) ParentID() types.Hash {
 	return types.Hash{}
 }
 
+func (candidate Header) NetworkID() uint32 {
+	if candidate.version == legacyblock.Version0 {
+		return candidate.legacy.NetworkID
+	}
+	if candidate.version == workblock.Version1 {
+		return candidate.work.Seal.NetworkID
+	}
+	return 0
+}
+
+func (candidate Header) Timestamp() uint64 {
+	if candidate.version == legacyblock.Version0 {
+		return candidate.legacy.Timestamp
+	}
+	if candidate.version == workblock.Version1 {
+		return candidate.work.Seal.Timestamp
+	}
+	return 0
+}
+
+func (candidate Header) Target() types.Hash {
+	if candidate.version == legacyblock.Version0 {
+		return candidate.legacy.Target
+	}
+	if candidate.version == workblock.Version1 {
+		return candidate.work.Seal.Target
+	}
+	return types.Hash{}
+}
+
+func (candidate Header) StateRoot() types.Hash {
+	if candidate.version == legacyblock.Version0 {
+		return candidate.legacy.StateRoot
+	}
+	if candidate.version == workblock.Version1 {
+		return candidate.work.StateRoot
+	}
+	return types.Hash{}
+}
+
 func (candidate Header) ID() (types.Hash, error) {
 	if candidate.version == legacyblock.Version0 {
 		return candidate.legacy.ID()

@@ -144,6 +144,23 @@ KiB/s per peer and 5.13 MiB/s globally. A fixed-window boundary can double the
 short burst and QUIC retransmission is outside this application accounting;
 operators still require physical bandwidth monitoring and peer bans.
 
+The inactive versioned chain session has a distinct capability handshake and
+requires exact network, genesis, and activation-height agreement. Its
+negotiated frame ceiling is applied before allocation on reads and before any
+bytes are emitted on writes. Defaults permit at most 64 header/body batches,
+64 requests of each class, and 4,096 total inbound messages. Mixed v0/v1
+headers must pass parent, height, activation, MTP, future-time, lagged-target,
+and PoW checks before bodies are requested; body headers must then match byte
+for byte and full replay still goes through the activation router. The responder
+serves bodies only after pinning the exact preceding header batch and matching
+the next locator/count request; body-first and request-substitution sequences
+fail closed. A continuation locator is accepted only for a locally known
+downloaded block, so
+a long losing side branch can advance without unbounded prefix retries. The
+final replayed ID, height, state root, and cumulative work must match the hello.
+The session remains in-process and unregistered by transports/CLI; multi-base
+durable router recovery is still an activation blocker.
+
 The isolated WorkGraph Pebble schema stores one activation checkpoint and, for
 each later block, exactly one parent delta or bounded full-state replay
 checkpoint. It never stores both for one node. Explicit maintenance defaults to

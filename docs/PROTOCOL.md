@@ -377,7 +377,14 @@ and maximum accepted frame body. A mismatch in network, genesis, or activation
 height fails before locators. Compatible peers intersect frame ceilings.
 `GetVersionedBlocksV1` and `GetVersionedHeadersV1` use 1–32 unique locators and
 a 1–128 limit; `VersionedBatchDoneV1` binds a response to the responder tip.
-These types do not yet have a router-backed serving/synchronization loop.
+An isolated router-backed serving/synchronization loop now implements these
+types. It applies the negotiated ceiling in both directions, validates the full
+v0/v1 header context before requesting bodies, requires body/header identity,
+and submits every block through the activation router. A continuation locator
+can advance along a downloaded side branch before that branch has enough work
+to become the selected local tip. At completion the replayed ID, height, state
+root, and cumulative work must equal the hello. The loop is not registered by
+the active transport or CLI.
 
 The next hard target is known before mining and is independent of the current
 candidate timestamp:

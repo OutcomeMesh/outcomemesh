@@ -299,20 +299,31 @@ Implemented in an isolated, not-yet-activated consensus package:
   codec. Appended `VersionedBlock` and `VersionedHeaders` envelopes preserve the
   unchanged inner encodings; a 128-header batch can cross v0→v1 but cannot
   reverse version or break parent/height continuity. The active reader retains
-  its 8 MiB ceiling, while a future versioned session must explicitly opt into
+  its 8 MiB ceiling, while the isolated versioned session explicitly opts into
   the larger WorkGraph-block ceiling before allocation. Union and frame decoders
-  are fuzzed; versioned serving and download handlers remain absent.
+  are fuzzed.
 - the inactive chain-control grammar now adds `ChainHello`, distinct versioned
   block/header locator requests, and a versioned batch terminator. Negotiation
   requires exact network, genesis, and activation-height agreement plus the
   `versioned_sync_v1` capability, then intersects the advertised frame ceilings.
   Locator count, uniqueness, and batch bounds remain unchanged. A golden hello
   frame fixes the encoding; the active v0 session still cannot negotiate these
-  types, and the router-backed request loop remains to be implemented.
+  types.
+- an isolated router-backed versioned chain session now performs header-first
+  sync across the activation boundary. It applies the negotiated frame ceiling
+  to reads and writes, checks both versions' ancestry/MTP/target/future-time/PoW
+  rules before bodies, requires byte-identical body headers, and replays through
+  the activation router. Continuation locators make progress along a losing
+  downloaded side branch instead of repeating its prefix. A two-block-batch
+  fixture crosses v0→v1 through a different activation base: batch one remains
+  below the local tip, later batches win and reorg. Final ID, height, state root,
+  and cumulative work are bound back to `ChainHello`; a lying work advertisement
+  is rejected after replay. The active transport and CLI do not install this
+  session.
 
 No WorkGraph field has entered a version-0 block yet. The isolated v1 store and
 opt-in QUIC session remain disconnected from the active chain/CLI routing path;
-multi-base persistence, versioned chain-session serving/download handlers,
+multi-base persistence, opt-in versioned transport/CLI routing,
 history-anchored archival pruning, extended filesystem-fault/soak campaigns,
 production gossip-budget calibration, and finer/adaptive economic-strategy
 analysis remain before activation.

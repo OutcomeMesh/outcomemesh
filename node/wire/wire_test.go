@@ -150,6 +150,17 @@ func TestVersionedFrameCeilingIsExplicitlyOptIn(t *testing.T) {
 	if _, err := DecodeFrameBody(oversizeHeaders); !errors.Is(err, ErrFrameSize) {
 		t.Fatalf("per-message header ceiling error = %v", err)
 	}
+	legacy, err := chainblock.Legacy(testBlock(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	if err := WriteMessageLimit(&output, VersionedBlock{Version: Version1, Value: legacy}, 1); !errors.Is(err, ErrFrameSize) {
+		t.Fatalf("negotiated writer error = %v", err)
+	}
+	if output.Len() != 0 {
+		t.Fatal("negotiated writer emitted a partial oversize frame")
+	}
 }
 
 func TestRejectsUnknownTypeTrailingBytesAndDuplicateLocators(t *testing.T) {

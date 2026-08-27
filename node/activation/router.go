@@ -102,6 +102,9 @@ func (router *Router) Submit(candidate Block) (storage.Tip, error) {
 			return storage.Tip{}, err
 		}
 		if _, _, err := tree.Commit(work, router.config.Now()); err != nil {
+			if errors.Is(err, workchain.ErrDuplicate) {
+				return storage.Tip{}, storage.ErrBlockExists
+			}
 			return storage.Tip{}, err
 		}
 		id, _ := work.Header.ID()
@@ -121,6 +124,44 @@ func (router *Router) Tip() (storage.Tip, error) {
 	defer router.mu.Unlock()
 	tip, _, err := router.bestLocked()
 	return tip, err
+}
+
+// TipByID resolves either legacy-ledger or WorkChain fork metadata.
+func (router *Router) TipByID(id types.Hash) (storage.Tip, error) {
+	if router == nil {
+		return storage.Tip{}, ErrConfiguration
+	}
+	router.mu.Lock()
+	defer router.mu.Unlock()
+	if baseID, exists := router.workBases[id]; exists {
+		tree := router.trees[baseID]
+		if tree == nil {
+			return storage.Tip{}, storage.ErrCorrupt
+		}
+		return tree.TipByID(id)
+	}
+	return router.ledger.TipByID(id)
+}
+
+// Parameters returns the immutable v0/v1 consensus parameters used by the
+// router so a detached session cannot negotiate a different boundary.
+func (router *Router) Parameters() (legacyblock.Parameters, workblock.Parameters, error) {
+	if router == nil {
+		return legacyblock.Parameters{}, workblock.Parameters{}, ErrConfiguration
+	}
+	router.mu.Lock()
+	defer router.mu.Unlock()
+	return router.config.Legacy, router.config.Work, nil
+}
+
+// AdmissionTime samples the same explicit local clock used by Submit.
+func (router *Router) AdmissionTime() (uint64, error) {
+	if router == nil {
+		return 0, ErrConfiguration
+	}
+	router.mu.Lock()
+	defer router.mu.Unlock()
+	return router.config.Now(), nil
 }
 
 func (router *Router) Snapshot() (*state.Memory, error) {

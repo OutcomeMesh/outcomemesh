@@ -129,8 +129,8 @@ The CLI wallet is for development only.
 - `node/chain/`: optimistic mining, validation, and commit coordination;
 - `node/activation/`: inactive strict v0/v1 boundary and cumulative-work fork
   choice across multiple activation bases;
-- `node/chainsession/`: inactive cross-version chain identity, activation, and
-  frame-limit negotiation;
+- `node/chainsession/`: inactive negotiated, header-first cross-version sync
+  through the activation router;
 - `node/workpool/`, `node/workminer/`, `node/worksession/`: inactive bounded
   WorkGraph gossip state, unified weak-share/hard-anchor mining, and explicitly
   negotiated inventory-first relay;

@@ -171,16 +171,19 @@ The strict block and header unions live below networking in `core/chainblock`.
 The wire package has appended, inactive version-1 envelopes for one union block
 and for a length-delimited contiguous union-header batch that may cross v0→v1.
 This does not enlarge the active reader's 8 MiB ceiling: a versioned session
-must opt into the WorkGraph maximum explicitly. Status negotiation, locator
-requests, sync handlers, persistence routing, and CLI activation are still
-missing, so the codec alone cannot place a v1 block on the live chain.
+must opt into the WorkGraph maximum explicitly. The active status, locator,
+sync, persistence-routing, and CLI paths still do not use it, so the codec alone
+cannot place a v1 block on the live chain.
 
 The accompanying inactive chain handshake refuses network, genesis, or
 activation-height mismatch before locator exchange and intersects explicit
 frame ceilings. Its locator requests and batch terminator have distinct v1
 message IDs. This fixes the control-plane grammar without weakening the active
-session's fail-closed dispatch; a router-backed serving and download state
-machine is still required.
+session's fail-closed dispatch. An isolated router-backed serving/download state
+machine now validates mixed headers before bodies, continues along known losing
+side branches, replays blocks through global hard-work fork choice, and binds
+the completed state/work back to the hello. It has no active transport or CLI
+registration.
 
 The isolated version-1 coordinator exercises each routed tree:
 it derives branch-local MTP, targets, fee queues, states, and prior earnings and
@@ -201,10 +204,10 @@ branch reaching a configurable cutoff, then atomically removes only complete
 stale subtrees while decrementing the exact logical history counter. Its default
 window is 4,096 heights, zero disables it, and it never creates local PoW
 finality by pruning canonical history. Broader filesystem-fault soaks and
-multi-base persistence plus versioned chain-session/CLI routing for the already
-isolated negotiated WorkGraph session also remain. The libp2p adapter carries that
-session under a separate opt-in protocol ID and resource scope, while default
-hosts and the active CLI leave it disabled.
+multi-base persistence plus transport/CLI registration of the versioned chain
+session also remain. The libp2p adapter carries the separate WorkGraph share
+session under an opt-in protocol ID and resource scope, while default hosts and
+the active CLI leave it disabled.
 The current integration test kills a separate process immediately before and
 after the synchronous Pebble batch and verifies old-or-new recovery.
 
