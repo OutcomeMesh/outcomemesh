@@ -321,9 +321,10 @@ Implemented in an isolated, not-yet-activated consensus package:
   is rejected after replay.
 - the libp2p adapter now carries that session under the distinct opt-in
   `/outcomemesh/chain/1` protocol without fallback to `/outcomemesh/session/0`.
-  Default hosts and the active CLI do not install its handler. A real two-host
-  QUIC fixture pins peer identity and synchronizes a divergent activation fork
-  with a negotiated 1 KiB ceiling. Its independent scopes default to one
+  Default hosts and ordinary v0 CLI commands do not install its handler; the
+  explicit `work-serve-quic` command now does. A real two-host QUIC fixture pins
+  peer identity and synchronizes a divergent activation fork with a negotiated
+  1 KiB ceiling. Its independent scopes default to one
   concurrent stream per peer/four globally and four admitted streams per
   peer/128 globally per minute; tests exhaust every scope while proving a held
   versioned stream does not consume the v0 session allowance.
@@ -338,12 +339,23 @@ Implemented in an isolated, not-yet-activated consensus package:
   recover it again. Empty crash-boundary directories are safe; pending/corrupt
   manifests, unknown or swapped bases, reduced budgets, and excess trees fail
   closed.
+- `omd work-enable` now creates a fixed-size immutable activation profile only
+  after exact genesis confirmation, target/reward compatibility checks, a
+  future boundary, and forest validation. Final or pending markers block every
+  ordinary command that could mutate or report stale v0-only state. Separate
+  `work-mine/status/balance/verify/serve-quic/sync-quic` commands cross the
+  boundary without changing v0 defaults. A real two-process Pebble fixture
+  enables two nodes, mines height 1 as v0 and heights 2–5 as v1, authenticates
+  and synchronizes `/outcomemesh/chain/1`, replay-verifies the mixed ancestry,
+  rejects legacy mining, and reopens the same receiver tip after shutdown.
 
-No WorkGraph field has entered a version-0 block yet. The isolated v1 store and
-opt-in QUIC session remain disconnected from the active chain/CLI routing path;
-opt-in versioned CLI routing, history-anchored archival pruning, extended
-filesystem-fault/soak campaigns, production gossip-budget calibration, and
-finer/adaptive economic-strategy analysis remain before activation.
+No WorkGraph field has entered a version-0 block yet. The v1 store and opt-in
+QUIC session remain isolated from every ordinary v0 chain/CLI path and are
+reachable only through the explicitly marked experimental commands;
+automatic versioned discovery/routing, WorkGraph share-relay/miner integration,
+history-anchored archival pruning, extended filesystem-fault/soak campaigns,
+production gossip-budget calibration, and finer/adaptive economic-strategy
+analysis remain before activation.
 
 ## Milestones 6–10 — not integrated
 

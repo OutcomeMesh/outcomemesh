@@ -1,14 +1,132 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/outcomemesh/outcomemesh/core/genesis"
 	"github.com/outcomemesh/outcomemesh/core/resource"
 	"github.com/outcomemesh/outcomemesh/core/types"
 )
+
+func TestWorkActivationProfileRoundTripAndPendingRecovery(t *testing.T) {
+	directory := t.TempDir()
+	document := commandTestGenesis()
+	genesisID, err := document.ID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile := workActivationProfile{
+		NetworkID: document.NetworkID, GenesisID: genesisID, ActivationHeight: 7,
+		FeeDelay: 3, MaxTrees: 4, MaxHistoryBytes: minimumHistoryBytes,
+	}
+	encoded := profile.canonicalBytes()
+	decoded, err := decodeWorkActivation(encoded)
+	if err != nil || decoded != profile || len(encoded) != workActivationSize {
+		t.Fatalf("activation profile roundtrip=%+v err=%v", decoded, err)
+	}
+	for _, malformed := range [][]byte{nil, encoded[:len(encoded)-1], append([]byte{1}, encoded[1:]...)} {
+		if _, err := decodeWorkActivation(malformed); err == nil {
+			t.Fatal("malformed WorkGraph activation profile was accepted")
+		}
+	}
+	if err := os.WriteFile(filepath.Join(directory, workActivationPending), encoded, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeWorkActivation(directory, profile); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := loadWorkActivation(directory, document)
+	if err != nil || loaded != profile {
+		t.Fatalf("loaded activation profile=%+v err=%v", loaded, err)
+	}
+	if err := writeWorkActivation(directory, profile); err == nil {
+		t.Fatal("activation profile replacement was accepted")
+	}
+	if err := rejectWorkActivation(directory, "mine"); err == nil || !strings.Contains(err.Error(), "work-*") {
+		t.Fatalf("legacy mutation guard error=%v", err)
+	}
+	if _, store, _, err := openNode([]string{"--data", directory}, "status"); err == nil || store != nil || !strings.Contains(err.Error(), "work-*") {
+		t.Fatalf("legacy open bypassed activation marker: store=%v err=%v", store, err)
+	}
+	foreign := document
+	foreign.NetworkID++
+	if _, err := loadWorkActivation(directory, foreign); err == nil {
+		t.Fatal("activation profile was accepted for another genesis")
+	}
+}
+
+func TestExplicitWorkCommandsCrossActivationAndBlockLegacyMutation(t *testing.T) {
+	directory := filepath.Join(t.TempDir(), "node")
+	if err := runInit([]string{
+		"--data", directory, "--network", "1001", "--timestamp", "1700000000",
+		"--difficulty-bits", "12", "--max-history-bytes", strconv.FormatUint(minimumHistoryBytes, 10),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	document, err := loadGenesis(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	genesisID, _ := document.ID()
+	if err := runWorkEnable([]string{
+		"--data", directory, "--activation-height", "2", "--confirm-genesis", genesisID.String(),
+		"--max-trees", "4", "--max-history-bytes", strconv.FormatUint(minimumHistoryBytes, 10),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := runMine([]string{"--data", directory, "--count", "1"}); err == nil {
+		t.Fatal("legacy miner mutated a WorkGraph-enabled directory")
+	}
+	if err := runWorkMine([]string{"--data", directory, "--count", "3"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := runWorkVerify([]string{"--data", directory}); err != nil {
+		t.Fatal(err)
+	}
+	if err := runWorkBalance([]string{"--data", directory}); err != nil {
+		t.Fatal(err)
+	}
+	_, store, router, profile, err := openWorkNode(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	defer router.Close()
+	tip, err := router.Tip()
+	if err != nil || tip.Height != 3 || profile.ActivationHeight != 2 {
+		t.Fatalf("experimental tip=%+v profile=%+v err=%v", tip, profile, err)
+	}
+	candidate, err := router.BlockByID(tip.ID)
+	if err != nil || candidate.Version() != 1 {
+		t.Fatalf("experimental tip version=%d err=%v", candidate.Version(), err)
+	}
+}
+
+func TestWorkEnableRejectsInexactGenesisTarget(t *testing.T) {
+	directory := filepath.Join(t.TempDir(), "node")
+	if err := runInit([]string{
+		"--data", directory, "--network", "1002", "--timestamp", "1700000000",
+		"--difficulty-bits", "8", "--max-history-bytes", strconv.FormatUint(minimumHistoryBytes, 10),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	document, _ := loadGenesis(directory)
+	genesisID, _ := document.ID()
+	err := runWorkEnable([]string{
+		"--data", directory, "--activation-height", "2", "--confirm-genesis", genesisID.String(),
+	})
+	if err == nil || !strings.Contains(err.Error(), "512:1") {
+		t.Fatalf("inexact target activation error=%v", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(directory, workActivationFilename)); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("failed activation left a profile: %v", statErr)
+	}
+}
 
 func TestStoragePolicyRoundTripControlsLedgerHistoryBudget(t *testing.T) {
 	directory := t.TempDir()

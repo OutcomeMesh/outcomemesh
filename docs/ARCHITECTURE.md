@@ -152,10 +152,9 @@ preimage, and its predecessor payout is materialized one height later. A
 bounded fork-local fee queue separates transaction collection from the future
 PoW winner receiving those fees; its root and matured award are part of the
 payload commitment. This reduces the incentive to mine a private high-fee
-payload while preserving exact conservation. Active storage, chain sessions,
-and CLI remain on version 0. An isolated activation router now supplies the
-explicit block-version boundary and cross-version fork-choice suite without
-enabling it in those paths.
+payload while preserving exact conservation. Default storage, chain sessions,
+and CLI commands remain on version 0. Explicit `work-*` commands can now open
+the isolated activation router without changing those defaults.
 
 The router accepts v0 only below the configured activation height and v1 only
 at or above it. Every known v0 node at height `H-1` can independently seed a v1
@@ -185,13 +184,22 @@ Lowering a partition below already stored history fails reopen. Operators can
 inspect aggregate tree/node/history usage through the router. This layout is
 still inactive unless an absolute forest root is supplied explicitly.
 
+`omd work-enable` is the only CLI transition into that layout. Its immutable,
+fsynced 64-byte profile binds the network, genesis ID, activation height, fee
+delay, tree cap, and forest history budget. The exact genesis ID must be typed
+back and the current v0 tip must remain below activation. A complete pending
+profile can be finalized after interruption. Once either marker exists, all
+ordinary commands capable of mutating or misreporting the mixed chain refuse
+that data directory. `work-mine`, `work-status`, `work-balance`, `work-verify`,
+`work-serve-quic`, and `work-sync-quic` are separate experimental entry points.
+
 The strict block and header unions live below networking in `core/chainblock`.
 The wire package has appended, inactive version-1 envelopes for one union block
 and for a length-delimited contiguous union-header batch that may cross v0→v1.
 This does not enlarge the active reader's 8 MiB ceiling: a versioned session
-must opt into the WorkGraph maximum explicitly. The active status, locator,
+must opt into the WorkGraph maximum explicitly. Ordinary v0 status, locator,
 sync, persistence-routing, and CLI paths still do not use it, so the codec alone
-cannot place a v1 block on the live chain.
+cannot place a v1 block on a default chain.
 
 The accompanying inactive chain handshake refuses network, genesis, or
 activation-height mismatch before locator exchange and intersects explicit
@@ -202,7 +210,8 @@ machine now validates mixed headers before bodies, continues along known losing
 side branches, replays blocks through global hard-work fork choice, and binds
 the completed state/work back to the hello. The QUIC adapter exposes it under
 the distinct opt-in `/outcomemesh/chain/1` protocol and resource scope, while
-default hosts and the active CLI leave it unregistered.
+default hosts and ordinary CLI commands leave it unregistered. Only
+`work-serve-quic` installs the handler and only `work-sync-quic` dials it.
 
 The isolated version-1 coordinator exercises each routed tree:
 it derives branch-local MTP, targets, fee queues, states, and prior earnings and
@@ -222,10 +231,12 @@ maintenance already marks canonical ancestry and every side
 branch reaching a configurable cutoff, then atomically removes only complete
 stale subtrees while decrementing the exact logical history counter. Its default
 window is 4,096 heights, zero disables it, and it never creates local PoW
-finality by pruning canonical history. Broader filesystem-fault soaks and CLI
-registration of the versioned chain session remain. The libp2p adapter carries
-both the versioned chain and separate WorkGraph share sessions under distinct opt-in protocol IDs and resource
-scopes, while default hosts and the active CLI leave both disabled.
+finality by pruning canonical history. Broader filesystem-fault soaks and full
+share-relay/miner coordination remain. The libp2p adapter carries both the
+versioned chain and separate WorkGraph share sessions under distinct opt-in
+protocol IDs and resource scopes. Ordinary CLI hosts leave both disabled; the
+experimental `work-*`
+commands enable only the versioned chain session, not share relay.
 The current integration test kills a separate process immediately before and
 after the synchronous Pebble batch and verifies old-or-new recovery.
 

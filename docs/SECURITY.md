@@ -159,8 +159,10 @@ downloaded block, so
 a long losing side branch can advance without unbounded prefix retries. The
 final replayed ID, height, state root, and cumulative work must match the hello.
 The QUIC adapter exposes the session only through an explicitly installed
-`/outcomemesh/chain/1` handler; default hosts and active CLI commands do not
-advertise it. Its independent resource scope defaults to one concurrent stream
+`/outcomemesh/chain/1` handler; default hosts and ordinary CLI commands do not
+advertise it. The experimental `work-serve-quic` command installs only this
+handler, and `work-sync-quic` cannot fall back to `/outcomemesh/session/0`.
+Its independent resource scope defaults to one concurrent stream
 per peer and four globally, while a separate minute window admits four per peer
 and 128 globally. The hard configurable maxima are two/64 concurrent and
 30/1,024 per minute. These gates do not replace the protocol's frame and
@@ -181,6 +183,16 @@ so aggregate admitted history cannot exceed the forest ceiling without a
 cross-database counter. Reopen rejects a tree already above its newly assigned
 partition. Pebble/WAL physical amplification, free space, directory ownership,
 and archival policy remain separate operator concerns.
+
+CLI activation is fail-closed per data directory. `work-enable` requires the
+exact genesis ID, refuses an activation height at or below the current v0 tip,
+checks the exact 512:1 target ratio and bounded reward split, validates/creates
+the forest first, then atomically renames and fsyncs a fixed-size immutable
+profile. A complete pending profile is recoverable; a conflicting or malformed
+profile is not overwritten. The presence of either final or pending marker
+blocks ordinary status, balance, verification, mining, transfer, sync, serving,
+discovery, and snapshot commands, preventing an operator from extending v0
+through the selected boundary or reading stale v0-only state accidentally.
 
 The isolated WorkGraph Pebble schema stores one activation checkpoint and, for
 each later block, exactly one parent delta or bounded full-state replay

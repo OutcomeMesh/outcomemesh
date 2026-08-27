@@ -80,7 +80,8 @@ usable frame limit is the smaller advertisement. Locator requests retain the
 message IDs, so an active handler cannot reinterpret them accidentally. The
 isolated router-backed state machine now serves and downloads those messages,
 and the QUIC adapter can register it explicitly as `/outcomemesh/chain/1`.
-Default hosts and every active CLI path leave that protocol unhandled.
+Default hosts and ordinary v0 CLI paths leave that protocol unhandled;
+`work-serve-quic` is the explicit experimental registration point.
 
 The isolated versioned chain session uses the negotiated maximum for both reads
 and writes. It admits at most 64 header/body batches by default, with separate
@@ -101,8 +102,9 @@ hard-work fork choice takes over. The completed tip must match the hello's ID,
 height, state root, and cumulative work. A deterministic test uses two-block
 batches, keeps the first remote prefix as a losing side branch, then crosses
 v0→v1 and reorganizes through a different activation base. The session remains
-an opt-in prototype until an explicit CLI activation path exists; its router
-can now recover every activation-base tree from the optional persistent forest.
+an opt-in prototype behind `work-enable`, `work-serve-quic`, and
+`work-sync-quic`; its router recovers every activation-base tree from the
+optional persistent forest.
 
 ## Handshake and synchronization
 
@@ -149,8 +151,9 @@ unbounded request loop. The libp2p QUIC adapter exposes the separate
 `/outcomemesh/workgraph/1` protocol only after an explicit handler is installed;
 without that call negotiation fails. Active CLI nodes do not install it. The
 share stream remains separate from the isolated activation chain session. The
-multi-base persistent router, versioned codecs, and opt-in QUIC chain sync now
-exist, but CLI integration remains a prerequisite for network activation.
+multi-base persistent router, versioned codecs, and explicit experimental QUIC
+chain commands now exist. Automatic discovery/routing, WorkGraph share relay,
+and production activation remain separate gates.
 
 ## Signed peer advertisements
 
@@ -301,7 +304,7 @@ admits four new streams per peer and 128 globally per minute by default (hard
 maxima 30 and 1,024). These controls bound concurrent frame allocation and
 sequential reconnect churn; the session's own frame, message, request, and
 batch ceilings provide the application-level bounds. The handler is opt-in and
-is not installed by `omd`.
+is installed only by `omd work-serve-quic`; ordinary `serve-quic` remains v0.
 
 QUIC-v1 authentication is performed by libp2p's built-in TLS 1.3 identity
 handshake. Noise is registered in the libp2p security configuration but is not
@@ -330,6 +333,13 @@ and state equality after the remote branch reorganizes the receiver. Negative
 fixtures prove that an unhandled host cannot negotiate the protocol, a held
 chain-v1 stream does not consume a v0 session slot, and the dedicated per-peer,
 global, concurrent, and fixed-window limits fail closed.
+
+A separate process fixture initializes two Pebble nodes with the same genesis,
+writes independently validated activation profiles, mines through v0→v1,
+synchronizes over the versioned QUIC protocol, performs mixed-chain replay
+verification, stops the server, and reopens the receiver with the same tip,
+state root, cumulative work, and forest inventory. It also proves that ordinary
+v0 mining is rejected after activation is marked.
 
 Milestone 4's written devnet gates are closed: convergence, fail-closed resource
 bounds, and trustless full-history bootstrap are reproducibly tested. A public

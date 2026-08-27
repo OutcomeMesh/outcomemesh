@@ -98,6 +98,20 @@ func run(arguments []string) error {
 		return runPeersQUIC(arguments[1:])
 	case "auto-sync-quic":
 		return runAutoSyncQUIC(arguments[1:])
+	case "work-enable":
+		return runWorkEnable(arguments[1:])
+	case "work-status":
+		return runWorkStatus(arguments[1:])
+	case "work-balance":
+		return runWorkBalance(arguments[1:])
+	case "work-verify":
+		return runWorkVerify(arguments[1:])
+	case "work-mine":
+		return runWorkMine(arguments[1:])
+	case "work-serve-quic":
+		return runWorkServeQUIC(arguments[1:])
+	case "work-sync-quic":
+		return runWorkSyncQUIC(arguments[1:])
 	case "help", "-h", "--help":
 		printUsage()
 		return nil
@@ -257,6 +271,9 @@ func runBalance(arguments []string) error {
 	if err := flags.Parse(arguments); err != nil {
 		return err
 	}
+	if err := rejectWorkActivation(*data, "balance"); err != nil {
+		return err
+	}
 	document, err := loadGenesis(*data)
 	if err != nil {
 		return err
@@ -315,6 +332,9 @@ func runTransfer(arguments []string) error {
 	validFor := flags.Uint64("valid-for", 100, "validity window in block heights")
 	minerText := flags.String("miner", "", "reward address (default: sender)")
 	if err := flags.Parse(arguments); err != nil {
+		return err
+	}
+	if err := rejectWorkActivation(*data, "transfer"); err != nil {
 		return err
 	}
 	if *keyPath == "" || *recipientText == "" {
@@ -403,6 +423,9 @@ func runMine(arguments []string) error {
 	if err := flags.Parse(arguments); err != nil {
 		return err
 	}
+	if err := rejectWorkActivation(*data, "mine"); err != nil {
+		return err
+	}
 	if *count == 0 {
 		return errors.New("count must be positive")
 	}
@@ -450,43 +473,51 @@ func runVerify(arguments []string) error {
 		return err
 	}
 	defer store.Close()
-	tip, err := store.Tip()
+	tip, err := verifyLegacyLedger(store, document)
 	if err != nil {
 		return err
+	}
+	fmt.Printf("verified data=%s height=%d tip=%s state=%s\n", data, tip.Height, tip.ID, tip.StateRoot)
+	return nil
+}
+
+func verifyLegacyLedger(store storage.Ledger, document genesis.Document) (storage.Tip, error) {
+	tip, err := store.Tip()
+	if err != nil {
+		return storage.Tip{}, err
 	}
 	currentState, err := document.State()
 	if err != nil {
-		return err
+		return storage.Tip{}, err
 	}
 	currentTip, err := storage.GenesisTip(document)
 	if err != nil {
-		return err
+		return storage.Tip{}, err
 	}
 	parameters := block.ParametersFromGenesis(document)
 	for height := uint64(1); height <= tip.Height; height++ {
 		candidate, err := store.Block(height)
 		if err != nil {
-			return err
+			return storage.Tip{}, err
 		}
 		parent, err := storage.ParentContext(store, currentTip)
 		if err != nil {
-			return err
+			return storage.Tip{}, err
 		}
 		executed, err := block.ValidateAndExecuteAt(currentState, parent, candidate, parameters, uint64(time.Now().Unix()))
 		if err != nil {
-			return fmt.Errorf("block %d: %w", height, err)
+			return storage.Tip{}, fmt.Errorf("block %d: %w", height, err)
 		}
 		currentTip, err = storage.NextTip(currentTip, candidate)
 		if err != nil {
-			return err
+			return storage.Tip{}, err
 		}
 		currentState = executed.State
 	}
 	if currentState.Root() != tip.StateRoot || currentTip.ID != tip.ID {
-		return errors.New("replayed chain does not match stored tip")
+		return storage.Tip{}, errors.New("replayed chain does not match stored tip")
 	}
-	fmt.Printf("verified data=%s height=%d tip=%s state=%s\n", data, tip.Height, tip.ID, tip.StateRoot)
-	return nil
+	return tip, nil
 }
 
 func runServe(arguments []string) error {
@@ -497,6 +528,9 @@ func runServe(arguments []string) error {
 	advertiseAddress := flags.String("advertise", "", "IP:port advertised to peers (default: actual listen address)")
 	maxConnections := flags.Int("max-connections", 64, "maximum concurrent peer sessions")
 	if err := flags.Parse(arguments); err != nil {
+		return err
+	}
+	if err := rejectWorkActivation(*data, "serve"); err != nil {
 		return err
 	}
 	if *keyPath == "" || *maxConnections <= 0 {
@@ -642,6 +676,9 @@ func runPeerSync(arguments []string) error {
 	if err := flags.Parse(arguments); err != nil {
 		return err
 	}
+	if err := rejectWorkActivation(*data, "sync"); err != nil {
+		return err
+	}
 	if *keyPath == "" || *peerAddress == "" {
 		return errors.New("key and peer are required")
 	}
@@ -697,6 +734,9 @@ func runServeQUIC(arguments []string) error {
 	maxConnections := flags.Int("max-connections", 64, "maximum authenticated QUIC connections")
 	maxStreamsPerPeer := flags.Int("max-streams-per-peer", 4, "maximum concurrent streams per peer")
 	if err := flags.Parse(arguments); err != nil {
+		return err
+	}
+	if err := rejectWorkActivation(*data, "serve-quic"); err != nil {
 		return err
 	}
 	if *keyPath == "" || *maxConnections <= 0 || *maxConnections > libp2ptransport.MaxConnectionLimit ||
@@ -818,6 +858,9 @@ func runSyncQUIC(arguments []string) error {
 	if err := flags.Parse(arguments); err != nil {
 		return err
 	}
+	if err := rejectWorkActivation(*data, "sync-quic"); err != nil {
+		return err
+	}
 	if *keyPath == "" || *peerAddress == "" {
 		return errors.New("key and peer are required")
 	}
@@ -875,6 +918,9 @@ func runPeersQUIC(arguments []string) error {
 	peerIDText := flags.String("peer-id", "", "expected OutcomeMesh peer ID as 64 hex characters")
 	limit := flags.Uint("limit", 32, "maximum signed peer records to request")
 	if err := flags.Parse(arguments); err != nil {
+		return err
+	}
+	if err := rejectWorkActivation(*data, "peers-quic"); err != nil {
 		return err
 	}
 	if *keyPath == "" || *peerAddress == "" {
@@ -954,6 +1000,9 @@ func runAutoSyncQUIC(arguments []string) error {
 	maxPerASN := flags.Int("max-per-asn", 2, "maximum dial attempts from one resolved ASN per pass")
 	watchInterval := flags.Duration("watch-interval", 0, "repeat bounded passes at this interval; requires --asn-map")
 	if err := flags.Parse(arguments); err != nil {
+		return err
+	}
+	if err := rejectWorkActivation(*data, "auto-sync-quic"); err != nil {
 		return err
 	}
 	if *keyPath == "" || *limit <= 0 || *limit > wire.MaxPeerRecords || *maxPerASN <= 0 || *maxPerASN > wire.MaxPeerRecords {
@@ -1118,6 +1167,9 @@ func runPeerDiscovery(arguments []string) error {
 	if err := flags.Parse(arguments); err != nil {
 		return err
 	}
+	if err := rejectWorkActivation(*data, "peers"); err != nil {
+		return err
+	}
 	if *keyPath == "" || *peerAddress == "" {
 		return errors.New("key and peer are required")
 	}
@@ -1193,6 +1245,9 @@ func runSnapshotCheck(arguments []string) error {
 	if err := flags.Parse(arguments); err != nil {
 		return err
 	}
+	if err := rejectWorkActivation(*data, "snapshot-check"); err != nil {
+		return err
+	}
 	if *keyPath == "" || *peerAddress == "" {
 		return errors.New("key and peer are required")
 	}
@@ -1261,6 +1316,9 @@ func openNode(arguments []string, name string) (string, *pebblestore.Store, gene
 	flags := flag.NewFlagSet(name, flag.ContinueOnError)
 	data := flags.String("data", defaultDataDirectory, "node data directory")
 	if err := flags.Parse(arguments); err != nil {
+		return "", nil, genesis.Document{}, err
+	}
+	if err := rejectWorkActivation(*data, name); err != nil {
 		return "", nil, genesis.Document{}, err
 	}
 	document, err := loadGenesis(*data)
@@ -1458,5 +1516,5 @@ func defaultDevelopmentAddress() types.Address {
 
 func printUsage() {
 	fmt.Println("OutcomeMesh standalone development node")
-	fmt.Println("usage: omd <keygen|init|status|balance|transfer|mine|verify|serve|sync|peers|snapshot-check|serve-quic|sync-quic|peers-quic|auto-sync-quic> [flags]")
+	fmt.Println("usage: omd <keygen|init|status|balance|transfer|mine|verify|serve|sync|peers|snapshot-check|serve-quic|sync-quic|peers-quic|auto-sync-quic|work-enable|work-status|work-balance|work-verify|work-mine|work-serve-quic|work-sync-quic> [flags]")
 }

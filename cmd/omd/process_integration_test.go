@@ -64,6 +64,61 @@ func TestProcessQUICRestartSoak(t *testing.T) {
 	}
 }
 
+func TestProcessWorkGraphActivationQUICRestart(t *testing.T) {
+	root := t.TempDir()
+	dataA := root + "/work-node-a"
+	dataB := root + "/work-node-b"
+	keyA := root + "/work-node-a.key"
+	keyB := root + "/work-node-b.key"
+	writeProcessKey(t, keyA, "work-a")
+	writeProcessKey(t, keyB, "work-b")
+	for _, data := range []string{dataA, dataB} {
+		runProcessCommand(t, 20*time.Second,
+			"init", "--data", data, "--network", "20260828", "--timestamp", "1700000000",
+			"--difficulty-bits", "12", "--max-history-bytes", strconv.FormatUint(minimumHistoryBytes, 10),
+		)
+	}
+	document, err := loadGenesis(dataA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	genesisID, err := document.ID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, data := range []string{dataA, dataB} {
+		runProcessCommand(t, 20*time.Second,
+			"work-enable", "--data", data, "--activation-height", "2",
+			"--confirm-genesis", genesisID.String(), "--max-trees", "4",
+			"--max-history-bytes", strconv.FormatUint(minimumHistoryBytes, 10),
+		)
+	}
+	runProcessCommand(t, 30*time.Second, "work-mine", "--data", dataA, "--count", "5")
+	server, peerID, address := startWorkQUICServerProcess(t, dataA, keyA)
+	runProcessCommand(t, 30*time.Second,
+		"work-sync-quic", "--data", dataB, "--key", keyB, "--peer", address, "--peer-id", peerID,
+	)
+	stopQUICServerProcess(t, server)
+	runProcessCommand(t, 20*time.Second, "work-verify", "--data", dataB)
+
+	statusA := runProcessCommand(t, 20*time.Second, "work-status", "--data", dataA)
+	statusB := runProcessCommand(t, 20*time.Second, "work-status", "--data", dataB)
+	fieldsA := outputFields(statusA, "work_status")
+	fieldsB := outputFields(statusB, "work_status")
+	if fieldsA["height"] != "5" || fieldsB["height"] != "5" || fieldsA["tip"] == "" ||
+		fieldsA["tip"] != fieldsB["tip"] || fieldsA["state"] != fieldsB["state"] ||
+		fieldsA["cumulative_work"] != fieldsB["cumulative_work"] {
+		t.Fatalf("versioned process nodes did not converge\nnode-a: %s\nnode-b: %s", statusA, statusB)
+	}
+	if output, err := runProcessCommandError(20*time.Second, "mine", "--data", dataB, "--count", "1"); err == nil || !strings.Contains(output, "use the explicit work-* command") {
+		t.Fatalf("legacy mutation guard err=%v output=%s", err, output)
+	}
+	statusAfterRestart := runProcessCommand(t, 20*time.Second, "work-status", "--data", dataB)
+	if fields := outputFields(statusAfterRestart, "work_status"); fields["tip"] != fieldsA["tip"] || fields["trees"] == "0/4" {
+		t.Fatalf("versioned restart lost forest state: %s", statusAfterRestart)
+	}
+}
+
 // TestOMDHelperProcess executes exactly one CLI command in a separate process.
 func TestOMDHelperProcess(t *testing.T) {
 	if os.Getenv(helperProcessEnvironment) != "1" {
@@ -144,6 +199,52 @@ func startQUICServerProcess(t testing.TB, data, key string) (*serverProcess, str
 	return &serverProcess{command: command, stderr: stderr}, peerID, address
 }
 
+func startWorkQUICServerProcess(t testing.TB, data, key string) (*serverProcess, string, string) {
+	t.Helper()
+	command := helperCommand(nil,
+		"work-serve-quic", "--data", data, "--key", key,
+		"--listen", "/ip4/127.0.0.1/udp/0/quic-v1", "--max-connections", "8",
+		"--max-chain-streams", "2", "--max-chain-streams-per-peer", "1",
+	)
+	stdout, err := command.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stderr := new(bytes.Buffer)
+	command.Stderr = stderr
+	if err := command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if command.ProcessState == nil || !command.ProcessState.Exited() {
+			_ = command.Process.Kill()
+			_ = command.Wait()
+		}
+	})
+	lineResult := make(chan string, 1)
+	go func() {
+		line, _ := bufio.NewReader(stdout).ReadString('\n')
+		lineResult <- line
+	}()
+	var line string
+	select {
+	case line = <-lineResult:
+	case <-time.After(30 * time.Second):
+		_ = command.Process.Kill()
+		_ = command.Wait()
+		t.Fatalf("detached versioned QUIC server startup timeout stderr=%s", stderr.String())
+	}
+	values := outputFields(line, "serving_work_quic")
+	peerID := values["peer_id"]
+	address := strings.Split(values["listen"], ",")[0]
+	if peerID == "" || address == "" {
+		_ = command.Process.Kill()
+		_ = command.Wait()
+		t.Fatalf("invalid detached versioned server line %q stderr=%s", line, stderr.String())
+	}
+	return &serverProcess{command: command, stderr: stderr}, peerID, address
+}
+
 func stopQUICServerProcess(t testing.TB, server *serverProcess) {
 	t.Helper()
 	if err := server.command.Process.Signal(syscall.SIGTERM); err != nil {
@@ -172,6 +273,31 @@ func runProcessCommand(t testing.TB, timeout time.Duration, arguments ...string)
 		t.Fatalf("command %q: %v\n%s", arguments, err, output)
 	}
 	return string(output)
+}
+
+func runProcessCommandError(timeout time.Duration, arguments ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	output, err := helperCommand(ctx, arguments...).CombinedOutput()
+	return string(output), err
+}
+
+func outputFields(output, prefix string) map[string]string {
+	for _, line := range strings.Split(output, "\n") {
+		fields := strings.Fields(strings.TrimSpace(line))
+		if len(fields) == 0 || fields[0] != prefix {
+			continue
+		}
+		result := make(map[string]string, len(fields)-1)
+		for _, field := range fields[1:] {
+			keyValue := strings.SplitN(field, "=", 2)
+			if len(keyValue) == 2 {
+				result[keyValue[0]] = keyValue[1]
+			}
+		}
+		return result
+	}
+	return nil
 }
 
 func helperCommand(ctx context.Context, arguments ...string) *exec.Cmd {

@@ -385,13 +385,21 @@ can advance along a downloaded side branch before that branch has enough work
 to become the selected local tip. At completion the replayed ID, height, state
 root, and cumulative work must equal the hello. The QUIC adapter registers the
 loop only through the opt-in `/outcomemesh/chain/1` handler; default hosts and
-the active CLI do not install it.
+ordinary v0 CLI commands do not install it. The experimental
+`work-serve-quic`/`work-sync-quic` pair is protocol-exact and cannot negotiate
+the version-0 session as a fallback.
 
 The optional local activation forest does not add a consensus field. It stores
 each v1 tree below the canonical hash of its v0 activation base, fully verifies
 every child database on reopen, rebuilds block ownership, and recomputes the
 winner by the fork-choice rule above. There is deliberately no persisted global
 tip requiring an atomic commit across databases.
+
+The local `work-activation.bin` profile is an operator safety boundary, not a
+network or consensus message. Its fixed 64 bytes bind the network ID, genesis
+ID, activation height, fee delay, tree cap, and forest-wide history budget.
+Peers still compare the consensus-relevant network/genesis/height values in
+`ChainHelloV1`; local storage limits are not negotiated as consensus.
 
 The next hard target is known before mining and is independent of the current
 candidate timestamp:

@@ -100,8 +100,10 @@ network/height/parent/target/payload context. An isolated version-1 stream now
 negotiates that context and its frame/count limits. The libp2p adapter can expose
 it under an explicit opt-in protocol handler and passes a real two-host QUIC
 relay. The isolated block router now enforces the activation-height version
-boundary across multiple possible v0 bases, but active CLI/session routing and
-consensus activation remain disabled.
+boundary across multiple possible v0 bases. Ordinary CLI/session routing remains
+version 0, while explicit `work-enable`, `work-mine`, and versioned QUIC commands
+exercise the transition on a marked development directory. Weak-share relay and
+public consensus activation remain disabled.
 
 ## Gates before public mining
 

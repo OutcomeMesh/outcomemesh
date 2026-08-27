@@ -26,7 +26,8 @@ Milestones 0–4 are complete under the repository's written exit gates. The
 deterministic kernel, signed ledger, standalone PoW chain, and bounded QUIC
 peer-to-peer devnet all run today. Milestone 5 WorkGraph research and
 implementation is now in progress; its consensus-pure DAG/accounting kernel and
-an isolated version-1 block-transition prototype exist but are not activated.
+an isolated version-1 block-transition prototype run only through explicit
+experimental `work-*` commands and are not activated by default.
 
 The repository also contains the first standalone-ledger slice:
 
@@ -55,9 +56,10 @@ make test-process
 make build
 ```
 
-`test-process` runs three real QUIC server restart/sync/replay cycles and kills
-the WorkGraph Pebble process on both sides of its durable batch boundary. Raise
-the opt-in QUIC soak length with, for example,
+`test-process` runs three real v0 QUIC server restart/sync/replay cycles, a
+separate v0→v1 WorkGraph enable/mine/QUIC-sync/restart cycle, and kills the
+WorkGraph Pebble process on both sides of its durable batch boundary. Raise the
+v0 QUIC soak length with, for example,
 `OUTCOMEMESH_SOAK_CYCLES=25 make test-process` (hard cap: 100 cycles).
 
 Create a wallet, initialize a local chain to that wallet, mine, transfer, and
@@ -106,6 +108,33 @@ The ASN file is operator-supplied local policy (`CIDR,ASN`, one mapping per
 line); [docs/asn-map.example](docs/asn-map.example) is only a private-use
 development fixture. The node does not bundle or silently download a production
 routing dataset. Omitting `--watch-interval` keeps auto-sync one-shot.
+
+The WorkGraph path is experimental and remains off for every ordinary command.
+Enable it only on an initialized development directory after checking its exact
+genesis ID (the default 12-bit development target supports the required exact
+512:1 share threshold):
+
+```sh
+./bin/omd work-enable --data ./data/work-a --activation-height 2 \
+  --confirm-genesis <genesis-id> --max-trees 64 \
+  --max-history-bytes 68719476736
+./bin/omd work-mine --data ./data/work-a --count 5
+./bin/omd work-status --data ./data/work-a
+./bin/omd work-balance --data ./data/work-a
+./bin/omd work-verify --data ./data/work-a
+./bin/omd work-serve-quic --data ./data/work-a --key node-a.key \
+  --listen /ip4/127.0.0.1/udp/9845/quic-v1
+./bin/omd work-sync-quic --data ./data/work-b --key node-b.key \
+  --peer <multiaddress> --peer-id <outcomemesh-peer-id>
+```
+
+`work-enable` writes an immutable, fsynced profile binding network, genesis,
+activation height, fee delay, tree cap, and forest-wide history budget. Once
+that marker exists, ordinary v0 status/balance/verify/mining and networking
+commands refuse the directory; only explicit `work-*` commands can open its
+mixed chain. `work-mine` currently mines empty v0/v1 development blocks. Weak
+share relay, transactions on the experimental path, migration tooling, and
+public activation remain gated.
 
 `balance` reports total, spendable at the next height, and maturity-locked
 amounts separately.
