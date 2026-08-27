@@ -39,6 +39,7 @@ test-fuzz-smoke:
 	$(GO) test ./node/peers -run '^$$' -fuzz '^FuzzDecodeManagerNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/snapshot -run '^$$' -fuzz '^FuzzDecodeManifestNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/snapshot -run '^$$' -fuzz '^FuzzDecodeChunkNeverPanics$$' -fuzztime=$(FUZZTIME)
+	$(GO) test ./node/activation -run '^$$' -fuzz '^FuzzDecodeRoutedBlockNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/workchain -run '^$$' -fuzz '^FuzzDecodeNodeMetadataNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/workchain -run '^$$' -fuzz '^FuzzDecodePersistedStateNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/workchain -run '^$$' -fuzz '^FuzzDecodeStateDeltaNeverPanics$$' -fuzztime=$(FUZZTIME)

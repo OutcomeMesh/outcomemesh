@@ -335,7 +335,8 @@ timestamp simulations remain mandatory before a networked devnet.
 ## Experimental block version 1: WorkGraph activation
 
 This section specifies an implemented, isolated prototype. It is not accepted
-by active version-0 storage or session handlers. A separate version-1
+by active version-0 storage or session handlers. The isolated activation router
+does enforce the transition and fork choice in-process. A separate version-1
 WorkGraph stream negotiates and relays shares only between explicitly compatible
 prototype peers; it does not reinterpret the version-0 chain session.
 
@@ -343,6 +344,20 @@ Activation occurs at one configured non-zero height. That first version-1 block
 does not create a delayed WorkGraph payout because its version-0 parent already
 issued its reward. Every later version-1 block must consume the validated
 earning record of its direct version-1 parent; omitting it is invalid.
+
+The routing rule is exact:
+
+```text
+height < activation_height  => version 0 only
+height >= activation_height => version 1 only
+```
+
+The leading canonical `uint16` selects the unchanged version-specific decoder.
+Every stored version-0 node at `activation_height-1`, including a non-canonical
+side node, may anchor an independent version-1 tree. Fork choice compares the
+best tip from every such tree and the pre-activation ledger by cumulative hard
+proof of work, followed by the common lexicographic ID tie-break. Thus activation
+does not turn the first observed boundary parent into an implicit checkpoint.
 
 The next hard target is known before mining and is independent of the current
 candidate timestamp:

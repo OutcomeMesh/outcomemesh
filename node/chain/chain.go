@@ -72,6 +72,12 @@ func (chain *Chain) Prepare(transactions []outcome.Transaction, miner types.Addr
 }
 
 func (chain *Chain) Submit(candidate block.Block) (storage.Tip, error) {
+	return chain.SubmitAt(candidate, chain.now())
+}
+
+// SubmitAt validates and commits with an explicit local admission time. It is
+// used by version routers so every consensus version observes one time sample.
+func (chain *Chain) SubmitAt(candidate block.Block, validationTime uint64) (storage.Tip, error) {
 	chain.mu.Lock()
 	defer chain.mu.Unlock()
 
@@ -90,7 +96,7 @@ func (chain *Chain) Submit(candidate block.Block) (storage.Tip, error) {
 	if err != nil {
 		return storage.Tip{}, err
 	}
-	executed, err := block.ValidateAndExecuteAt(preState, parent, candidate, chain.parameters, chain.now())
+	executed, err := block.ValidateAndExecuteAt(preState, parent, candidate, chain.parameters, validationTime)
 	if err != nil {
 		return storage.Tip{}, err
 	}

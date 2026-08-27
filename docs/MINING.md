@@ -99,7 +99,9 @@ missing bodies are requested at once, and every response is tied to one exact
 network/height/parent/target/payload context. An isolated version-1 stream now
 negotiates that context and its frame/count limits. The libp2p adapter can expose
 it under an explicit opt-in protocol handler and passes a real two-host QUIC
-relay, but active CLI routing and consensus activation remain disabled.
+relay. The isolated block router now enforces the activation-height version
+boundary across multiple possible v0 bases, but active CLI/session routing and
+consensus activation remain disabled.
 
 ## Gates before public mining
 

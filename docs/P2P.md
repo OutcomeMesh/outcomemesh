@@ -100,7 +100,9 @@ bodies and advertised bodies the peer withheld. One stream cannot become an
 unbounded request loop. The libp2p QUIC adapter exposes the separate
 `/outcomemesh/workgraph/1` protocol only after an explicit handler is installed;
 without that call negotiation fails. Active CLI nodes do not install it and no
-activation-height routing exists yet.
+activation-height routing is connected to the chain session. The isolated
+in-process block router exists, but multi-base persistence and versioned block/
+header chain messages remain prerequisites for network activation.
 
 ## Signed peer advertisements
 

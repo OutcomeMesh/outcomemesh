@@ -152,11 +152,22 @@ preimage, and its predecessor payout is materialized one height later. A
 bounded fork-local fee queue separates transaction collection from the future
 PoW winner receiving those fees; its root and matured award are part of the
 payload commitment. This reduces the incentive to mine a private high-fee
-payload while preserving exact conservation. Storage, wire, and chain selection
-remain on version 0 until an explicit activation rule and boundary-reorg suite
-are integrated.
+payload while preserving exact conservation. Active storage, wire, and CLI
+remain on version 0. An isolated activation router now supplies the explicit
+block-version boundary and cross-version fork-choice suite without enabling it
+in those paths.
 
-An isolated version-1 coordinator already exercises that boundary:
+The router accepts v0 only below the configured activation height and v1 only
+at or above it. Every known v0 node at height `H-1` can independently seed a v1
+tree; it does not freeze whichever v0 branch happened to be canonical first.
+The global selected tip is the best cumulative hard-PoW tip across the legacy
+ledger and every v1 tree, using the existing deterministic ID tie-break. A test
+extends one activation base, then reorganizes through a different base with
+more hard work. Both versions receive the same explicit local admission-time
+sample. Canonical encodings remain unchanged and a strict leading-version
+decoder rejects a format on the wrong side of `H`.
+
+The isolated version-1 coordinator exercises each routed tree:
 it derives branch-local MTP, targets, fee queues, states, and prior earnings and
 uses only hard WorkSeal difficulty in cumulative-work fork choice. It is test
 scaffolding, not an alternate consensus authority. Its schema-versioned Pebble
@@ -175,9 +186,10 @@ branch reaching a configurable cutoff, then atomically removes only complete
 stale subtrees while decrementing the exact logical history counter. Its default
 window is 4,096 heights, zero disables it, and it never creates local PoW
 finality by pruning canonical history. Broader filesystem-fault soaks and
-activation routing for the already isolated negotiated WorkGraph session also
-remain. The libp2p adapter carries that session under a separate opt-in protocol
-ID and resource scope, while default hosts and the active CLI leave it disabled.
+multi-base persistence plus chain-session/CLI routing for the already isolated
+negotiated WorkGraph session also remain. The libp2p adapter carries that
+session under a separate opt-in protocol ID and resource scope, while default
+hosts and the active CLI leave it disabled.
 The current integration test kills a separate process immediately before and
 after the synchronous Pebble batch and verifies old-or-new recovery.
 

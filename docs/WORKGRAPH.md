@@ -257,9 +257,14 @@ block transition now exist. The prototype adds the unified WorkSeal, payload
 commitment, previous-interval WorkGraph root/share body, canonical codec,
 header-first proof checks, explicit activation height, a committed fee queue,
 and delayed reward resources. Version-0 blocks are not silently reinterpreted.
-The prototype now has isolated schema-versioned persistent storage; session
-negotiation and a production storage budget remain mandatory before it can
-become active.
+The prototype now has isolated schema-versioned persistent storage, negotiated
+relay, and a published local budget. A strict in-process activation router now
+dispatches unchanged
+canonical encodings by their leading version, rejects v0 at/above `H` and v1
+below `H`, and compares cumulative hard work across independent v1 trees rooted
+at every known v0 node on `H-1`. This avoids implicit finality at the initially
+selected boundary parent. Multi-base persistence and the active wire/CLI path
+are not yet enabled.
 
 The transport-independent codec and an isolated finite session implement
 inventory-first WorkGraph relay: 1,024 sorted IDs per announcement and at most
@@ -272,8 +277,8 @@ the full local pool validator. The libp2p adapter exposes it under the distinct
 `/outcomemesh/workgraph/1` ID only when an operator installs a handler; default
 hosts and the active CLI cannot negotiate it. Two-host QUIC tests cover peer-ID
 pinning, a negotiated 512-byte frame, parent/child relay, context rejection, and
-an independent one-stream-per-peer resource scope. Activation routing remains
-disabled.
+an independent one-stream-per-peer resource scope. The in-process block router
+remains disconnected from this chain session.
 
 One maximal 1,024-ID relay is bounded to exactly 630,258 bytes of bidirectional
 application framing when a peer forces one maximum-size body per batch. The
@@ -335,4 +340,5 @@ new chain, never a partial node/delta/tip combination.
 - simulations for honest proportionality, propagation delay, withholding,
   orphan anchors, competing forks, a multi-seed selfish-strategy grid, and
   bandwidth;
-- an explicit block-version activation and reorg test proving no double payout.
+- explicit block-version and cross-boundary reorg tests proving no implicit
+  activation checkpoint or double payout.

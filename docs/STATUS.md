@@ -285,12 +285,22 @@ Implemented in an isolated, not-yet-activated consensus package:
   delta→checkpoint→delta rotation, exact byte accounting, pre-sync failure,
   corrupt checkpoint rejection, restart/extension, and pruning a checkpoint
   carried by a stale fork. Schema 2 fails closed and requires replay.
+- an isolated activation router now owns strict v0/v1 block admission. It
+  dispatches unchanged canonical encodings from their leading version, permits
+  v0 only below `H` and v1 only from `H`, and lazily creates one WorkChain tree
+  for every known v0 parent at `H-1`. Global fork choice compares their best
+  tips by cumulative hard work and the shared ID tie-break. The executable
+  boundary fixture extends one base and then reorganizes through a different
+  v0 base, proving activation does not freeze the first canonical parent. Both
+  validators consume one explicit admission-time sample, and the routed decoder
+  is a fuzz target.
 
 No WorkGraph field has entered a version-0 block yet. The isolated v1 store and
 opt-in QUIC session remain disconnected from the active chain/CLI routing path;
-history-anchored archival pruning, extended filesystem-fault/soak campaigns,
-production gossip-budget calibration, and finer/adaptive economic-strategy
-analysis remain before activation.
+multi-base persistence, a versioned chain-session codec, history-anchored
+archival pruning, extended filesystem-fault/soak campaigns, production gossip-
+budget calibration, and finer/adaptive economic-strategy analysis remain before
+activation.
 
 ## Milestones 6–10 — not integrated
 

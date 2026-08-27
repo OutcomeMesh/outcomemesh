@@ -165,6 +165,14 @@ Canonical history remains intact: an independently history-anchored archival
 pruning rule and broader filesystem fault/long-soak campaigns are still
 required.
 
+The activation boundary is not a locally finalized block. The isolated router
+can create a separate v1 tree for every known v0 node at height `H-1` and uses
+the same cumulative-hard-work comparison across all of them. A more-work v1
+branch rooted in a formerly losing v0 node can therefore reorganize the selected
+chain. The router rejects v0 at or above `H`, v1 below `H`, unknown v1 parents,
+and consensus-parameter disagreement between versions. This logic is not yet
+connected to persistent multi-base recovery or the public chain session.
+
 ## Consensus coding rules
 
 - Never serialize a Go map.
