@@ -182,8 +182,9 @@ message IDs. This fixes the control-plane grammar without weakening the active
 session's fail-closed dispatch. An isolated router-backed serving/download state
 machine now validates mixed headers before bodies, continues along known losing
 side branches, replays blocks through global hard-work fork choice, and binds
-the completed state/work back to the hello. It has no active transport or CLI
-registration.
+the completed state/work back to the hello. The QUIC adapter exposes it under
+the distinct opt-in `/outcomemesh/chain/1` protocol and resource scope, while
+default hosts and the active CLI leave it unregistered.
 
 The isolated version-1 coordinator exercises each routed tree:
 it derives branch-local MTP, targets, fee queues, states, and prior earnings and
@@ -204,10 +205,10 @@ branch reaching a configurable cutoff, then atomically removes only complete
 stale subtrees while decrementing the exact logical history counter. Its default
 window is 4,096 heights, zero disables it, and it never creates local PoW
 finality by pruning canonical history. Broader filesystem-fault soaks and
-multi-base persistence plus transport/CLI registration of the versioned chain
-session also remain. The libp2p adapter carries the separate WorkGraph share
-session under an opt-in protocol ID and resource scope, while default hosts and
-the active CLI leave it disabled.
+multi-base persistence plus CLI registration of the versioned chain session
+also remain. The libp2p adapter carries both the versioned chain and separate
+WorkGraph share sessions under distinct opt-in protocol IDs and resource
+scopes, while default hosts and the active CLI leave both disabled.
 The current integration test kills a separate process immediately before and
 after the synchronous Pebble batch and verifies old-or-new recovery.
 

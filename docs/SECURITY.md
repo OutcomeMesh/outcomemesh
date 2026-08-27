@@ -158,8 +158,14 @@ fail closed. A continuation locator is accepted only for a locally known
 downloaded block, so
 a long losing side branch can advance without unbounded prefix retries. The
 final replayed ID, height, state root, and cumulative work must match the hello.
-The session remains in-process and unregistered by transports/CLI; multi-base
-durable router recovery is still an activation blocker.
+The QUIC adapter exposes the session only through an explicitly installed
+`/outcomemesh/chain/1` handler; default hosts and active CLI commands do not
+advertise it. Its independent resource scope defaults to one concurrent stream
+per peer and four globally, while a separate minute window admits four per peer
+and 128 globally. The hard configurable maxima are two/64 concurrent and
+30/1,024 per minute. These gates do not replace the protocol's frame and
+message budgets. Multi-base durable router recovery is still an activation
+blocker.
 
 The isolated WorkGraph Pebble schema stores one activation checkpoint and, for
 each later block, exactly one parent delta or bounded full-state replay

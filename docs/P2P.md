@@ -79,7 +79,8 @@ usable frame limit is the smaller advertisement. Locator requests retain the
 32-locator/128-object bounds and duplicate rejection of v0 under distinct
 message IDs, so an active handler cannot reinterpret them accidentally. The
 isolated router-backed state machine now serves and downloads those messages,
-but no active transport protocol or CLI path registers it.
+and the QUIC adapter can register it explicitly as `/outcomemesh/chain/1`.
+Default hosts and every active CLI path leave that protocol unhandled.
 
 The isolated versioned chain session uses the negotiated maximum for both reads
 and writes. It admits at most 64 header/body batches by default, with separate
@@ -100,8 +101,8 @@ hard-work fork choice takes over. The completed tip must match the hello's ID,
 height, state root, and cumulative work. A deterministic test uses two-block
 batches, keeps the first remote prefix as a losing side branch, then crosses
 v0→v1 and reorganizes through a different activation base. The session remains
-in-process only until multi-base persistence and an opt-in transport handler
-exist.
+an opt-in prototype until multi-base persistence and an explicit CLI activation
+path exist.
 
 ## Handshake and synchronization
 
@@ -148,9 +149,9 @@ unbounded request loop. The libp2p QUIC adapter exposes the separate
 `/outcomemesh/workgraph/1` protocol only after an explicit handler is installed;
 without that call negotiation fails. Active CLI nodes do not install it. The
 share stream remains separate from the isolated activation chain session. The
-in-process block router, versioned codecs, and isolated chain sync exist, but
-multi-base persistence and transport/CLI handler integration remain
-prerequisites for network activation.
+in-process block router, versioned codecs, and opt-in QUIC chain sync exist, but
+multi-base persistence and CLI integration remain prerequisites for network
+activation.
 
 ## Signed peer advertisements
 
@@ -293,6 +294,16 @@ about 82.1 KiB/s per peer and 5.13 MiB/s globally averaged over the window.
 Window-boundary bursts, QUIC/IP overhead, and retransmissions are separate
 capacity concerns.
 
+The activation-aware chain session is a third protocol scope under
+`/outcomemesh/chain/1`; it never falls back to `/outcomemesh/session/0`. Its
+defaults allow one concurrent stream per peer and four across the host, with
+hard implementation maxima of two and 64. An independent fixed-window gate
+admits four new streams per peer and 128 globally per minute by default (hard
+maxima 30 and 1,024). These controls bound concurrent frame allocation and
+sequential reconnect churn; the session's own frame, message, request, and
+batch ceilings provide the application-level bounds. The handler is opt-in and
+is not installed by `omd`.
+
 QUIC-v1 authentication is performed by libp2p's built-in TLS 1.3 identity
 handshake. Noise is registered in the libp2p security configuration but is not
 layered over QUIC; describing QUIC as “QUIC over Noise” would be technically
@@ -312,6 +323,14 @@ frame, relays an out-of-order parent/child DAG in two body batches, and verifies
 full pool admission. Negative fixtures reject a different payload context,
 refuse negotiation when no WorkGraph handler is installed, and enforce its
 independent one-stream-per-peer scope.
+
+Another two-host fixture explicitly enables `/outcomemesh/chain/1`, pins the
+authenticated peer ID, negotiates a 1 KiB frame ceiling, and synchronizes a
+divergent branch across v0→v1 in two-block batches. It verifies final hard work
+and state equality after the remote branch reorganizes the receiver. Negative
+fixtures prove that an unhandled host cannot negotiate the protocol, a held
+chain-v1 stream does not consume a v0 session slot, and the dedicated per-peer,
+global, concurrent, and fixed-window limits fail closed.
 
 Milestone 4's written devnet gates are closed: convergence, fail-closed resource
 bounds, and trustless full-history bootstrap are reproducibly tested. A public

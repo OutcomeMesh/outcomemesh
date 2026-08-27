@@ -365,10 +365,10 @@ its unchanged consensus encoding; length-delimited headers allow one contiguous
 batch to cross from v0 to v1. The codec checks basic syntax, ancestry, height,
 and forbids a v1-to-v0 reversal, but it deliberately does not choose an
 activation height. That stateful rule remains the activation router's job.
-The ordinary chain reader retains its 8 MiB v0 payload ceiling. A future
-versioned session must explicitly opt into the larger WorkGraph-block ceiling,
-and the frame prefix is checked against that ceiling before allocation.
-Versioned requests, status negotiation, and session routing are not active yet.
+The ordinary chain reader retains its 8 MiB v0 payload ceiling. The versioned
+session explicitly opts into the larger WorkGraph-block ceiling, and the frame
+prefix is checked against that ceiling before allocation. Versioned requests,
+status negotiation, and session routing remain inactive by default.
 
 The appended control grammar is now canonical but still inactive.
 `ChainHelloV1` carries the exact network ID, genesis ID, activation height,
@@ -383,8 +383,9 @@ v0/v1 header context before requesting bodies, requires body/header identity,
 and submits every block through the activation router. A continuation locator
 can advance along a downloaded side branch before that branch has enough work
 to become the selected local tip. At completion the replayed ID, height, state
-root, and cumulative work must equal the hello. The loop is not registered by
-the active transport or CLI.
+root, and cumulative work must equal the hello. The QUIC adapter registers the
+loop only through the opt-in `/outcomemesh/chain/1` handler; default hosts and
+the active CLI do not install it.
 
 The next hard target is known before mining and is independent of the current
 candidate timestamp:

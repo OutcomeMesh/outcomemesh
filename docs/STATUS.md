@@ -318,12 +318,19 @@ Implemented in an isolated, not-yet-activated consensus package:
   fixture crosses v0→v1 through a different activation base: batch one remains
   below the local tip, later batches win and reorg. Final ID, height, state root,
   and cumulative work are bound back to `ChainHello`; a lying work advertisement
-  is rejected after replay. The active transport and CLI do not install this
-  session.
+  is rejected after replay.
+- the libp2p adapter now carries that session under the distinct opt-in
+  `/outcomemesh/chain/1` protocol without fallback to `/outcomemesh/session/0`.
+  Default hosts and the active CLI do not install its handler. A real two-host
+  QUIC fixture pins peer identity and synchronizes a divergent activation fork
+  with a negotiated 1 KiB ceiling. Its independent scopes default to one
+  concurrent stream per peer/four globally and four admitted streams per
+  peer/128 globally per minute; tests exhaust every scope while proving a held
+  versioned stream does not consume the v0 session allowance.
 
 No WorkGraph field has entered a version-0 block yet. The isolated v1 store and
 opt-in QUIC session remain disconnected from the active chain/CLI routing path;
-multi-base persistence, opt-in versioned transport/CLI routing,
+multi-base persistence, opt-in versioned CLI routing,
 history-anchored archival pruning, extended filesystem-fault/soak campaigns,
 production gossip-budget calibration, and finer/adaptive economic-strategy
 analysis remain before activation.

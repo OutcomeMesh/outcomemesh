@@ -144,7 +144,8 @@ The CLI wallet is for development only.
 - `node/snapshot/`: bounded chunk export and state-root verification without
   unsafe canonical-state import;
 - `node/transport/`: mutually authenticated TLS/TCP fallback and bounded
-  go-libp2p QUIC-v1 adapter, including an opt-in isolated WorkGraph-v1 stream;
+  go-libp2p QUIC-v1 adapter, including distinct opt-in WorkGraph-v1 and
+  activation-aware chain-v1 streams;
 - `wallet/`: deterministic resource selection and guarded transaction building;
 - `cmd/omd/`: standalone development CLI;
 - `docs/`: protocol, architecture, security model, vectors, and gated roadmap.

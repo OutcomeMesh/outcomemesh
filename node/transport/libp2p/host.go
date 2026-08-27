@@ -25,19 +25,24 @@ import (
 )
 
 const (
-	SessionProtocol    protocol.ID = "/outcomemesh/session/0"
-	WorkGraphProtocol  protocol.ID = "/outcomemesh/workgraph/1"
-	maxListenAddresses             = 8
-	maxAddressBytes                = 256
+	SessionProtocol        protocol.ID = "/outcomemesh/session/0"
+	WorkGraphProtocol      protocol.ID = "/outcomemesh/workgraph/1"
+	VersionedChainProtocol protocol.ID = "/outcomemesh/chain/1"
+	maxListenAddresses                 = 8
+	maxAddressBytes                    = 256
 	// MaxConnectionLimit and MaxStreamsPerPeerLimit are hard implementation
 	// bounds. Callers may choose lower operational limits, but cannot silently
 	// expand the resource-manager scopes past these values.
-	MaxConnectionLimit                 = 1_024
-	MaxStreamsPerPeerLimit             = 32
-	MaxWorkStreamsPerPeerLimit         = 4
-	MaxWorkStreamsPerMinuteLimit       = 60
-	MaxWorkStreamsGlobalPerMinuteLimit = 4_096
-	MaxFileDescriptorLimit             = 4_096
+	MaxConnectionLimit                           = 1_024
+	MaxStreamsPerPeerLimit                       = 32
+	MaxWorkStreamsPerPeerLimit                   = 4
+	MaxWorkStreamsPerMinuteLimit                 = 60
+	MaxWorkStreamsGlobalPerMinuteLimit           = 4_096
+	MaxVersionedChainStreamsLimit                = 64
+	MaxVersionedChainStreamsPerPeerLimit         = 2
+	MaxVersionedChainStreamsPerMinuteLimit       = 30
+	MaxVersionedChainStreamsGlobalPerMinuteLimit = 1_024
+	MaxFileDescriptorLimit                       = 4_096
 )
 
 var (
@@ -50,43 +55,57 @@ var (
 type Handler func(context.Context, types.Hash, network.Stream)
 
 type Config struct {
-	Listen                        []string
-	MaxConnections                int
-	MaxStreamsPerPeer             int
-	MaxWorkStreamsPerPeer         int
-	MaxWorkStreamsPerMinute       int
-	MaxWorkStreamsGlobalPerMinute int
-	MemoryBytes                   int64
-	MaxFileDescriptors            int
-	GracePeriod                   time.Duration
+	Listen                                  []string
+	MaxConnections                          int
+	MaxStreamsPerPeer                       int
+	MaxWorkStreamsPerPeer                   int
+	MaxWorkStreamsPerMinute                 int
+	MaxWorkStreamsGlobalPerMinute           int
+	MaxVersionedChainStreams                int
+	MaxVersionedChainStreamsPerPeer         int
+	MaxVersionedChainStreamsPerMinute       int
+	MaxVersionedChainStreamsGlobalPerMinute int
+	MemoryBytes                             int64
+	MaxFileDescriptors                      int
+	GracePeriod                             time.Duration
 }
 
 func DefaultConfig() Config {
 	return Config{
-		Listen:                        []string{"/ip4/127.0.0.1/udp/0/quic-v1"},
-		MaxConnections:                64,
-		MaxStreamsPerPeer:             4,
-		MaxWorkStreamsPerPeer:         1,
-		MaxWorkStreamsPerMinute:       8,
-		MaxWorkStreamsGlobalPerMinute: 512,
-		MemoryBytes:                   64 << 20,
-		MaxFileDescriptors:            128,
-		GracePeriod:                   30 * time.Second,
+		Listen:                                  []string{"/ip4/127.0.0.1/udp/0/quic-v1"},
+		MaxConnections:                          64,
+		MaxStreamsPerPeer:                       4,
+		MaxWorkStreamsPerPeer:                   1,
+		MaxWorkStreamsPerMinute:                 8,
+		MaxWorkStreamsGlobalPerMinute:           512,
+		MaxVersionedChainStreams:                4,
+		MaxVersionedChainStreamsPerPeer:         1,
+		MaxVersionedChainStreamsPerMinute:       4,
+		MaxVersionedChainStreamsGlobalPerMinute: 128,
+		MemoryBytes:                             64 << 20,
+		MaxFileDescriptors:                      128,
+		GracePeriod:                             30 * time.Second,
 	}
 }
 
 type Host struct {
-	inner                         host.Host
-	id                            types.Hash
-	context                       context.Context
-	cancel                        context.CancelFunc
-	once                          sync.Once
-	workMu                        sync.Mutex
-	workWindowStart               time.Time
-	workGlobalCount               int
-	workPeerCounts                map[types.Hash]int
-	maxWorkStreamsPerMinute       int
-	maxGlobalWorkStreamsPerMinute int
+	inner                                   host.Host
+	id                                      types.Hash
+	context                                 context.Context
+	cancel                                  context.CancelFunc
+	once                                    sync.Once
+	workMu                                  sync.Mutex
+	workWindowStart                         time.Time
+	workGlobalCount                         int
+	workPeerCounts                          map[types.Hash]int
+	maxWorkStreamsPerMinute                 int
+	maxGlobalWorkStreamsPerMinute           int
+	versionedChainMu                        sync.Mutex
+	versionedChainWindowStart               time.Time
+	versionedChainGlobalCount               int
+	versionedChainPeerCounts                map[types.Hash]int
+	maxVersionedChainStreamsPerMinute       int
+	maxGlobalVersionedChainStreamsPerMinute int
 }
 
 func New(ctx context.Context, privateKey ed25519.PrivateKey, config Config, handler Handler) (*Host, error) {
@@ -133,9 +152,12 @@ func New(ctx context.Context, privateKey ed25519.PrivateKey, config Config, hand
 	}
 	result := &Host{
 		inner: inner, id: id, context: hostContext, cancel: cancel,
-		workPeerCounts:                make(map[types.Hash]int),
-		maxWorkStreamsPerMinute:       config.MaxWorkStreamsPerMinute,
-		maxGlobalWorkStreamsPerMinute: config.MaxWorkStreamsGlobalPerMinute,
+		workPeerCounts:                          make(map[types.Hash]int),
+		maxWorkStreamsPerMinute:                 config.MaxWorkStreamsPerMinute,
+		maxGlobalWorkStreamsPerMinute:           config.MaxWorkStreamsGlobalPerMinute,
+		versionedChainPeerCounts:                make(map[types.Hash]int),
+		maxVersionedChainStreamsPerMinute:       config.MaxVersionedChainStreamsPerMinute,
+		maxGlobalVersionedChainStreamsPerMinute: config.MaxVersionedChainStreamsGlobalPerMinute,
 	}
 	result.setHandler(SessionProtocol, handler)
 	return result, nil
@@ -151,6 +173,16 @@ func (value *Host) SetWorkGraphHandler(handler Handler) error {
 	return nil
 }
 
+// SetVersionedChainHandler explicitly enables the activation-aware chain
+// session. Hosts that never call it do not negotiate the prototype protocol.
+func (value *Host) SetVersionedChainHandler(handler Handler) error {
+	if value == nil || value.inner == nil || handler == nil {
+		return ErrConfiguration
+	}
+	value.setHandler(VersionedChainProtocol, handler)
+	return nil
+}
+
 func (value *Host) setHandler(protocolID protocol.ID, handler Handler) {
 	value.inner.SetStreamHandler(protocolID, func(stream network.Stream) {
 		remoteID, err := outcomeIDFromPublicKey(stream.Conn().RemotePublicKey())
@@ -162,8 +194,30 @@ func (value *Host) setHandler(protocolID protocol.ID, handler Handler) {
 			_ = stream.Reset()
 			return
 		}
+		if protocolID == VersionedChainProtocol && !value.allowVersionedChainStream(remoteID, time.Now()) {
+			_ = stream.Reset()
+			return
+		}
 		handler(value.context, remoteID, stream)
 	})
+}
+
+func (value *Host) allowVersionedChainStream(remoteID types.Hash, now time.Time) bool {
+	value.versionedChainMu.Lock()
+	defer value.versionedChainMu.Unlock()
+	if value.versionedChainWindowStart.IsZero() ||
+		now.Sub(value.versionedChainWindowStart) >= time.Minute || now.Before(value.versionedChainWindowStart) {
+		value.versionedChainWindowStart = now
+		value.versionedChainGlobalCount = 0
+		clear(value.versionedChainPeerCounts)
+	}
+	if value.versionedChainGlobalCount >= value.maxGlobalVersionedChainStreamsPerMinute ||
+		value.versionedChainPeerCounts[remoteID] >= value.maxVersionedChainStreamsPerMinute {
+		return false
+	}
+	value.versionedChainGlobalCount++
+	value.versionedChainPeerCounts[remoteID]++
+	return true
 }
 
 func (value *Host) allowWorkStream(remoteID types.Hash, now time.Time) bool {
@@ -218,6 +272,12 @@ func (value *Host) OpenStream(ctx context.Context, address string, expected *typ
 // Peer pinning and direct-QUIC checks are identical to the chain session.
 func (value *Host) OpenWorkGraphStream(ctx context.Context, address string, expected *types.Hash) (network.Stream, types.Hash, error) {
 	return value.openStream(ctx, address, expected, WorkGraphProtocol)
+}
+
+// OpenVersionedChainStream opens only the activation-aware chain protocol.
+// It cannot fall back to the active version-0 session on negotiation failure.
+func (value *Host) OpenVersionedChainStream(ctx context.Context, address string, expected *types.Hash) (network.Stream, types.Hash, error) {
+	return value.openStream(ctx, address, expected, VersionedChainProtocol)
 }
 
 func (value *Host) openStream(
@@ -347,6 +407,14 @@ func validateConfig(ctx context.Context, privateKey ed25519.PrivateKey, config C
 		config.MaxWorkStreamsPerMinute <= 0 || config.MaxWorkStreamsPerMinute > MaxWorkStreamsPerMinuteLimit ||
 		config.MaxWorkStreamsGlobalPerMinute < config.MaxWorkStreamsPerMinute ||
 		config.MaxWorkStreamsGlobalPerMinute > MaxWorkStreamsGlobalPerMinuteLimit ||
+		config.MaxVersionedChainStreams <= 0 || config.MaxVersionedChainStreams > MaxVersionedChainStreamsLimit ||
+		config.MaxVersionedChainStreamsPerPeer <= 0 ||
+		config.MaxVersionedChainStreamsPerPeer > MaxVersionedChainStreamsPerPeerLimit ||
+		config.MaxVersionedChainStreams < config.MaxVersionedChainStreamsPerPeer ||
+		config.MaxVersionedChainStreamsPerMinute <= 0 ||
+		config.MaxVersionedChainStreamsPerMinute > MaxVersionedChainStreamsPerMinuteLimit ||
+		config.MaxVersionedChainStreamsGlobalPerMinute < config.MaxVersionedChainStreamsPerMinute ||
+		config.MaxVersionedChainStreamsGlobalPerMinute > MaxVersionedChainStreamsGlobalPerMinuteLimit ||
 		config.MemoryBytes < 16<<20 || config.MemoryBytes > 2<<30 ||
 		config.MaxFileDescriptors < config.MaxConnections || config.MaxFileDescriptors > MaxFileDescriptorLimit ||
 		config.GracePeriod < 0 {
@@ -369,8 +437,10 @@ func newResourceManager(config Config) (network.ResourceManager, error) {
 	// peer scope reserves room for those, while the OutcomeMesh protocol scope
 	// below enforces the exact application-stream limit.
 	const internalStreamsPerPeer = 8
-	peerStreams := config.MaxStreamsPerPeer + config.MaxWorkStreamsPerPeer + internalStreamsPerPeer
-	totalStreams := config.MaxConnections * peerStreams
+	peerStreams := config.MaxStreamsPerPeer + config.MaxWorkStreamsPerPeer +
+		config.MaxVersionedChainStreamsPerPeer + internalStreamsPerPeer
+	totalStreams := config.MaxConnections*(config.MaxStreamsPerPeer+config.MaxWorkStreamsPerPeer+internalStreamsPerPeer) +
+		config.MaxVersionedChainStreams
 	system := rcmgr.ResourceLimits{
 		Streams:         rcmgr.LimitVal(totalStreams),
 		StreamsInbound:  rcmgr.LimitVal(totalStreams),
@@ -403,6 +473,12 @@ func newResourceManager(config Config) (network.ResourceManager, error) {
 		StreamsOutbound: rcmgr.LimitVal(config.MaxWorkStreamsPerPeer),
 		Memory:          512 << 10,
 	}
+	versionedChainPerPeer := rcmgr.ResourceLimits{
+		Streams:         rcmgr.LimitVal(config.MaxVersionedChainStreamsPerPeer),
+		StreamsInbound:  rcmgr.LimitVal(config.MaxVersionedChainStreamsPerPeer),
+		StreamsOutbound: rcmgr.LimitVal(config.MaxVersionedChainStreamsPerPeer),
+		Memory:          4 << 20,
+	}
 	partial := rcmgr.PartialLimitConfig{
 		System:      system,
 		Transient:   system,
@@ -420,10 +496,17 @@ func newResourceManager(config Config) (network.ResourceManager, error) {
 				StreamsOutbound: rcmgr.LimitVal(config.MaxConnections * config.MaxWorkStreamsPerPeer),
 				Memory:          rcmgr.LimitVal64(config.MemoryBytes / 8),
 			},
+			VersionedChainProtocol: {
+				Streams:         rcmgr.LimitVal(config.MaxVersionedChainStreams),
+				StreamsInbound:  rcmgr.LimitVal(config.MaxVersionedChainStreams),
+				StreamsOutbound: rcmgr.LimitVal(config.MaxVersionedChainStreams),
+				Memory:          rcmgr.LimitVal64(config.MemoryBytes / 2),
+			},
 		},
 		ProtocolPeer: map[protocol.ID]rcmgr.ResourceLimits{
-			SessionProtocol:   applicationPerPeer,
-			WorkGraphProtocol: workGraphPerPeer,
+			SessionProtocol:        applicationPerPeer,
+			WorkGraphProtocol:      workGraphPerPeer,
+			VersionedChainProtocol: versionedChainPerPeer,
 		},
 		Conn: rcmgr.ResourceLimits{
 			Conns: 1, ConnsInbound: 1, ConnsOutbound: 1, FD: 1, Memory: 4 << 20,

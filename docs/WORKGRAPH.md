@@ -269,7 +269,8 @@ version-1 envelopes for either canonical block version and for a contiguous
 mixed header batch. They preserve the old chain reader's 8 MiB default and
 require explicit opt-in to the larger WorkGraph block ceiling. A separate
 in-process versioned chain session now uses their status/locator grammar and the
-activation router; active transport and CLI routing do not.
+activation router. The QUIC adapter can carry it under the explicit
+`/outcomemesh/chain/1` protocol; default hosts and active CLI routing do not.
 
 The transport-independent codec and an isolated finite session implement
 inventory-first WorkGraph relay: 1,024 sorted IDs per announcement and at most
@@ -284,8 +285,9 @@ hosts and the active CLI cannot negotiate it. Two-host QUIC tests cover peer-ID
 pinning, a negotiated 512-byte frame, parent/child relay, context rejection, and
 an independent one-stream-per-peer resource scope. The in-process block router
 remains disconnected from this share-relay stream, but now backs a separate
-header-first versioned chain session. That session has no transport/CLI
-registration, and its multiple activation trees are not durably reopened as
+header-first versioned chain session. That session has an isolated, opt-in QUIC
+handler with its own per-peer/global concurrency and admission scopes, but no
+CLI registration; its multiple activation trees are not durably reopened as
 one router yet.
 
 One maximal 1,024-ID relay is bounded to exactly 630,258 bytes of bidirectional
