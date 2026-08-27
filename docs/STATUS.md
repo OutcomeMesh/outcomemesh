@@ -251,14 +251,16 @@ Implemented in an isolated, not-yet-activated consensus package:
   parent deltas and verifies every state root, recovering the canonical tip and
   competing side branches. Tests reject consensus-configuration and old-schema
   changes, corrupted deltas, and over-budget commits; injected pre-commit failure
-  proves that neither memory nor disk observes a partial block. Strict metadata,
-  checkpoint, and delta decoders are fuzz targets.
+  proves that neither memory nor disk observes a partial block. A separate
+  process-kill test stops immediately before the durable batch and immediately
+  after its synchronous commit; reopen observes exactly the old or new chain.
+  Strict metadata, checkpoint, and delta decoders are fuzz targets.
 
 No WorkGraph field has entered a version-0 block yet. The isolated v1 store and
 session remain disconnected from the production chain/QUIC routing path;
-periodic checkpoint/pruning policy, process-crash campaigns, production
-gossip-budget calibration, and expanded economic/strategy analysis remain
-before activation.
+periodic checkpoint/pruning policy, extended filesystem-fault/soak campaigns,
+production gossip-budget calibration, and expanded economic/strategy analysis
+remain before activation.
 
 ## Milestones 6–10 — not integrated
 

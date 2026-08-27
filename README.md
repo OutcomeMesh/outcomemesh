@@ -55,8 +55,9 @@ make test-process
 make build
 ```
 
-`test-process` runs three real QUIC server restart/sync/replay cycles. Raise the
-opt-in soak length with, for example,
+`test-process` runs three real QUIC server restart/sync/replay cycles and kills
+the WorkGraph Pebble process on both sides of its durable batch boundary. Raise
+the opt-in QUIC soak length with, for example,
 `OUTCOMEMESH_SOAK_CYCLES=25 make test-process` (hard cap: 100 cycles).
 
 Create a wallet, initialize a local chain to that wallet, mine, transfer, and

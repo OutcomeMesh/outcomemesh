@@ -48,10 +48,11 @@ type Policy struct {
 func DefaultPolicy() Policy { return Policy{MaxHistoryBytes: DefaultMaxHistoryBytes} }
 
 type workPersistence struct {
-	db           *pebble.DB
-	policy       Policy
-	historyBytes uint64
-	commitHook   func() error
+	db              *pebble.DB
+	policy          Policy
+	historyBytes    uint64
+	commitHook      func() error
+	afterCommitHook func()
 }
 
 // Open creates or reopens the isolated version-1 Pebble coordinator. All
@@ -203,6 +204,9 @@ func (persistence *workPersistence) commitNode(parent, node *chainNode, canonica
 		return err
 	}
 	persistence.historyBytes = nextHistory
+	if persistence.afterCommitHook != nil {
+		persistence.afterCommitHook()
+	}
 	return nil
 }
 

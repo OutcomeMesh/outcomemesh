@@ -143,7 +143,9 @@ Exhaustion rejects before batch commit while reads and reopen remain available.
 Every restart reapplies deltas parent-first and verifies state roots, ancestry,
 fee-queue roots, cumulative hard work, selected tip, and the recomputed byte
 counter. WAL/LSM amplification and filesystem free space remain separate
-operator limits; pruning and real process-kill campaigns are still required.
+operator limits. A real subprocess is killed before and after the synchronous
+batch boundary and recovers only the old or new chain; pruning and broader
+filesystem fault/long-soak campaigns are still required.
 
 ## Consensus coding rules
 

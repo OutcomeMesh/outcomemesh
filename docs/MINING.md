@@ -104,4 +104,4 @@ and CLI activation remain disabled.
 
 - external PoW review and hash-rate simulations;
 - production calibration of fee delay, share gossip queues, and miner strategy;
-- process-crash storage campaigns and negotiated multi-node QUIC sessions.
+- extended filesystem-fault storage soaks and negotiated multi-node QUIC sessions.

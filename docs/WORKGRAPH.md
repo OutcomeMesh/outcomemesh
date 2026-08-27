@@ -295,7 +295,10 @@ retain side branches, reject corrupted deltas and old schema 1, enforce a 64-GiB
 default logical budget before batch creation, and leave memory/disk unchanged on
 an injected pre-commit failure. Pre-alpha schema 1 fails closed and is rebuilt
 by replay rather than silently migrated. Periodic checkpoints/pruning and
-process-crash fault campaigns still precede production activation.
+extended filesystem-fault/soak campaigns still precede production activation.
+The integration suite also kills a real subprocess on both sides of the
+synchronous batch boundary and proves reopen yields the complete old or complete
+new chain, never a partial node/delta/tip combination.
 
 ## Milestone-5 evidence required
 

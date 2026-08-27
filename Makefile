@@ -45,5 +45,6 @@ test-fuzz-smoke:
 
 test-process:
 	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessQUICRestartSoak$$' -count=1 -timeout=10m
+	$(GO) test -tags=integration ./node/workchain -run '^TestPebbleProcessCrashAtomicity$$' -count=1 -timeout=2m
 
 test-all: fmt vet test-race

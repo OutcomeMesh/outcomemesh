@@ -166,8 +166,10 @@ cumulative work, logical-history counter, and selected tip change in one
 synchronous batch. Reopen reconstructs parent-first states and verifies every
 stored root and ancestry link. Schema 2 fails closed on the earlier pre-alpha
 full-snapshot layout; replay is the migration policy. Production activation
-still requires periodic checkpoint/pruning policy, process-crash fault campaigns,
-and registration of the already isolated negotiated WorkGraph session.
+still requires periodic checkpoint/pruning policy, broader filesystem-fault
+soaks, and registration of the already isolated negotiated WorkGraph session.
+The current integration test kills a separate process immediately before and
+after the synchronous Pebble batch and verifies old-or-new recovery.
 
 The later committee provides preconfirmations. It does not define the canonical
 chain and cannot make an invalid transition valid. A full node independently
