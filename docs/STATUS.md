@@ -1,0 +1,257 @@
+# Implementation status
+
+Updated: 2026-08-27
+
+This file records evidence against `PLAN.md`. A milestone remains open until all
+of its exit gates pass; implementing most deliverables does not close it.
+
+## Milestone 0: specification foundation — complete
+
+- Architecture, protocol, security model, dependency boundary, and gated plan
+  are written.
+- Consensus state transition has no database, network, clock, random, JSON, or
+  goroutine dependency.
+
+## Milestone 1: deterministic kernel — complete
+
+- Fixed primitives, canonical codec, Resource/Outcome transactions, Ed25519,
+  GuardVM, reference state, atomic execution, and deterministic roots exist.
+- Golden vectors are in `VECTORS.md` and executable tests.
+- Unit, negative, race, and fuzz-smoke tests pass.
+- Fuzzing found and closed an allocation-before-EOF genesis decoder issue.
+
+## Milestone 2: signed ledger and blocks — complete
+
+Implemented:
+
+- canonical genesis, headers, bodies, receipts, and ordered Merkle roots;
+- sequential block replay and checked fee aggregation;
+- one-batch Pebble block/state/tip commit with synchronous WAL durability;
+- crash-clone recovery at every logical batch boundary, proving recovery to
+  exactly the old or new state;
+- stable block/genesis golden vectors;
+- a 64-block transaction corpus with per-height Pebble/reference comparison and
+  full deterministic replay.
+
+## Milestone 3: single-node proof of work — complete
+
+Implemented:
+
+- SHA-256 target validation and cancelable nonce search;
+- target-derived block work and persistent cumulative work;
+- integer-only, genesis-anchored ASERT with published fractional vectors;
+- 11-block median-time-past and a 120-second future-time admission bound;
+- subsidy-plus-fee reward resources with a 100-height maturity lock and no
+  state-root/hash cycle;
+- persistent competing branches, deterministic cumulative-work selection,
+  atomic canonical reorganization, and preserved losing-branch state;
+- crash injection at every logical higher-work reorganization boundary;
+- deterministic integer-only hash-rate and timestamp-manipulation simulations;
+- standalone keygen, init, balance, transfer, mine, status, and replay verify;
+- pure-Go `CGO_ENABLED=0` build.
+
+## Milestone 4: peer-to-peer devnet — complete
+
+Implemented:
+
+- bounded mempool with full admission replay, input reservations,
+  deterministic fee-rate eviction/selection, and reorg revalidation;
+- strict length-prefixed Status/GetHeaders/Headers/GetBlocks/Block/Transaction/
+  BatchDone/Result/GetPeers/Peers/GetSnapshot/SnapshotManifest/SnapshotChunk/
+  SnapshotDone wire protocol with frame and per-message limits plus fuzz
+  targets;
+- exponential canonical locators and header-first bounded fork-aware batch
+  sync; PoW/ASERT/MTP/network/ancestry/tip checks run before body requests, and
+  full body replay remains mandatory;
+- deadline session handshake, network/genesis rejection, block submission, and
+  transaction relay;
+- replaceable transports: a TLS 1.3/TCP fallback and an official go-libp2p
+  v0.48.0 QUIC-v1 adapter with authenticated Ed25519 identities, independent
+  OutcomeMesh peer-ID pinning, disabled relay, and bounded libp2p resource
+  scopes;
+- working `omd serve`/`omd sync`/`omd peers` and
+  `serve-quic`/`sync-quic`/`peers-quic` commands with persistent
+  seed-derived identity, optional peer-ID pinning, and a global
+  concurrent-session limit; real two-Pebble-node sync and signed-discovery
+  socket checks pass;
+- bounded peer table, per-peer concurrent-session and inbound-byte windows,
+  per-peer outbound-response windows, two-sided capped/decaying local score,
+  typed behavior counters, bounded integer latency EWMA, retention pruning that
+  preserves active dials, temporary abuse bans, clock-rollback-safe single-flight
+  outbound dials, and capped exponential backoff; auto-sync
+  score/backoff/counters/latency survive restart through an atomic bounded
+  canonical file with offline decay, version-0 migration, and a fuzz target;
+- signed short-lived Ed25519 peer advertisements, canonical IP:port or
+  identity-matched QUIC multiaddresses, bounded anti-replay address book, and
+  atomic discovery-batch admission; /16 IPv4-/32 IPv6-bucket caps and
+  fsync/rename peerbook persistence preserve diversity and restart sequence;
+- bounded chunked snapshot export/transport, exact ordering/count enforcement,
+  and full state-root reconstruction; `omd snapshot-check` verifies but cannot
+  import an untrusted snapshot;
+- five-node partition/heal convergence over delayed fragmented streams,
+  idempotent duplicate delivery, fail-closed reordered batches, and fixed-seed
+  seven-node convergence under loss, churn, and asymmetric partitions;
+- real `serve-quic`/`sync-quic` two-Pebble-node synchronization followed by
+  full replay verification;
+- bounded score-ranked `auto-sync-quic`; a persisted discovery record was used
+  after process restart to sync a third Pebble node from height 0→3 and replay
+  verify it without supplying the peer address again;
+- optional bounded CIDR→ASN longest-prefix-match routing policy with a per-ASN
+  attempt cap, plus an opt-in non-overlapping long-running scheduler that
+  requires an ASN map, refreshes signed records on established sessions, and
+  benefits from 30-minute server self-record renewal; bounded age-checked ASN
+  file reload now runs before every watch pass and failed parsing preserves the
+  last table but stops dialing. A real process test ran discovery, one-shot
+  height 0→3 sync, multiple watch passes, SIGINT shutdown, and successful full
+  replay verification;
+- hard per-session request-class budgets, a 50,000-event peer-manager resource
+  stress test, a state-machine fuzz target, exact QUIC stack validation, and a
+  negative test proving invalid headers are rejected before block bodies are
+  requested;
+- consensus validation now independently rejects a header whose network ID
+  differs from genesis, even if transport authentication and PoW are valid;
+- Pebble schema 3 stores one materialized canonical state plus immutable
+  create/delete deltas per accepted block; side branches reconstruct from
+  genesis with a state-root check at every node, and a 256-resource regression
+  test proves an empty competing block adds one reward delta rather than a full
+  257-resource copy. Reorg/crash tests, the full race suite, and `CGO_ENABLED=0`
+  tests pass with this schema;
+- canonical extension/reorg now writes only the active resource diff instead of
+  rewriting the full state. Immutable block/node/delta key/value bytes have an
+  exact counter and persisted, init-configurable 64 GiB default budget;
+  over-budget commits are rejected without mutation while the store remains
+  readable. A real init→mine-two→status→replay smoke reported 1,702 logical
+  bytes under a 64 MiB test policy and verified successfully;
+- opt-in `make test-process` launches separate CLI processes and passed three
+  mine→QUIC serve→sync→replay→SIGTERM/restart cycles over two Pebble nodes; the
+  cycle count is configurable from 1 to 100 for longer local runs.
+
+Exit-gate evidence:
+
+- partition, duplication, delay, reordered-batch, churn, and asymmetric-network
+  convergence tests pass;
+- parser/session/peer/libp2p limits, behavioral bans, delta fork storage, and a
+  fail-closed logical history budget bound attacker-controlled work;
+- a new Pebble node synchronizes through independently validated headers and
+  complete block execution, never importing the untrusted snapshot;
+- full race, pure-Go, fuzz-smoke, real-process restart, and replay suites pass.
+
+Public-network blockers retained beyond the M4 devnet gates:
+
+- independently maintained production ASN-table source and provenance policy;
+- independently history-anchored snapshot activation and persistent import;
+- longer randomized/fault-injected process soaks, physical disk reserve/pruning
+  for unpruned history, and broader resource-exhaustion fault injection.
+
+## Milestone 5: WorkGraph — specification in progress
+
+Implemented in an isolated, not-yet-activated consensus package:
+
+- canonical weak-share format/strict decoder and domain-separated ID;
+- unified WorkSeal semantics: the stored target is the hard anchor target and
+  the same Work ID is checked against weak or anchor thresholds, so rewarded
+  share hashing is reusable anchor security work;
+- exact integer 1:512 derived target and weak-PoW validation; the initial 1:4096
+  draft was rejected before activation because its expected honest share count
+  exceeded the batch cap;
+- bounded closed DAG with unique lexicographic Kahn order, root, count/byte/
+  parent/miner limits, and detached validated batches; geometric-tail analysis
+  raised the cap from 2,048 to 8,192 shares/3 MiB (16× the expected count)
+  before block integration;
+- winning hard-target seals commit DAG tips; delayed-payout validation requires
+  the supplied batch to be exactly their transitive closure, preventing the
+  successor from omitting ancestors or adding uncommitted shares;
+- fixed pay-per-share subsidy accounting with address aggregation, checked
+  arithmetic, maturity-preserving resources, and worst-case policy bounds; the
+  earlier variable half-pool was rejected because it paid a winner to omit all
+  foreign shares;
+- executable share/ID/inclusion-root/batch-root/target vectors and decoder fuzz
+  target;
+- isolated canonical version-1 WorkGraph block/header codec and strict decoder,
+  unified header/WorkSeal ID, header-first hard-PoW checks, MTP/future admission,
+  and a fuzz target that passed more than one million generated inputs;
+- parent-timestamp lagged ASERT fixes the next target before mining, preventing
+  a current miner's timestamp from easing its own proof while allowing a
+  bounded 120-second timestamp window for otherwise matching shares;
+- activation rejects a proof-of-work limit that would saturate the weak target,
+  preserving the exact 512:1 rate assumed by pay-per-share issuance;
+- an integer-only lagged-ASERT fluid model covers the baseline schedule, a 4x
+  hash-rate step, full legal future bias, and slow-timestamp manipulation;
+- explicit activation-height transition, two-block delayed-payout replay, and
+  competing-branch tests prove that abandoned reward resources do not leak,
+  reward IDs are fork-specific, and an earning cannot be applied twice;
+- written omission, withholding, bandwidth, direct-child payment, and block
+  activation rules in `WORKGRAPH.md`; payouts move to the following block so
+  unknown concurrent shares/miner rewards cannot create a state/PoW root cycle;
+- deterministic geometric simulations cover honest proportionality, an
+  undersized-cap tail, 50% share withholding, 10% orphaning, bandwidth, and
+  competing payload templates; the split-template case loses about half of
+  otherwise valid share work and is documented as a centralization risk.
+- a discrete-event topology model covers local DAG views, shortest-path delay,
+  missing-parent queues, four-tip pressure, withholding, and deliberate
+  foreign-tip omission; a delayed eight-node line retained about 94.7% of
+  published shares while exposing 55/2,000 rounds above four winner tips.
+- a multi-round public/private-fork model pays only the eventual canonical
+  branch and enforces paid-shares <= discovered-shares: at 25% attacker hash
+  withholding reduced reward share from 25.3954% to 21.6652%, while at 35%
+  hash and 50% tie adoption it raised the share from 35.2656% to 40.9857%; this
+  records, rather than assumes away, the remaining classic selfish-mining
+  threshold;
+- the same fork corpus proves deliberate omission does not increase the
+  winner's absolute fixed-rate reward, although it lowers honest rewards and
+  total issuance and therefore retains a relative-revenue/censorship motive.
+- a production-ratio store-and-forward model now gives every directed link an
+  independent byte rate, latency, and bounded FIFO: a provisioned six-node
+  full mesh included all 271,199 shares, while a 32-byte/event eight-node line
+  included 84,643/494,208 and respected its 732-byte link-queue cap; upgrading
+  only its core links raised inclusion to 172,833 and exposed naive flooding's
+  duplicate-message cost.
+- an exact best-response payload market quantified direct-fee fragmentation:
+  a 10% miner with a 3,000,000,000-unit private fee split from a
+  5,000,000,000-unit-subsidy common template, reducing matching work to 82%
+  and expected subsidy issuance to 91%; delaying fees to future hash-proportional
+  winners kept the same fixture fully coordinated;
+- the isolated v1 transition now implements that mitigation as a bounded,
+  canonical, fork-local fee ring. Queue balance equals checked slot sum, the
+  next root and matured award are inside the payload commitment, codecs have a
+  golden vector and fuzz target, and an execution test carries a transaction
+  fee through the exact delay into a future anchor's mature reward resource.
+- the shared wire codec now has inactive inventory-first WorkGraph messages:
+  1,024 sorted IDs per announcement and 256 requested/returned bodies per
+  frame, with exact mining-context checks, strict decoding, and the existing
+  wire fuzz surface; session relay remains intentionally unnegotiated.
+- an inactive concurrency-safe local WorkGraph pool now performs weak-PoW and
+  context validation before bounded storage, resolves out-of-order parent DAGs,
+  reserves one reward-miner slot for the future anchor, selects four tips
+  without unbounded closure scans, and reconstructs the winner's exact batch;
+  hard-target work is diverted to block processing and cannot enter both pools.
+- an inactive unified mining coordinator now rebuilds WorkSeal parents after
+  every admitted weak result, publishes detached shares, continues hard search
+  under pool saturation, and sends a lucky seal directly through exact-closure
+  block finalization; its deterministic integration fixture produced 228 weak
+  shares followed by a valid replayable anchor with no double inclusion.
+- an inactive fork-aware chain coordinator now reconstructs state, 11-sample
+  MTP history, fee queue, lagged target, and predecessor earning independently
+  for every branch. An activation fixture accepted two equal-height competitors,
+  selected their tie lexicographically, reorganized to a higher-hard-work child,
+  and proved that the abandoned branch's delayed payout was absent; weak shares
+  never contributed fork weight.
+- the coordinator now has an isolated schema-versioned Pebble store. Each
+  accepted v1 block atomically persists its canonical bytes, branch-local state,
+  timestamp history, fee queue, cumulative hard work, and selected tip in one
+  synchronous batch. Restart tests recover the canonical tip and a competing
+  side branch, reject consensus-configuration changes, continue mining after
+  reopen, and inject a pre-commit failure to prove that neither memory nor disk
+  observes a partial block. Strict metadata/state decoders are fuzz targets.
+
+No WorkGraph field has entered a version-0 block yet. The isolated v1 store
+materializes a full state per branch as a correctness-first prototype; a
+delta/checkpoint history budget, session version negotiation, production
+gossip-budget design, and expanded economic/strategy analysis remain before
+activation.
+
+## Milestones 6–10 — not integrated
+
+Committee finality, Wasm, solvers, privacy, data availability, proving,
+adversarial testnet, and mainnet readiness remain gated exactly as described in
+`PLAN.md`.

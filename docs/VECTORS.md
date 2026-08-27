@@ -1,0 +1,159 @@
+# Protocol version 0 vectors
+
+These vectors are consensus fixtures. Any intentional change requires a new
+protocol version or an explicit compatibility decision.
+
+## Signed transaction
+
+The transaction is constructed by `testSignedTransaction` in
+`core/outcome/transaction_test.go`. Its canonical bytes are:
+
+```text
+00000000000701000000000000000000000000000000000000000000000000000000000000000100000000000000000200000000000000000000000000000000000000000000000000000000000000022f4f0bcd1bea178c030f78e4f4da18c7031210a7e50102f4e17a94b7fb339bb30000000000000064000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000b2cd65f2baa9c0377a94c8399de6abdba8e3ee561e96d3b4d83a0f9d508f27e42f4f0bcd1bea178c030f78e4f4da18c7031210a7e50102f4e17a94b7fb339bb3000000000000037f00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000504010000000000000005090e0f00000000000000050000000000000064000000000000000000000000000000000000000000000000000000000000000903a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b86b79f3f7da7eac02d758c2b6b3e57e866b2de3721ae3bb5ba17ede517f6d5164eda26b343d96ba8de2ff0bbdfacdb763b3eaf9b144980e87913b81e6ddcbad0a
+```
+
+Expected unsigned transaction identifier:
+
+```text
+ba52e389b007e9d38cb3313aceb215d8a3c9d3671b5825567dcf1dc7b6bf4fcd
+```
+
+## Reference state root
+
+For the three resources constructed in `TestRootIsIndependentOfInsertionOrder`,
+the expected root is:
+
+```text
+69790007c85c9e268e4abeeebfe44a8ff80824ce4bae80e4646d57adf57a4f4b
+```
+
+## Genesis document
+
+The document constructed by `testDocument` in `core/genesis/genesis_test.go`
+has canonical bytes:
+
+```text
+00000000000b000000006553f10000ffffff00000000000000000000000000000000000000000000000000000000000000000000003201acd69fcdbfcac6605db8407602e6df47c6fdfaa7425d54528584a75ec8d52ccd0000000000000000223208fdaecf845f6173f99e779d5a3c7d6639e9d719b54febec14ff5693d9f62f4f0bcd1bea178c030f78e4f4da18c7031210a7e50102f4e17a94b7fb339bb300000000000003e8000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+```
+
+Expected identifiers:
+
+```text
+genesis_id = 9bbaa98da32d9a9f1e0cc744a44b2d44fcd0c50fdd9dfa517c985b73fead5e96
+state_root = bd9d2b89a375c129542bd83d4fd852203c966dedb3f12bff8a174e2abc27a755
+```
+
+## Empty development block
+
+The mined empty block constructed by `TestPrepareMineValidateEmptyBlock` has
+canonical bytes:
+
+```text
+0000000000090000000000000001243fc993547ba2a9ffab93a9e926f91977e2b8fcfc15bd6b4e7a822e0ba77770000000006553f101ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffc1265c23e8244ab55cbcaba33ab962f964a57ca1a5efa845230bfe4543825da86672452e301a6893e2060f6cfa5f57379e4496a03b4d78aff11ae014e60852a838f137f4680f1bb8da88e859511438286cbdda3b926c08907d158a6a6b2154a6ed7b941fc24bf386993c2db1dd82afaa552bfc358c1230d7d0bec36edf1769f7000000000000000000
+```
+
+Expected commitments:
+
+```text
+block_id    = 8c63485ab8a8a8fcf43d69b0fbd938133112185fe47a0cc93a52366f9d225874
+tx_root     = c1265c23e8244ab55cbcaba33ab962f964a57ca1a5efa845230bfe4543825da8
+receipt_root= 6672452e301a6893e2060f6cfa5f57379e4496a03b4d78aff11ae014e60852a8
+state_root  = 38f137f4680f1bb8da88e859511438286cbdda3b926c08907d158a6a6b2154a6
+```
+
+## ASERT fractional vectors
+
+Inputs shared by these vectors:
+
+```text
+anchor_target    = 0001000000000000000000000000000000000000000000000000000000000000
+anchor_timestamp = 1700000000
+height           = 100
+target_spacing   = 60
+half_life        = 7200
+scheduled_time   = 1700006000
+```
+
+Expected targets by `timestamp - scheduled_time`:
+
+```text
+-3600 = 0000b50100000000000000000000000000000000000000000000000000000000
+  -61 = 0000fe8100000000000000000000000000000000000000000000000000000000
+   -1 = 0000fff900000000000000000000000000000000000000000000000000000000
+    1 = 0001000000000000000000000000000000000000000000000000000000000000
+   61 = 0001000000000000000000000000000000000000000000000000000000000000
+ 3600 = 0001000000000000000000000000000000000000000000000000000000000000
+```
+
+Positive offsets clamp because the anchor target is also the version-0 proof-of-
+work limit.
+
+## WorkGraph draft share
+
+These Milestone-5 fixtures are implemented by `TestGoldenShareVectors`. They do
+not alter a version-0 block until the WorkGraph activation decision is made.
+
+Canonical share bytes:
+
+```text
+00000000004d00000000000000096cbf201defd160bae5a8f83d09a0ab1b5d96dae4a67be8d6048a51dd4b2447a9000000006553f101007fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff30437bb9bcd7a8f9e102e80d36db384da29954bf43eb12ee33b9b537f6789e5faddd6d5ae0229cd6dc8308ca52b8973246ecf2e27b2224af2d28a75f7857f621052626f83be9e4801476397dd982d7deebdc46ea2557d9dbfb3bd366d4bf6c4c000000000000000007
+```
+
+Expected commitments:
+
+```text
+work_id             = d602d67c610d3f45e3db5a19c5899aaab8a6c9b792dde021c097749338d061fe
+empty_inclusion_root = 052626f83be9e4801476397dd982d7deebdc46ea2557d9dbfb3bd366d4bf6c4c
+one_share_batch_root = 468ddfa28a83db3d8dcd144bb2b95a22fa2083fc7820cb85f8dd85b4b0f91e7a
+```
+
+For anchor target value `1`, the exact ratio formula produces share target
+value `1023`, encoded as:
+
+```text
+00000000000000000000000000000000000000000000000000000000000003ff
+```
+
+The easiest WorkGraph-valid hard target is `2^247-1`; it derives the exact
+maximum 256-bit weak target without saturation:
+
+```text
+007fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+```
+
+For test subsidy `10,220` and `E=511`, the fixed omission-neutral rates are:
+
+```text
+anchor_subsidy = 5,110
+share_reward   = 10
+```
+
+## Delayed fee queue
+
+`TestFeeQueueEncodingRoundTripAndDetachedSlots` fixes a three-slot queue after
+deposits `10, 20, 0`. Its cursor is back at zero, its conserved balance is 30,
+and its slots are `[10, 20, 0]`:
+
+```text
+canonical = 000000030000000000000000001e000000000000000a00000000000000140000000000000000
+root      = 9edb244b34d9734c6d82e6bfa3acbc24fd2c175d57d9da64c162fe43a9507539
+bytes     = 38
+```
+
+## Experimental WorkGraph block version 1
+
+`TestGoldenVersion1BlockVector` fixes the isolated activation-block codec. The
+fixture has no transactions or shares; the final two `00` bytes are its two
+empty canonical list lengths. It is not accepted by active version-0 storage.
+
+```text
+header_bytes = 361
+block_bytes  = 363
+block_id     = 002fd4201ce8009bee8176585ab086affdb1a5b5e3b5ad77c7a29f76af3f0619
+```
+
+Canonical header bytes:
+
+```text
+000100000000004d0000000000000001c03ea83b20b7f068ecf378fe3dde1662213fb410c87757e466b0314b05a0c14a000000006553f100007fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffde688a7e3502cfc2ce9c832eee98e4cd3d107e0aafd1c5253a273e74f217f650ace6904f805047b8675a3129f84d0916fa60cfc9516bfca85033202e1a3852a7052626f83be9e4801476397dd982d7deebdc46ea2557d9dbfb3bd366d4bf6c4c0000000000000000e4c1265c23e8244ab55cbcaba33ab962f964a57ca1a5efa845230bfe4543825da86672452e301a6893e2060f6cfa5f57379e4496a03b4d78aff11ae014e60852a84a725e151beb9dd0fba579c14cc511895301f6a632142e7294f88f783891222531199c8b262bb18f7820ba0f7c1156b81940f52cebb9c205c946f2e7b57ca020d44be30322640c368aff4cf516cd220bf70227f9f1558f65166116387cdd61ae0000000000000000
+```

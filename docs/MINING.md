@@ -1,0 +1,106 @@
+# Mining design
+
+Status: standalone development implementation; network rules pending
+
+## What a miner does now
+
+For each candidate height, a miner:
+
+1. reads a consistent tip and resource snapshot;
+2. chooses an ordered transaction list;
+3. executes every transaction against a private candidate state;
+4. creates receipts and sums checked native fees;
+5. creates one reward resource for `block_subsidy + fees`, locked for 100
+   block heights;
+6. commits transaction, receipt, and final state roots into the header;
+7. increments a 64-bit nonce until the domain-separated SHA-256 block ID is at
+   or below the header target;
+8. submits the full block for independent replay and atomic commit.
+
+The reward identifier is derived from network, height, parent, and miner. It is
+known before nonce search, so the miner does not have to rebuild the state tree
+for every hash attempt.
+
+`omd mine` performs this flow on CPU. The PoW search is isolated behind a small
+hash/target boundary so later worker processes, GPUs, FPGAs, pools, or a changed
+PoW engine do not enter transaction execution or storage code.
+
+## Fork weight
+
+Each valid target contributes:
+
+```text
+floor(2^256 / (target + 1))
+```
+
+The store persists every competing block, its cumulative work, and its
+create/delete resource delta. More cumulative work wins; an equal-work tie uses
+the lexicographically smaller tip ID. A winning side branch atomically switches
+the canonical height index, materialized active state, and tip while preserving
+the losing branch for later descendants. Reconstructed branches are checked
+against every committed intermediate state root. Blocks and deltas are not yet
+pruned. A persisted local logical-history budget atomically stops new commits
+at its limit, but checkpoints, pruning, and a physical filesystem reserve remain
+public-network gates.
+
+## Why rewards are ordinary resources
+
+Mining rewards use the same native `Resource` representation as transferred
+funds. There is no hidden account balance or separate coinbase database. The
+reward's consensus-committed `spend_after` is `reward height + 100`; execution
+rejects an early spend and the wallet excludes immature rewards from selection.
+This keeps conservation auditing, state roots, wallets, and maturity on one
+state model.
+
+## Inactive WorkGraph mining path
+
+The anchor chain remains conventional and independently verifiable. The
+implemented but inactive version-1 loop publishes weaker proof-of-work shares
+into one bounded per-candidate DAG. Accepted shares can provide:
+
+- proportional accounting for small miners without trusting a pool operator;
+- transaction-inclusion commitments before the next anchor block;
+- eligibility input for a short-lived preconfirmation committee;
+- measurable work that can be paid only once after an anchor and maturity
+  window.
+
+Weak shares never make an invalid transaction valid and never outweigh anchor
+proof of work. Useful computation, solving, proving, and archival storage remain
+separate paid markets; pretending arbitrary computation is Sybil-resistant PoW
+would weaken objective verification.
+
+The isolated version-1 prototype additionally precommits each height's target
+from the parent timestamp using lagged ASERT. The current miner's timestamp can
+no longer make its own target easier, and bounded timestamp differences between
+otherwise identical WorkSeals do not discard the whole share DAG. This rule is
+not active in version-0 mining.
+
+For each version-1 candidate the miner now:
+
+1. executes transactions, applies the predecessor WorkGraph payout, advances
+   the delayed-fee queue, and fixes one payload root;
+2. takes up to four accepted local pool tips and constructs one WorkSeal;
+3. searches that seal against the 512-times-easier weak threshold;
+4. if the Work ID misses the hard target, stores the detached weak share,
+   announces its ID, and rebuilds the next seal on the updated tips;
+5. if the same Work ID meets the hard target, bypasses ordinary share admission,
+   reconstructs the exact parent closure, and finalizes it as the anchor block.
+
+The winner therefore uses the exact nonce and preimage already tested as weak
+work, and cannot also appear in its own paid share list. If the 8,192-share or
+3 MiB pool limit is reached, further weak results are discarded while hard
+search continues on the last accepted tips. The mining loop is cancelable and
+safe against concurrent remote-share admission. A deterministic integration
+fixture produced 228 weak shares and then a valid replayable anchor from this
+single loop.
+
+Gossip is inventory-first: up to 1,024 sorted IDs are announced, at most 256
+missing bodies are requested at once, and every response is tied to one exact
+network/height/parent/target/payload context. These codecs and the local pool
+exist, but session negotiation and CLI activation do not.
+
+## Gates before public mining
+
+- external PoW review and hash-rate simulations;
+- production calibration of fee delay, share gossip queues, and miner strategy;
+- activation-boundary storage/reorg tests and negotiated multi-node sessions.
