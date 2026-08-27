@@ -70,6 +70,17 @@ are rechecked after the type byte is available. No active `Status`, locator
 request, sync loop, or session handler advertises or consumes these new chain
 messages yet.
 
+Message IDs 22–25 complete the inactive control grammar: `ChainHello`,
+`GetVersionedBlocks`, `GetVersionedHeaders`, and `VersionedBatchDone`.
+`ChainHello` commits the network, genesis, activation height, capability bits,
+tip metadata, cumulative hard work, and allocation ceiling. Both peers must
+match the first three values exactly and advertise `versioned_sync_v1`; the
+usable frame limit is the smaller advertisement. Locator requests retain the
+32-locator/128-object bounds and duplicate rejection of v0 under distinct
+message IDs, so an active handler cannot reinterpret them accidentally. The
+isolated negotiator exists, but the router-backed request state machine is the
+next integration step.
+
 ## Handshake and synchronization
 
 The initiator sends `Status`; the responder validates network and genesis before

@@ -70,10 +70,19 @@ func TestMessageRoundTripsAndSupportsShortWrites(t *testing.T) {
 	versionedHeaders := VersionedHeaders{
 		Version: Version1, Values: []chainblock.Header{legacyValue.Header(), workValue.Header()}, TipID: workID,
 	}
+	chainHello := testChainHello()
+	getVersionedBlocks := GetVersionedBlocks{
+		Version: Version1, Locators: []types.Hash{chainHello.TipID, chainHello.GenesisID}, Limit: 16,
+	}
+	getVersionedHeaders := GetVersionedHeaders{
+		Version: Version1, Locators: append([]types.Hash(nil), getVersionedBlocks.Locators...), Limit: 16,
+	}
+	versionedDone := VersionedBatchDone{Version: Version1, TipID: chainHello.TipID}
 	messages := []Message{
 		status, request, headerRequest, headerBatch, blockMessage, transactionMessage, done, result,
 		getPeers, peers, getSnapshot, manifest, chunk, snapshotDone, inventory, getShares, shares,
-		hello, shareResult, versionedLegacy, versionedWork, versionedHeaders,
+		hello, shareResult, versionedLegacy, versionedWork, versionedHeaders, chainHello,
+		getVersionedBlocks, getVersionedHeaders, versionedDone,
 	}
 
 	var storage bytes.Buffer
@@ -272,6 +281,48 @@ func TestVersionedMessagesRejectWrongEnvelopeAndTrailingBytes(t *testing.T) {
 	}
 }
 
+func TestVersionedChainControlMessagesEnforceBoundaryAndLocators(t *testing.T) {
+	t.Parallel()
+
+	hello := testChainHello()
+	if err := hello.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	hello.ActivationHeight = 0
+	if err := hello.Validate(); !errors.Is(err, ErrMessage) {
+		t.Fatalf("zero activation error = %v", err)
+	}
+	hello = testChainHello()
+	hello.MaxFrameBytes = MinVersionedChainFrameBodyBytes - 1
+	if err := hello.Validate(); !errors.Is(err, ErrMessage) {
+		t.Fatalf("small chain frame error = %v", err)
+	}
+	hello = testChainHello()
+	hello.Features = 0
+	if err := hello.Validate(); !errors.Is(err, ErrMessage) {
+		t.Fatalf("missing chain feature error = %v", err)
+	}
+	hello = testChainHello()
+	hello.TipHeight = 0
+	hello.CumulativeWork = nil
+	if err := hello.Validate(); !errors.Is(err, ErrMessage) {
+		t.Fatalf("wrong genesis-height tip error = %v", err)
+	}
+
+	id := types.DomainHash("test/wire/versioned-locator")
+	duplicate := GetVersionedBlocks{Version: Version1, Locators: []types.Hash{id, id}, Limit: 1}
+	if err := duplicate.Validate(); !errors.Is(err, ErrDuplicateLocator) {
+		t.Fatalf("duplicate versioned locator error = %v", err)
+	}
+	wrongVersion := GetVersionedHeaders{Version: Version0, Locators: []types.Hash{id}, Limit: 1}
+	if err := wrongVersion.Validate(); !errors.Is(err, ErrUnsupported) {
+		t.Fatalf("versioned request version error = %v", err)
+	}
+	if err := (VersionedBatchDone{Version: Version1}).Validate(); !errors.Is(err, ErrMessage) {
+		t.Fatalf("empty versioned terminator error = %v", err)
+	}
+}
+
 func TestReadRejectsTruncatedFrame(t *testing.T) {
 	t.Parallel()
 
@@ -414,6 +465,19 @@ func TestWorkHelloGoldenFrame(t *testing.T) {
 	}
 }
 
+func TestChainHelloGoldenFrame(t *testing.T) {
+	t.Parallel()
+
+	var frame bytes.Buffer
+	if err := WriteMessage(&frame, testChainHello()); err != nil {
+		t.Fatal(err)
+	}
+	const want = "000000851600010000005bf4114ac064ae0a0c51c0698b6489f637b748ad5e62772c6352097f5abf2b57e3000000000000000500000000000000014f798cff34d9eba2f1ffbbf96323acc5bd35594dd89d45279437685dcc47f9f030384bfb981b28a7f8d40049408d54ab1c93bf78da83be0b081b2533b0a97c910000000000000004010700b0040d"
+	if got := hex.EncodeToString(frame.Bytes()); got != want {
+		t.Fatalf("ChainHello frame=%s", got)
+	}
+}
+
 func FuzzDecodeFrameBodyNeverPanics(f *testing.F) {
 	payload, err := encodePayload(testStatus())
 	if err != nil {
@@ -429,6 +493,20 @@ func FuzzDecodeFrameBodyNeverPanics(f *testing.F) {
 		f.Fatal(err)
 	}
 	f.Add(append([]byte{byte(TypeVersionedBlock)}, versionedPayload...))
+	hello := testChainHello()
+	controlMessages := []Message{
+		hello,
+		GetVersionedBlocks{Version: Version1, Locators: []types.Hash{hello.GenesisID}, Limit: 1},
+		GetVersionedHeaders{Version: Version1, Locators: []types.Hash{hello.GenesisID}, Limit: 1},
+		VersionedBatchDone{Version: Version1, TipID: hello.TipID},
+	}
+	for _, message := range controlMessages {
+		payload, err := encodePayload(message)
+		if err != nil {
+			f.Fatal(err)
+		}
+		f.Add(append([]byte{byte(message.messageType())}, payload...))
+	}
 	f.Add([]byte{})
 	f.Add([]byte{0xff})
 	f.Fuzz(func(t *testing.T, input []byte) {
@@ -457,6 +535,17 @@ func testStatus() Status {
 		TipHeight:      4,
 		CumulativeWork: []byte{7},
 		MaxFrameBytes:  uint32(MaxFrameBodyBytes),
+	}
+}
+
+func testChainHello() ChainHello {
+	status := testStatus()
+	return ChainHello{
+		Version: Version1, NetworkID: status.NetworkID, GenesisID: status.GenesisID,
+		ActivationHeight: 5, Features: ChainFeatureVersionedSyncV1,
+		TipID: status.TipID, StateRoot: status.StateRoot, TipHeight: status.TipHeight,
+		CumulativeWork: append([]byte(nil), status.CumulativeWork...),
+		MaxFrameBytes:  uint32(MaxVersionedFrameBodyBytes),
 	}
 }
 

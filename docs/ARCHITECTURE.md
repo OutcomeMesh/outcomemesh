@@ -175,6 +175,13 @@ must opt into the WorkGraph maximum explicitly. Status negotiation, locator
 requests, sync handlers, persistence routing, and CLI activation are still
 missing, so the codec alone cannot place a v1 block on the live chain.
 
+The accompanying inactive chain handshake refuses network, genesis, or
+activation-height mismatch before locator exchange and intersects explicit
+frame ceilings. Its locator requests and batch terminator have distinct v1
+message IDs. This fixes the control-plane grammar without weakening the active
+session's fail-closed dispatch; a router-backed serving and download state
+machine is still required.
+
 The isolated version-1 coordinator exercises each routed tree:
 it derives branch-local MTP, targets, fee queues, states, and prior earnings and
 uses only hard WorkSeal difficulty in cumulative-work fork choice. It is test

@@ -143,6 +143,22 @@ frame = 0000007f1200010000005b0000000000000005f2ee6638d996e281afb71491418b5da2c1
 The four-byte prefix `0000007f` is the 127-byte frame body length and is
 checked against the negotiated WorkGraph ceiling before allocation.
 
+## Versioned chain hello
+
+`TestChainHelloGoldenFrame` fixes the complete message-type `0x16`
+(`ChainHello`) frame. It advertises wire version 1, network 91, activation at
+height 5, `versioned_sync_v1`, the test tip at height 4 with cumulative work 7,
+and the 11,535,373-byte maximum versioned frame body:
+
+```text
+frame_bytes = 137
+frame = 000000851600010000005bf4114ac064ae0a0c51c0698b6489f637b748ad5e62772c6352097f5abf2b57e3000000000000000500000000000000014f798cff34d9eba2f1ffbbf96323acc5bd35594dd89d45279437685dcc47f9f030384bfb981b28a7f8d40049408d54ab1c93bf78da83be0b081b2533b0a97c910000000000000004010700b0040d
+```
+
+The body-length prefix is `00000085` (133 bytes). Peers must agree on the
+network, genesis, and activation height before any locator request; the usable
+allocation ceiling is the smaller valid advertisement.
+
 ## Delayed fee queue
 
 `TestFeeQueueEncodingRoundTripAndDetachedSlots` fixes a three-slot queue after

@@ -370,6 +370,15 @@ versioned session must explicitly opt into the larger WorkGraph-block ceiling,
 and the frame prefix is checked against that ceiling before allocation.
 Versioned requests, status negotiation, and session routing are not active yet.
 
+The appended control grammar is now canonical but still inactive.
+`ChainHelloV1` carries the exact network ID, genesis ID, activation height,
+`versioned_sync_v1` capability, tip ID/state root/height/cumulative hard work,
+and maximum accepted frame body. A mismatch in network, genesis, or activation
+height fails before locators. Compatible peers intersect frame ceilings.
+`GetVersionedBlocksV1` and `GetVersionedHeadersV1` use 1–32 unique locators and
+a 1–128 limit; `VersionedBatchDoneV1` binds a response to the responder tip.
+These types do not yet have a router-backed serving/synchronization loop.
+
 The next hard target is known before mining and is independent of the current
 candidate timestamp:
 

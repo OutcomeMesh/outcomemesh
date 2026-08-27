@@ -29,6 +29,7 @@ const (
 	MaxSharesPerMessage                    = 256
 	MinWorkFrameBodyBytes                  = 512
 	MaxWorkFrameBodyBytes                  = 96 * 1024
+	MinVersionedChainFrameBodyBytes        = 1_024
 	MaxPayloadBytes                        = block.MaxCanonicalBytes
 	MaxFrameBodyBytes                      = MaxPayloadBytes + 1
 	MaxVersionedBlockPayloadBytes          = 2 + binary.MaxVarintLen64 + chainblock.MaxCanonicalBytes
@@ -37,6 +38,7 @@ const (
 )
 
 const WorkFeatureShareRelayV1 uint64 = 1 << 0
+const ChainFeatureVersionedSyncV1 uint64 = 1 << 0
 
 var (
 	ErrFrameSize        = errors.New("invalid wire frame size")
@@ -70,6 +72,10 @@ const (
 	TypeShareResult
 	TypeVersionedBlock
 	TypeVersionedHeaders
+	TypeChainHello
+	TypeGetVersionedBlocks
+	TypeGetVersionedHeaders
+	TypeVersionedBatchDone
 )
 
 type ResultCode uint16
@@ -146,6 +152,46 @@ type VersionedHeaders struct {
 }
 
 func (VersionedHeaders) messageType() Type { return TypeVersionedHeaders }
+
+// ChainHello negotiates the isolated cross-version chain protocol. An exact
+// activation height match is required before either side exchanges locators.
+type ChainHello struct {
+	Version          uint16
+	NetworkID        uint32
+	GenesisID        types.Hash
+	ActivationHeight uint64
+	Features         uint64
+	TipID            types.Hash
+	StateRoot        types.Hash
+	TipHeight        uint64
+	CumulativeWork   []byte
+	MaxFrameBytes    uint32
+}
+
+func (ChainHello) messageType() Type { return TypeChainHello }
+
+type GetVersionedBlocks struct {
+	Version  uint16
+	Locators []types.Hash
+	Limit    uint16
+}
+
+func (GetVersionedBlocks) messageType() Type { return TypeGetVersionedBlocks }
+
+type GetVersionedHeaders struct {
+	Version  uint16
+	Locators []types.Hash
+	Limit    uint16
+}
+
+func (GetVersionedHeaders) messageType() Type { return TypeGetVersionedHeaders }
+
+type VersionedBatchDone struct {
+	Version uint16
+	TipID   types.Hash
+}
+
+func (VersionedBatchDone) messageType() Type { return TypeVersionedBatchDone }
 
 type Transaction struct {
 	Value outcome.Transaction
@@ -378,6 +424,14 @@ func DecodeFrameBody(body []byte) (Message, error) {
 		return decodeVersionedBlock(payload)
 	case TypeVersionedHeaders:
 		return decodeVersionedHeaders(payload)
+	case TypeChainHello:
+		return decodeChainHello(payload)
+	case TypeGetVersionedBlocks:
+		return decodeGetVersionedBlocks(payload)
+	case TypeGetVersionedHeaders:
+		return decodeGetVersionedHeaders(payload)
+	case TypeVersionedBatchDone:
+		return decodeVersionedBatchDone(payload)
 	default:
 		return nil, fmt.Errorf("%w: %d", ErrMessageType, body[0])
 	}
@@ -459,6 +513,40 @@ func encodePayload(message Message) ([]byte, error) {
 		for _, header := range value.Values {
 			encoder.BytesField(header.CanonicalBytes())
 		}
+		encoder.Fixed(value.TipID[:])
+		return encoder.Bytes(), nil
+	case ChainHello:
+		if err := value.Validate(); err != nil {
+			return nil, err
+		}
+		encoder := codec.NewEncoder(160)
+		encoder.U16(value.Version)
+		encoder.U32(value.NetworkID)
+		encoder.Fixed(value.GenesisID[:])
+		encoder.U64(value.ActivationHeight)
+		encoder.U64(value.Features)
+		encoder.Fixed(value.TipID[:])
+		encoder.Fixed(value.StateRoot[:])
+		encoder.U64(value.TipHeight)
+		encoder.BytesField(value.CumulativeWork)
+		encoder.U32(value.MaxFrameBytes)
+		return encoder.Bytes(), nil
+	case GetVersionedBlocks:
+		if err := value.Validate(); err != nil {
+			return nil, err
+		}
+		return encodeLocatedRequest(value.Version, value.Locators, value.Limit), nil
+	case GetVersionedHeaders:
+		if err := value.Validate(); err != nil {
+			return nil, err
+		}
+		return encodeLocatedRequest(value.Version, value.Locators, value.Limit), nil
+	case VersionedBatchDone:
+		if err := value.Validate(); err != nil {
+			return nil, err
+		}
+		encoder := codec.NewEncoder(2 + types.HashSize)
+		encoder.U16(value.Version)
 		encoder.Fixed(value.TipID[:])
 		return encoder.Bytes(), nil
 	case Transaction:
@@ -606,6 +694,17 @@ func payloadLimitForType(messageType Type) int {
 	}
 }
 
+func encodeLocatedRequest(version uint16, locators []types.Hash, limit uint16) []byte {
+	encoder := codec.NewEncoder(8 + len(locators)*types.HashSize)
+	encoder.U16(version)
+	encoder.Uvarint(uint64(len(locators)))
+	for _, locator := range locators {
+		encoder.Fixed(locator[:])
+	}
+	encoder.U16(limit)
+	return encoder.Bytes()
+}
+
 func (status Status) Validate() error {
 	if status.Version != Version0 {
 		return ErrUnsupported
@@ -623,15 +722,15 @@ func (status Status) Validate() error {
 }
 
 func (request GetBlocks) Validate() error {
-	return validateLocatedRequest(request.Version, request.Locators, request.Limit, MaxBlocksPerRequest)
+	return validateLocatedRequest(request.Version, Version0, request.Locators, request.Limit, MaxBlocksPerRequest)
 }
 
 func (request GetHeaders) Validate() error {
-	return validateLocatedRequest(request.Version, request.Locators, request.Limit, MaxHeadersPerRequest)
+	return validateLocatedRequest(request.Version, Version0, request.Locators, request.Limit, MaxHeadersPerRequest)
 }
 
-func validateLocatedRequest(version uint16, locators []types.Hash, limit uint16, maximum uint16) error {
-	if version != Version0 {
+func validateLocatedRequest(version uint16, required uint16, locators []types.Hash, limit uint16, maximum uint16) error {
+	if version != required {
 		return ErrUnsupported
 	}
 	if len(locators) == 0 || len(locators) > MaxLocators || limit == 0 || limit > maximum {
@@ -698,6 +797,43 @@ func (headers VersionedHeaders) Validate() error {
 			header.ParentID() != parentID || header.Version() < previous.Version() {
 			return ErrMessage
 		}
+	}
+	return nil
+}
+
+func (hello ChainHello) Validate() error {
+	if hello.Version != Version1 {
+		return ErrUnsupported
+	}
+	if hello.NetworkID == 0 || hello.GenesisID.IsZero() || hello.ActivationHeight == 0 ||
+		hello.Features == 0 || hello.TipID.IsZero() || hello.StateRoot.IsZero() ||
+		(hello.TipHeight == 0 && hello.TipID != hello.GenesisID) ||
+		hello.MaxFrameBytes < MinVersionedChainFrameBodyBytes ||
+		hello.MaxFrameBytes > uint32(MaxVersionedFrameBodyBytes) {
+		return ErrMessage
+	}
+	if len(hello.CumulativeWork) > storage.MaxWorkBytes ||
+		(len(hello.CumulativeWork) > 0 && hello.CumulativeWork[0] == 0) ||
+		(hello.TipHeight > 0 && len(hello.CumulativeWork) == 0) {
+		return storage.ErrWorkEncoding
+	}
+	return nil
+}
+
+func (request GetVersionedBlocks) Validate() error {
+	return validateLocatedRequest(request.Version, Version1, request.Locators, request.Limit, MaxBlocksPerRequest)
+}
+
+func (request GetVersionedHeaders) Validate() error {
+	return validateLocatedRequest(request.Version, Version1, request.Locators, request.Limit, MaxHeadersPerRequest)
+}
+
+func (done VersionedBatchDone) Validate() error {
+	if done.Version != Version1 {
+		return ErrUnsupported
+	}
+	if done.TipID.IsZero() {
+		return ErrMessage
 	}
 	return nil
 }
@@ -1064,6 +1200,135 @@ func decodeVersionedHeaders(payload []byte) (VersionedHeaders, error) {
 	copy(result.TipID[:], id)
 	if err := decoder.Finish(); err != nil {
 		return VersionedHeaders{}, err
+	}
+	return result, result.Validate()
+}
+
+func decodeChainHello(payload []byte) (ChainHello, error) {
+	decoder := codec.NewDecoder(payload)
+	var result ChainHello
+	var err error
+	result.Version, err = decoder.U16()
+	if err != nil {
+		return ChainHello{}, err
+	}
+	if result.Version != Version1 {
+		return ChainHello{}, ErrUnsupported
+	}
+	result.NetworkID, err = decoder.U32()
+	if err != nil {
+		return ChainHello{}, err
+	}
+	genesisID, err := decoder.Fixed(types.HashSize)
+	if err != nil {
+		return ChainHello{}, err
+	}
+	copy(result.GenesisID[:], genesisID)
+	result.ActivationHeight, err = decoder.U64()
+	if err != nil {
+		return ChainHello{}, err
+	}
+	result.Features, err = decoder.U64()
+	if err != nil {
+		return ChainHello{}, err
+	}
+	tipID, err := decoder.Fixed(types.HashSize)
+	if err != nil {
+		return ChainHello{}, err
+	}
+	copy(result.TipID[:], tipID)
+	stateRoot, err := decoder.Fixed(types.HashSize)
+	if err != nil {
+		return ChainHello{}, err
+	}
+	copy(result.StateRoot[:], stateRoot)
+	result.TipHeight, err = decoder.U64()
+	if err != nil {
+		return ChainHello{}, err
+	}
+	result.CumulativeWork, err = decoder.BytesField(storage.MaxWorkBytes)
+	if err != nil {
+		return ChainHello{}, err
+	}
+	result.MaxFrameBytes, err = decoder.U32()
+	if err != nil {
+		return ChainHello{}, err
+	}
+	if err := decoder.Finish(); err != nil {
+		return ChainHello{}, err
+	}
+	return result, result.Validate()
+}
+
+func decodeGetVersionedBlocks(payload []byte) (GetVersionedBlocks, error) {
+	version, locators, limit, err := decodeLocatedRequest(payload, MaxBlocksPerRequest)
+	if err != nil {
+		return GetVersionedBlocks{}, err
+	}
+	result := GetVersionedBlocks{Version: version, Locators: locators, Limit: limit}
+	return result, result.Validate()
+}
+
+func decodeGetVersionedHeaders(payload []byte) (GetVersionedHeaders, error) {
+	version, locators, limit, err := decodeLocatedRequest(payload, MaxHeadersPerRequest)
+	if err != nil {
+		return GetVersionedHeaders{}, err
+	}
+	result := GetVersionedHeaders{Version: version, Locators: locators, Limit: limit}
+	return result, result.Validate()
+}
+
+func decodeLocatedRequest(payload []byte, maximum uint16) (uint16, []types.Hash, uint16, error) {
+	decoder := codec.NewDecoder(payload)
+	version, err := decoder.U16()
+	if err != nil {
+		return 0, nil, 0, err
+	}
+	if version != Version1 {
+		return 0, nil, 0, ErrUnsupported
+	}
+	count, err := decoder.ListLength(MaxLocators)
+	if err != nil {
+		return 0, nil, 0, err
+	}
+	locators := make([]types.Hash, count)
+	for index := range locators {
+		encoded, err := decoder.Fixed(types.HashSize)
+		if err != nil {
+			return 0, nil, 0, err
+		}
+		copy(locators[index][:], encoded)
+	}
+	limit, err := decoder.U16()
+	if err != nil {
+		return 0, nil, 0, err
+	}
+	if limit > maximum {
+		return 0, nil, 0, ErrMessage
+	}
+	if err := decoder.Finish(); err != nil {
+		return 0, nil, 0, err
+	}
+	return version, locators, limit, nil
+}
+
+func decodeVersionedBatchDone(payload []byte) (VersionedBatchDone, error) {
+	decoder := codec.NewDecoder(payload)
+	version, err := decoder.U16()
+	if err != nil {
+		return VersionedBatchDone{}, err
+	}
+	if version != Version1 {
+		return VersionedBatchDone{}, ErrUnsupported
+	}
+	id, err := decoder.Fixed(types.HashSize)
+	if err != nil {
+		return VersionedBatchDone{}, err
+	}
+	result := VersionedBatchDone{Version: version}
+	copy(result.TipID[:], id)
+	if err := decoder.Finish(); err != nil {
+		return VersionedBatchDone{}, err
 	}
 	return result, result.Validate()
 }
