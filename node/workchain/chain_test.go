@@ -429,6 +429,127 @@ func TestPebbleHistoryBudgetRejectsCommitAtomically(t *testing.T) {
 	}
 }
 
+func TestPebblePrunesOnlyStaleForkSubtreesAtomically(t *testing.T) {
+	parameters := testParameters()
+	base := testBase(t, parameters)
+	path := t.TempDir()
+	store, err := OpenWithPolicy(path, base, parameters, Policy{
+		MaxHistoryBytes: DefaultMaxHistoryBytes,
+		ForkRetention:   1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	activationA, _ := mineChild(t, store, base.Tip.ID, base.Tip.Timestamp+60, "prune-canonical")
+	activationB, _ := mineChild(t, store, base.Tip.ID, base.Tip.Timestamp+60, "prune-live")
+	activationC, _ := mineChild(t, store, base.Tip.ID, base.Tip.Timestamp+60, "prune-stale")
+	for _, block := range []workblock.Block{activationA, activationB, activationC} {
+		if _, _, err := store.Commit(block, block.Header.Seal.Timestamp); err != nil {
+			t.Fatal(err)
+		}
+	}
+	idA, _ := activationA.Header.ID()
+	idB, _ := activationB.Header.ID()
+	idC, _ := activationC.Header.ID()
+	childA, _ := mineChild(t, store, idA, activationA.Header.Seal.Timestamp+60, "prune-canonical-2")
+	if _, _, err := store.Commit(childA, childA.Header.Seal.Timestamp); err != nil {
+		t.Fatal(err)
+	}
+	childAID, _ := childA.Header.ID()
+	grandchildA, _ := mineChild(t, store, childAID, childA.Header.Seal.Timestamp+60, "prune-canonical-3")
+	if _, _, err := store.Commit(grandchildA, grandchildA.Header.Seal.Timestamp); err != nil {
+		t.Fatal(err)
+	}
+	grandchildAID, _ := grandchildA.Header.ID()
+	greatGrandchildA, _ := mineChild(t, store, grandchildAID, grandchildA.Header.Seal.Timestamp+60, "prune-canonical-4")
+	if _, _, err := store.Commit(greatGrandchildA, greatGrandchildA.Header.Seal.Timestamp); err != nil {
+		t.Fatal(err)
+	}
+
+	childB, _ := mineChild(t, store, idB, activationB.Header.Seal.Timestamp+60, "prune-live-2")
+	if _, _, err := store.Commit(childB, childB.Header.Seal.Timestamp); err != nil {
+		t.Fatal(err)
+	}
+	childBID, _ := childB.Header.ID()
+	grandchildB, _ := mineChild(t, store, childBID, childB.Header.Seal.Timestamp+60, "prune-live-3")
+	if _, _, err := store.Commit(grandchildB, grandchildB.Header.Seal.Timestamp); err != nil {
+		t.Fatal(err)
+	}
+	grandchildBID, _ := grandchildB.Header.ID()
+	childC, _ := mineChild(t, store, idC, activationC.Header.Seal.Timestamp+60, "prune-stale-2")
+	if _, _, err := store.Commit(childC, childC.Header.Seal.Timestamp); err != nil {
+		t.Fatal(err)
+	}
+	childCID, _ := childC.Header.ID()
+
+	usageBefore, _, err := store.HistoryUsage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	injected := errors.New("injected prune failure")
+	store.persistence.commitHook = func() error { return injected }
+	if _, err := store.PruneStaleForks(); !errors.Is(err, injected) {
+		t.Fatalf("failed prune error=%v", err)
+	}
+	if _, err := store.BlockByID(childCID); err != nil {
+		t.Fatalf("failed prune changed memory: %v", err)
+	}
+	usageAfterFailure, _, err := store.HistoryUsage()
+	if err != nil || usageAfterFailure != usageBefore {
+		t.Fatalf("failed prune history=%d want=%d err=%v", usageAfterFailure, usageBefore, err)
+	}
+
+	store.persistence.commitHook = nil
+	report, err := store.PruneStaleForks()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.CutoffHeight != parameters.ActivationHeight+2 || report.RemovedNodes != 2 ||
+		report.RetainedNodes != 8 || report.ReleasedHistoryBytes == 0 {
+		t.Fatalf("prune report=%+v", report)
+	}
+	if _, err := store.BlockByID(idC); !errors.Is(err, ErrParent) {
+		t.Fatalf("stale root survived prune: %v", err)
+	}
+	if _, err := store.BlockByID(childCID); !errors.Is(err, ErrParent) {
+		t.Fatalf("stale child survived prune: %v", err)
+	}
+	for _, id := range []types.Hash{idA, idB, childBID, grandchildBID} {
+		if _, err := store.BlockByID(id); err != nil {
+			t.Fatalf("retained block %s missing: %v", id, err)
+		}
+	}
+	usageAfter, _, err := store.HistoryUsage()
+	if err != nil || usageAfter+report.ReleasedHistoryBytes != usageBefore {
+		t.Fatalf("pruned history=%d released=%d before=%d err=%v",
+			usageAfter, report.ReleasedHistoryBytes, usageBefore, err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := OpenWithPolicy(path, base, parameters, Policy{
+		MaxHistoryBytes: DefaultMaxHistoryBytes,
+		ForkRetention:   1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	if _, err := reopened.BlockByID(childCID); !errors.Is(err, ErrParent) {
+		t.Fatalf("restart restored pruned child: %v", err)
+	}
+	if _, err := reopened.BlockByID(grandchildBID); err != nil {
+		t.Fatalf("restart lost live side branch: %v", err)
+	}
+	competing, _ := mineChild(
+		t, reopened, grandchildBID, grandchildB.Header.Seal.Timestamp+60, "prune-live-4",
+	)
+	if _, _, err := reopened.Commit(competing, competing.Header.Seal.Timestamp); err != nil {
+		t.Fatalf("retained side branch cannot extend after restart: %v", err)
+	}
+}
+
 func TestPebbleRejectsOldWorkSchema(t *testing.T) {
 	t.Parallel()
 

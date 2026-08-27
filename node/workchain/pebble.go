@@ -22,6 +22,7 @@ const (
 	maxPersistedStateBytes        = 256 << 20
 	maxStateDeltaBytes            = 256 << 20
 	DefaultMaxHistoryBytes uint64 = 64 << 30
+	DefaultForkRetention   uint64 = 4_096
 )
 
 var (
@@ -42,10 +43,17 @@ type Policy struct {
 	// MaxHistoryBytes counts immutable logical node, block, checkpoint, and
 	// resource-delta key/value bytes. Pebble WAL/LSM overhead is separate.
 	MaxHistoryBytes uint64
+	// ForkRetention is the number of heights behind the selected tip within
+	// which every side branch is retained. Zero disables side-fork pruning.
+	ForkRetention uint64
 }
 
-// DefaultPolicy returns the local 64-GiB immutable-history admission budget.
-func DefaultPolicy() Policy { return Policy{MaxHistoryBytes: DefaultMaxHistoryBytes} }
+// DefaultPolicy returns the local 64-GiB history budget and a 4,096-height
+// side-fork retention window. Pruning still requires an explicit maintenance
+// call and never removes canonical history.
+func DefaultPolicy() Policy {
+	return Policy{MaxHistoryBytes: DefaultMaxHistoryBytes, ForkRetention: DefaultForkRetention}
+}
 
 type workPersistence struct {
 	db              *pebble.DB
@@ -62,8 +70,9 @@ func Open(path string, base Base, parameters workblock.Parameters) (*Store, erro
 	return OpenWithPolicy(path, base, parameters, DefaultPolicy())
 }
 
-// OpenWithPolicy opens the isolated store with an explicit local history
-// budget. The policy is not a consensus input and may change across restarts.
+// OpenWithPolicy opens the isolated store with explicit local history and fork
+// retention policy. The policy is not a consensus input and may change across
+// restarts.
 func OpenWithPolicy(path string, base Base, parameters workblock.Parameters, policy Policy) (*Store, error) {
 	if policy.MaxHistoryBytes == 0 {
 		return nil, storage.ErrHistoryLimit
@@ -208,6 +217,59 @@ func (persistence *workPersistence) commitNode(parent, node *chainNode, canonica
 		persistence.afterCommitHook()
 	}
 	return nil
+}
+
+func (persistence *workPersistence) pruneNodes(nodes map[types.Hash]*chainNode, ids []types.Hash) (uint64, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	batch := persistence.db.NewBatch()
+	defer batch.Close()
+	var released uint64
+	for _, id := range ids {
+		node := nodes[id]
+		if node == nil || node.block == nil {
+			return 0, storage.ErrCorrupt
+		}
+		for _, key := range [][]byte{workNodeKey(id), workBlockKey(id), workDeltaKey(id)} {
+			value, err := persistence.get(key)
+			if errors.Is(err, pebble.ErrNotFound) {
+				return 0, storage.ErrCorrupt
+			}
+			if err != nil {
+				return 0, err
+			}
+			released, err = checkedHistoryBytes(released, uint64(len(key)+len(value)))
+			if err != nil {
+				return 0, err
+			}
+			if err := batch.Delete(key, nil); err != nil {
+				return 0, err
+			}
+		}
+	}
+	if released > persistence.historyBytes {
+		return 0, storage.ErrCorrupt
+	}
+	nextHistory := persistence.historyBytes - released
+	var history [8]byte
+	binary.BigEndian.PutUint64(history[:], nextHistory)
+	if err := batch.Set(workKeyHistory, history[:], nil); err != nil {
+		return 0, err
+	}
+	if persistence.commitHook != nil {
+		if err := persistence.commitHook(); err != nil {
+			return 0, err
+		}
+	}
+	if err := batch.Commit(pebble.Sync); err != nil {
+		return 0, err
+	}
+	persistence.historyBytes = nextHistory
+	if persistence.afterCommitHook != nil {
+		persistence.afterCommitHook()
+	}
+	return released, nil
 }
 
 func (persistence *workPersistence) load(store *Store, base Base) error {

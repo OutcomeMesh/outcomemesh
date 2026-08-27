@@ -153,8 +153,12 @@ Every restart reapplies deltas parent-first and verifies state roots, ancestry,
 fee-queue roots, cumulative hard work, selected tip, and the recomputed byte
 counter. WAL/LSM amplification and filesystem free space remain separate
 operator limits. A real subprocess is killed before and after the synchronous
-batch boundary and recovers only the old or new chain; pruning and broader
-filesystem fault/long-soak campaigns are still required.
+batch boundary and recovers only the old or new chain. Explicit maintenance can
+atomically delete a complete stale side-fork subtree only after every canonical
+node and every branch reaching the local retention window have been marked.
+The default window is 4,096 heights and zero disables this local operation.
+Canonical history remains intact: history-anchored checkpoints, archival
+pruning, and broader filesystem fault/long-soak campaigns are still required.
 
 ## Consensus coding rules
 

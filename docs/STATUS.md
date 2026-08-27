@@ -269,12 +269,19 @@ Implemented in an isolated, not-yet-activated consensus package:
   process-kill test stops immediately before the durable batch and immediately
   after its synchronous commit; reopen observes exactly the old or new chain.
   Strict metadata, checkpoint, and delta decoders are fuzz targets.
+- explicit stale-fork maintenance now uses a 4,096-height default local window.
+  It marks the canonical ancestry and every side branch reaching the window,
+  then atomically deletes only unmarked complete subtrees together with an exact
+  history-counter decrement. A boundary fixture preserves and extends a live
+  side branch after restart, removes a two-block stale subtree, and proves an
+  injected pre-sync failure changes neither memory nor disk. It does not prune
+  canonical PoW history or introduce local finality.
 
 No WorkGraph field has entered a version-0 block yet. The isolated v1 store and
 opt-in QUIC session remain disconnected from the active chain/CLI routing path;
-periodic checkpoint/pruning policy, extended filesystem-fault/soak campaigns,
-production gossip-budget calibration, and finer/adaptive economic-strategy
-analysis remain before activation.
+canonical replay checkpoints and history-anchored archival pruning, extended
+filesystem-fault/soak campaigns, production gossip-budget calibration, and
+finer/adaptive economic-strategy analysis remain before activation.
 
 ## Milestones 6–10 — not integrated
 

@@ -166,11 +166,15 @@ cumulative work, logical-history counter, and selected tip change in one
 synchronous batch. Reopen reconstructs parent-first states and verifies every
 stored root and ancestry link. Schema 2 fails closed on the earlier pre-alpha
 full-snapshot layout; replay is the migration policy. Production activation
-still requires periodic checkpoint/pruning policy, broader filesystem-fault
-soaks, and activation routing for the already isolated negotiated WorkGraph
-session. The libp2p adapter now carries that session under a separate opt-in
-protocol ID and resource scope, while default hosts and the active CLI leave it
-disabled.
+still requires canonical replay checkpoints and history-anchored archival
+pruning. Local maintenance already marks canonical ancestry and every side
+branch reaching a configurable cutoff, then atomically removes only complete
+stale subtrees while decrementing the exact logical history counter. Its default
+window is 4,096 heights, zero disables it, and it never creates local PoW
+finality by pruning canonical history. Broader filesystem-fault soaks and
+activation routing for the already isolated negotiated WorkGraph session also
+remain. The libp2p adapter carries that session under a separate opt-in protocol
+ID and resource scope, while default hosts and the active CLI leave it disabled.
 The current integration test kills a separate process immediately before and
 after the synchronous Pebble batch and verifies old-or-new recovery.
 

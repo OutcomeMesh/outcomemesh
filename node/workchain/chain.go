@@ -29,6 +29,14 @@ type Base struct {
 	RecentTimestamps []uint64
 }
 
+// PruneReport describes one completed local side-fork maintenance pass.
+type PruneReport struct {
+	CutoffHeight         uint64
+	RemovedNodes         uint64
+	RetainedNodes        uint64
+	ReleasedHistoryBytes uint64
+}
+
 type chainNode struct {
 	tip      storage.Tip
 	state    *state.Memory
@@ -243,6 +251,67 @@ func (store *Store) HistoryUsage() (uint64, uint64, error) {
 	return store.persistence.historyBytes, store.persistence.policy.MaxHistoryBytes, nil
 }
 
+// PruneStaleForks atomically removes side-branch subtrees that have not reached
+// the configured retention window. Canonical history and every ancestor of a
+// retained side branch remain available. A zero retention policy disables the
+// operation; in-memory stores have no persistent pruning policy and are no-ops.
+func (store *Store) PruneStaleForks() (PruneReport, error) {
+	if store == nil {
+		return PruneReport{}, ErrConfiguration
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if store.closed {
+		return PruneReport{}, storage.ErrClosed
+	}
+	if store.persistence == nil || store.persistence.policy.ForkRetention == 0 {
+		return PruneReport{RetainedNodes: uint64(len(store.nodes))}, nil
+	}
+	tip := store.nodes[store.tipID]
+	if tip == nil {
+		return PruneReport{}, storage.ErrCorrupt
+	}
+	retention := store.persistence.policy.ForkRetention
+	if tip.tip.Height <= retention {
+		return PruneReport{RetainedNodes: uint64(len(store.nodes))}, nil
+	}
+	cutoff := tip.tip.Height - retention
+	keep := make(map[types.Hash]struct{}, len(store.nodes))
+	if err := store.markAncestorsLocked(store.tipID, keep); err != nil {
+		return PruneReport{}, err
+	}
+	for id, node := range store.nodes {
+		if node == nil {
+			return PruneReport{}, storage.ErrCorrupt
+		}
+		if node.tip.Height >= cutoff {
+			if err := store.markAncestorsLocked(id, keep); err != nil {
+				return PruneReport{}, err
+			}
+		}
+	}
+	remove := make([]types.Hash, 0, len(store.nodes)-len(keep))
+	for id := range store.nodes {
+		if _, retained := keep[id]; !retained {
+			remove = append(remove, id)
+		}
+	}
+	sort.Slice(remove, func(left, right int) bool {
+		return types.CompareHash(remove[left], remove[right]) < 0
+	})
+	released, err := store.persistence.pruneNodes(store.nodes, remove)
+	if err != nil {
+		return PruneReport{}, err
+	}
+	for _, id := range remove {
+		delete(store.nodes, id)
+	}
+	return PruneReport{
+		CutoffHeight: cutoff, RemovedNodes: uint64(len(remove)),
+		RetainedNodes: uint64(len(store.nodes)), ReleasedHistoryBytes: released,
+	}, nil
+}
+
 func (store *Store) Close() error {
 	if store == nil {
 		return ErrConfiguration
@@ -257,6 +326,26 @@ func (store *Store) Close() error {
 		return store.persistence.close()
 	}
 	return nil
+}
+
+func (store *Store) markAncestorsLocked(id types.Hash, keep map[types.Hash]struct{}) error {
+	for {
+		if _, exists := keep[id]; exists {
+			return nil
+		}
+		node, exists := store.nodes[id]
+		if !exists || node == nil {
+			return storage.ErrCorrupt
+		}
+		keep[id] = struct{}{}
+		if node.block == nil {
+			if id != store.baseID {
+				return storage.ErrCorrupt
+			}
+			return nil
+		}
+		id = node.block.Header.Seal.AnchorParent
+	}
 }
 
 func (store *Store) childInputsLocked(

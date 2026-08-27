@@ -308,8 +308,15 @@ reconstructs every branch in parent order and verifies each state root; tests
 retain side branches, reject corrupted deltas and old schema 1, enforce a 64-GiB
 default logical budget before batch creation, and leave memory/disk unchanged on
 an injected pre-commit failure. Pre-alpha schema 1 fails closed and is rebuilt
-by replay rather than silently migrated. Periodic checkpoints/pruning and
-extended filesystem-fault/soak campaigns still precede production activation.
+by replay rather than silently migrated. Explicit maintenance can atomically
+remove only side-fork subtrees whose highest node is behind a local retention
+window (4,096 heights by default). It retains the entire canonical path plus
+every ancestor of a side branch at the boundary, updates the logical byte
+counter in the same synchronous batch, and is disabled by a zero local setting.
+Canonical history is deliberately not pruned without a separately designed
+history-anchored checkpoint rule. Canonical replay checkpoints, archival
+pruning, and extended filesystem-fault/soak campaigns still precede production
+activation.
 The integration suite also kills a real subprocess on both sides of the
 synchronous batch boundary and proves reopen yields the complete old or complete
 new chain, never a partial node/delta/tip combination.
