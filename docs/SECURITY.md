@@ -181,11 +181,13 @@ share.
 Outbound cooperative mining is fail-soft with respect to networking. The
 publisher queues only IDs already admitted to its local pool, caps one selected
 announcement at 1,024 IDs, and removes only the negotiated announced prefix.
-A dial, timeout, resource, or context failure retains unpublished IDs but does
-not reject a subsequently found hard anchor. Honest context mismatch caused by
-a changed tip is scored as stale data rather than an invalid-message attack.
-The current command has one explicit peer, so it does not claim Sybil-resistant
-peer selection or production gossip coverage.
+Each of at most eight explicit peers owns an independent queue and worker; the
+mining callback performs no network I/O. A slow peer therefore cannot block
+hard search or another relay. A dial, timeout, resource, or context failure
+retains that peer's unpublished IDs during the round but does not reject a
+subsequently found hard anchor. Honest context mismatch caused by a changed tip
+is scored as stale data rather than an invalid-message attack. Explicit peers
+still do not provide Sybil-resistant selection or production gossip coverage.
 
 Anchor notification is separated from ordinary chain pull at the libp2p
 protocol ID, but deliberately reuses its verified session. The remote winner
@@ -194,7 +196,10 @@ bounded requests. The receiver performs cumulative-work comparison, all header
 and body checks, replay, and router admission. Chain and notification protocols
 have separate concurrent resource scopes but share the same inbound fixed-window
 counter; total system/peer stream limits account for both. Neither handler is
-installed on default hosts.
+installed on default hosts. Outbound notification workers coalesce repeated
+wins to one pending prompt per peer and use a bounded total deadline. Each
+responder serves the immutable canonical path advertised in its handshake, so
+a concurrently mined anchor cannot splice a different tip into that session.
 
 Optional multi-base recovery uses no mutable global-tip catalog. A schema-1
 forest root contains only its fsynced manifest and canonical lowercase

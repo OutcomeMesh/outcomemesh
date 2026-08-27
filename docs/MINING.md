@@ -108,16 +108,19 @@ come from the same evolving nonce space, and the anchor commits the canonical
 share closure. The opt-in QUIC server now admits authenticated inbound share
 inventories into a parent-scoped round that is discarded on parent change.
 The ordinary `work-mine` remains local-only. The separate `work-mine-quic`
-experiment publishes to one explicit peer: it accumulates locally admitted,
-not-yet-announced IDs, sorts at the relay boundary, and lets negotiation shorten
-the prefix. Exact progress accounting removes that prefix and retains the rest.
+experiment publishes to as many as eight explicit peers. Each peer accumulates
+its own locally admitted, not-yet-announced IDs, sorts at the relay boundary,
+and lets negotiation shorten the prefix. The mining callback only enqueues IDs;
+independent workers perform all network I/O. Exact progress accounting removes
+successful prefixes and retains the rest until a fresh batch or round end.
 Transport/context failure cannot invalidate hard mining; attempts have bounded
-deadlines and the queue remains capped by the 8,192-share round. The command
-also admits reciprocal shares into its live pool. Automatic multi-peer fanout,
-discovery, and public activation remain disabled. A winning local anchor opens
-chain-notify-v1 to the configured peer. That peer becomes the initiator of the
-normal header-first verification; only a successfully selected new hard-work
-tip invalidates its round and cancels stale hashing.
+deadlines and every queue is capped by the 8,192-share round. The command also
+admits reciprocal shares into its live pool. Automatic discovery and public
+activation remain disabled. A winning local anchor queues one coalesced
+chain-notify-v1 prompt per peer without delaying the next mining round. Each
+peer becomes the initiator of normal header-first verification; the responder
+serves the canonical path pinned at handshake, and only a successfully selected
+new hard-work tip invalidates the receiver's round and cancels stale hashing.
 
 ## Gates before public mining
 

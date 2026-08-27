@@ -278,6 +278,29 @@ func (value *Host) Addresses() []string {
 	return addresses
 }
 
+// PeerIDFromAddress validates one direct QUIC-v1 peer multiaddress and derives
+// the OutcomeMesh identity committed by its /p2p component. Callers can use it
+// to reject duplicate or mismatched explicit peers before opening a stream.
+func PeerIDFromAddress(address string) (types.Hash, error) {
+	if len(address) == 0 || len(address) > maxAddressBytes {
+		return types.Hash{}, ErrAddress
+	}
+	info, err := peer.AddrInfoFromString(address)
+	if err != nil || len(info.Addrs) == 0 {
+		return types.Hash{}, ErrAddress
+	}
+	for _, candidate := range info.Addrs {
+		if !isDirectQUIC(candidate) {
+			return types.Hash{}, ErrAddress
+		}
+	}
+	result, err := outcomeIDFromPeerID(info.ID)
+	if err != nil {
+		return types.Hash{}, err
+	}
+	return result, nil
+}
+
 func (value *Host) OpenStream(ctx context.Context, address string, expected *types.Hash) (network.Stream, types.Hash, error) {
 	return value.openStream(ctx, address, expected, SessionProtocol)
 }
@@ -305,21 +328,16 @@ func (value *Host) openStream(
 	expected *types.Hash,
 	protocolID protocol.ID,
 ) (network.Stream, types.Hash, error) {
-	if value == nil || value.inner == nil || len(address) == 0 || len(address) > maxAddressBytes {
+	if value == nil || value.inner == nil {
 		return nil, types.Hash{}, ErrAddress
 	}
-	info, err := peer.AddrInfoFromString(address)
-	if err != nil || len(info.Addrs) == 0 {
-		return nil, types.Hash{}, ErrAddress
-	}
-	for _, candidate := range info.Addrs {
-		if !isDirectQUIC(candidate) {
-			return nil, types.Hash{}, ErrAddress
-		}
-	}
-	advertisedID, err := outcomeIDFromPeerID(info.ID)
+	advertisedID, err := PeerIDFromAddress(address)
 	if err != nil {
 		return nil, types.Hash{}, err
+	}
+	info, err := peer.AddrInfoFromString(address)
+	if err != nil {
+		return nil, types.Hash{}, ErrAddress
 	}
 	if expected != nil && advertisedID != *expected {
 		return nil, types.Hash{}, ErrUnexpectedPeer

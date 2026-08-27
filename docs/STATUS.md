@@ -346,11 +346,11 @@ Implemented in an isolated, not-yet-activated consensus package:
   after exact genesis confirmation, target/reward compatibility checks, a
   future boundary, and forest validation. Final or pending markers block every
   ordinary command that could mutate or report stale v0-only state. Separate
-  `work-mine/mine-quic/status/balance/verify/serve-quic/sync-quic` commands cross the
-  boundary without changing v0 defaults. A real two-process Pebble fixture
-  enables two nodes, mines height 1 as v0 and heights 2–5 as v1, authenticates
+  `work-mine/mine-quic/status/balance/verify/serve-quic/sync-quic` commands cross
+  the boundary without changing v0 defaults. A real multi-process Pebble fixture
+  enables three nodes, mines height 1 as v0 and heights 2–5 as v1, authenticates
   and synchronizes `/outcomemesh/chain/1`, replay-verifies the mixed ancestry,
-  rejects legacy mining, and reopens the same receiver tip after shutdown.
+  rejects legacy mining, and reopens the same receiver tips after shutdown.
 - the explicit v1 CLI miner now uses the bounded WorkGraph pool and unified
   weak-share/hard-anchor nonce loop. Locally admitted shares form deterministic
   parent tips, are committed in canonical topological order by the hard seal,
@@ -363,14 +363,13 @@ Implemented in an isolated, not-yet-activated consensus package:
   scoped WorkGraph handler as well as chain-v1. The process fixture now relays
   and fully admits two weak shares after mixed-chain synchronization; default
   hosts remain unable to negotiate the protocol.
-- `work-mine-quic` now publishes locally admitted weak shares to one explicit
-  peer while mining the hard anchor, accepts reciprocal round shares, and serves
-  chain-v1. A selected-inventory API checks local ownership and reports the
-  exact negotiated prefix, allowing the bounded unpublished queue to retain
-  only its unsent suffix. Network failure is recorded but does not invalidate
-  hard work. The process fixture mines height 6 through this path, then syncs it
-  back through the notified peer's chain-v1 state machine and replay-verifies
-  both persistent nodes.
+- `work-mine-quic` now publishes locally admitted weak shares to as many as
+  eight explicit authenticated peers while mining the hard anchor, accepts
+  reciprocal round shares, and serves chain-v1. Each peer has an independent
+  8,192-ID queue and worker; the hash-loop callback only enqueues, so slow or
+  incompatible peers cannot block healthy relay or hard work. A
+  selected-inventory API checks local ownership and reports the exact negotiated
+  prefix, allowing each queue to retain only its unsent suffix.
 - the distinct opt-in `/outcomemesh/chain-notify/1` protocol now reverses only
   chain session roles: a winning dialer serves, while the receiver initiates
   the same cumulative-work/header-first/full-replay synchronization. A selected
@@ -378,11 +377,18 @@ Implemented in an isolated, not-yet-activated consensus package:
   Ten consecutive two-process runs covered share rate exhaustion, notification,
   restart, and convergence. Transport resets no longer create a retry storm or
   count remote rate limiting as an invalid protocol message.
+- winning-anchor prompts now fan out through independent per-peer workers and
+  coalesce while a peer is busy. Versioned responders pin the canonical path
+  advertised in their handshake, allowing the next mining round to start
+  without changing an in-flight sync view. A real process fixture converges
+  three persistent WorkGraph nodes at height 6 while a fourth authenticated
+  v0-only peer rejects both optional protocols without delaying the compatible
+  peers; all three mixed chains replay-verify and survive restart.
 
 No WorkGraph field has entered a version-0 block yet. The v1 store and opt-in
 QUIC session remain isolated from every ordinary v0 chain/CLI path and are
 reachable only through the explicitly marked experimental commands;
-automatic versioned discovery/routing and multi-peer share fanout,
+automatic versioned discovery/routing and topology-derived peer selection,
 history-anchored archival pruning, extended filesystem-fault/soak campaigns,
 production gossip-budget calibration, and finer/adaptive economic-strategy
 analysis remain before activation.

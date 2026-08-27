@@ -57,9 +57,10 @@ make build
 ```
 
 `test-process` runs three real v0 QUIC server restart/sync/replay cycles, a
-separate v0→v1 WorkGraph enable/mine/QUIC-sync/restart cycle, and kills the
-WorkGraph Pebble process on both sides of commit, replay-checkpoint rotation,
-and stale-fork pruning durability boundaries. Raise the
+separate three-node v0→v1 WorkGraph enable/mine/fanout/restart cycle with one
+incompatible authenticated peer, and kills the WorkGraph Pebble process on both
+sides of commit, replay-checkpoint rotation, and stale-fork pruning durability
+boundaries. Raise the
 v0 QUIC soak length with, for example,
 `OUTCOMEMESH_SOAK_CYCLES=25 make test-process` (hard cap: 100 cycles).
 
@@ -129,6 +130,7 @@ genesis ID (the default 12-bit development target supports the required exact
   --peer <multiaddress> --peer-id <outcomemesh-peer-id>
 ./bin/omd work-mine-quic --data ./data/work-b --key node-b.key \
   --peer <multiaddress> --peer-id <outcomemesh-peer-id> \
+  --peer <second-multiaddress> --peer-id <second-outcomemesh-peer-id> \
   --count 1 --relay-every 128
 ```
 
@@ -139,13 +141,15 @@ commands refuse the directory; only explicit `work-*` commands can open its
 mixed chain. `work-mine` currently builds empty development payloads, but its
 v1 loop mines weak shares and the hard anchor in one nonce space, commits the
 bounded canonical share DAG, and reports both share counts. `work-mine-quic`
-adds authenticated, best-effort publication to one explicit peer while also
-accepting reciprocal shares and serving chain-v1. Successfully announced
-negotiated prefixes leave its bounded queue; failures retain the unpublished
-suffix and never invalidate objective hard-PoW progress. Automatic peer
-discovery and multi-peer routing remain gated. When this miner wins, the
-separate chain-notify-v1 prompt makes its configured peer initiate the existing
-trustless header-first pull immediately; it is not a trusted block push.
+adds authenticated, best-effort publication to as many as eight explicit peers
+while also accepting reciprocal shares and serving chain-v1. Repeat `--peer`;
+either omit every `--peer-id` or supply one matching pin after each peer. Every
+peer has its own full-round bounded queue and worker, while the mining callback
+performs no network I/O. A slow, incompatible, or unreachable peer therefore
+cannot stop hard-PoW search or a healthy peer's relay. Automatic peer discovery
+and topology-aware routing remain gated. When this miner wins, coalesced
+background chain-notify-v1 prompts make the configured peers initiate the
+existing trustless header-first pull; these are not trusted block pushes.
 Transactions on the experimental path, migration tooling, and public activation
 also remain gated.
 

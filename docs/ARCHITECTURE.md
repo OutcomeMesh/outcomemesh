@@ -245,21 +245,25 @@ three bounded attempts, and replaces the entire pool on an anchor or reorg.
 In-flight handlers may finish against the detached old round, but those shares
 can never enter the replacement payload or persistent block state.
 
-`work-mine-quic` attaches a bounded unpublished-ID queue to that round. The
-miner callback performs no consensus mutation: it batches locally admitted IDs,
-opens only the exact WorkGraph protocol, and removes precisely the prefix that
-the negotiated relay reports as announced. Failed attempts retain the suffix;
-hard-PoW search continues because network publication is best-effort. The same
-host accepts reciprocal share sessions and serves chain-v1, but automatic peer
-routing is not implemented yet.
+`work-mine-quic` attaches one bounded unpublished-ID queue and worker per
+explicit peer, with a hard maximum of eight. The miner callback performs no
+consensus mutation or network I/O: it only copies locally admitted IDs into the
+bounded queues. Each worker opens only the exact WorkGraph protocol and removes
+precisely the prefix that its negotiated relay reports as announced. Failed
+attempts retain that peer's suffix without delaying healthy workers or hard-PoW
+search. The same host accepts reciprocal share sessions and serves chain-v1,
+but automatic peer routing is not implemented yet.
 
 Anchor propagation uses a third opt-in protocol role without a second sync
 grammar. On `/outcomemesh/chain-notify/1` the winning dialer runs the existing
 versioned responder and the notified node runs the existing synchronizer. The
 receiver still compares cumulative hard work, requests headers before bodies,
-and submits through the activation router. A changed selected tip invalidates
-the round manager and cancels its active hash loop; an unchanged notification
-does neither.
+and submits through the activation router. Winning anchors are queued to
+independent per-peer notification workers; a busy peer keeps at most one extra
+prompt, which serves the newest selected tip. The responder pins the canonical
+path advertised by its handshake so concurrent local mining cannot mutate the
+session's header/body view. A changed selected tip invalidates the round manager
+and cancels its active hash loop; an unchanged notification does neither.
 The process fault suite kills a separate process immediately before and after
 the synchronous Pebble batch for ordinary block commit, replay-checkpoint
 creation/rotation, and stale-fork pruning. Reopen must match the complete old or

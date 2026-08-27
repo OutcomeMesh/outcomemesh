@@ -162,6 +162,8 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
 - Reward maturity and proportional payout calculation.
 - Orphan, withholding, and selfish-mining simulator.
 - Inclusion commitments carried by work shares.
+- Bounded explicit multi-peer relay with independent backpressure and verified
+  anchor synchronization.
 
 ### Exit gates
 

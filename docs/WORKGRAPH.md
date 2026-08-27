@@ -293,7 +293,8 @@ payloads, then runs the unified miner against a bounded per-context pool. Weak
 shares update the selected DAG parents and the eventual hard WorkSeal commits
 their canonical closure in the exact same nonce space. The opt-in QUIC server
 now admits remote shares into the same kind of round; outbound miner publication
-is available through the separate single-peer `work-mine-quic` experiment.
+is available through the separate bounded multi-peer `work-mine-quic`
+experiment.
 
 The transport-independent codec and an isolated finite session implement
 inventory-first WorkGraph relay: 1,024 sorted IDs per announcement and at most
@@ -319,13 +320,18 @@ catalog-free forest.
 For outbound relay, a round can announce an explicit sorted subset after
 proving every ID is locally owned. The remote negotiated inventory limit may
 shorten it; returned statistics identify the exact announced prefix. The QUIC
-miner therefore keeps a bounded unpublished-ID queue, drops only successful
-prefixes, and retries the suffix without invalidating hard-PoW progress. It also
-installs the inbound round and chain-v1 handlers. Automatic peer discovery,
-and multi-peer fanout remain gated. A selected local anchor uses the separate
-chain-notify-v1 protocol to make the configured peer initiate normal verified
-chain synchronization. If that changes the peer's selected parent, its round is
-invalidated and the stale hashing context is canceled.
+miner therefore gives each of at most eight explicit authenticated peers an
+independent bounded unpublished-ID queue and relay worker. Its mining callback
+only enqueues an admitted ID; it never dials, blocks on a stream, or waits for
+another peer. Each worker drops only successful prefixes and retries the suffix
+after a fresh batch without invalidating hard-PoW progress. The miner also
+installs the inbound round and chain-v1 handlers. Automatic peer discovery and
+topology-derived peer choice remain gated. A selected local anchor schedules a
+coalesced chain-notify-v1 session per configured peer in the background. Each
+receiver still initiates normal verified synchronization. A chain responder
+pins the canonical path advertised by its handshake, so mining the next anchor
+cannot change that in-flight response. If synchronization changes a peer's
+selected parent, its round is invalidated and stale hashing is canceled.
 
 One maximal 1,024-ID relay is bounded to exactly 630,258 bytes of bidirectional
 application framing when a peer forces one maximum-size body per batch. The

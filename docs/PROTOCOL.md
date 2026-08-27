@@ -383,8 +383,11 @@ v0/v1 header context before requesting bodies, requires body/header identity,
 and submits every block through the activation router. A continuation locator
 can advance along a downloaded side branch before that branch has enough work
 to become the selected local tip. At completion the replayed ID, height, state
-root, and cumulative work must equal the hello. The QUIC adapter registers the
-loop only through the opt-in `/outcomemesh/chain/1` handler; default hosts and
+root, and cumulative work must equal the hello. The responder pins the complete
+canonical path used to construct its hello for the lifetime of that session;
+later local anchors cannot change its headers, bodies, or batch-done tip. The
+QUIC adapter registers the loop only through the opt-in
+`/outcomemesh/chain/1` handler; default hosts and
 ordinary v0 CLI commands do not install it. The experimental
 `work-serve-quic`/`work-sync-quic` pair is protocol-exact and cannot negotiate
 the version-0 session as a fallback.
@@ -497,7 +500,9 @@ IDs instead of the pool's default first page. Selection is checked against the
 pool before the stream exchange. Negotiation may reduce the announcement to a
 prefix; relay statistics return its exact length so an outbound queue can drop
 only attempted IDs and retain the suffix. This is local transport progress
-accounting and does not alter `ShareInventoryV1` encoding or consensus.
+accounting and does not alter `ShareInventoryV1` encoding or consensus. The
+experimental miner applies it independently to at most eight explicit peers;
+peer-local bounded queues and workers likewise add no wire or consensus rule.
 
 The opt-in `/outcomemesh/chain-notify/1` protocol adds no message type and no
 consensus rule. It reverses only stream roles: the node that found a selected
@@ -505,4 +510,7 @@ anchor dials and runs `ChainNode.Serve`, while the receiver runs
 `ChainNode.Synchronize`. The receiver sends `ChainHelloV1`, independently
 decides whether the advertised cumulative work is better, and if so performs
 the same bounded header-first/body-second pull over the stream. A losing or
-equal notification transfers no blocks. Default hosts cannot negotiate it.
+equal notification transfers no blocks. Local outbound workers may coalesce
+multiple wins to one pending prompt per peer because every session advertises
+the newest selected tip at its own handshake. Default hosts cannot negotiate
+it.

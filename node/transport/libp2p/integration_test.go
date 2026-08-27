@@ -69,6 +69,15 @@ func TestQUICHostAuthenticatesIdentityAndSynchronizesFork(t *testing.T) {
 	if server.ID() != wantServerID {
 		t.Fatalf("OutcomeMesh peer ID = %s, want %s", server.ID(), wantServerID)
 	}
+	parsedServerID, err := libp2ptransport.PeerIDFromAddress(addresses[0])
+	if err != nil || parsedServerID != wantServerID {
+		t.Fatalf("parsed OutcomeMesh peer ID = %s, want %s (error %v)", parsedServerID, wantServerID, err)
+	}
+	for _, invalid := range []string{"", "/ip4/127.0.0.1/tcp/9844/p2p/" + server.Libp2pID().String()} {
+		if _, err := libp2ptransport.PeerIDFromAddress(invalid); !errors.Is(err, libp2ptransport.ErrAddress) {
+			t.Fatalf("peer address %q error = %v", invalid, err)
+		}
+	}
 	wrong := types.DomainHash("test/libp2p/wrong-peer")
 	if _, _, err := client.OpenStream(ctx, addresses[0], &wrong); !errors.Is(err, libp2ptransport.ErrUnexpectedPeer) {
 		t.Fatalf("wrong pin error = %v", err)

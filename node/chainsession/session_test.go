@@ -69,6 +69,92 @@ func TestSessionSynchronizesDivergentBranchAcrossActivation(t *testing.T) {
 	}
 }
 
+func TestResponderPathRemainsPinnedWhileSelectedChainAdvances(t *testing.T) {
+	source := newChainFixture(t, 739, 2, DefaultSessionConfig())
+	remote := newChainFixture(t, 739, 2, DefaultSessionConfig())
+	defer source.ledger.Close()
+	defer remote.ledger.Close()
+	extendChain(t, source, "pinned", 2)
+	oldTip, err := source.router.Tip()
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, server := net.Pipe()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	serverDone := make(chan error, 1)
+	go func() { serverDone <- source.node.Serve(ctx, server) }()
+	remoteHello, err := remote.node.Status()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := wire.WriteMessage(client, remoteHello); err != nil {
+		t.Fatal(err)
+	}
+	message, err := wire.ReadMessage(client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	servedHello, ok := message.(wire.ChainHello)
+	if !ok || servedHello.TipID != oldTip.ID {
+		t.Fatalf("served hello=%+v, want tip %s", message, oldTip.ID)
+	}
+	newTipID := mineWork(t, source, "newer")
+	genesisID, err := source.document.ID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	headerRequest := wire.GetVersionedHeaders{
+		Version: wire.Version1, Locators: []types.Hash{genesisID}, Limit: wire.MaxHeadersPerRequest,
+	}
+	if err := wire.WriteMessage(client, headerRequest); err != nil {
+		t.Fatal(err)
+	}
+	message, err = wire.ReadMessage(client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	headers, ok := message.(wire.VersionedHeaders)
+	if !ok || headers.TipID != oldTip.ID || len(headers.Values) != int(oldTip.Height) {
+		t.Fatalf("pinned response=%+v, want tip %s with %d headers", message, oldTip.ID, oldTip.Height)
+	}
+	for _, header := range headers.Values {
+		id, idErr := header.ID()
+		if idErr != nil || id == newTipID {
+			t.Fatalf("pinned response leaked post-handshake tip %s (error %v)", newTipID, idErr)
+		}
+	}
+	blockRequest := wire.GetVersionedBlocks{
+		Version: wire.Version1, Locators: headerRequest.Locators, Limit: uint16(len(headers.Values)),
+	}
+	if err := wire.WriteMessage(client, blockRequest); err != nil {
+		t.Fatal(err)
+	}
+	for range headers.Values {
+		message, err = wire.ReadMessage(client)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := message.(wire.VersionedBlock); !ok {
+			t.Fatalf("body response=%T, want VersionedBlock", message)
+		}
+	}
+	message, err = wire.ReadMessage(client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done, ok := message.(wire.VersionedBatchDone)
+	if !ok || done.TipID != oldTip.ID {
+		t.Fatalf("pinned batch done=%+v, want tip %s", message, oldTip.ID)
+	}
+	if err := client.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-serverDone; err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestHeaderFirstSessionRejectsInvalidHeaderBeforeBodies(t *testing.T) {
 	t.Parallel()
 

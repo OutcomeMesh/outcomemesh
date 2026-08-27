@@ -199,6 +199,13 @@ func (node *Node) HeadersAfter(request wire.GetVersionedHeaders) (wire.Versioned
 	if err != nil {
 		return wire.VersionedHeaders{}, err
 	}
+	return node.headersAfterPath(request, path)
+}
+
+func (node *Node) headersAfterPath(request wire.GetVersionedHeaders, path canonicalPath) (wire.VersionedHeaders, error) {
+	if err := request.Validate(); err != nil {
+		return wire.VersionedHeaders{}, err
+	}
 	ancestorHeight, found := node.findCanonicalAncestor(request.Locators, path)
 	if !found {
 		return wire.VersionedHeaders{}, ErrNoProgress
@@ -343,7 +350,7 @@ func (node *Node) Serve(ctx context.Context, stream Stream) error {
 		return ErrConfiguration
 	}
 	defer stream.Close()
-	_, _, limits, err := node.responderHandshake(ctx, stream)
+	_, _, limits, path, err := node.responderHandshake(ctx, stream)
 	if err != nil {
 		return err
 	}
@@ -372,7 +379,7 @@ func (node *Node) Serve(ctx context.Context, stream Stream) error {
 			if headerRequests > node.config.MaxHeaderRequests {
 				return ErrSessionBudget
 			}
-			response, err := node.HeadersAfter(value)
+			response, err := node.headersAfterPath(value, path)
 			if err != nil {
 				return err
 			}
@@ -659,27 +666,34 @@ func (node *Node) initiatorHandshake(ctx context.Context, stream Stream) (wire.C
 	return remote, limits, err
 }
 
-func (node *Node) responderHandshake(ctx context.Context, stream Stream) (wire.ChainHello, wire.ChainHello, Limits, error) {
+func (node *Node) responderHandshake(
+	ctx context.Context,
+	stream Stream,
+) (wire.ChainHello, wire.ChainHello, Limits, canonicalPath, error) {
 	message, err := node.readWithTimeout(ctx, stream, node.config.MaxFrameBytes, node.config.HandshakeTimeout)
 	if err != nil {
-		return wire.ChainHello{}, wire.ChainHello{}, Limits{}, err
+		return wire.ChainHello{}, wire.ChainHello{}, Limits{}, canonicalPath{}, err
 	}
 	remote, ok := message.(wire.ChainHello)
 	if !ok {
-		return wire.ChainHello{}, wire.ChainHello{}, Limits{}, ErrUnexpected
+		return wire.ChainHello{}, wire.ChainHello{}, Limits{}, canonicalPath{}, ErrUnexpected
 	}
 	limits, err := node.protocol.Negotiate(remote)
 	if err != nil {
-		return wire.ChainHello{}, wire.ChainHello{}, Limits{}, err
+		return wire.ChainHello{}, wire.ChainHello{}, Limits{}, canonicalPath{}, err
 	}
-	local, err := node.Status()
+	path, err := node.canonicalPath()
 	if err != nil {
-		return wire.ChainHello{}, wire.ChainHello{}, Limits{}, err
+		return wire.ChainHello{}, wire.ChainHello{}, Limits{}, canonicalPath{}, err
+	}
+	local, err := node.protocol.Hello(path.tip)
+	if err != nil {
+		return wire.ChainHello{}, wire.ChainHello{}, Limits{}, canonicalPath{}, err
 	}
 	if err := node.writeWithTimeout(ctx, stream, local, limits.MaxFrameBytes, node.config.HandshakeTimeout); err != nil {
-		return wire.ChainHello{}, wire.ChainHello{}, Limits{}, err
+		return wire.ChainHello{}, wire.ChainHello{}, Limits{}, canonicalPath{}, err
 	}
-	return remote, local, limits, nil
+	return remote, local, limits, path, nil
 }
 
 func (node *Node) readBatch(ctx context.Context, stream Stream, maximum uint32) ([]chainblock.Block, wire.VersionedBatchDone, error) {

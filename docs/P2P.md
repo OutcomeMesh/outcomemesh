@@ -154,19 +154,24 @@ experimental `work-serve-quic` command installs both this handler and the
 separate activation chain handler. On each incoming share stream it resolves
 the current best-parent round, performs full pool admission, and reports the
 bounded pool totals. The pool is replaced rather than migrated when the parent
-changes. A real process fixture chain-syncs two Pebble nodes, then relays two
-fresh weak shares through the independently authenticated protocol. Automatic
-peer discovery, multi-peer routing, and production activation remain separate
-gates.
+changes. A real process fixture chain-syncs three WorkGraph-enabled Pebble
+nodes, relays fresh weak shares, then proves that two compatible peers converge
+after the miner wins while a third authenticated v0-only peer fails
+independently. Automatic peer discovery, topology-aware routing, and production
+activation remain separate gates.
 
-`work-mine-quic` is the first explicit outbound path. One configured and
-optionally OutcomeMesh-ID-pinned peer receives sorted unpublished subsets.
-`RelayInventory` proves every selected ID belongs to the local pool before
-opening the application exchange. If the peer advertises a smaller inventory
-limit, only that prefix is counted as announced and the tail remains queued.
-The command uses the same peer byte accounting, fixed-window WorkGraph stream
-limits, exact-context handshake, and separate chain-v1 handler as the server.
-It does not yet discover peers or fan out.
+`work-mine-quic` is the first explicit outbound fanout path. Up to eight direct
+QUIC peers are identity-derived from their `/p2p` multiaddresses; optional
+OutcomeMesh pins must match those identities and duplicate identities fail
+before mining. Every peer receives sorted unpublished subsets from an
+independent round-bounded queue. `RelayInventory` proves every selected ID
+belongs to the local pool before opening the application exchange. If a peer
+advertises a smaller inventory limit, only that prefix is counted as announced
+and its tail remains queued. The mining callback performs no network I/O, so a
+slow peer cannot block another worker or hard-PoW progress. The command uses the
+same peer byte accounting, fixed-window WorkGraph stream limits, exact-context
+handshake, and separate chain-v1 handler as the server. It does not yet discover
+or select peers automatically.
 
 `/outcomemesh/chain-notify/1` reuses the complete chain-v1 wire and validation
 state machine with inverted connection roles. The winning dialer serves; the
@@ -175,7 +180,10 @@ cannot bypass cumulative-work comparison, header-first validation, body/header
 identity, replay, or activation routing. It has its own libp2p protocol scope
 and shares the versioned-chain fixed-window admission counter. Default hosts do
 not register it. A notified cooperative miner cancels its current round only
-after the selected tip actually changes.
+after the selected tip actually changes. Outbound notifications run in one
+worker per explicit peer and coalesce repeated wins to one pending prompt. The
+responder pins the canonical chain path advertised in its hello, preventing a
+concurrent next-round win from changing an in-flight header/body response.
 
 ## Signed peer advertisements
 
@@ -356,12 +364,14 @@ fixtures prove that an unhandled host cannot negotiate the protocol, a held
 chain-v1 stream does not consume a v0 session slot, and the dedicated per-peer,
 global, concurrent, and fixed-window limits fail closed.
 
-A separate process fixture initializes two Pebble nodes with the same genesis,
-writes independently validated activation profiles, mines through v0→v1,
-synchronizes over the versioned QUIC protocol, performs mixed-chain replay
-verification, stops the server, and reopens the receiver with the same tip,
-state root, cumulative work, and forest inventory. It also proves that ordinary
-v0 mining is rejected after activation is marked.
+A separate process fixture initializes three activated Pebble nodes with the
+same genesis, writes independently validated activation profiles, mines through
+v0→v1, synchronizes over the versioned QUIC protocol, performs mixed-chain
+replay verification, stops both compatible servers, and reopens the receivers
+with the same tip, state root, cumulative work, and forest inventory. A fourth
+authenticated v0-only process proves optional-protocol incompatibility is
+isolated. The fixture also proves ordinary v0 mining is rejected after
+activation is marked.
 
 Milestone 4's written devnet gates are closed: convergence, fail-closed resource
 bounds, and trustless full-history bootstrap are reproducibly tested. A public

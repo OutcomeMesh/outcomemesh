@@ -72,11 +72,17 @@ func TestProcessWorkGraphActivationQUICRestart(t *testing.T) {
 	root := t.TempDir()
 	dataA := root + "/work-node-a"
 	dataB := root + "/work-node-b"
+	dataC := root + "/work-node-c"
+	dataD := root + "/legacy-incompatible-node"
 	keyA := root + "/work-node-a.key"
 	keyB := root + "/work-node-b.key"
+	keyC := root + "/work-node-c.key"
+	keyD := root + "/legacy-incompatible-node.key"
 	writeProcessKey(t, keyA, "work-a")
 	writeProcessKey(t, keyB, "work-b")
-	for _, data := range []string{dataA, dataB} {
+	writeProcessKey(t, keyC, "work-c")
+	writeProcessKey(t, keyD, "work-incompatible")
+	for _, data := range []string{dataA, dataB, dataC, dataD} {
 		runProcessCommand(t, 20*time.Second,
 			"init", "--data", data, "--network", "20260828", "--timestamp", "1700000000",
 			"--difficulty-bits", "12", "--max-history-bytes", strconv.FormatUint(minimumHistoryBytes, 10),
@@ -90,7 +96,7 @@ func TestProcessWorkGraphActivationQUICRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, data := range []string{dataA, dataB} {
+	for _, data := range []string{dataA, dataB, dataC} {
 		runProcessCommand(t, 20*time.Second,
 			"work-enable", "--data", data, "--activation-height", "2",
 			"--confirm-genesis", genesisID.String(), "--max-trees", "4",
@@ -102,31 +108,55 @@ func TestProcessWorkGraphActivationQUICRestart(t *testing.T) {
 	runProcessCommand(t, 30*time.Second,
 		"work-sync-quic", "--data", dataB, "--key", keyB, "--peer", address, "--peer-id", peerID,
 	)
+	runProcessCommand(t, 30*time.Second,
+		"work-sync-quic", "--data", dataC, "--key", keyC, "--peer", address, "--peer-id", peerID,
+	)
+	serverC, peerIDC, addressC := startWorkQUICServerProcess(t, dataC, keyC)
+	incompatible, peerIDD, addressD := startQUICServerProcess(t, dataD, keyD)
 	relayProcessWorkShares(t, dataB, keyB, address, peerID, 2)
+	relayProcessWorkShares(t, dataB, keyB, addressC, peerIDC, 2)
 	minedQUIC := runProcessCommand(t, 40*time.Second,
 		"work-mine-quic", "--data", dataB, "--key", keyB, "--peer", address,
-		"--peer-id", peerID, "--count", "1", "--relay-every", "128",
+		"--peer-id", peerID, "--peer", addressC, "--peer-id", peerIDC,
+		"--peer", addressD, "--peer-id", peerIDD,
+		"--count", "1", "--relay-every", "128",
 	)
 	if fields := outputFields(minedQUIC, "work_mined_quic"); fields["height"] != "6" || fields["relayed_shares"] == "" ||
-		fields["pending_relay"] == "" || fields["anchor_notified"] != "true" {
+		fields["pending_relay"] == "" || fields["anchor_notify_queued"] != "3" ||
+		!strings.HasSuffix(fields["relay_peers"], "/3") {
 		t.Fatalf("cooperative miner output is incomplete: %s", minedQUIC)
 	}
+	if fields := outputFields(minedQUIC, "work_mining_quic_done"); fields["peers"] != "3" ||
+		fields["notifications"] != "2/3" || fields["notification_failures"] != "1" {
+		t.Fatalf("multi-peer notification summary is incomplete: %s", minedQUIC)
+	}
 	stopQUICServerProcess(t, server)
+	stopQUICServerProcess(t, serverC)
+	stopQUICServerProcess(t, incompatible)
 	if output := server.stderr.String(); !strings.Contains(output, "work_relay") || !strings.Contains(output, "accepted=2") ||
 		!strings.Contains(output, "chain_notification") || !strings.Contains(output, "height=6") {
 		t.Fatalf("versioned server did not admit shares and the notified anchor: %s", output)
 	}
+	if output := serverC.stderr.String(); !strings.Contains(output, "work_relay") || !strings.Contains(output, "accepted=2") ||
+		!strings.Contains(output, "chain_notification") || !strings.Contains(output, "height=6") {
+		t.Fatalf("second versioned server did not admit shares and the notified anchor: %s", output)
+	}
 	runProcessCommand(t, 20*time.Second, "work-verify", "--data", dataB)
 	runProcessCommand(t, 20*time.Second, "work-verify", "--data", dataA)
+	runProcessCommand(t, 20*time.Second, "work-verify", "--data", dataC)
 
 	statusA := runProcessCommand(t, 20*time.Second, "work-status", "--data", dataA)
 	statusB := runProcessCommand(t, 20*time.Second, "work-status", "--data", dataB)
+	statusC := runProcessCommand(t, 20*time.Second, "work-status", "--data", dataC)
 	fieldsA := outputFields(statusA, "work_status")
 	fieldsB := outputFields(statusB, "work_status")
+	fieldsC := outputFields(statusC, "work_status")
 	if fieldsA["height"] != "6" || fieldsB["height"] != "6" || fieldsA["tip"] == "" ||
 		fieldsA["tip"] != fieldsB["tip"] || fieldsA["state"] != fieldsB["state"] ||
-		fieldsA["cumulative_work"] != fieldsB["cumulative_work"] {
-		t.Fatalf("versioned process nodes did not converge\nnode-a: %s\nnode-b: %s", statusA, statusB)
+		fieldsA["cumulative_work"] != fieldsB["cumulative_work"] || fieldsC["height"] != "6" ||
+		fieldsA["tip"] != fieldsC["tip"] || fieldsA["state"] != fieldsC["state"] ||
+		fieldsA["cumulative_work"] != fieldsC["cumulative_work"] {
+		t.Fatalf("versioned process nodes did not converge\nnode-a: %s\nnode-b: %s\nnode-c: %s", statusA, statusB, statusC)
 	}
 	if output, err := runProcessCommandError(20*time.Second, "mine", "--data", dataB, "--count", "1"); err == nil || !strings.Contains(output, "use the explicit work-* command") {
 		t.Fatalf("legacy mutation guard err=%v output=%s", err, output)
@@ -134,6 +164,10 @@ func TestProcessWorkGraphActivationQUICRestart(t *testing.T) {
 	statusAfterRestart := runProcessCommand(t, 20*time.Second, "work-status", "--data", dataB)
 	if fields := outputFields(statusAfterRestart, "work_status"); fields["tip"] != fieldsA["tip"] || fields["trees"] == "0/4" {
 		t.Fatalf("versioned restart lost forest state: %s", statusAfterRestart)
+	}
+	statusCAfterRestart := runProcessCommand(t, 20*time.Second, "work-status", "--data", dataC)
+	if fields := outputFields(statusCAfterRestart, "work_status"); fields["tip"] != fieldsA["tip"] || fields["trees"] == "0/4" {
+		t.Fatalf("second versioned restart lost forest state: %s", statusCAfterRestart)
 	}
 }
 

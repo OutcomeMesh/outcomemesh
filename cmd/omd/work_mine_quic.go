@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -31,8 +30,10 @@ func runWorkMineQUIC(arguments []string) error {
 	data := flags.String("data", defaultDataDirectory, "WorkGraph-enabled node data directory")
 	keyPath := flags.String("key", "", "persistent Ed25519 seed file created by keygen")
 	listenAddress := flags.String("listen", "/ip4/127.0.0.1/udp/0/quic-v1", "QUIC-v1 libp2p listen multiaddress")
-	peerAddress := flags.String("peer", "", "cooperating WorkGraph peer multiaddress including /p2p/<id>")
-	peerIDText := flags.String("peer-id", "", "expected OutcomeMesh peer ID as 64 hex characters")
+	var peerAddresses repeatedStringFlag
+	var peerIDs repeatedStringFlag
+	flags.Var(&peerAddresses, "peer", "cooperating WorkGraph peer multiaddress; repeat for up to 8 peers")
+	flags.Var(&peerIDs, "peer-id", "matching OutcomeMesh peer ID; omit all or repeat once per peer")
 	minerText := flags.String("miner", defaultDevelopmentAddress().String(), "reward address as 64 hex characters")
 	count := flags.Uint64("count", 1, "number of version-1 anchors")
 	startNonce := flags.Uint64("start-nonce", 0, "first WorkSeal nonce to test per round")
@@ -40,8 +41,12 @@ func runWorkMineQUIC(arguments []string) error {
 	if err := flags.Parse(arguments); err != nil {
 		return err
 	}
-	if *keyPath == "" || *peerAddress == "" || *count == 0 || *relayEvery <= 0 || *relayEvery > wire.MaxShareInventoryIDs {
-		return fmt.Errorf("key and peer are required; count must be positive and relay-every must be 1..%d", wire.MaxShareInventoryIDs)
+	if *keyPath == "" || *count == 0 || *relayEvery <= 0 || *relayEvery > wire.MaxShareInventoryIDs {
+		return fmt.Errorf("key is required; count must be positive and relay-every must be 1..%d", wire.MaxShareInventoryIDs)
+	}
+	targets, err := parseWorkPeerTargets(peerAddresses, peerIDs)
+	if err != nil {
+		return err
 	}
 	miner, err := parseAddress(*minerText)
 	if err != nil {
@@ -50,14 +55,6 @@ func runWorkMineQUIC(arguments []string) error {
 	privateKey, err := loadPrivateKey(*keyPath)
 	if err != nil {
 		return err
-	}
-	var expectedPeer *types.Hash
-	if *peerIDText != "" {
-		parsed, err := parseHash(*peerIDText)
-		if err != nil {
-			return fmt.Errorf("peer-id: %w", err)
-		}
-		expectedPeer = &parsed
 	}
 	document, store, router, profile, err := openWorkNode(*data)
 	if err != nil {
@@ -93,12 +90,24 @@ func runWorkMineQUIC(arguments []string) error {
 		return err
 	}
 	defer host.Close()
+	for _, target := range targets {
+		if target.id == host.ID() {
+			return errors.New("cooperative peer list contains this miner's identity")
+		}
+	}
 	roundControl := new(workMiningRoundControl)
 	if err := installWorkMiningHandlers(host, chainSession, roundManager, peerManager, roundControl); err != nil {
 		return err
 	}
-	fmt.Printf("mining_work_quic peer_id=%s libp2p_id=%s network=%d activation_height=%d relay_every=%d listen=%s\n",
-		host.ID(), host.Libp2pID(), document.NetworkID, profile.ActivationHeight, *relayEvery,
+	notifier, err := newWorkAnchorNotifier(ctx, targets, func(notifyContext context.Context, target workPeerTarget) error {
+		return notifyWorkAnchor(notifyContext, host, chainSession, peerManager, target)
+	})
+	if err != nil {
+		return err
+	}
+	defer notifier.Close()
+	fmt.Printf("mining_work_quic peer_id=%s libp2p_id=%s network=%d activation_height=%d peers=%d relay_every=%d listen=%s\n",
+		host.ID(), host.Libp2pID(), document.NetworkID, profile.ActivationHeight, len(targets), *relayEvery,
 		strings.Join(host.Addresses(), ","))
 	for minedCount := uint64(0); minedCount < *count; {
 		round, err := roundManager.Current()
@@ -109,18 +118,25 @@ func runWorkMineQUIC(arguments []string) error {
 		if err != nil {
 			return err
 		}
-		publisher := &workSharePublisher{
-			ctx: ctx, round: round, host: host, peerManager: peerManager,
-			peerAddress: *peerAddress, expectedPeer: expectedPeer, relayEvery: *relayEvery,
-		}
 		miningContext, err := round.Context()
 		if err != nil {
 			return err
 		}
 		roundContext, finishRound := roundControl.Begin(ctx, miningContext.AnchorParent)
+		publisher, err := newWorkSharePublisher(
+			roundContext, targets, *relayEvery,
+			func(relayContext context.Context, target workPeerTarget, ids []types.Hash) (worksession.Stats, error) {
+				return relayWorkShares(relayContext, round, host, peerManager, target, ids)
+			},
+		)
+		if err != nil {
+			finishRound()
+			return err
+		}
 		started := time.Now()
 		mined, err := round.Mine(roundContext, miner, inclusion, *startNonce, publisher.Publish)
 		finishRound()
+		relayStats := publisher.Close()
 		if err != nil {
 			if errors.Is(err, context.Canceled) && ctx.Err() == nil {
 				_ = roundManager.Invalidate()
@@ -129,7 +145,6 @@ func runWorkMineQUIC(arguments []string) error {
 			}
 			return err
 		}
-		publisher.Flush()
 		routed, err := activation.Work(mined.Block, profile.ActivationHeight)
 		if err != nil {
 			return err
@@ -145,16 +160,21 @@ func runWorkMineQUIC(arguments []string) error {
 		if err != nil {
 			return err
 		}
-		notified := false
+		notifyQueued := 0
 		if selected.ID == id {
-			notified = notifyWorkAnchor(ctx, host, chainSession, peerManager, *peerAddress, expectedPeer)
+			notifyQueued = notifier.Notify()
 		}
-		fmt.Printf("work_mined_quic height=%d id=%s nonce=%d weak_shares=%d included_shares=%d relayed_shares=%d relay_rejected=%d relay_failures=%d pending_relay=%d anchor_notified=%t elapsed=%s state=%s\n",
+		fmt.Printf("work_mined_quic height=%d id=%s nonce=%d weak_shares=%d included_shares=%d relay_peers=%d/%d relay_failed_peers=%d relayed_shares=%d relay_rejected=%d relay_failures=%d relay_dropped=%d pending_relay=%d anchor_notify_queued=%d elapsed=%s state=%s\n",
 			selected.Height, id, mined.WinningNonce, mined.WeakShares, len(mined.Block.Shares),
-			publisher.relayed, publisher.rejected, publisher.failures, len(publisher.pending),
-			notified, time.Since(started).Round(time.Millisecond), selected.StateRoot)
+			relayStats.ReachedPeers, relayStats.Peers, relayStats.FailedPeers, relayStats.Relayed, relayStats.Rejected,
+			relayStats.Failures, relayStats.Dropped, relayStats.Pending, notifyQueued,
+			time.Since(started).Round(time.Millisecond), selected.StateRoot)
 		minedCount++
 	}
+	notifyStats := notifier.Close()
+	fmt.Printf("work_mining_quic_done peers=%d notifications=%d/%d notification_failures=%d notification_coalesced=%d\n",
+		notifyStats.Peers, notifyStats.Succeeded, notifyStats.Attempts,
+		notifyStats.Failed, notifyStats.Coalesced)
 	return nil
 }
 
@@ -228,29 +248,51 @@ func notifyWorkAnchor(
 	host *libp2ptransport.Host,
 	chainSession *chainsession.Node,
 	peerManager *peers.Manager,
-	peerAddress string,
-	expectedPeer *types.Hash,
-) bool {
-	stream, peerID, err := host.OpenChainNotifyStream(ctx, peerAddress, expectedPeer)
+	target workPeerTarget,
+) error {
+	stream, peerID, err := host.OpenChainNotifyStream(ctx, target.address, &target.id)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "notify WorkGraph anchor: %v\n", err)
-		return false
+		return err
 	}
+	stopReset := context.AfterFunc(ctx, func() { _ = stream.Reset() })
+	defer stopReset()
 	if err := peerManager.Acquire(peerID); err != nil {
 		_ = stream.Reset()
-		return false
+		return err
 	}
 	limited := &peerLimitedStream{Stream: stream, manager: peerManager, peerID: peerID}
 	sessionErr := chainSession.Serve(ctx, limited)
 	peerManager.Release(peerID)
 	recordPeerSession(peerManager, peerID, sessionErr)
 	if sessionErr != nil {
-		if ctx.Err() == nil {
-			fmt.Fprintf(os.Stderr, "notify WorkGraph anchor to %s: %v\n", peerID, sessionErr)
-		}
-		return false
+		return sessionErr
 	}
-	return true
+	return nil
+}
+
+func relayWorkShares(
+	ctx context.Context,
+	round *workround.Round,
+	host *libp2ptransport.Host,
+	peerManager *peers.Manager,
+	target workPeerTarget,
+	ids []types.Hash,
+) (worksession.Stats, error) {
+	stream, peerID, err := host.OpenWorkGraphStream(ctx, target.address, &target.id)
+	if err != nil {
+		return worksession.Stats{}, err
+	}
+	stopReset := context.AfterFunc(ctx, func() { _ = stream.Reset() })
+	defer stopReset()
+	if err := peerManager.Acquire(peerID); err != nil {
+		_ = stream.Reset()
+		return worksession.Stats{}, err
+	}
+	limited := &peerLimitedStream{Stream: stream, manager: peerManager, peerID: peerID}
+	stats, sessionErr := round.RelayInventory(ctx, limited, ids)
+	peerManager.Release(peerID)
+	recordWorkRelayAttempt(peerManager, peerID, sessionErr)
+	return stats, sessionErr
 }
 
 type workMiningRoundControl struct {
@@ -287,78 +329,6 @@ func (control *workMiningRoundControl) Advance(parentID types.Hash) {
 	defer control.mu.Unlock()
 	if control.cancel != nil && control.parent != parentID {
 		control.cancel()
-	}
-}
-
-type workSharePublisher struct {
-	ctx          context.Context
-	round        *workround.Round
-	host         *libp2ptransport.Host
-	peerManager  *peers.Manager
-	peerAddress  string
-	expectedPeer *types.Hash
-	relayEvery   int
-	pending      []types.Hash
-	sinceAttempt int
-	relayed      uint64
-	rejected     uint64
-	failures     uint64
-}
-
-func (publisher *workSharePublisher) Publish(share workgraph.Share) error {
-	id, err := share.ID()
-	if err != nil {
-		return err
-	}
-	publisher.pending = append(publisher.pending, id)
-	publisher.sinceAttempt++
-	if publisher.sinceAttempt >= publisher.relayEvery {
-		publisher.sinceAttempt = 0
-		publisher.Flush()
-	}
-	return nil
-}
-
-// Flush is best-effort: network failure must not stop objective hard-PoW
-// search. Successfully announced prefixes are removed exactly; an error keeps
-// the complete unannounced suffix for the next bounded attempt.
-func (publisher *workSharePublisher) Flush() {
-	if publisher == nil || len(publisher.pending) == 0 {
-		return
-	}
-	sort.Slice(publisher.pending, func(left, right int) bool {
-		return types.CompareHash(publisher.pending[left], publisher.pending[right]) < 0
-	})
-	for len(publisher.pending) > 0 {
-		count := min(len(publisher.pending), wire.MaxShareInventoryIDs)
-		selected := publisher.pending[:count]
-		stream, peerID, err := publisher.host.OpenWorkGraphStream(
-			publisher.ctx, publisher.peerAddress, publisher.expectedPeer,
-		)
-		if err != nil {
-			publisher.failures++
-			fmt.Fprintf(os.Stderr, "publish WorkGraph shares: %v\n", err)
-			return
-		}
-		if err := publisher.peerManager.Acquire(peerID); err != nil {
-			_ = stream.Reset()
-			publisher.failures++
-			return
-		}
-		limited := &peerLimitedStream{Stream: stream, manager: publisher.peerManager, peerID: peerID}
-		stats, sessionErr := publisher.round.RelayInventory(publisher.ctx, limited, selected)
-		publisher.peerManager.Release(peerID)
-		recordWorkRelayAttempt(publisher.peerManager, peerID, sessionErr)
-		if sessionErr != nil || stats.Announced <= 0 || stats.Announced > len(selected) {
-			publisher.failures++
-			if sessionErr != nil && publisher.ctx.Err() == nil {
-				fmt.Fprintf(os.Stderr, "publish WorkGraph shares to %s: %v\n", peerID, sessionErr)
-			}
-			return
-		}
-		publisher.relayed += uint64(stats.Announced)
-		publisher.rejected += uint64(stats.Rejected)
-		publisher.pending = publisher.pending[stats.Announced:]
 	}
 }
 
