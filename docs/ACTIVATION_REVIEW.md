@@ -104,9 +104,11 @@ and a finding ledger. A summary without reproducible inputs is not sufficient.
 
 ## Known model limits
 
-The checked-in corpus still lacks real nonce-time variance in `sim/powmodel`,
-empirically calibrated Internet propagation, miner entry/exit, pool payout and
-switching behavior, correlated outages, private transaction arrival processes,
-bribery, and a complete adaptive-strategy search. The exact-template market is
-a deterministic best-response model, not evidence that private order flow can
-be observed. These limits are explicit inputs to ER-3 through ER-6.
+The checked-in `sim/powmodel` now has deterministic whole-second geometric
+discovery variance, but does not hash real nonces or model sub-second competing
+discoveries. The wider corpus still lacks empirically calibrated Internet
+propagation, miner entry/exit, pool payout and switching behavior, correlated
+outages, private transaction arrival processes, bribery, and a complete
+adaptive strategy/hash-hopping search. The exact-template market is a
+deterministic best-response model, not evidence that private order flow can be
+observed. These limits are explicit inputs to ER-3 through ER-6.

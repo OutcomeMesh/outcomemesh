@@ -262,14 +262,43 @@ The experimental `RunLagged` corpus separately proves:
 - a `-3600s` slow-timestamp strategy still requires both more cumulative work
   and more physical time for the same 300 heights.
 
+The fixed-seed stochastic harness adds whole-second nonce-time variance to both
+target rules. For each second it calculates the exact integer expected-work
+fraction from hash rate and target, samples that rational probability with a
+256-bit deterministic draw, and caps probability at one. It never uses floating
+point or host randomness. Admission limits a corpus to 100,000 blocks and each
+block to 30 days of sampled seconds. Canonical observation digests commit
+height, wall and header time, solve duration, target, per-block work, and
+cumulative work:
+
+- active v0 over 2,048 baseline blocks had mean 62 seconds, median 43, p95 184,
+  p99 271, and maximum 464; its observation digest is
+  `be7e802166596c6c5bd6f226561056e412f623738462da910b5c89ec2956e8aa`;
+- lagged v1 over 4,096 baseline blocks had mean 59 seconds, median 41, p95 179,
+  p99 269, and maximum 560; its observation digest is
+  `34be269d5b978372e5bc183bf46c46e2a27bf2a37216defb80b56d5413bcd187`;
+- after a `1x -> 4x` step, the fixed v1 path solved its first stepped block in
+  15 seconds and the final 100-block mean returned to 55 seconds;
+- paired v1 runs at 4x hash showed that `-3600s` timestamps increased the
+  300-height path from 423 to 534 cumulative work units and from 7,474 to 9,718
+  physical seconds;
+- after a 700-block 4x warmup, twelve alternating 32-block 1x/4x cycles gave
+  active v0 2,561 work units in 88,750 seconds and lagged v1 2,574 units in
+  88,791 seconds. Full-path digests make this basic oscillation fixture a
+  regression corpus rather than a profitability claim.
+
+This is a geometric whole-second model. It provides realistic discovery
+variance at the protocol's timestamp resolution, but it does not hash actual
+nonces, model sub-second multiple discoveries, or replace a network fork race.
+
 ## Interpretation and limits
 
 These results validate feedback direction, arithmetic bounds, and deterministic
 fork-weight accounting. They do not establish economic security. The repository
 now covers network delay, bounded partitions/restarts, selfish anchor
 withholding, heterogeneous clocks, and deterministic private-template markets,
-but still lacks nonce-time variance, empirically calibrated Internet behavior,
-richer adaptive/stubborn strategies, difficulty oscillation campaigns, miner
+but still lacks per-nonce/sub-second mining, empirically calibrated Internet
+behavior, richer adaptive/stubborn and adaptive hash-hopping strategies, miner
 entry/exit, pool switching, and private transaction arrival processes.
 Parameters and model structure require independent review. Passing this harness
 and reproducing its digest are milestone gates, not an audit; the complete

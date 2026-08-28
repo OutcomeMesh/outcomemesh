@@ -181,6 +181,8 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
 - Versioned PoW/economic activation-review packet with a deterministic result
   digest, fine selfish-mining and private-fee grids, and precommitted external
   pass/fail gates.
+- Integer-only stochastic PoW paths for both target rules with canonical
+  observation digests and timestamp/hash-rate regression corpora.
 
 ### Exit gates
 

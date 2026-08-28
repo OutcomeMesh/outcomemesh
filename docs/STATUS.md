@@ -433,6 +433,11 @@ Implemented in an isolated, not-yet-activated consensus package:
   deterministic JSON. Its canonical SHA-256 digest is golden-tested, while
   `ACTIVATION_REVIEW.md` separates passed internal reproduction from still-open
   independent PoW/model review and public-testnet calibration gates.
+- the PoW research harness now also has an integer-only, fixed-seed geometric
+  solve process for active v0 and lagged v1. Golden observation digests cover
+  baseline variance and an alternating 1x/4x campaign, while separate cases
+  cover a 4x hash-rate step, timestamp manipulation, deterministic replay, and
+  bounded no-solution behavior.
 
 No WorkGraph field has entered a version-0 block yet. The v1 store and opt-in
 QUIC session remain isolated from every ordinary v0 chain/CLI path and are
