@@ -131,8 +131,27 @@ peer becomes the initiator of normal header-first verification; the responder
 serves the canonical path pinned at handshake, and only a successfully selected
 new hard-work tip invalidates the receiver's round and cancels stale hashing.
 
+An optional `--auto-peers N` startup path fills part or all of the same eight
+slots from the existing signed local peerbook. It requires a fresh local ASN
+table, caps attempts and attempts per ASN, excludes self and explicit peers,
+ranks by persisted score/latency/backoff, and stops after exactly N successful
+WorkGraph probes. `Probe` performs only identity, protocol, and exact mining-
+context negotiation; it never announces pool inventory. Unsupported peers enter
+the normal dial backoff. The command persists reputation atomically. It does not
+fetch or refresh peer advertisements, so expired/pre-activation-only peerbooks
+remain an explicit testnet limitation.
+
+The peer probe's stable context intentionally excludes each miner's candidate
+timestamp, but share admission still applies the winner-relative 120-second
+window. Because the current manager freezes one timestamp for the lifetime of a
+parent, rounds longer than that window can disadvantage a late joiner. A safe
+same-parent timestamp rollover with pool revalidation remains required before
+public mining.
+
 ## Gates before public mining
 
 - external PoW review and hash-rate simulations;
 - production calibration of fee delay, share gossip queues, and miner strategy;
+- activation-safe signed peer-record refresh and capability advertisement;
+- same-parent timestamp rollover without losing or miscrediting valid work;
 - extended filesystem-fault storage soaks and longer multi-node QUIC churn.

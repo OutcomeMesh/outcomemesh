@@ -258,7 +258,15 @@ pool admission is forwarded through the same workers except to its authenticated
 source; later copies stop at pool deduplication. Round control binds that path to
 the exact mining context and buffers at most 8,192 admissions during publisher
 handoff. The host also serves chain-v1, but automatic peer routing is not
-implemented yet.
+enabled unless explicitly requested.
+
+The opt-in startup selector can populate those same workers from an existing
+signed peerbook. The generic router distinguishes attempt budget from required
+successful connections and filters candidates before reserving dial state.
+WorkGraph selection filters for identity-bound direct QUIC addresses, uses
+score/latency/backoff plus mandatory ASN diversity, and counts success only
+after a no-inventory exact-context probe. Reputation is persisted; signed-record
+refresh for activated stores is intentionally still outside this component.
 
 Anchor propagation uses a third opt-in protocol role without a second sync
 grammar. On `/outcomemesh/chain-notify/1` the winning dialer runs the existing

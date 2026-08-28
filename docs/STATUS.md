@@ -173,6 +173,10 @@ Implemented in an isolated, not-yet-activated consensus package:
 - parent-timestamp lagged ASERT fixes the next target before mining, preventing
   a current miner's timestamp from easing its own proof while allowing a
   bounded 120-second timestamp window for otherwise matching shares;
+- stable WorkGraph negotiation excludes that local candidate timestamp, but the
+  round manager does not yet roll it forward. Long rounds beyond 120 seconds can
+  create early/late admission asymmetry; safe same-parent pool revalidation is
+  an explicit activation gate.
 - activation rejects a proof-of-work limit that would saturate the weak target,
   preserving the exact 512:1 rate assumed by pay-per-share issuance;
 - an integer-only lagged-ASERT fluid model covers the baseline schedule, a 4x
@@ -379,6 +383,13 @@ Implemented in an isolated, not-yet-activated consensus package:
   repeated fanout, exact-context round control buffers the publisher handoff,
   and a two-hop fixture proves the middle node can serve the admitted body to a
   third node. The mining callback and admission observer remain network-free.
+- `work-mine-quic --auto-peers` can fill the same eight-slot target set from
+  fresh signed local peerbook records. It requires an age-checked operator ASN
+  table, reuses reputation/latency/backoff ranking, separates bounded attempt
+  and success targets, and admits a peer only after an inventory-free WorkGraph
+  exact-context probe. Reputation persists across runs; selector integration
+  tests reject a higher-ranked incompatible peer and stop after the requested
+  compatible count.
 - the distinct opt-in `/outcomemesh/chain-notify/1` protocol now reverses only
   chain session roles: a winning dialer serves, while the receiver initiates
   the same cumulative-work/header-first/full-replay synchronization. A selected
@@ -397,7 +408,8 @@ Implemented in an isolated, not-yet-activated consensus package:
 No WorkGraph field has entered a version-0 block yet. The v1 store and opt-in
 QUIC session remain isolated from every ordinary v0 chain/CLI path and are
 reachable only through the explicitly marked experimental commands;
-automatic versioned discovery/routing and topology-derived peer selection,
+activation-safe signed-record refresh, same-parent timestamp rollover, and
+topology-derived peer selection,
 history-anchored archival pruning, extended filesystem-fault/soak campaigns,
 production gossip-budget calibration, and broader adaptive economic-strategy
 analysis remain before activation.

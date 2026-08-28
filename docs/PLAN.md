@@ -166,6 +166,8 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
   anchor synchronization.
 - Count-or-time share flushing with a deterministic small-miner reward corpus.
 - Admission-deduplicated multi-hop forwarding across the explicit peer graph.
+- Reputation/latency/ASN-ranked peerbook selection with an inventory-free,
+  exact-context WorkGraph capability probe.
 
 ### Exit gates
 

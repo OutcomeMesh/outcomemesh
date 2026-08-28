@@ -132,6 +132,69 @@ func TestRouterCapsAttemptsPerResolvedASN(t *testing.T) {
 	}
 }
 
+func TestRouterRunUntilFiltersAndStopsAtSuccessfulCapabilityCount(t *testing.T) {
+	t.Parallel()
+
+	const nowUnix uint64 = 1_800_000_050
+	book, err := discovery.NewBook(91, 8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	records := []discovery.Record{
+		routingRecord(t, "excluded", "10.1.0.1:1", nowUnix),
+		routingRecord(t, "unsupported", "10.2.0.1:2", nowUnix),
+		routingRecord(t, "supported-a", "10.3.0.1:3", nowUnix),
+		routingRecord(t, "supported-b", "10.4.0.1:4", nowUnix),
+		routingRecord(t, "unused", "10.5.0.1:5", nowUnix),
+	}
+	if err := book.AddBatch(records, nowUnix); err != nil {
+		t.Fatal(err)
+	}
+	manager, err := peers.New(peers.DefaultPolicy(), func() time.Time { return time.Unix(int64(nowUnix), 0) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index, record := range records {
+		id, _ := record.PeerID()
+		for range len(records) - index {
+			if err := manager.Record(id, peers.EventValidMessage); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	router, err := New(book, manager, types.DomainHash("test/routing/run-until-self"), func() uint64 { return nowUnix })
+	if err != nil {
+		t.Fatal(err)
+	}
+	excludedID, _ := records[0].PeerID()
+	unsupportedID, _ := records[1].PeerID()
+	unusedID, _ := records[4].PeerID()
+	attempted := make([]types.Hash, 0, 3)
+	results := router.RunUntil(
+		context.Background(), 4, 2,
+		func(record discovery.Record) bool {
+			id, _ := record.PeerID()
+			return id != excludedID
+		},
+		func(_ context.Context, record discovery.Record) error {
+			id, _ := record.PeerID()
+			attempted = append(attempted, id)
+			if id == unsupportedID {
+				return errors.New("capability unavailable")
+			}
+			return nil
+		},
+	)
+	if len(results) != 3 || len(attempted) != 3 || attempted[0] != unsupportedID {
+		t.Fatalf("run-until attempts=%v results=%+v", attempted, results)
+	}
+	for _, id := range attempted {
+		if id == excludedID || id == unusedID {
+			t.Fatalf("unexpected candidate attempted: %s", id)
+		}
+	}
+}
+
 func TestRouterUsesMeasuredLatencyAsDeterministicScoreTieBreak(t *testing.T) {
 	t.Parallel()
 

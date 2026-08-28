@@ -131,6 +131,18 @@ func (node *Node) Relay(ctx context.Context, stream Stream) (Stats, error) {
 	return node.relay(ctx, stream, nil)
 }
 
+// Probe performs only the authenticated, exact-context capability handshake.
+// It never announces pool inventory; the responder treats the clean EOF after
+// negotiation as a finite no-op session.
+func (node *Node) Probe(ctx context.Context, stream Stream) error {
+	if node == nil || stream == nil {
+		return ErrConfiguration
+	}
+	defer stream.Close()
+	_, err := node.initiatorHandshake(ctx, stream)
+	return err
+}
+
 // RelayInventory announces only the caller-selected, locally owned IDs. The
 // negotiated peer limit may shorten the prefix; Stats.Announced tells the
 // caller exactly how many input IDs were attempted so it can retain the tail.

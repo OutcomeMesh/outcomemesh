@@ -49,8 +49,8 @@ type workPeerTarget struct {
 }
 
 func parseWorkPeerTargets(addresses, pins repeatedStringFlag) ([]workPeerTarget, error) {
-	if len(addresses) == 0 || len(addresses) > maxWorkMiningPeers {
-		return nil, fmt.Errorf("peer must be repeated 1..%d times", maxWorkMiningPeers)
+	if len(addresses) > maxWorkMiningPeers {
+		return nil, fmt.Errorf("peer may be repeated at most %d times", maxWorkMiningPeers)
 	}
 	if len(pins) != 0 && len(pins) != len(addresses) {
 		return nil, errors.New("peer-id must be omitted or repeated once for every peer")

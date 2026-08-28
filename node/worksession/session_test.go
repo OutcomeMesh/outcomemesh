@@ -53,6 +53,32 @@ func TestMaximumRelayApplicationByteBudget(t *testing.T) {
 	}
 }
 
+func TestProbeNegotiatesWithoutAnnouncingPoolInventory(t *testing.T) {
+	validation := testContext()
+	sourcePool, _ := workpool.New(validation)
+	destinationPool, _ := workpool.New(validation)
+	share := mineWeak(t, testShare(validation, "probe-private", nil), true)
+	if _, err := sourcePool.Add(share); err != nil {
+		t.Fatal(err)
+	}
+	source := newNode(t, sourcePool, DefaultConfig())
+	destination := newNode(t, destinationPool, DefaultConfig())
+	client, server := net.Pipe()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	served := make(chan error, 1)
+	go func() { served <- destination.Serve(ctx, server) }()
+	if err := source.Probe(ctx, client); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-served; err != nil {
+		t.Fatal(err)
+	}
+	if status := destinationPool.Status(); status.Shares != 0 {
+		t.Fatalf("probe announced private inventory: %+v", status)
+	}
+}
+
 func TestRelayClampsBatchesToNegotiatedFrame(t *testing.T) {
 	t.Parallel()
 

@@ -114,6 +114,13 @@ func (round *Round) Relay(ctx context.Context, stream worksession.Stream) (works
 	return round.session.Relay(ctx, stream)
 }
 
+func (round *Round) Probe(ctx context.Context, stream worksession.Stream) error {
+	if round == nil || round.session == nil {
+		return ErrConfiguration
+	}
+	return round.session.Probe(ctx, stream)
+}
+
 func (round *Round) RelayInventory(
 	ctx context.Context,
 	stream worksession.Stream,

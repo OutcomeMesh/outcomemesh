@@ -508,6 +508,11 @@ locally owned ID to its other explicit peers. It excludes the authenticated
 source and does not observe duplicate admission, so cycles terminate at the
 round pool. This forwarding policy, its count/time thresholds, and its bounded
 publisher-handoff buffer do not change any WorkGraph message or consensus rule.
+An initiator may also close immediately after the symmetric hello exchange. The
+responder treats that clean EOF as a finite capability probe; no inventory,
+request, body, or result message is sent. Automatic peer selection uses this to
+verify protocol support and byte-identical mining context without disclosing
+the local pool. It adds no message type or feature bit.
 
 The opt-in `/outcomemesh/chain-notify/1` protocol adds no message type and no
 consensus rule. It reverses only stream roles: the node that found a selected

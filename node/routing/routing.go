@@ -19,6 +19,8 @@ const discoveryAttemptLimit = discovery.MaxBookRecords
 
 type Connector func(context.Context, discovery.Record) error
 
+type CandidateFilter func(discovery.Record) bool
+
 type Result struct {
 	PeerID types.Hash
 	Err    error
@@ -56,7 +58,21 @@ func NewWithPolicy(book *discovery.Book, manager *peers.Manager, self types.Hash
 // and always releases their dial state. Authentication and protocol handshake
 // remain the connector's responsibility.
 func (router *Router) RunOnce(ctx context.Context, limit int, connector Connector) []Result {
-	if router == nil || ctx == nil || ctx.Err() != nil || limit <= 0 || connector == nil {
+	return router.RunUntil(ctx, limit, limit, nil, connector)
+}
+
+// RunUntil ranks and filters live records with the same diversity and backoff
+// policy as RunOnce, but can spend a larger bounded attempt budget to collect a
+// smaller number of successful capability-specific connections.
+func (router *Router) RunUntil(
+	ctx context.Context,
+	attemptLimit int,
+	successLimit int,
+	filter CandidateFilter,
+	connector Connector,
+) []Result {
+	if router == nil || ctx == nil || ctx.Err() != nil || attemptLimit <= 0 ||
+		attemptLimit > discoveryAttemptLimit || successLimit <= 0 || successLimit > attemptLimit || connector == nil {
 		return nil
 	}
 	records := router.book.List(router.now(), discovery.MaxBookRecords)
@@ -94,11 +110,15 @@ func (router *Router) RunOnce(ctx context.Context, limit int, connector Connecto
 		}
 		return types.CompareHash(candidates[left].id, candidates[right].id) < 0
 	})
-	results := make([]Result, 0, min(limit, len(candidates)))
+	results := make([]Result, 0, min(attemptLimit, len(candidates)))
 	asnAttempts := make(map[uint32]int)
+	succeeded := 0
 	for _, candidate := range candidates {
-		if len(results) == limit || ctx.Err() != nil {
+		if len(results) == attemptLimit || succeeded == successLimit || ctx.Err() != nil {
 			break
+		}
+		if filter != nil && !filter(candidate.record) {
+			continue
 		}
 		allowed := true
 		for _, asn := range candidate.asns {
@@ -119,6 +139,9 @@ func (router *Router) RunOnce(ctx context.Context, limit int, connector Connecto
 		err := connector(ctx, candidate.record)
 		_ = router.manager.EndDial(candidate.id, err == nil)
 		results = append(results, Result{PeerID: candidate.id, Err: err})
+		if err == nil {
+			succeeded++
+		}
 	}
 	return results
 }

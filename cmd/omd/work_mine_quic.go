@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -19,13 +20,14 @@ import (
 	"github.com/outcomemesh/outcomemesh/node/activation"
 	"github.com/outcomemesh/outcomemesh/node/chainsession"
 	"github.com/outcomemesh/outcomemesh/node/peers"
+	"github.com/outcomemesh/outcomemesh/node/routing"
 	libp2ptransport "github.com/outcomemesh/outcomemesh/node/transport/libp2p"
 	"github.com/outcomemesh/outcomemesh/node/wire"
 	"github.com/outcomemesh/outcomemesh/node/workround"
 	"github.com/outcomemesh/outcomemesh/node/worksession"
 )
 
-func runWorkMineQUIC(arguments []string) error {
+func runWorkMineQUIC(arguments []string) (resultErr error) {
 	flags := flag.NewFlagSet("work-mine-quic", flag.ContinueOnError)
 	data := flags.String("data", defaultDataDirectory, "WorkGraph-enabled node data directory")
 	keyPath := flags.String("key", "", "persistent Ed25519 seed file created by keygen")
@@ -34,6 +36,11 @@ func runWorkMineQUIC(arguments []string) error {
 	var peerIDs repeatedStringFlag
 	flags.Var(&peerAddresses, "peer", "cooperating WorkGraph peer multiaddress; repeat for up to 8 peers")
 	flags.Var(&peerIDs, "peer-id", "matching OutcomeMesh peer ID; omit all or repeat once per peer")
+	autoPeers := flags.Int("auto-peers", 0, "compatible peers to select from the signed local peerbook")
+	autoAttempts := flags.Int("auto-attempts", 16, "maximum ranked peerbook capability probes")
+	asnMapPath := flags.String("asn-map", "", "required local CIDR,ASN table for automatic peer diversity")
+	asnMaxAge := flags.Duration("asn-max-age", 24*time.Hour, "maximum accepted age of the local ASN table")
+	maxPerASN := flags.Int("max-per-asn", 1, "maximum automatic peers attempted from one resolved ASN")
 	minerText := flags.String("miner", defaultDevelopmentAddress().String(), "reward address as 64 hex characters")
 	count := flags.Uint64("count", 1, "number of version-1 anchors")
 	startNonce := flags.Uint64("start-nonce", 0, "first WorkSeal nonce to test per round")
@@ -50,6 +57,15 @@ func runWorkMineQUIC(arguments []string) error {
 	targets, err := parseWorkPeerTargets(peerAddresses, peerIDs)
 	if err != nil {
 		return err
+	}
+	if *autoPeers < 0 || *autoPeers > maxWorkMiningPeers || len(targets)+*autoPeers == 0 ||
+		len(targets)+*autoPeers > maxWorkMiningPeers {
+		return fmt.Errorf("explicit plus automatic peers must total 1..%d", maxWorkMiningPeers)
+	}
+	if *autoPeers > 0 && (*asnMapPath == "" || *autoAttempts < *autoPeers || *autoAttempts > wire.MaxPeerRecords ||
+		*asnMaxAge <= 0 || *asnMaxAge > routing.MaxASNTableAge || *maxPerASN <= 0 || *maxPerASN > wire.MaxPeerRecords) {
+		return fmt.Errorf("automatic peers require an ASN map, attempts %d..%d, max-per-asn 1..%d, and asn-max-age up to %s",
+			*autoPeers, wire.MaxPeerRecords, wire.MaxPeerRecords, routing.MaxASNTableAge)
 	}
 	miner, err := parseAddress(*minerText)
 	if err != nil {
@@ -80,10 +96,15 @@ func runWorkMineQUIC(arguments []string) error {
 	if err != nil {
 		return err
 	}
-	peerManager, err := peers.New(peers.DefaultPolicy(), nil)
+	peerManager, err := openPeerManager(*data)
 	if err != nil {
 		return err
 	}
+	defer func() {
+		if saveErr := peers.SaveFile(filepath.Join(*data, reputationFilename), peerManager); resultErr == nil && saveErr != nil {
+			resultErr = saveErr
+		}
+	}()
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	config := libp2ptransport.DefaultConfig()
@@ -102,6 +123,33 @@ func runWorkMineQUIC(arguments []string) error {
 	if err := installWorkMiningHandlers(host, chainSession, roundManager, peerManager, roundControl); err != nil {
 		return err
 	}
+	if *autoPeers > 0 {
+		probeRound, err := roundManager.Current()
+		if err != nil {
+			return err
+		}
+		automatic, results, err := selectAutomaticWorkPeers(
+			ctx, *data, document.NetworkID, host, probeRound, peerManager, targets,
+			workAutoPeerConfig{
+				Count: *autoPeers, AttemptLimit: *autoAttempts, ASNMapPath: *asnMapPath,
+				ASNMaxAge: *asnMaxAge, MaxPerASN: *maxPerASN,
+			},
+		)
+		for _, result := range results {
+			if result.Err == nil {
+				fmt.Printf("work_auto_probe peer_id=%s result=compatible\n", result.PeerID)
+			} else {
+				fmt.Printf("work_auto_probe peer_id=%s result=failed error=%q\n", result.PeerID, result.Err)
+			}
+		}
+		if err != nil {
+			return err
+		}
+		for _, target := range automatic {
+			fmt.Printf("work_auto_peer peer_id=%s address=%s\n", target.id, target.address)
+		}
+		targets = append(targets, automatic...)
+	}
 	notifier, err := newWorkAnchorNotifier(ctx, targets, func(notifyContext context.Context, target workPeerTarget) error {
 		return notifyWorkAnchor(notifyContext, host, chainSession, peerManager, target)
 	})
@@ -109,8 +157,8 @@ func runWorkMineQUIC(arguments []string) error {
 		return err
 	}
 	defer notifier.Close()
-	fmt.Printf("mining_work_quic peer_id=%s libp2p_id=%s network=%d activation_height=%d peers=%d relay_every=%d relay_interval=%s listen=%s\n",
-		host.ID(), host.Libp2pID(), document.NetworkID, profile.ActivationHeight, len(targets), *relayEvery, *relayInterval,
+	fmt.Printf("mining_work_quic peer_id=%s libp2p_id=%s network=%d activation_height=%d peers=%d auto_peers=%d relay_every=%d relay_interval=%s listen=%s\n",
+		host.ID(), host.Libp2pID(), document.NetworkID, profile.ActivationHeight, len(targets), *autoPeers, *relayEvery, *relayInterval,
 		strings.Join(host.Addresses(), ","))
 	for minedCount := uint64(0); minedCount < *count; {
 		round, err := roundManager.Current()

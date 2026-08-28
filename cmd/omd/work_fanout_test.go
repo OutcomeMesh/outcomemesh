@@ -44,6 +44,10 @@ func TestWorkPeerTargetsRequireUniqueAuthenticatedIdentities(t *testing.T) {
 	if _, err := parseWorkPeerTargets(overLimit, nil); err == nil {
 		t.Fatal("over-limit peer list was accepted")
 	}
+	empty, err := parseWorkPeerTargets(nil, nil)
+	if err != nil || len(empty) != 0 {
+		t.Fatalf("empty explicit target set=%v error=%v", empty, err)
+	}
 }
 
 func TestWorkShareFanoutIsolatesSlowPeer(t *testing.T) {

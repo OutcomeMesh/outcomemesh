@@ -178,7 +178,19 @@ publisher attachment wait in a bounded 8,192-entry lifecycle buffer. Failures
 keep the suffix for a later attempt. The command uses the same peer byte
 accounting, fixed-window WorkGraph stream limits, exact-context handshake, and
 separate chain-v1 handler as the server. It does not yet discover or select
-peers automatically.
+peers automatically unless the operator explicitly enables the bounded
+peerbook selector described below.
+
+`work-mine-quic --auto-peers` reuses the ordinary routing score, latency, dial
+backoff, and ASN-diversity policy against fresh signed records already stored in
+`peers.bin`. Automatic selection requires an operator-owned, age-checked ASN
+map. It excludes self and any explicit peer, considers only direct QUIC-v1
+addresses whose embedded libp2p identity matches the signed OutcomeMesh record,
+and spends at most `--auto-attempts`. A handshake-only `Probe` verifies the
+WorkGraph protocol and byte-identical mining context without announcing share
+IDs. Selection fails closed if it cannot reach the requested count; failed
+capability probes update persisted dial backoff. This path deliberately does not
+refresh peer records after activation yet.
 
 `/outcomemesh/chain-notify/1` reuses the complete chain-v1 wire and validation
 state machine with inverted connection roles. The winning dialer serves; the

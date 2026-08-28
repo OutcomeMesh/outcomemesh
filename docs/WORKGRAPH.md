@@ -65,6 +65,13 @@ the block timestamp exactly. Miners may therefore have bounded clock skew, as
 well as different payout addresses, nonces, parent-share links, and inclusion
 commitments, without changing the executable payload.
 
+The current round manager freezes its local candidate timestamp until the parent
+changes. Consequently, after a round lasts more than the 120-second lead window,
+an early miner can reject otherwise matching shares created by a much later
+joiner, even though the stable wire context still negotiates. This asymmetry is
+now an explicit activation gate: timestamp rollover must preserve/revalidate the
+same-parent pool without letting work cross target or payload boundaries.
+
 ## Difficulty and validity
 
 Version 0 uses a fixed ratio `R = 512`. For hard anchor target `T`, the derived
@@ -345,6 +352,16 @@ work. A generation- and mining-context-bound buffer holds admissions that race
 publisher attachment, capped at 8,192 and cleared on parent change. A two-hop
 round fixture proves that the middle node can serve the exact admitted body to
 the destination.
+
+The experimental miner can replace explicit addresses with a bounded ranked
+selection from its existing signed peerbook. Selection shares the ordinary
+reputation, latency, exponential-backoff, and ASN-diversity machinery, then
+requires a WorkGraph handshake against the current round before a peer becomes
+a target. The handshake-only probe exposes no share inventory. Explicit and
+automatic targets together remain capped at eight, and startup fails if the
+requested compatible count is unavailable. Activation-safe signed-record
+refresh remains unimplemented, so this is routing over an operator-seeded book,
+not autonomous peer discovery.
 
 One maximal 1,024-ID relay is bounded to exactly 630,258 bytes of bidirectional
 application framing when a peer forces one maximum-size body per batch. The

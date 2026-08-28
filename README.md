@@ -132,6 +132,11 @@ genesis ID (the default 12-bit development target supports the required exact
   --peer <multiaddress> --peer-id <outcomemesh-peer-id> \
   --peer <second-multiaddress> --peer-id <second-outcomemesh-peer-id> \
   --count 1 --relay-every 128 --relay-interval 8s
+
+# Or fill a bounded peer set from fresh signed records already in peers.bin.
+./bin/omd work-mine-quic --data ./data/work-b --key node-b.key \
+  --auto-peers 4 --auto-attempts 16 --asn-map ./current-cidr-asn.csv \
+  --max-per-asn 1 --count 1
 ```
 
 `work-enable` writes an immutable, fsynced profile binding network, genesis,
@@ -155,6 +160,12 @@ miner's shares from remaining private for an entire round. Automatic peer
 discovery and topology-aware routing remain gated. When this miner wins,
 coalesced background chain-notify-v1 prompts make the configured peers initiate
 the existing trustless header-first pull; these are not trusted block pushes.
+`--auto-peers` is an experimental bounded selector, not peer discovery: it ranks
+fresh signed records already in the local peerbook by persisted reputation and
+latency, applies the required operator-supplied ASN table, and performs an
+inventory-free WorkGraph/exact-context capability probe. It fails unless the
+requested number of compatible peers is found. Refreshing signed records after
+WorkGraph activation remains a separate gate.
 Transactions on the experimental path, migration tooling, and public activation
 also remain gated.
 

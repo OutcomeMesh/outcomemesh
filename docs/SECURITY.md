@@ -110,6 +110,12 @@ with lagged ASERT: a current miner cannot future-date its own header to receive
 an easier target. Shares may differ from the winning timestamp only inside the
 MTP-valid, winner-relative 120-second window and must still use the exact same
 target and payload.
+The current prototype does not yet roll a live same-parent round's candidate
+timestamp forward. A round lasting beyond that window can therefore produce
+asymmetric admission between an early miner and a late joiner. Capability
+negotiation deliberately uses only the stable network/height/parent/target/
+payload tuple, but public activation still requires a bounded rollover design
+that revalidates retained shares against the eventual winner timestamp.
 
 Directly paying current transaction fees to the current anchor creates a
 separate payload-fragmentation incentive. Version 1 therefore prototypes a
@@ -200,6 +206,16 @@ if the source was not one of the configured peers (seven otherwise). Duplicate
 inventories therefore cannot amplify recursively. The round-control handoff can
 buffer at most the same 8,192-share consensus maximum and discards it on parent
 change; callbacks only copy/enqueue and perform no network I/O.
+
+Automatic WorkGraph peer selection is opt-in and cannot silently weaken network
+diversity. It requires a non-stale operator ASN table, enforces a per-ASN attempt
+cap, preserves signed-record address/identity binding, excludes self/explicit
+duplicates, and requires every selected peer to complete an inventory-free
+exact-context capability probe. Attempt and success counts are independently
+bounded; incompatible peers enter persisted exponential dial backoff. The
+selector does not treat a signed advertisement as proof of WorkGraph support.
+It also does not refresh advertisements after activation, so operators must not
+mistake this stage for autonomous bootstrap or Sybil-resistant discovery.
 
 Anchor notification is separated from ordinary chain pull at the libp2p
 protocol ID, but deliberately reuses its verified session. The remote winner
