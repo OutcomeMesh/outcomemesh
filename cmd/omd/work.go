@@ -23,6 +23,7 @@ import (
 	"github.com/outcomemesh/outcomemesh/core/workblock"
 	"github.com/outcomemesh/outcomemesh/core/workgraph"
 	"github.com/outcomemesh/outcomemesh/node/activation"
+	"github.com/outcomemesh/outcomemesh/node/calibration"
 	"github.com/outcomemesh/outcomemesh/node/chainsession"
 	"github.com/outcomemesh/outcomemesh/node/peers"
 	libp2ptransport "github.com/outcomemesh/outcomemesh/node/transport/libp2p"
@@ -109,7 +110,7 @@ func runWorkEnable(arguments []string) error {
 		NetworkID: document.NetworkID, GenesisID: genesisID, ActivationHeight: *activationHeight,
 		FeeDelay: uint16(*feeDelay), MaxTrees: uint16(*maxTrees), MaxHistoryBytes: *maxHistoryBytes,
 	}
-	router, err := openWorkRouter(store, document, profile, *data)
+	router, err := openWorkRouter(store, document, profile, *data, nil)
 	if err != nil {
 		return fmt.Errorf("validate WorkGraph activation: %w", err)
 	}
@@ -407,6 +408,12 @@ func runWorkServeQUIC(arguments []string) error {
 	maxConnections := flags.Int("max-connections", 64, "maximum authenticated QUIC connections")
 	maxStreams := flags.Int("max-chain-streams", 4, "maximum concurrent versioned chain streams")
 	maxStreamsPerPeer := flags.Int("max-chain-streams-per-peer", 1, "maximum concurrent versioned streams per peer")
+	telemetryKeyPath := flags.String("telemetry-key", "", "independent Ed25519 observer seed; enables hard-anchor telemetry")
+	telemetryPolicyPath := flags.String("telemetry-policy", "", "published miner-to-cluster policy text file")
+	telemetryPolicyIDText := flags.String("telemetry-policy-id", "", "expected canonical cluster-policy ID")
+	telemetryClusters := flags.Uint("telemetry-clusters", 0, "precommitted cluster comparison budget")
+	telemetryManifestPath := flags.String("telemetry-manifest", "", "signed telemetry manifest path (default under data)")
+	telemetryPendingPath := flags.String("telemetry-pending", "", "crash-safe current-hour journal path (default under data)")
 	if err := flags.Parse(arguments); err != nil {
 		return err
 	}
@@ -420,7 +427,49 @@ func runWorkServeQUIC(arguments []string) error {
 	if err != nil {
 		return err
 	}
-	document, store, router, profile, err := openWorkNode(*data)
+	telemetryEnabled := *telemetryKeyPath != "" || *telemetryPolicyPath != "" || *telemetryPolicyIDText != "" ||
+		*telemetryClusters != 0 || *telemetryManifestPath != "" || *telemetryPendingPath != ""
+	var liveTelemetry *liveWorkTelemetry
+	var observer func(activation.WorkAdmission)
+	telemetryClosed := false
+	if telemetryEnabled {
+		if *telemetryKeyPath == "" || *telemetryPolicyPath == "" || *telemetryPolicyIDText == "" ||
+			*telemetryClusters == 0 || *telemetryClusters > calibration.MaximumClusters {
+			return errors.New("telemetry requires key, policy, expected policy ID, and a bounded cluster budget")
+		}
+		expectedPolicyID, err := parseHash(*telemetryPolicyIDText)
+		if err != nil {
+			return fmt.Errorf("telemetry-policy-id: %w", err)
+		}
+		telemetryDocument, err := loadGenesis(*data)
+		if err != nil {
+			return err
+		}
+		telemetryProfile, err := loadWorkActivation(*data, telemetryDocument)
+		if err != nil {
+			return err
+		}
+		if *telemetryManifestPath == "" {
+			*telemetryManifestPath = filepath.Join(*data, "work-telemetry.omtm")
+		}
+		if *telemetryPendingPath == "" {
+			*telemetryPendingPath = filepath.Join(*data, "work-telemetry.pending")
+		}
+		liveTelemetry, err = openLiveWorkTelemetry(
+			telemetryDocument, telemetryProfile, *telemetryKeyPath, *telemetryPolicyPath,
+			expectedPolicyID, uint32(*telemetryClusters), *telemetryManifestPath, *telemetryPendingPath, unixNow(),
+		)
+		if err != nil {
+			return err
+		}
+		observer = liveTelemetry.Observe
+		defer func() {
+			if !telemetryClosed {
+				_ = liveTelemetry.Close(unixNow())
+			}
+		}()
+	}
+	document, store, router, profile, err := openWorkNodeObserved(*data, observer)
 	if err != nil {
 		return err
 	}
@@ -440,6 +489,16 @@ func runWorkServeQUIC(arguments []string) error {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+	var telemetryErrors <-chan error
+	if liveTelemetry != nil {
+		telemetryErrors = liveTelemetry.Start(ctx, unixNow)
+		status, statusErr := liveTelemetry.Status()
+		if statusErr != nil {
+			return statusErr
+		}
+		fmt.Printf("work_telemetry_enabled policy=%s records=%d completed_through=%d pending_start=%d tail=%s\n",
+			*telemetryPolicyIDText, status.Records, status.CompletedThrough, status.PendingStartedAt, status.LastRecordID)
+	}
 	config := libp2ptransport.DefaultConfig()
 	config.Listen = []string{*listenAddress}
 	config.MaxConnections = *maxConnections
@@ -538,15 +597,26 @@ func runWorkServeQUIC(arguments []string) error {
 		ctx, *data, addressBook, privateKey, host.ID(), document.NetworkID,
 		profile.ActivationHeight, host.Addresses(),
 	)
+	var serveErr error
 	select {
 	case <-ctx.Done():
-		return nil
+		serveErr = nil
 	case renewalErr, ok := <-renewalErrors:
 		if !ok {
-			return nil
+			serveErr = nil
+		} else {
+			serveErr = renewalErr
 		}
-		return renewalErr
+	case telemetryErr := <-telemetryErrors:
+		serveErr = fmt.Errorf("WorkGraph telemetry failed: %w", telemetryErr)
 	}
+	cancel()
+	serveErr = errors.Join(serveErr, host.Close(), router.Close())
+	if liveTelemetry != nil {
+		telemetryClosed = true
+		serveErr = errors.Join(serveErr, liveTelemetry.Close(unixNow()))
+	}
+	return serveErr
 }
 
 func recordWorkPeerSession(manager *peers.Manager, peerID types.Hash, sessionErr error) {
@@ -622,6 +692,19 @@ func openWorkNode(data string) (
 	workActivationProfile,
 	error,
 ) {
+	return openWorkNodeObserved(data, nil)
+}
+
+func openWorkNodeObserved(
+	data string,
+	observer func(activation.WorkAdmission),
+) (
+	genesis.Document,
+	storage.Ledger,
+	*activation.Router,
+	workActivationProfile,
+	error,
+) {
 	document, err := loadGenesis(data)
 	if err != nil {
 		return genesis.Document{}, nil, nil, workActivationProfile{}, err
@@ -634,7 +717,7 @@ func openWorkNode(data string) (
 	if err != nil {
 		return genesis.Document{}, nil, nil, workActivationProfile{}, err
 	}
-	router, err := openWorkRouter(store, document, profile, data)
+	router, err := openWorkRouter(store, document, profile, data, observer)
 	if err != nil {
 		_ = store.Close()
 		return genesis.Document{}, nil, nil, workActivationProfile{}, err
@@ -647,6 +730,7 @@ func openWorkRouter(
 	document genesis.Document,
 	profile workActivationProfile,
 	data string,
+	observer func(activation.WorkAdmission),
 ) (*activation.Router, error) {
 	if err := validateWorkActivation(profile, document); err != nil {
 		return nil, err
@@ -668,7 +752,7 @@ func openWorkRouter(
 			FeeDelay: profile.FeeDelay,
 		},
 		Now: func() uint64 { return unixNow() }, WorkRoot: forestRoot,
-		WorkPolicy: policy, MaxWorkTrees: int(profile.MaxTrees),
+		WorkPolicy: policy, MaxWorkTrees: int(profile.MaxTrees), ObserveWork: observer,
 	})
 }
 

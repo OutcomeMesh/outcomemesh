@@ -88,13 +88,20 @@ func SaveFile(path string, records []Record, expected Binding) (Aggregate, error
 	if err != nil {
 		return Aggregate{}, err
 	}
-	directory := filepath.Dir(path)
-	if err := os.MkdirAll(directory, 0o755); err != nil {
+	if err := savePrivateFile(path, ".outcomemesh-telemetry-*", encoded); err != nil {
 		return Aggregate{}, err
 	}
-	temporary, err := os.CreateTemp(directory, ".outcomemesh-telemetry-*")
+	return aggregate, nil
+}
+
+func savePrivateFile(path, pattern string, encoded []byte) error {
+	directory := filepath.Dir(path)
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		return err
+	}
+	temporary, err := os.CreateTemp(directory, pattern)
 	if err != nil {
-		return Aggregate{}, err
+		return err
 	}
 	temporaryPath := temporary.Name()
 	committed := false
@@ -105,34 +112,34 @@ func SaveFile(path string, records []Record, expected Binding) (Aggregate, error
 		}
 	}()
 	if err := temporary.Chmod(0o600); err != nil {
-		return Aggregate{}, err
+		return err
 	}
 	written, err := temporary.Write(encoded)
 	if err != nil {
-		return Aggregate{}, err
+		return err
 	}
 	if written != len(encoded) {
-		return Aggregate{}, io.ErrShortWrite
+		return io.ErrShortWrite
 	}
 	if err := temporary.Sync(); err != nil {
-		return Aggregate{}, err
+		return err
 	}
 	if err := temporary.Close(); err != nil {
-		return Aggregate{}, err
+		return err
 	}
 	if err := os.Rename(temporaryPath, path); err != nil {
-		return Aggregate{}, err
+		return err
 	}
 	committed = true
 	directoryHandle, err := os.Open(directory)
 	if err != nil {
-		return Aggregate{}, err
+		return err
 	}
 	defer directoryHandle.Close()
 	if err := directoryHandle.Sync(); err != nil {
-		return Aggregate{}, err
+		return err
 	}
-	return aggregate, nil
+	return nil
 }
 
 func LoadFile(path string, expected Binding) ([]Record, Aggregate, error) {

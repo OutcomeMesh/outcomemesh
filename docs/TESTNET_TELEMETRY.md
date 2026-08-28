@@ -1,7 +1,7 @@
 # Public-testnet calibration telemetry
 
-Status: format and verifier implemented; live collectors and independent
-observers not yet deployed
+Status: opt-in hard-anchor collector implemented; independent observers and
+controlled tie harness not yet deployed
 
 This format supplies reproducible inputs to ER-5 without making telemetry part
 of consensus. A valid manifest proves that one expected Ed25519 observer signed
@@ -70,6 +70,84 @@ atomic rename, and directory `fsync`. This protects local crash recovery. The
 cryptographic chain, not filesystem append semantics, provides historical
 mutation detection.
 
+## Live hard-anchor collector
+
+The opt-in collector is connected to the activation router's first-admission
+boundary. A telemetry event is emitted only after a new version-1 block passes
+full validation and durable WorkChain commit. Legacy blocks, rejected blocks,
+and duplicate submissions emit nothing. The callback runs after the router lock
+is released and cannot change admission or fork choice.
+
+The current interval is a separate mode-0600 journal containing sorted unique
+hard-anchor IDs and controlled-tie experiment IDs rather than mutable totals.
+This makes repeated delivery idempotent and makes a conflicting classification
+for the same event detectable. Each successful observation atomically replaces
+and fsyncs this journal before returning. At an hour boundary the collector:
+
+1. derives counters and sorted cluster totals from the journal;
+2. signs the next record and atomically commits the extended manifest;
+3. atomically creates the next empty pending interval;
+4. reconciles a crash between steps two and three from the signed manifest tail
+   on restart.
+
+No-anchor hours still produce signed empty records. Clock rollback is rejected.
+Any live telemetry failure poisons the collector and writes a separate
+`.failed` marker when the filesystem permits it; `work-serve-quic` then exits,
+and the marker prevents a silent restart of the same evidence window. This
+includes disk errors, exhausted event bounds, and an admission that cannot be
+classified. Consensus admission remains committed, so operators must start a
+fresh calibration window after such a failure rather than pretending the
+missed observation did not happen.
+
+The collector currently counts first-admitted hard anchors as equal-difficulty
+work observations. It does not mix weak shares into that denominator. This
+keeps duplicate and difficulty semantics explicit, at the cost of a smaller
+sample.
+
+## Published clustering policy
+
+The policy text file has one mandatory conservative catch-all plus optional
+payout-address assignments:
+
+```text
+# unknown addresses are grouped together, never silently ignored
+unknown,<64-hex-cluster-id>
+miner,<64-hex-payout-address>,<64-hex-cluster-id>
+miner,<64-hex-payout-address>,<64-hex-cluster-id>
+```
+
+Whitespace and comment lines are ignored. Assignments are canonically sorted by
+miner address. Duplicate miners, zero IDs, or more distinct clusters than the
+precommitted comparison budget are rejected. Unknown payout addresses all map
+to the catch-all, which is deliberately conservative: unrelated new miners can
+make concentration look worse, but cannot make it look safer.
+
+Compute and publish the canonical policy ID before starting the window:
+
+```sh
+.tools/go/bin/go run ./cmd/omd work-telemetry-policy \
+  --policy clusters.txt --clusters 64
+```
+
+Then enable collection on a persistent observer node with a key distinct from
+its transport identity:
+
+```sh
+.tools/go/bin/go run ./cmd/omd work-serve-quic \
+  --data observer-data \
+  --key transport.key \
+  --telemetry-key observer.key \
+  --telemetry-policy clusters.txt \
+  --telemetry-policy-id <published-policy-id> \
+  --telemetry-clusters 64
+```
+
+The default outputs are `observer-data/work-telemetry.omtm` and
+`observer-data/work-telemetry.pending`; both can be overridden explicitly. A
+minute ticker closes every completed hour even when the node admits no block.
+The startup line reports the current signed-record count, completed boundary,
+pending boundary, and tail ID.
+
 ## ER-5 handoff
 
 `omcalibrate --manifest` derives all observation counters from the verified
@@ -90,12 +168,15 @@ and its version-2 report digest is
 ## Remaining operational work
 
 - build the live collector that obtains controlled tie outcomes and canonical
-  work classifications from node events;
-- publish the clustering policy and its digest before each observation window;
+  outcomes from an independently reproducible network experiment (hard-anchor
+  first admission and work classification are now connected);
+- deploy and publish the clustering policy and its digest before each real
+  observation window;
 - operate multiple independently controlled observers and document how their
   correlated views are handled rather than naively pooling them;
 - publish signed tail checkpoints outside the manifest storage path;
 - define privacy retention for the raw identifiers used to derive pseudonymous
   cluster IDs;
 - chaos-test missed intervals, observer restart, disk-full behavior, and
-  checkpoint disagreement.
+  checkpoint disagreement. Local restart, duplicate, clock rollback,
+  persistence failure, and concurrent-observation cases are already covered.

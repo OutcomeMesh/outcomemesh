@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	legacyblock "github.com/outcomemesh/outcomemesh/core/block"
 	"github.com/outcomemesh/outcomemesh/core/genesis"
@@ -87,6 +88,94 @@ func TestRouterReorganizesAcrossDistinctActivationBases(t *testing.T) {
 	}
 	if _, _, err := router.PrepareWork(types.DomainHash("unknown/activation/parent"), tip.Timestamp+60, nil); !errors.Is(err, ErrParent) {
 		t.Fatalf("unknown WorkGraph parent error=%v", err)
+	}
+}
+
+func TestWorkAdmissionObserverRunsOnceOutsideRouterLock(t *testing.T) {
+	var router *Router
+	var observed []WorkAdmission
+	observer := func(event WorkAdmission) {
+		if _, err := router.Tip(); err != nil {
+			t.Errorf("observer could not reenter router: %v", err)
+		}
+		observed = append(observed, event)
+	}
+	var ledger *reference.Store
+	var document genesis.Document
+	var config Config
+	router, ledger, document, config = activationFixtureWithObserver(t, observer)
+	defer ledger.Close()
+	genesisTip, _ := storage.GenesisTip(document)
+	base := mineLegacyOn(t, ledger, config.Legacy, genesisTip, activationAddress("observer-base"))
+	routedBase, _ := Legacy(base, config.Work.ActivationHeight)
+	if _, err := router.Submit(routedBase); err != nil {
+		t.Fatal(err)
+	}
+	if len(observed) != 0 {
+		t.Fatalf("legacy block produced WorkGraph admission: %+v", observed)
+	}
+	baseID, _ := base.Header.ID()
+	work := mineWorkOn(t, router, baseID, base.Header.Timestamp+60, "observer-work")
+	routedWork, _ := Work(work, config.Work.ActivationHeight)
+	selected, err := router.Submit(routedWork)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(observed) != 1 {
+		t.Fatalf("admission count = %d, want 1", len(observed))
+	}
+	id, _ := work.Header.ID()
+	event := observed[0]
+	if event.ID != id || event.ParentID != baseID || event.Height != work.Header.Seal.Height ||
+		event.BlockTimestamp != work.Header.Seal.Timestamp || event.ObservedAt != document.Timestamp+10_000 ||
+		event.Miner != work.Header.Seal.Miner || event.Selected != (selected.ID == id) {
+		t.Fatalf("admission = %+v", event)
+	}
+	if _, err := router.Submit(routedWork); !errors.Is(err, storage.ErrBlockExists) {
+		t.Fatalf("duplicate error = %v", err)
+	}
+	if len(observed) != 1 {
+		t.Fatalf("duplicate produced admission: %+v", observed)
+	}
+}
+
+func TestRouterCloseWaitsForCommittedAdmissionObserver(t *testing.T) {
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	observer := func(WorkAdmission) {
+		close(entered)
+		<-release
+	}
+	router, ledger, document, config := activationFixtureWithObserver(t, observer)
+	defer ledger.Close()
+	genesisTip, _ := storage.GenesisTip(document)
+	base := mineLegacyOn(t, ledger, config.Legacy, genesisTip, activationAddress("close-observer-base"))
+	routedBase, _ := Legacy(base, config.Work.ActivationHeight)
+	if _, err := router.Submit(routedBase); err != nil {
+		t.Fatal(err)
+	}
+	baseID, _ := base.Header.ID()
+	work := mineWorkOn(t, router, baseID, base.Header.Timestamp+60, "close-observer-work")
+	routedWork, _ := Work(work, config.Work.ActivationHeight)
+	submitted := make(chan error, 1)
+	go func() {
+		_, err := router.Submit(routedWork)
+		submitted <- err
+	}()
+	<-entered
+	closed := make(chan error, 1)
+	go func() { closed <- router.Close() }()
+	select {
+	case err := <-closed:
+		t.Fatalf("router closed before admission observer returned: %v", err)
+	case <-time.After(25 * time.Millisecond):
+	}
+	close(release)
+	if err := <-submitted; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-closed; err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -213,6 +302,13 @@ func FuzzDecodeRoutedBlockNeverPanics(f *testing.F) {
 }
 
 func activationFixture(t testing.TB) (*Router, *reference.Store, genesis.Document, Config) {
+	return activationFixtureWithObserver(t, nil)
+}
+
+func activationFixtureWithObserver(
+	t testing.TB,
+	observer func(WorkAdmission),
+) (*Router, *reference.Store, genesis.Document, Config) {
 	t.Helper()
 	var target types.Hash
 	target[1] = 0x7f
@@ -236,7 +332,8 @@ func activationFixture(t testing.TB) (*Router, *reference.Store, genesis.Documen
 			DifficultyAnchorTimestamp: document.Timestamp, DifficultyAnchorTarget: document.Target,
 			TargetSpacing: legacy.TargetSpacing, ASERTHalfLife: legacy.ASERTHalfLife, FeeDelay: 3,
 		},
-		Now: func() uint64 { return document.Timestamp + 10_000 },
+		Now:         func() uint64 { return document.Timestamp + 10_000 },
+		ObserveWork: observer,
 	}
 	router, err := New(ledger, config)
 	if err != nil {

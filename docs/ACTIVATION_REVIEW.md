@@ -161,6 +161,14 @@ detectable. It does not prove observer honesty, statistical independence, or
 that Sybil identities were grouped into the right coordination clusters.
 Independent review must challenge those assumptions before ER-5 can pass.
 
+An opt-in `work-serve-quic` collector now records only the router's first
+successful admission of each version-1 hard anchor, persists unique event IDs
+in a crash-safe current-hour journal, emits signed empty hours, and stops the
+observer service on telemetry failure. The clustering policy and expected ID
+are mandatory startup inputs; unknown miners enter one conservative catch-all.
+Controlled tie experiments and multiple independent observer deployments are
+still required before the 30-day clock can start.
+
 ## Reviewer scope
 
 The review must cover the code, not only this report:

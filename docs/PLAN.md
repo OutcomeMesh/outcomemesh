@@ -186,8 +186,9 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
 - Versioned public-testnet calibration evidence with integer-only one-sided 99%
   upper bounds, family-wise mining-cluster selection correction, a 30-day
   window gate, signed gapless hourly manifests, trusted deployment/policy
-  bindings, published rollback checkpoints, and a canonical digest. Live
-  multi-observer collection remains a Milestone 9 deliverable.
+  bindings, published rollback checkpoints, a crash-safe first-admission hard-
+  anchor collector, and a canonical digest. Controlled tie experiments and
+  live multi-observer deployment remain Milestone 9 deliverables.
 
 ### Exit gates
 

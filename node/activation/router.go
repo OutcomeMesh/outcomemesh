@@ -37,6 +37,20 @@ type Config struct {
 	WorkRoot     string
 	WorkPolicy   workchain.Policy
 	MaxWorkTrees int
+	// ObserveWork receives one immutable event after a new v1 block is durably
+	// admitted and after the router lock is released. It is operational
+	// telemetry only and cannot accept, reject, or reorder consensus work.
+	ObserveWork func(WorkAdmission)
+}
+
+type WorkAdmission struct {
+	ID             types.Hash
+	ParentID       types.Hash
+	Height         uint64
+	BlockTimestamp uint64
+	ObservedAt     uint64
+	Miner          types.Address
+	Selected       bool
 }
 
 // ForestStatus reports bounded local v1 persistence without treating local
@@ -54,13 +68,14 @@ type ForestStatus struct {
 // at activationHeight-1 owns an independent v1 fork tree; Tip compares their
 // best hard-work tips with the best pre-activation v0 tip.
 type Router struct {
-	mu        sync.Mutex
-	ledger    storage.Ledger
-	legacy    *chain.Chain
-	config    Config
-	trees     map[types.Hash]*workchain.Store
-	workBases map[types.Hash]types.Hash
-	closed    bool
+	mu          sync.Mutex
+	observeGate sync.RWMutex
+	ledger      storage.Ledger
+	legacy      *chain.Chain
+	config      Config
+	trees       map[types.Hash]*workchain.Store
+	workBases   map[types.Hash]types.Hash
+	closed      bool
 }
 
 func New(ledger storage.Ledger, config Config) (*Router, error) {
@@ -119,44 +134,79 @@ func (router *Router) Submit(candidate Block) (storage.Tip, error) {
 		return storage.Tip{}, ErrConfiguration
 	}
 	router.mu.Lock()
-	defer router.mu.Unlock()
 	if router.closed {
+		router.mu.Unlock()
 		return storage.Tip{}, storage.ErrClosed
 	}
-	if err := candidate.Validate(router.config.Work.ActivationHeight); err != nil {
-		return storage.Tip{}, err
+	tip, admission, err := router.submitLocked(candidate)
+	observer := router.config.ObserveWork
+	// Once Commit succeeds, the admission must be observable even if the
+	// subsequent best-tip scan detects a separate local-state error. A retry
+	// would be a duplicate and could not reconstruct this event.
+	observing := admission != nil && observer != nil
+	if observing {
+		// Acquire the read side before releasing the router lock. Close first
+		// marks the router closed under that lock and then takes the write side,
+		// so every already-committed admission finishes its callback before
+		// Close returns.
+		router.observeGate.RLock()
 	}
+	router.mu.Unlock()
+	if observing {
+		defer router.observeGate.RUnlock()
+		observer(*admission)
+	}
+	return tip, err
+}
+
+func (router *Router) submitLocked(candidate Block) (storage.Tip, *WorkAdmission, error) {
+	if err := candidate.Validate(router.config.Work.ActivationHeight); err != nil {
+		return storage.Tip{}, nil, err
+	}
+	var admission *WorkAdmission
 	switch candidate.Version() {
 	case legacyblock.Version0:
 		legacy, ok := candidate.LegacyBlock()
 		if !ok {
-			return storage.Tip{}, ErrEncoding
+			return storage.Tip{}, nil, ErrEncoding
 		}
 		if _, err := router.legacy.SubmitAt(legacy, router.config.Now()); err != nil {
-			return storage.Tip{}, err
+			return storage.Tip{}, nil, err
 		}
 	case workblock.Version1:
 		work, ok := candidate.WorkBlock()
 		if !ok {
-			return storage.Tip{}, ErrEncoding
+			return storage.Tip{}, nil, ErrEncoding
 		}
 		tree, baseID, err := router.treeForWorkLocked(work)
 		if err != nil {
-			return storage.Tip{}, err
+			return storage.Tip{}, nil, err
 		}
-		if _, _, err := tree.Commit(work, router.config.Now()); err != nil {
+		observedAt := router.config.Now()
+		if _, _, err := tree.Commit(work, observedAt); err != nil {
 			if errors.Is(err, workchain.ErrDuplicate) {
-				return storage.Tip{}, storage.ErrBlockExists
+				return storage.Tip{}, nil, storage.ErrBlockExists
 			}
-			return storage.Tip{}, err
+			return storage.Tip{}, nil, err
 		}
 		id, _ := work.Header.ID()
 		router.workBases[id] = baseID
+		admission = &WorkAdmission{
+			ID: id, ParentID: work.Header.Seal.AnchorParent, Height: work.Header.Seal.Height,
+			BlockTimestamp: work.Header.Seal.Timestamp, ObservedAt: observedAt,
+			Miner: work.Header.Seal.Miner,
+		}
 	default:
-		return storage.Tip{}, ErrEncoding
+		return storage.Tip{}, nil, ErrEncoding
 	}
 	tip, _, err := router.bestLocked()
-	return tip, err
+	if err != nil {
+		return storage.Tip{}, admission, err
+	}
+	if admission != nil {
+		admission.Selected = admission.ID == tip.ID
+	}
+	return tip, admission, nil
 }
 
 func (router *Router) Tip() (storage.Tip, error) {
@@ -349,12 +399,18 @@ func (router *Router) Close() error {
 		return ErrConfiguration
 	}
 	router.mu.Lock()
-	defer router.mu.Unlock()
 	if router.closed {
+		router.mu.Unlock()
 		return storage.ErrClosed
 	}
 	router.closed = true
-	return router.closeTreesLocked()
+	err := router.closeTreesLocked()
+	router.mu.Unlock()
+	// Wait until callbacks for admissions committed before closed=true have
+	// durably handed their events to the operational observer.
+	router.observeGate.Lock()
+	router.observeGate.Unlock()
+	return err
 }
 
 func (router *Router) closeTreesLocked() error {

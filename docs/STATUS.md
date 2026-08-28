@@ -442,8 +442,11 @@ Implemented in an isolated, not-yet-activated consensus package:
   hourly records, exact per-cluster work conservation, trusted network/genesis/
   activation/policy bindings, and a published tail ID before `EvidencePass`.
   A generated 720-record chain freezes the end-to-end digest. Live collection,
-  independent observers, observer honesty, and Sybil-cluster provenance remain
-  open testnet work.
+  now has an opt-in `work-serve-quic` path: post-commit first-admission events
+  enter a crash-safe unique-ID journal, completed/empty hours are signed, and a
+  canonical published mapping places unknown payout addresses in a conservative
+  catch-all cluster. Independent observer deployment, controlled tie trials,
+  observer honesty, and Sybil-cluster provenance remain open testnet work.
 - the PoW research harness now also has an integer-only, fixed-seed geometric
   solve process for active v0 and lagged v1. Golden observation digests cover
   baseline variance and an alternating 1x/4x campaign, while separate cases
