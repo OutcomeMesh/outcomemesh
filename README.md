@@ -167,7 +167,10 @@ activation height and claimed capabilities; refreshed batches are validated
 atomically and persisted. The selector then ranks them by reputation/latency,
 applies the required operator-supplied ASN table, and performs an inventory-free
 WorkGraph/exact-context capability probe. Claims never replace the live probe,
-and the command fails unless the requested compatible count is reached.
+and the command fails unless the requested compatible count is reached. A
+long-lived miner repeats the bounded refresh every 30 minutes through its
+selected peers. Candidate order is keyed by the local identity and refresh
+epoch, so a small attempt budget does not retry one fixed peer-ID prefix forever.
 Transactions on the experimental path, migration tooling, and public activation
 also remain gated.
 

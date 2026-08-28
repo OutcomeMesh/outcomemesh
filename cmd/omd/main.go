@@ -55,6 +55,8 @@ const (
 
 var storagePolicyMagic = [8]byte{'O', 'M', 'H', 'I', 'S', 'T', '0', '0'}
 
+var peerBookSaveMu sync.Mutex
+
 func main() {
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
@@ -1405,6 +1407,8 @@ func openPeerBook(data string, networkID uint32, now uint64) (*discovery.Book, e
 }
 
 func savePeerBook(data string, book *discovery.Book, now uint64) error {
+	peerBookSaveMu.Lock()
+	defer peerBookSaveMu.Unlock()
 	return discovery.SaveFile(filepath.Join(data, peerbookFilename), book, now)
 }
 

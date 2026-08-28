@@ -144,6 +144,12 @@ without announcing inventory. Signed claims therefore reduce wasted dials but
 never replace capability proof. At least one live explicit or unexpired signed
 bootstrap remains necessary when a local book has no usable records.
 
+After selection, the miner repeats the bounded refresh every 30 minutes through
+the selected peers without changing the active relay set mid-round. Selected
+bootstrap peers remain the first tier; each tier is ordered by a local-identity and
+epoch keyed hash so successive passes do not spend a small attempt budget on a
+fixed peer-ID prefix. This rotation improves coverage but is not Sybil proof.
+
 The peer probe's stable context intentionally excludes each miner's candidate
 timestamp, but share admission still applies the winner-relative 120-second
 window. The manager rolls the candidate after 60 seconds without changing the
@@ -157,6 +163,6 @@ into deduplicated per-peer queues, so pending work is not abandoned at handoff.
 
 - external PoW review and hash-rate simulations;
 - production calibration of fee delay, share gossip queues, and miner strategy;
-- bootstrap-rotation and adversarial discovery soaks across diverse operators;
+- adversarial discovery/eclipse soaks across diverse operators and networks;
 - multi-node long-round rollover soaks with clock skew, churn, and relay loss;
 - extended filesystem-fault storage soaks and longer multi-node QUIC churn.

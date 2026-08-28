@@ -129,26 +129,6 @@ func runWorkMineQUIC(arguments []string) (resultErr error) {
 		return err
 	}
 	chainSession.AttachDiscovery(addressBook)
-	renewalFailures := make(chan error, 1)
-	renewalErrors := renewWorkDiscoveryRecords(
-		ctx, *data, addressBook, privateKey, host.ID(), document.NetworkID,
-		profile.ActivationHeight, host.Addresses(),
-	)
-	go func() {
-		if renewalErr, ok := <-renewalErrors; ok {
-			renewalFailures <- renewalErr
-			cancel()
-		}
-	}()
-	defer func() {
-		select {
-		case renewalErr := <-renewalFailures:
-			if resultErr == nil || errors.Is(resultErr, context.Canceled) {
-				resultErr = renewalErr
-			}
-		default:
-		}
-	}()
 	for _, target := range targets {
 		if target.id == host.ID() {
 			return errors.New("cooperative peer list contains this miner's identity")
@@ -158,24 +138,22 @@ func runWorkMineQUIC(arguments []string) (resultErr error) {
 	if err := installWorkMiningHandlers(host, chainSession, roundManager, peerManager, roundControl); err != nil {
 		return err
 	}
-	if len(targets) > 0 || *autoPeers > 0 {
-		refreshAttempts := *autoAttempts
-		if *autoPeers == 0 {
-			refreshAttempts = len(targets)
-		}
-		refreshResults, err := refreshWorkPeerBook(
-			ctx, *data, document.NetworkID, profile.ActivationHeight, host, chainSession,
-			peerManager, addressBook, targets, refreshAttempts,
-		)
-		if err != nil {
-			return err
-		}
-		for _, result := range refreshResults {
-			if result.Err == nil {
-				fmt.Printf("work_peerbook_refresh peer_id=%s records=%d result=ok\n", result.PeerID, result.Records)
-			} else {
-				fmt.Printf("work_peerbook_refresh peer_id=%s records=0 result=failed error=%q\n", result.PeerID, result.Err)
-			}
+	refreshAttempts := *autoAttempts
+	if *autoPeers == 0 {
+		refreshAttempts = len(targets)
+	}
+	refreshResults, err := refreshWorkPeerBook(
+		ctx, *data, document.NetworkID, profile.ActivationHeight, host, chainSession,
+		peerManager, addressBook, targets, refreshAttempts,
+	)
+	if err != nil {
+		return err
+	}
+	for _, result := range refreshResults {
+		if result.Err == nil {
+			fmt.Printf("work_peerbook_refresh peer_id=%s records=%d result=ok\n", result.PeerID, result.Records)
+		} else {
+			fmt.Printf("work_peerbook_refresh peer_id=%s records=0 result=failed error=%q\n", result.PeerID, result.Err)
 		}
 	}
 	if *autoPeers > 0 {
@@ -206,6 +184,55 @@ func runWorkMineQUIC(arguments []string) (resultErr error) {
 		}
 		targets = append(targets, automatic...)
 	}
+	renewalErrors := renewWorkDiscoveryRecords(
+		ctx, *data, addressBook, privateKey, host.ID(), document.NetworkID,
+		profile.ActivationHeight, host.Addresses(),
+	)
+	periodicRefreshErrors := repeatWorkDiscoveryRefresh(
+		ctx, workDiscoveryRefreshInterval,
+		func(refreshContext context.Context) ([]workDiscoveryRefreshResult, error) {
+			return refreshWorkPeerBook(
+				refreshContext, *data, document.NetworkID, profile.ActivationHeight,
+				host, chainSession, peerManager, addressBook, targets, refreshAttempts,
+			)
+		},
+		func(results []workDiscoveryRefreshResult) {
+			for _, result := range results {
+				if result.Err == nil {
+					fmt.Printf("work_peerbook_refresh phase=periodic peer_id=%s records=%d result=ok\n", result.PeerID, result.Records)
+				} else {
+					fmt.Printf("work_peerbook_refresh phase=periodic peer_id=%s records=0 result=failed error=%q\n", result.PeerID, result.Err)
+				}
+			}
+		},
+	)
+	var maintenanceMu sync.Mutex
+	var maintenanceErr error
+	var maintenanceWait sync.WaitGroup
+	for _, source := range []<-chan error{renewalErrors, periodicRefreshErrors} {
+		source := source
+		maintenanceWait.Add(1)
+		go func() {
+			defer maintenanceWait.Done()
+			if discoveredErr, ok := <-source; ok {
+				maintenanceMu.Lock()
+				if maintenanceErr == nil {
+					maintenanceErr = discoveredErr
+				}
+				maintenanceMu.Unlock()
+				cancel()
+			}
+		}()
+	}
+	defer func() {
+		cancel()
+		maintenanceWait.Wait()
+		maintenanceMu.Lock()
+		defer maintenanceMu.Unlock()
+		if maintenanceErr != nil && (resultErr == nil || errors.Is(resultErr, context.Canceled)) {
+			resultErr = maintenanceErr
+		}
+	}()
 	notifier, err := newWorkAnchorNotifier(ctx, targets, func(notifyContext context.Context, target workPeerTarget) error {
 		return notifyWorkAnchor(notifyContext, host, chainSession, peerManager, target)
 	})

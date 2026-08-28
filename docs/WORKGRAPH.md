@@ -371,6 +371,11 @@ inventory. Explicit and automatic targets together remain capped at eight, and
 startup fails if the requested compatible count is unavailable. Bootstrap view
 bias and Sybil resistance remain operator/testnet concerns.
 
+The selected set is reused for a bounded peerbook refresh every 30 minutes while
+mining continues. Selected bootstraps and other learned records remain separate tiers;
+each tier rotates by a local-identity/epoch keyed hash instead of a fixed peer-ID
+prefix. Active relay targets are not swapped in the middle of a round.
+
 One maximal 1,024-ID relay is bounded to exactly 630,258 bytes of bidirectional
 application framing when a peer forces one maximum-size body per batch. The
 QUIC adapter's fixed-window defaults admit eight such streams per peer and 512

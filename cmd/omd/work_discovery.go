@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"crypto/ed25519"
+	"encoding/binary"
 	"errors"
+	"sort"
 	"time"
 
 	"github.com/outcomemesh/outcomemesh/core/types"
@@ -29,6 +31,13 @@ type workDiscoveryRefreshResult struct {
 	PeerID  types.Hash
 	Records int
 	Err     error
+}
+
+type workDiscoveryCandidate struct {
+	id        types.Hash
+	addresses []string
+	bootstrap bool
+	rotation  types.Hash
 }
 
 func workDiscoverySuggestedSequence() uint64 {
@@ -133,6 +142,43 @@ func renewWorkDiscoveryRecordsAt(
 	return result
 }
 
+func repeatWorkDiscoveryRefresh(
+	ctx context.Context,
+	interval time.Duration,
+	refresh func(context.Context) ([]workDiscoveryRefreshResult, error),
+	observe func([]workDiscoveryRefreshResult),
+) <-chan error {
+	result := make(chan error, 1)
+	go func() {
+		defer close(result)
+		if ctx == nil || interval <= 0 || refresh == nil {
+			result <- errors.New("invalid periodic WorkGraph discovery refresh")
+			return
+		}
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				results, err := refresh(ctx)
+				if ctx.Err() != nil {
+					return
+				}
+				if err != nil {
+					result <- err
+					return
+				}
+				if observe != nil {
+					observe(results)
+				}
+			}
+		}
+	}()
+	return result
+}
+
 func refreshWorkPeerBook(
 	ctx context.Context,
 	data string,
@@ -150,11 +196,8 @@ func refreshWorkPeerBook(
 		attemptLimit > discovery.MaxBookRecords {
 		return nil, errors.New("invalid WorkGraph peerbook refresh")
 	}
-	type candidate struct {
-		id        types.Hash
-		addresses []string
-	}
-	queue := make([]candidate, 0, len(explicit)+wire.MaxPeerRecords)
+	now := unixNow()
+	queue := make([]workDiscoveryCandidate, 0, len(explicit)+wire.MaxPeerRecords)
 	queued := make(map[types.Hash]struct{}, len(explicit)+wire.MaxPeerRecords)
 	appendTarget := func(target workPeerTarget) {
 		if target.id.IsZero() || target.id == host.ID() || target.address == "" {
@@ -164,7 +207,10 @@ func refreshWorkPeerBook(
 			return
 		}
 		queued[target.id] = struct{}{}
-		queue = append(queue, candidate{id: target.id, addresses: []string{target.address}})
+		queue = append(queue, workDiscoveryCandidate{
+			id: target.id, addresses: []string{target.address}, bootstrap: true,
+			rotation: workDiscoveryRotation(host.ID(), target.id, now),
+		})
 	}
 	appendRecord := func(record discovery.Record) {
 		if !record.Supports(
@@ -189,15 +235,17 @@ func refreshWorkPeerBook(
 			return
 		}
 		queued[id] = struct{}{}
-		queue = append(queue, candidate{id: id, addresses: addresses})
+		queue = append(queue, workDiscoveryCandidate{
+			id: id, addresses: addresses, rotation: workDiscoveryRotation(host.ID(), id, now),
+		})
 	}
 	for _, target := range explicit {
 		appendTarget(target)
 	}
-	now := unixNow()
 	for _, record := range book.List(now, discovery.MaxBookRecords) {
 		appendRecord(record)
 	}
+	orderWorkDiscoveryCandidates(queue)
 
 	results := make([]workDiscoveryRefreshResult, 0, min(attemptLimit, len(queue)))
 	successes := 0
@@ -240,6 +288,7 @@ func refreshWorkPeerBook(
 			for _, record := range records {
 				appendRecord(record)
 			}
+			orderWorkDiscoveryCandidates(queue)
 			if err := savePeerBook(data, book, unixNow()); err != nil {
 				return results, err
 			}
@@ -253,4 +302,25 @@ func refreshWorkPeerBook(
 		results = append(results, result)
 	}
 	return results, nil
+}
+
+func workDiscoveryRotation(self, candidate types.Hash, now uint64) types.Hash {
+	var epoch [8]byte
+	seconds := uint64(workDiscoveryRefreshInterval / time.Second)
+	binary.BigEndian.PutUint64(epoch[:], now/seconds)
+	return types.DomainHash(
+		"OMESH/p2p/bootstrap-rotation/v1", self[:], epoch[:], candidate[:],
+	)
+}
+
+func orderWorkDiscoveryCandidates(candidates []workDiscoveryCandidate) {
+	sort.Slice(candidates, func(left, right int) bool {
+		if candidates[left].bootstrap != candidates[right].bootstrap {
+			return candidates[left].bootstrap
+		}
+		if order := types.CompareHash(candidates[left].rotation, candidates[right].rotation); order != 0 {
+			return order < 0
+		}
+		return types.CompareHash(candidates[left].id, candidates[right].id) < 0
+	})
 }

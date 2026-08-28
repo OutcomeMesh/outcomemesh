@@ -271,6 +271,10 @@ WorkGraph selection filters for identity-bound direct QUIC addresses and a
 signed WorkGraph claim, uses score/latency/backoff plus mandatory ASN diversity,
 and counts success only after a live no-inventory exact-context probe.
 Reputation is persisted; bootstrap diversity remains local operator policy.
+The long-lived miner repeats that refresh every 30 minutes through the selected
+set. A local-identity/epoch keyed order rotates the bounded candidate prefix,
+and serialized atomic peerbook saves prevent self-renewal from overwriting a
+concurrently learned batch. Relay targets stay generation-stable during mining.
 
 Anchor propagation uses a third opt-in protocol role without a second sync
 grammar. On `/outcomemesh/chain-notify/1` the winning dialer runs the existing

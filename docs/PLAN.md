@@ -172,6 +172,8 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
   revalidation, concurrent-admission linearization, and gossip handoff.
 - Activation-bound peer exchange with signed height/capability records,
   atomic refresh, persistent sequence renewal, and live WorkGraph confirmation.
+- Epoch-keyed bootstrap rotation and periodic long-lived miner refresh with
+  serialized crash-safe peerbook persistence.
 
 ### Exit gates
 

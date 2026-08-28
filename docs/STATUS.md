@@ -400,6 +400,11 @@ Implemented in an isolated, not-yet-activated consensus package:
   ranked selection, then confirm every WorkGraph claim with the existing live
   inventory-free probe. The process fixture covers compatible refresh plus a
   fail-closed authenticated legacy peer;
+- long-lived cooperative miners repeat bounded refresh through their selected
+  peers every 30 minutes. Selected-bootstrap and learned tiers use a local-identity/epoch
+  keyed order, removing fixed peer-ID prefix starvation while preserving the
+  operator tier. Peerbook saves are serialized across renewal and learned-batch
+  persistence; rotation coverage and fatal maintenance shutdown run under race;
 - the distinct opt-in `/outcomemesh/chain-notify/1` protocol now reverses only
   chain session roles: a winning dialer serves, while the receiver initiates
   the same cumulative-work/header-first/full-replay synchronization. A selected
@@ -418,8 +423,8 @@ Implemented in an isolated, not-yet-activated consensus package:
 No WorkGraph field has entered a version-0 block yet. The v1 store and opt-in
 QUIC session remain isolated from every ordinary v0 chain/CLI path and are
 reachable only through the explicitly marked experimental commands;
-bootstrap-rotation and long-round clock-skew/churn soaks, topology-derived peer
-selection,
+adversarial discovery/eclipse and long-round clock-skew/churn soaks,
+topology-derived peer selection,
 history-anchored archival pruning, extended filesystem-fault/soak campaigns,
 production gossip-budget calibration, and broader adaptive economic-strategy
 analysis remain before activation.

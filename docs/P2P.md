@@ -194,6 +194,12 @@ verifies the live WorkGraph protocol and byte-identical mining context without
 announcing share IDs. Selection fails closed if it cannot reach the requested
 count; failed capability probes update persisted dial backoff.
 
+After startup, selected peers become the bootstrap tier for another bounded
+refresh every 30 minutes. Selected bootstrap entries stay ahead of other learned
+entries, while ordering inside each tier is the hash of local identity, refresh epoch, and
+candidate identity. That removes permanent fixed-prefix starvation under a
+small attempt budget without pretending to solve Sybil or eclipse attacks.
+
 `/outcomemesh/chain-notify/1` reuses the complete chain-v1 wire and validation
 state machine with inverted connection roles. The winning dialer serves; the
 inbound handler synchronizes. Thus a notification grants no block authority and
@@ -229,8 +235,10 @@ records, shortens the deterministic response prefix to the negotiated frame
 budget, and accepts at most eight requests per session. The receiver validates
 the entire batch before one atomic merge. WorkGraph servers and long-lived
 miners publish a one-hour self-record and replace it every 30 minutes with a
-monotonic sequence. These capability assertions optimize routing; only a live
-protocol handshake proves current support.
+monotonic sequence. Peerbook file replacement is serialized with refresh so a
+concurrent renewal cannot overwrite a newer learned batch. These capability
+assertions optimize routing; only a live protocol handshake proves current
+support.
 
 Records live for at most 24 hours. The address book has a hard record cap,
 prunes expiry, rejects stale sequence numbers, returns detached deterministic

@@ -229,12 +229,20 @@ most eight discovery requests. Only exact-activation version-1 records claiming
 versioned-chain support are served or admitted; a live WorkGraph probe remains
 authoritative before selection.
 
+Long-lived miners refresh again every 30 minutes through the selected peer set.
+Selected bootstrap identities remain a separate first tier. Ordering within a
+tier is keyed by local identity and the refresh epoch, preventing a bounded
+attempt budget from selecting one permanent lexicographic prefix. Renewal and
+learned-batch persistence share one process-local save lock so an older atomic
+snapshot cannot win a concurrent rename. Periodic network failure is fail-soft;
+a local persistence or manager failure cancels mining and is reported.
+
 These constraints limit parsing, replay, and accidental cross-activation risks;
 they do not make discovery Sybil-resistant. A bootstrap peer can still return a
 biased or eclipse-oriented view, signed capabilities do not prove reachability,
 and the ASN table is local operator input rather than a trusted network fact.
-Production bootstrap rotation, independent seeds, monitoring, and adversarial
-soak testing remain required.
+Independent seeds, monitoring, and adversarial multi-operator eclipse soaks
+remain required.
 
 Anchor notification is separated from ordinary chain pull at the libp2p
 protocol ID, but deliberately reuses its verified session. The remote winner
