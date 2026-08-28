@@ -53,6 +53,7 @@ Go 1.26.7 is the pinned toolchain. With it available as `go`:
 ```sh
 make test-all
 make test-process
+make test-work-rollover-soak
 make build
 ```
 
@@ -63,6 +64,10 @@ sides of commit, replay-checkpoint rotation, and stale-fork pruning durability
 boundaries. Raise the
 v0 QUIC soak length with, for example,
 `OUTCOMEMESH_SOAK_CYCLES=25 make test-process` (hard cap: 100 cycles).
+`test-work-rollover-soak` runs 256 timestamp generations across four in-memory
+WorkGraph nodes with a 60-second clock spread, node churn, deterministic stream
+loss, full DAG convergence, and final anchor closure. Override the bounded
+8..1,000 generation count with `WORKROLLOVERCYCLES=1000`.
 
 Create a wallet, initialize a local chain to that wallet, mine, transfer, and
 replay-verify it:

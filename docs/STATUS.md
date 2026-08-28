@@ -419,11 +419,17 @@ Implemented in an isolated, not-yet-activated consensus package:
   three persistent WorkGraph nodes at height 6 while a fourth authenticated
   v0-only peer rejects both optional protocols without delaying the compatible
   peers; all three mixed chains replay-verify and survive restart.
+- a parameterized four-node rollover harness advances 32 generations by
+  default (256 in the dedicated Make target) across a 60-second clock spread,
+  offline windows, and deterministic stream loss, then requires identical DAG
+  inventories and full final anchor closure. It found a ranked-parent ordering
+  defect: coverage selection is now separated from canonical Work-ID encoding,
+  with a focused regression and repeated race coverage.
 
 No WorkGraph field has entered a version-0 block yet. The v1 store and opt-in
 QUIC session remain isolated from every ordinary v0 chain/CLI path and are
 reachable only through the explicitly marked experimental commands;
-adversarial discovery/eclipse and long-round clock-skew/churn soaks,
+adversarial discovery/eclipse and longer real-QUIC rapid-parent churn soaks,
 topology-derived peer selection,
 history-anchored archival pruning, extended filesystem-fault/soak campaigns,
 production gossip-budget calibration, and broader adaptive economic-strategy

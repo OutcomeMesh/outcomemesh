@@ -74,8 +74,12 @@ remain exact; any change requires an unrelated empty round. Because timestamp
 is deliberately absent from the stable WorkGraph session context, in-flight
 relay sessions keep using the same bounded pool. Local gossip reseeds all
 retained IDs with per-peer deduplication, closing the snapshot/admission race.
-Long-round clock-skew and churn behavior remains an activation soak target, not
-an unimplemented lifecycle boundary.
+A deterministic four-node harness now runs repeated timestamp generations with
+a 60-second clock spread, two offline windows, and dropped relay streams before
+requiring identical inventories and a final anchor closure. It exposed and now
+guards the canonical boundary after coverage-ranked parent selection: selected
+tips are re-sorted by Work ID before entering a share template. Longer real-QUIC
+and rapid-parent-change campaigns remain activation gates.
 
 ## Difficulty and validity
 
@@ -391,10 +395,11 @@ out-of-order children, resolves them only after all parents are accepted, and
 caps count/bytes at the consensus batch limits. It admits at most 255 distinct
 weak-share miners, reserving the 256th reward identity for the still-unknown
 anchor. Mining parents are selected from accepted tips with a saturating
-O(parent-count) coverage score and deterministic Work-ID tie-break; after a hard
-seal is found, the pool reconstructs and consensus-validates its exact canonical
-closure. Hard-target shares are redirected to the block path rather than being
-inserted and double-counted.
+O(parent-count) coverage score and deterministic Work-ID tie-break, then the
+selected set is re-sorted into canonical Work-ID order before encoding. After a
+hard seal is found, the pool reconstructs and consensus-validates its exact
+canonical closure. Hard-target shares are redirected to the block path rather
+than being inserted and double-counted.
 
 The fork coordinator integrates the activation boundary without changing active
 version-0 storage. For every candidate branch it reconstructs resource

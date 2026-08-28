@@ -1,7 +1,8 @@
 GO ?= go
 FUZZTIME ?= 3s
+WORKROLLOVERCYCLES ?= 256
 
-.PHONY: build fmt vet test test-race test-fuzz-smoke test-process test-all
+.PHONY: build fmt vet test test-race test-fuzz-smoke test-process test-work-rollover-soak test-all
 
 build:
 	$(GO) build -trimpath -o bin/omd ./cmd/omd
@@ -48,5 +49,8 @@ test-fuzz-smoke:
 test-process:
 	$(GO) test -tags=integration ./cmd/omd -run '^TestProcess(QUICRestartSoak|WorkGraphActivationQUICRestart)$$' -count=1 -timeout=10m
 	$(GO) test -tags=integration ./node/workchain -run '^TestPebbleProcessCrashAtomicity$$' -count=1 -timeout=2m
+
+test-work-rollover-soak:
+	OUTCOMEMESH_WORK_ROLLOVER_SOAK_CYCLES=$(WORKROLLOVERCYCLES) $(GO) test ./cmd/omd -run '^TestMultiNodeWorkRolloverConvergesAcrossClockSkewChurnAndRelayLoss$$' -count=1 -timeout=5m
 
 test-all: fmt vet test-race

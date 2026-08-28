@@ -288,8 +288,10 @@ func (pool *Pool) Shares(ids []types.Hash) ([]workgraph.Share, error) {
 }
 
 // Parents selects at most four accepted tips by a saturating additive ancestor
-// coverage score, then Work ID. The score is bounded O(parents) admission
-// policy rather than an exact closure scan and is deterministic for one view.
+// coverage score, then Work ID. Selection is ranked, but the returned IDs are
+// re-sorted by Work ID because the consensus share encoding requires canonical
+// parent order. The score is bounded O(parents) admission policy rather than an
+// exact closure scan and is deterministic for one view.
 func (pool *Pool) Parents() []types.Hash {
 	if pool == nil {
 		return nil
@@ -311,6 +313,9 @@ func (pool *Pool) Parents() []types.Hash {
 	if len(tips) > workgraph.MaxParents {
 		tips = tips[:workgraph.MaxParents]
 	}
+	sort.Slice(tips, func(left, right int) bool {
+		return types.CompareHash(tips[left], tips[right]) < 0
+	})
 	return tips
 }
 

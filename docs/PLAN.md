@@ -174,6 +174,8 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
   atomic refresh, persistent sequence renewal, and live WorkGraph confirmation.
 - Epoch-keyed bootstrap rotation and periodic long-lived miner refresh with
   serialized crash-safe peerbook persistence.
+- Canonical Work-ID ordering after coverage-ranked parent selection and a
+  parameterized four-node rollover/churn/loss convergence soak.
 
 ### Exit gates
 

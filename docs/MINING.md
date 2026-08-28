@@ -164,5 +164,5 @@ into deduplicated per-peer queues, so pending work is not abandoned at handoff.
 - external PoW review and hash-rate simulations;
 - production calibration of fee delay, share gossip queues, and miner strategy;
 - adversarial discovery/eclipse soaks across diverse operators and networks;
-- multi-node long-round rollover soaks with clock skew, churn, and relay loss;
+- longer real-QUIC rollover soaks with clock skew and rapid parent churn;
 - extended filesystem-fault storage soaks and longer multi-node QUIC churn.

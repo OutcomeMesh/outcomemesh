@@ -117,8 +117,11 @@ pool then revalidates every retained share under the later timestamp. Concurrent
 admission retries if it observed the old generation, so there is no copy window
 or unlocked migration. Capability negotiation continues to use only the stable
 network/height/parent/target/payload tuple, and gossip reseeds retained IDs after
-each rollover. Public activation still requires long-running clock-skew, relay
-failure, and rapid-parent-change tests of this boundary.
+each rollover. Coverage-ranked pool tips are re-sorted by Work ID before they
+enter the strictly canonical parent vector. A parameterized four-node harness
+now covers a 60-second clock spread, repeated rollovers, offline windows, stream
+loss, convergence, and full final anchor closure. Public activation still
+requires longer real-QUIC and rapid-parent-change tests of this boundary.
 
 Directly paying current transaction fees to the current anchor creates a
 separate payload-fragmentation incentive. Version 1 therefore prototypes a

@@ -90,6 +90,50 @@ func TestInventoryMissingAndBodiesStayCanonicalAndDetached(t *testing.T) {
 	}
 }
 
+func TestRankedParentSelectionReturnsCanonicalWorkIDOrder(t *testing.T) {
+	t.Parallel()
+
+	validation := testContext()
+	pool, _ := New(validation)
+	root := mineWeakOnly(t, testShare(validation, "ranked-root", nil))
+	rootID, err := pool.Add(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	child := mineWeakOnly(t, testShare(validation, "ranked-child", []types.Hash{rootID}))
+	childID, err := pool.Add(child)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var independent workgraph.Share
+	var independentID types.Hash
+	for index := 0; index < 1_000; index++ {
+		candidate := mineWeakOnly(t, testShare(validation, "ranked-independent-"+string(rune(index)), nil))
+		candidateID, err := candidate.ID()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if types.CompareHash(candidateID, childID) < 0 {
+			independent = candidate
+			independentID = candidateID
+			break
+		}
+	}
+	if independentID.IsZero() {
+		t.Fatal("could not construct coverage/Work-ID ordering regression")
+	}
+	if _, err := pool.Add(independent); err != nil {
+		t.Fatal(err)
+	}
+	parents := pool.Parents()
+	if len(parents) != 2 || parents[0] != independentID || parents[1] != childID {
+		t.Fatalf("canonical selected parents=%v, want [%s %s]", parents, independentID, childID)
+	}
+	if err := testShare(validation, "ranked-template", parents).ValidateBasic(); err != nil {
+		t.Fatalf("selected parents do not form a canonical template: %v", err)
+	}
+}
+
 func TestTimestampRolloverRetainsAndExtendsExactDAG(t *testing.T) {
 	t.Parallel()
 

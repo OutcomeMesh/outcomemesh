@@ -276,6 +276,11 @@ set. A local-identity/epoch keyed order rotates the bounded candidate prefix,
 and serialized atomic peerbook saves prevent self-renewal from overwriting a
 concurrently learned batch. Relay targets stay generation-stable during mining.
 
+Pool tip selection ranks by bounded ancestor coverage, but ranking order never
+enters consensus bytes. After choosing at most four tips, the pool re-sorts them
+by Work ID before constructing a weak or hard share. A four-node deterministic
+rollover harness exercises this boundary under skew, churn, and stream loss.
+
 Anchor propagation uses a third opt-in protocol role without a second sync
 grammar. On `/outcomemesh/chain-notify/1` the winning dialer runs the existing
 versioned responder and the notified node runs the existing synchronizer. The
