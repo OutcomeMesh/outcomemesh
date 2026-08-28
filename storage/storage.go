@@ -103,11 +103,25 @@ func NextTip(previous Tip, candidate block.Block) (Tip, error) {
 // wins. Equal-work tips are resolved by the lexicographically smaller block ID
 // so every implementation makes the same choice.
 func BetterTip(candidate, current Tip) bool {
-	workOrder := new(big.Int).SetBytes(candidate.CumulativeWork).Cmp(new(big.Int).SetBytes(current.CumulativeWork))
+	workOrder := CompareWork(candidate, current)
 	if workOrder != 0 {
 		return workOrder > 0
 	}
 	return bytes.Compare(candidate.ID[:], current.ID[:]) < 0
+}
+
+// CompareWork compares cumulative proof of work without imposing an
+// equal-work block-ID policy. Versioned fork-choice implementations use this
+// to keep an already selected incumbent on an exact tie, preventing a late
+// publisher from grinding a globally winning identifier.
+func CompareWork(left, right Tip) int {
+	return new(big.Int).SetBytes(left.CumulativeWork).Cmp(new(big.Int).SetBytes(right.CumulativeWork))
+}
+
+// MoreWork reports whether candidate has strictly greater cumulative proof of
+// work. Exact ties return false regardless of either tip ID.
+func MoreWork(candidate, current Tip) bool {
+	return CompareWork(candidate, current) > 0
 }
 
 func (tip Tip) Parent() block.Parent {

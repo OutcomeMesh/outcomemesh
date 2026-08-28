@@ -283,7 +283,10 @@ func (store *Store) Commit(
 		tip: cloneTip(next), state: stateCopy, block: &blockCopy, result: result,
 		position: position, history: history,
 	}
-	better := storage.BetterTip(next, store.nodes[store.tipID].tip)
+	// Version 1 keeps the incumbent on exact cumulative-work ties. A universal
+	// block-ID tie-break can be selectively ground by a withheld publisher;
+	// strictly greater hard work is the only automatic reorganization trigger.
+	better := storage.MoreWork(next, store.nodes[store.tipID].tip)
 	if store.persistence != nil {
 		canonicalTip := store.tipID
 		if better {

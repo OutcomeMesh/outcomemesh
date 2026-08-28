@@ -14,10 +14,14 @@ func TestActivationReviewCorpus(t *testing.T) {
 	}
 	if len(document.Result.SelfishMining.Points) != 155 ||
 		len(document.Result.TrailDepths) != int(MaxTrailDepth) ||
-		len(document.Result.FeeFragmentation.Points) != 72 {
-		t.Fatalf("review dimensions: selfish=%d trail_depths=%d fees=%d",
+		len(document.Result.FeeFragmentation.Points) != 72 ||
+		document.Result.RejectedGlobalTie != (GlobalTieBreakGrindingResult{
+			PotentialRaces: 10_000, PublishedRaces: 4_959, SuppressedRaces: 5_041,
+			PublishedAdoptions: 4_959, FavorableIDPPM: 495_900, PublishedAdoptionPPM: 1_000_000,
+		}) {
+		t.Fatalf("review dimensions: selfish=%d trail_depths=%d fees=%d global_tie=%+v",
 			len(document.Result.SelfishMining.Points), len(document.Result.TrailDepths),
-			len(document.Result.FeeFragmentation.Points))
+			len(document.Result.FeeFragmentation.Points), document.Result.RejectedGlobalTie)
 	}
 	wantSelfish := []SelfishProfitThreshold{
 		{TieAdoptionPPM: 0, FirstProfitableHashPPM: 340_000, Found: true},
@@ -43,7 +47,7 @@ func TestActivationReviewCorpus(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const wantDigest = "1baabb849b82781aafec4dc27ce3bb962df829fc032afd8e43a442c36159bc8a"
+	const wantDigest = "8d20c51d815a2149d505b361b14840c087e587fdcdaa203060a9ff1c69c3bc16"
 	if got := hex.EncodeToString(digest[:]); got != wantDigest {
 		t.Fatalf("review digest = %s, want %s", got, wantDigest)
 	}

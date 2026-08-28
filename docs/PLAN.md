@@ -180,7 +180,10 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
   parameterized four-node rollover/churn/loss convergence soak.
 - Versioned PoW/economic activation-review packet with a deterministic result
   digest, fine standard/bounded-trail selfish-mining and private-fee grids, and
-  precommitted external pass/fail gates.
+  precommitted external pass/fail gates. A global-ID selective-publication
+  counterexample rejects deterministic v1 equal-work displacement; version 1
+  persists the local arrival incumbent and switches only for strictly more
+  cumulative hard work.
 - Integer-only stochastic PoW paths for both target rules with canonical
   observation digests and timestamp/hash-rate regression corpora.
 - Versioned public-testnet calibration evidence with integer-only one-sided 99%

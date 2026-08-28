@@ -67,7 +67,7 @@ func TestNegotiationRejectsEveryImmutableBoundaryMismatch(t *testing.T) {
 	}
 }
 
-func TestPeerChoiceUsesWorkThenSmallerID(t *testing.T) {
+func TestPeerChoiceUsesWorkThenVersionScopedTiePolicy(t *testing.T) {
 	t.Parallel()
 
 	protocol := testProtocol(t)
@@ -86,13 +86,19 @@ func TestPeerChoiceUsesWorkThenSmallerID(t *testing.T) {
 	local.ID = types.Hash{}
 	local.ID[31] = 2
 	better, err = protocol.PeerIsBetter(local, remote)
+	if err != nil || better {
+		t.Fatalf("version-1 equal-work peer displaced incumbent better=%v err=%v", better, err)
+	}
+	local.Height = protocol.config.ActivationHeight - 1
+	remote.TipHeight = protocol.config.ActivationHeight - 1
+	better, err = protocol.PeerIsBetter(local, remote)
 	if err != nil || !better {
-		t.Fatalf("smaller-ID peer better=%v err=%v", better, err)
+		t.Fatalf("version-0 smaller-ID peer better=%v err=%v", better, err)
 	}
 	remote.TipID[31] = 3
 	better, err = protocol.PeerIsBetter(local, remote)
 	if err != nil || better {
-		t.Fatalf("larger-ID peer better=%v err=%v", better, err)
+		t.Fatalf("version-0 larger-ID peer better=%v err=%v", better, err)
 	}
 }
 

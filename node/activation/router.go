@@ -75,6 +75,8 @@ type Router struct {
 	config      Config
 	trees       map[types.Hash]*workchain.Store
 	workBases   map[types.Hash]types.Hash
+	selectedID  types.Hash
+	selectDirty bool
 	closed      bool
 }
 
@@ -102,6 +104,7 @@ func New(ledger storage.Ledger, config Config) (*Router, error) {
 	result := &Router{
 		ledger: ledger, legacy: legacy, config: config,
 		trees: make(map[types.Hash]*workchain.Store), workBases: make(map[types.Hash]types.Hash),
+		selectedID: tip.ID,
 	}
 	if config.WorkRoot != "" {
 		if err := result.openPersistentTrees(); err != nil {
@@ -137,6 +140,10 @@ func (router *Router) Submit(candidate Block) (storage.Tip, error) {
 	if router.closed {
 		router.mu.Unlock()
 		return storage.Tip{}, storage.ErrClosed
+	}
+	if err := router.persistSelectionLocked(); err != nil {
+		router.mu.Unlock()
+		return storage.Tip{}, err
 	}
 	tip, admission, err := router.submitLocked(candidate)
 	observer := router.config.ObserveWork
@@ -202,6 +209,9 @@ func (router *Router) submitLocked(candidate Block) (storage.Tip, *WorkAdmission
 	tip, _, err := router.bestLocked()
 	if err != nil {
 		return storage.Tip{}, admission, err
+	}
+	if err := router.persistSelectionLocked(); err != nil {
+		return tip, admission, err
 	}
 	if admission != nil {
 		admission.Selected = admission.ID == tip.ID
@@ -403,8 +413,9 @@ func (router *Router) Close() error {
 		router.mu.Unlock()
 		return storage.ErrClosed
 	}
+	selectionErr := router.persistSelectionLocked()
 	router.closed = true
-	err := router.closeTreesLocked()
+	err := errors.Join(selectionErr, router.closeTreesLocked())
 	router.mu.Unlock()
 	// Wait until callbacks for admissions committed before closed=true have
 	// durably handed their events to the operational observer.
@@ -542,29 +553,87 @@ func (router *Router) recentLegacyTimestampsLocked(tip storage.Tip) ([]uint64, e
 }
 
 func (router *Router) bestLocked() (storage.Tip, *workchain.Store, error) {
-	best, err := router.ledger.Tip()
+	legacyTip, err := router.ledger.Tip()
 	if err != nil {
 		return storage.Tip{}, nil, err
 	}
-	if best.Height >= router.config.Work.ActivationHeight {
+	if legacyTip.Height >= router.config.Work.ActivationHeight {
 		return storage.Tip{}, nil, storage.ErrCorrupt
+	}
+	best := legacyTip
+	var selected *workchain.Store
+	migrating := router.selectedID.IsZero()
+	if !router.selectedID.IsZero() {
+		incumbent, incumbentTree, err := router.selectedTipLocked()
+		if err != nil {
+			return storage.Tip{}, nil, err
+		}
+		if incumbent.Height >= router.config.Work.ActivationHeight {
+			best = incumbent
+			selected = incumbentTree
+		}
 	}
 	ids := make([]types.Hash, 0, len(router.trees))
 	for id := range router.trees {
 		ids = append(ids, id)
 	}
 	sort.Slice(ids, func(left, right int) bool { return types.CompareHash(ids[left], ids[right]) < 0 })
-	var selected *workchain.Store
 	for _, id := range ids {
 		tree := router.trees[id]
 		tip, err := tree.Tip()
 		if err != nil {
 			return storage.Tip{}, nil, err
 		}
-		if storage.BetterTip(tip, best) {
+		if (migrating && storage.BetterTip(tip, best)) || (!migrating && storage.MoreWork(tip, best)) {
 			best = tip
 			selected = tree
 		}
 	}
+	if router.selectedID != best.ID {
+		router.selectedID = best.ID
+		router.selectDirty = true
+	}
 	return best, selected, nil
+}
+
+func (router *Router) selectedTipLocked() (storage.Tip, *workchain.Store, error) {
+	if baseID, exists := router.workBases[router.selectedID]; exists {
+		tree := router.trees[baseID]
+		if tree == nil {
+			return storage.Tip{}, nil, storage.ErrCorrupt
+		}
+		tip, err := tree.TipByID(router.selectedID)
+		if err != nil {
+			return storage.Tip{}, nil, storage.ErrCorrupt
+		}
+		current, err := tree.Tip()
+		if err != nil {
+			return storage.Tip{}, nil, storage.ErrCorrupt
+		}
+		workOrder := storage.CompareWork(current, tip)
+		if workOrder < 0 || (workOrder == 0 && current.ID != tip.ID) {
+			return storage.Tip{}, nil, storage.ErrCorrupt
+		}
+		return tip, tree, nil
+	}
+	tip, err := router.ledger.TipByID(router.selectedID)
+	if err != nil {
+		return storage.Tip{}, nil, storage.ErrCorrupt
+	}
+	return tip, nil, nil
+}
+
+func (router *Router) persistSelectionLocked() error {
+	if !router.selectDirty {
+		return nil
+	}
+	if router.config.WorkRoot == "" {
+		router.selectDirty = false
+		return nil
+	}
+	if err := saveWorkForestSelection(router.config.WorkRoot, router.selectedID); err != nil {
+		return err
+	}
+	router.selectDirty = false
+	return nil
 }

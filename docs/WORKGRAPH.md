@@ -331,7 +331,7 @@ ephemeral until a hard anchor commits their closure; relay alone never writes
 them to the chain forest. The separate header-first versioned chain session has
 its own per-peer/global concurrency and admission scopes. Its multiple
 activation trees are durably reopened and re-indexed by the optional
-catalog-free forest.
+bounded forest, including the persisted local equal-work incumbent.
 
 For outbound relay, a round can announce an explicit sorted subset after
 proving every ID is locally owned. The remote negotiated inventory limit may
@@ -405,8 +405,11 @@ The fork coordinator integrates the activation boundary without changing active
 version-0 storage. For every candidate branch it reconstructs resource
 state, the last 11 timestamps, lagged target, fee queue, and predecessor earning;
 only hard-target work is added to cumulative fork weight. Competing activation
-anchors, equal-work tie-breaking, a higher-work side-branch reorganization, and
-branch-local delayed rewards are executable tests. Its isolated Pebble schema
+anchors, arrival-incumbent equal-work handling, a higher-work side-branch
+reorganization, and branch-local delayed rewards are executable tests. Two
+nodes may retain different exact-work tips until one is extended; this prevents
+a late publisher from grinding one ID that deterministically displaces every
+honest node. Its isolated Pebble schema
 persists canonical block bytes, immutable resource deltas, history, fee queues,
 cumulative work, a checked logical-history counter, and selected tip in one
 synchronous batch. Schema 3 requires every non-base node to carry exactly one

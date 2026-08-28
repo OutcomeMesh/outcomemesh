@@ -356,8 +356,15 @@ The leading canonical `uint16` selects the unchanged version-specific decoder.
 Every stored version-0 node at `activation_height-1`, including a non-canonical
 side node, may anchor an independent version-1 tree. Fork choice compares the
 best tip from every such tree and the pre-activation ledger by cumulative hard
-proof of work, followed by the common lexicographic ID tie-break. Thus activation
-does not turn the first observed boundary parent into an implicit checkpoint.
+proof of work. A strictly heavier tip replaces the selected version-1 tip; an
+exact-work tie keeps the local incumbent. The incumbent is persisted and sync
+does not fetch an equal-work version-1 peer solely because its ID is smaller.
+Nodes may therefore hold different tips during a tie and converge when either
+branch gains more hard work, as ordinary proof-of-work nodes do. This local rule
+prevents a withheld publisher from revealing only IDs that win one universal,
+grindable tie-break. Version-0 fork choice remains byte-for-byte compatible and
+continues to use its lexicographic ID tie-break. Activation still does not turn
+the first observed boundary parent into an implicit checkpoint.
 
 The inactive chain-protocol-v1 codec carries this same tagged union in appended
 `VersionedBlock` and `VersionedHeaders` message types. Each object remains in

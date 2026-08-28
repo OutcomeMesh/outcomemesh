@@ -575,7 +575,7 @@ func (persistence *workPersistence) load(store *Store, base Base) error {
 		return storage.ErrCorrupt
 	}
 	for _, node := range nodes {
-		if storage.BetterTip(node.tip, nodes[tipID].tip) {
+		if storage.MoreWork(node.tip, nodes[tipID].tip) {
 			return storage.ErrCorrupt
 		}
 	}

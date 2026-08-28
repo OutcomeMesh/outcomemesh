@@ -169,7 +169,9 @@ and its version-2 report digest is
 
 - build the live collector that obtains controlled tie outcomes and canonical
   outcomes from an independently reproducible network experiment (hard-anchor
-  first admission and work classification are now connected);
+  first admission and work classification are now connected). Trials must
+  precommit the tested branch and delivery schedule, record each miner's local
+  version-1 incumbent, and never select trials after seeing either block ID;
 - deploy and publish the clustering policy and its digest before each real
   observation window;
 - operate multiple independently controlled observers and document how their

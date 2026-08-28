@@ -109,8 +109,10 @@ func (protocol *Protocol) Negotiate(remote wire.ChainHello) (Limits, error) {
 	return Limits{MaxFrameBytes: maximum, Features: remote.Features & protocol.config.Features}, nil
 }
 
-// PeerIsBetter applies the same cumulative-hard-work and smaller-ID tie break
-// as storage without trusting the remote height or state root for fork choice.
+// PeerIsBetter preserves the version-0 smaller-ID tie break below activation.
+// Once the local tip is version 1, exact-work ties keep that incumbent so a
+// late publisher cannot grind one globally preferred ID. The remote height is
+// not trusted to select the rule.
 func (protocol *Protocol) PeerIsBetter(local storage.Tip, remote wire.ChainHello) (bool, error) {
 	if _, err := protocol.Negotiate(remote); err != nil {
 		return false, err
@@ -121,6 +123,9 @@ func (protocol *Protocol) PeerIsBetter(local storage.Tip, remote wire.ChainHello
 	order := new(big.Int).SetBytes(remote.CumulativeWork).Cmp(new(big.Int).SetBytes(local.CumulativeWork))
 	if order != 0 {
 		return order > 0, nil
+	}
+	if local.Height >= protocol.config.ActivationHeight {
+		return false, nil
 	}
 	return bytes.Compare(remote.TipID[:], local.ID[:]) < 0, nil
 }

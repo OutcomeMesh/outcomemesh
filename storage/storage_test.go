@@ -38,6 +38,10 @@ func TestBetterTipUsesWorkThenDeterministicIDTieBreak(t *testing.T) {
 	if !BetterTip(smallerID, largerID) || BetterTip(largerID, smallerID) {
 		t.Fatal("equal-work fork choice did not prefer smaller tip ID")
 	}
+	if MoreWork(smallerID, largerID) || MoreWork(largerID, smallerID) ||
+		CompareWork(smallerID, largerID) != 0 {
+		t.Fatal("work-only comparison changed an exact tie")
+	}
 }
 
 type timestampLedger struct {

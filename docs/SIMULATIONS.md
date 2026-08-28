@@ -150,8 +150,10 @@ configuration are emitted by `omreview`. Four more 155-point grids keep mining
 a losing branch up to public-lead deficits one through four. Their respective
 threshold rows are `37/33/27/23/16`, `38/34/31/25/16`, `38/36/33/25/16`, and
 `40/38/36/25/16`; no bounded trail depth lowers the conservative standard
-boundary in this corpus. The frozen version-3 document digest and precommitted
-launch gates are in `ACTIVATION_REVIEW.md`.
+boundary in this corpus. Version 4 also freezes 10,000 synthetic equal-work ID
+pairs: a selective late publisher exposes only 4,959 favorable races and wins
+all of those under the rejected global smaller-ID rule. The frozen document
+digest and precommitted launch gates are in `ACTIVATION_REVIEW.md`.
 
 The separate `omcalibrate` path evaluates live ER-5 aggregates without changing
 the frozen economic corpus. Its integer-only one-sided 99% Hoeffding bound

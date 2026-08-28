@@ -297,11 +297,12 @@ Implemented in an isolated, not-yet-activated consensus package:
   dispatches unchanged canonical encodings from their leading version, permits
   v0 only below `H` and v1 only from `H`, and lazily creates one WorkChain tree
   for every known v0 parent at `H-1`. Global fork choice compares their best
-  tips by cumulative hard work and the shared ID tie-break. The executable
-  boundary fixture extends one base and then reorganizes through a different
-  v0 base, proving activation does not freeze the first canonical parent. Both
-  validators consume one explicit admission-time sample, and the routed decoder
-  is a fuzz target.
+  tips by cumulative hard work; exact v1 ties preserve the persisted local
+  incumbent while strictly more work reorganizes it. This replaces a globally
+  grindable ID rule without changing v0 compatibility. The executable boundary
+  fixture preserves a cross-base tie across restart, then reorganizes through
+  a different v0 base with more work. Both validators consume one explicit
+  admission-time sample, and routed/selection decoders are fuzz targets.
 - strict block/header version dispatch now lives in consensus-pure
   `core/chainblock`, shared by the activation router and an inactive chain wire
   codec. Appended `VersionedBlock` and `VersionedHeaders` envelopes preserve the
@@ -429,11 +430,12 @@ Implemented in an isolated, not-yet-activated consensus package:
   defect: coverage selection is now separated from canonical Work-ID encoding,
   with a focused regression and repeated race coverage.
 - a versioned economic activation corpus now emits 155 standard-withholding,
-  620 bounded trail-depth, and 72 direct-versus-delayed private-fee points as
-  deterministic JSON. Its version-3 canonical SHA-256 digest is golden-tested;
-  depths one through four preserve branch-local share pools and none lowers the
-  standard profitability boundary. `ACTIVATION_REVIEW.md` separates this passed
-  internal reproduction from still-open independent review and testnet gates.
+  620 bounded trail-depth, 72 direct-versus-delayed private-fee points, and a
+  10,000-race global-ID counterexample as deterministic JSON. Its version-4
+  canonical SHA-256 digest is golden-tested. The counterexample publishes only
+  4,959 favorable IDs and reaches 100% adoption among published ties, which is
+  why v1 now keeps its incumbent. `ACTIVATION_REVIEW.md` separates internal
+  reproduction from still-open independent review and testnet gates.
 - the ER-5 public-testnet gate now has a versioned integer-only evaluator. It
   enforces the full 30-day window, conservative one-sided 99% Hoeffding bounds
   for controlled tie adoption and mining concentration, and a Bonferroni
@@ -441,7 +443,7 @@ Implemented in an isolated, not-yet-activated consensus package:
   version-2 evidence path verifies a bounded Ed25519-signed chain of gapless
   hourly records, exact per-cluster work conservation, trusted network/genesis/
   activation/policy bindings, and a published tail ID before `EvidencePass`.
-  A generated 720-record chain freezes the end-to-end digest. Live collection,
+  A generated 720-record chain freezes the end-to-end digest. Live collection
   now has an opt-in `work-serve-quic` path: post-commit first-admission events
   enter a crash-safe unique-ID journal, completed/empty hours are signed, and a
   canonical published mapping places unknown payout addresses in a conservative

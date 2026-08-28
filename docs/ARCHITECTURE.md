@@ -160,22 +160,26 @@ The router accepts v0 only below the configured activation height and v1 only
 at or above it. Every known v0 node at height `H-1` can independently seed a v1
 tree; it does not freeze whichever v0 branch happened to be canonical first.
 The global selected tip is the best cumulative hard-PoW tip across the legacy
-ledger and every v1 tree, using the existing deterministic ID tie-break. A test
-extends one activation base, then reorganizes through a different base with
-more hard work. Both versions receive the same explicit local admission-time
-sample. Canonical encodings remain unchanged and a strict leading-version
-decoder rejects a format on the wrong side of `H`.
+ledger and every v1 tree. Strictly greater work replaces it; exact v1 ties keep
+the local arrival incumbent instead of applying the grindable version-0 ID
+tie-break. A test extends one activation base, then reorganizes through a
+different base with more hard work. Both versions receive the same explicit
+local admission-time sample. Canonical encodings remain unchanged and a strict
+leading-version decoder rejects a format on the wrong side of `H`.
 
 Optional router persistence composes those independent Pebble trees as a
-catalog-free forest. The forest root has a synchronous schema-1 manifest and
-one canonical lowercase base-hash directory per tree. Creating a directory is
-fsynced before its database is opened, so an interrupted first admission leaves
-either no directory, a recoverable empty tree, or a complete WorkChain batch.
-On reopen, every directory must resolve to a known v0 node at `H-1`; the child
-database then revalidates its base/config binding and complete state history
-before the router rebuilds `block ID → base ID`. The global tip is recomputed
-from verified tree tips rather than stored in a cross-database catalog, avoiding
-a multi-DB commit point.
+bounded forest. The forest root has a synchronous schema-1 manifest, one
+canonical lowercase base-hash directory per tree, and a mode-0600 `SELECTED`
+checkpoint for the local incumbent. Creating a directory is fsynced before its
+database is opened, so an interrupted first admission leaves either no
+directory, a recoverable empty tree, or a complete WorkChain batch. On reopen,
+every directory must resolve to a known v0 node at `H-1`; the child database
+then revalidates its base/config binding and complete state history before the
+router rebuilds `block ID → base ID`. A missing `SELECTED` file migrates by
+choosing from verified tips; an unknown or malformed selection fails closed.
+If the stored choice is no longer heaviest, strictly greater verified work
+overrides it. This avoids requiring one atomic transaction across the separate
+tree databases while preserving arrival order across clean restart.
 
 The local forest defaults to at most 64 trees (hard maximum 1,024). Its 64 GiB
 logical history ceiling is statically partitioned across that maximum, yielding

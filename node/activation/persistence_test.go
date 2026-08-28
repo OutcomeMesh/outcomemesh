@@ -128,9 +128,129 @@ func TestPersistentRouterRecoversEveryActivationBaseAndForkChoice(t *testing.T) 
 		t.Fatalf("recovered forest status=%+v err=%v", forest, err)
 	}
 	entries, err := os.ReadDir(config.WorkRoot)
-	if err != nil || len(entries) != 3 {
+	if err != nil || len(entries) != 4 {
 		t.Fatalf("forest entries=%d err=%v", len(entries), err)
 	}
+}
+
+func TestPersistentRouterPreservesCrossBaseEqualWorkIncumbent(t *testing.T) {
+	document, config := persistentActivationSettings(t)
+	root := t.TempDir()
+	ledgerPath := filepath.Join(root, "ledger")
+	config.WorkRoot = filepath.Join(root, "work-forest")
+	config.MaxWorkTrees = 2
+	config.WorkPolicy = workchain.DefaultPolicy()
+	ledger, err := pebblestore.Open(ledgerPath, document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	router, err := New(ledger, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	genesisTip, _ := storage.GenesisTip(document)
+	baseA := mineLegacyOn(t, ledger, config.Legacy, genesisTip, activationAddress("selected-base-a"))
+	baseB := mineLegacyOn(t, ledger, config.Legacy, genesisTip, activationAddress("selected-base-b"))
+	baseAID, _ := baseA.Header.ID()
+	baseBID, _ := baseB.Header.ID()
+	for _, candidate := range []legacyblock.Block{baseA, baseB} {
+		routed, _ := Legacy(candidate, config.Work.ActivationHeight)
+		if _, err := router.Submit(routed); err != nil {
+			t.Fatal(err)
+		}
+	}
+	workA := mineWorkOn(t, router, baseAID, baseA.Header.Timestamp+60, "selected-work-a")
+	workB := mineWorkOn(t, router, baseBID, baseB.Header.Timestamp+60, "selected-work-b")
+	idA := submitWork(t, router, workA, config.Work.ActivationHeight)
+	idB := submitWork(t, router, workB, config.Work.ActivationHeight)
+	before, err := router.Tip()
+	if err != nil || before.ID != idA {
+		t.Fatalf("pre-restart incumbent=%+v want=%s competitor=%s err=%v", before, idA, idB, err)
+	}
+	if err := router.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := ledger.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	ledger, err = pebblestore.Open(ledgerPath, document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ledger.Close()
+	router, err = New(ledger, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer router.Close()
+	after, err := router.Tip()
+	if err != nil || after.ID != idA {
+		t.Fatalf("recovered incumbent=%+v want=%s err=%v", after, idA, err)
+	}
+	selectedInfo, err := os.Stat(filepath.Join(config.WorkRoot, workForestSelectedName))
+	if err != nil || selectedInfo.Mode().Perm() != 0o600 {
+		t.Fatalf("selected checkpoint mode=%v err=%v", selectedInfo, err)
+	}
+}
+
+func TestPersistentRouterMigratesMissingSelectionAndRejectsCorruption(t *testing.T) {
+	document, config := persistentActivationSettings(t)
+	root := t.TempDir()
+	config.WorkRoot = filepath.Join(root, "work-forest")
+	config.WorkPolicy = workchain.DefaultPolicy()
+	ledger, err := pebblestore.Open(filepath.Join(root, "ledger"), document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ledger.Close()
+	router, err := New(ledger, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := router.Close(); err != nil {
+		t.Fatal(err)
+	}
+	selectedPath := filepath.Join(config.WorkRoot, workForestSelectedName)
+	selectionBytes, err := os.ReadFile(selectedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(selectedPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(config.WorkRoot, workForestSelectPending), selectionBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	router, err = New(ledger, config)
+	if err != nil {
+		t.Fatalf("missing selection was not migrated: %v", err)
+	}
+	if err := router.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(selectedPath); err != nil {
+		t.Fatalf("migrated selection stat error=%v", err)
+	}
+	if _, err := os.Stat(filepath.Join(config.WorkRoot, workForestSelectPending)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("stale selection pending stat error=%v", err)
+	}
+	if err := os.WriteFile(selectedPath, append([]byte(nil), workForestSelectedMagic...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := New(ledger, config); !errors.Is(err, storage.ErrCorrupt) {
+		t.Fatalf("truncated selection error=%v", err)
+	}
+}
+
+func FuzzDecodeWorkForestSelectionNeverPanics(f *testing.F) {
+	selected := types.DomainHash("test/activation/selected-fuzz")
+	encoded := append(append([]byte(nil), workForestSelectedMagic...), selected[:]...)
+	f.Add(encoded)
+	f.Add([]byte{})
+	f.Fuzz(func(t *testing.T, input []byte) {
+		_, _ = decodeWorkForestSelection(input)
+	})
 }
 
 func TestPersistentRouterRecoversEmptyTreeCreatedBeforePebbleOpen(t *testing.T) {

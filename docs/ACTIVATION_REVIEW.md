@@ -20,10 +20,10 @@ jq -r .digest_sha256 economic-review.json
 The canonical compact document currently has SHA-256:
 
 ```text
-1baabb849b82781aafec4dc27ce3bb962df829fc032afd8e43a442c36159bc8a
+8d20c51d815a2149d505b361b14840c087e587fdcdaa203060a9ff1c69c3bc16
 ```
 
-`omreview` emits the complete configuration and all 847 aggregate result
+`omreview` emits the complete configuration and all 848 aggregate result
 points, not only the favorable boundaries. The document contains no wall-clock
 time, platform metadata, maps, floating point, or random seed from the host.
 Changing an assumption or result intentionally changes the digest.
@@ -54,6 +54,26 @@ unbounded/adaptive trailing, or combined policies. At some prior points an
 attack failed the three-seed rule even when aggregate advantage was positive.
 That sensitivity is one reason an independent, longer stochastic implementation
 is mandatory.
+
+### Rejected global ID tie-break
+
+The version-4 corpus also freezes a selective-publication counterexample for
+the former shared smaller-ID rule. From 10,000 deterministic equal-work ID
+pairs, a withheld publisher exposes the 4,959 races whose attacker ID is
+smaller and suppresses the other 5,041. Every exposed race is then selected by
+every node applying the same global rule: conditional published-race adoption
+is 1,000,000 ppm. Treating this as an ordinary propagation parameter would be
+wrong because the attacker chooses whether the trial becomes visible after
+learning both IDs.
+
+The inactive version-1 fork coordinator therefore no longer changes tips on an
+exact cumulative-work tie. It persists the local arrival incumbent and changes
+only for strictly greater hard work; versioned sync likewise ignores a merely
+smaller equal-work peer. Different nodes may temporarily mine different tips,
+which is the propagation behavior ER-5 must measure, and the next strictly
+heavier branch converges them. Version 0 retains its existing rule for
+compatibility. The counterexample remains in the corpus so a future refactor
+cannot silently reintroduce the rejected architecture.
 
 The fee corpus compares direct fees and the implemented delayed fee pool for
 one miner able to use a private template while all other hash remains on a

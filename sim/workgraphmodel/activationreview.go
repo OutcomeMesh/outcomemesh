@@ -7,20 +7,22 @@ import (
 	"github.com/outcomemesh/outcomemesh/core/workgraph"
 )
 
-const ActivationReviewSchema = "outcomemesh/economic-activation-review/v3"
+const ActivationReviewSchema = "outcomemesh/economic-activation-review/v4"
 
 // ActivationReviewConfig freezes the deterministic economic corpus separately
 // from its results. A reviewer can therefore change one assumption, rerun the
 // same code, and compare both the input document and its digest.
 type ActivationReviewConfig struct {
-	SelfishMining    SelfishSweepConfig
-	FeeFragmentation FeeFragmentationSweepConfig
+	SelfishMining     SelfishSweepConfig
+	FeeFragmentation  FeeFragmentationSweepConfig
+	RejectedGlobalTie GlobalTieBreakGrindingConfig
 }
 
 type ActivationReviewResult struct {
-	SelfishMining    SelfishSweepResult
-	TrailDepths      []ActivationTrailDepthResult
-	FeeFragmentation FeeFragmentationSweepResult
+	SelfishMining     SelfishSweepResult
+	TrailDepths       []ActivationTrailDepthResult
+	FeeFragmentation  FeeFragmentationSweepResult
+	RejectedGlobalTie GlobalTieBreakGrindingResult
 }
 
 type ActivationTrailDepthResult struct {
@@ -86,6 +88,10 @@ func CanonicalActivationReviewConfig() ActivationReviewConfig {
 			},
 			MaxPasses: 100,
 		},
+		RejectedGlobalTie: GlobalTieBreakGrindingConfig{
+			Trials: 10_000,
+			Seed:   0xd1310ba698dfb5ac,
+		},
 	}
 }
 
@@ -106,13 +112,18 @@ func RunActivationReview(config ActivationReviewConfig) (ActivationReviewDocumen
 	if err != nil {
 		return ActivationReviewDocument{}, err
 	}
+	tieBreak, err := RunGlobalTieBreakGrinding(config.RejectedGlobalTie)
+	if err != nil {
+		return ActivationReviewDocument{}, err
+	}
 	return ActivationReviewDocument{
 		Schema: ActivationReviewSchema,
 		Config: config,
 		Result: ActivationReviewResult{
-			SelfishMining:    selfish,
-			TrailDepths:      trails,
-			FeeFragmentation: fees,
+			SelfishMining:     selfish,
+			TrailDepths:       trails,
+			FeeFragmentation:  fees,
+			RejectedGlobalTie: tieBreak,
 		},
 	}, nil
 }

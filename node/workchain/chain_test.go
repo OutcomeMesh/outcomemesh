@@ -41,12 +41,8 @@ func TestActivationForkReorgUsesOnlyHardWorkAndBranchLocalPayouts(t *testing.T) 
 	winnerID := idA
 	loserID := idB
 	loserBlock := blockB
-	if current.ID == idB {
-		winnerID, loserID = idB, idA
-		loserBlock = blockA
-	}
 	if current.ID != winnerID || current.Height != parameters.ActivationHeight {
-		t.Fatalf("equal-work fork choice tip=%+v", current)
+		t.Fatalf("equal-work arrival incumbent tip=%+v want=%s", current, winnerID)
 	}
 	winningChild, winningChildResult := mineChild(
 		t, store, winnerID, loserBlock.Header.Seal.Timestamp+60, "winner-child",
@@ -82,12 +78,54 @@ func TestActivationForkReorgUsesOnlyHardWorkAndBranchLocalPayouts(t *testing.T) 
 	}
 	current, _ = store.Tip()
 	winningChildID, _ := winningChild.Header.ID()
-	want := losingChildID
-	if types.CompareHash(winningChildID, losingChildID) < 0 {
-		want = winningChildID
+	if current.ID != losingChildID {
+		t.Fatalf("equal cumulative work displaced incumbent tip=%s incumbent=%s competitor=%s",
+			current.ID, losingChildID, winningChildID)
 	}
-	if current.ID != want {
-		t.Fatalf("equal cumulative work tie tip=%s want=%s", current.ID, want)
+}
+
+func TestEqualWorkSelectionDependsOnArrivalUntilStrictlyExtended(t *testing.T) {
+	t.Parallel()
+
+	parameters := testParameters()
+	base := testBase(t, parameters)
+	left, err := New(base, parameters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	right, err := New(base, parameters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blockA, _ := mineChild(t, left, base.Tip.ID, base.Tip.Timestamp+60, "arrival-a")
+	blockB, _ := mineChild(t, left, base.Tip.ID, base.Tip.Timestamp+60, "arrival-b")
+	idA, _ := blockA.Header.ID()
+	idB, _ := blockB.Header.ID()
+	if _, _, err := left.Commit(blockA, blockA.Header.Seal.Timestamp); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := left.Commit(blockB, blockB.Header.Seal.Timestamp); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := right.Commit(blockB, blockB.Header.Seal.Timestamp); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := right.Commit(blockA, blockA.Header.Seal.Timestamp); err != nil {
+		t.Fatal(err)
+	}
+	leftTip, _ := left.Tip()
+	rightTip, _ := right.Tip()
+	if leftTip.ID != idA || rightTip.ID != idB || leftTip.ID == rightTip.ID {
+		t.Fatalf("arrival incumbents left=%s right=%s want=%s/%s", leftTip.ID, rightTip.ID, idA, idB)
+	}
+	child, _ := mineChild(t, left, idA, blockA.Header.Seal.Timestamp+60, "arrival-a-child")
+	childID, _ := child.Header.ID()
+	if _, _, err := right.Commit(child, child.Header.Seal.Timestamp); err != nil {
+		t.Fatal(err)
+	}
+	rightTip, _ = right.Tip()
+	if rightTip.ID != childID {
+		t.Fatalf("strictly extended branch did not converge tip=%s want=%s", rightTip.ID, childID)
 	}
 }
 

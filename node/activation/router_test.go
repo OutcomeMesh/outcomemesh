@@ -50,11 +50,8 @@ func TestRouterReorganizesAcrossDistinctActivationBases(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantTie := idA2
-	if types.CompareHash(idB2, idA2) < 0 {
-		wantTie = idB2
-	}
 	if tip.ID != wantTie || tip.Height != config.Work.ActivationHeight {
-		t.Fatalf("cross-base equal-work tip=%+v want=%s", tip, wantTie)
+		t.Fatalf("cross-base equal-work displaced incumbent tip=%+v want=%s competitor=%s", tip, wantTie, idB2)
 	}
 
 	workA3 := mineWorkOn(t, router, idA2, workA2.Header.Seal.Timestamp+60, "work-a-3")
