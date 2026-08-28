@@ -7,16 +7,21 @@ import (
 	"github.com/outcomemesh/outcomemesh/core/workgraph"
 )
 
+const MaxTrailDepth uint8 = 4
+
 type SelfishConfig struct {
-	HardDiscoveries  int
-	Seed             uint64
-	ShareRatio       uint64
-	AttackerHashPPM  uint32
-	TieAdoptionPPM   uint32
-	BlockSubsidy     uint64
-	FeesPerBlock     uint64
-	WithholdAnchors  bool
+	HardDiscoveries int
+	Seed            uint64
+	ShareRatio      uint64
+	AttackerHashPPM uint32
+	TieAdoptionPPM  uint32
+	BlockSubsidy    uint64
+	FeesPerBlock    uint64
+	WithholdAnchors bool
+	// TrailRetry is the compatibility shorthand for TrailDepth=1. Setting both
+	// fields is rejected so every strategy configuration has one representation.
 	TrailRetry       bool
+	TrailDepth       uint8
 	OmitHonestShares bool
 }
 
@@ -51,9 +56,9 @@ type tieRace struct {
 	honest   forkCandidate
 }
 
-// trailRace keeps the losing private branch alive for one additional anchor.
-// Before tied is set the attacker trails the public branch by one. If it catches
-// up, both two-anchor branches enter one final public race.
+// trailRace keeps a losing private branch alive within a configured deficit.
+// Before tied is set the attacker trails the public branch. If it catches up,
+// both equal-height branches enter one final public race.
 type trailRace struct {
 	attacker     []forkCandidate
 	honest       []forkCandidate
@@ -62,15 +67,30 @@ type trailRace struct {
 	tied         bool
 }
 
+func configuredTrailDepth(config SelfishConfig) (uint8, bool) {
+	if config.TrailRetry && config.TrailDepth != 0 {
+		return 0, false
+	}
+	if config.TrailRetry {
+		return 1, true
+	}
+	if config.TrailDepth > MaxTrailDepth {
+		return 0, false
+	}
+	return config.TrailDepth, true
+}
+
 // RunSelfish models adaptive hard-anchor withholding across multiple rounds.
 // Work shares remain tied to the branch parent on which they were found. A
 // public and private candidate may commit the same pre-fork shares, but only
 // the finally canonical candidate is passed to reward accounting.
 func RunSelfish(config SelfishConfig) (SelfishResult, error) {
+	trailDepth, validTrail := configuredTrailDepth(config)
 	if config.HardDiscoveries <= 0 || config.HardDiscoveries > 100_000 ||
 		config.ShareRatio != workgraph.ShareDifficultyRatio ||
 		config.AttackerHashPPM == 0 || config.AttackerHashPPM >= PartsPerMillion ||
-		config.TieAdoptionPPM > PartsPerMillion || (config.TrailRetry && !config.WithholdAnchors) {
+		config.TieAdoptionPPM > PartsPerMillion || !validTrail ||
+		(trailDepth > 0 && !config.WithholdAnchors) {
 		return SelfishResult{}, ErrConfiguration
 	}
 	anchorSubsidy, shareReward, err := workgraph.RewardRates(config.BlockSubsidy)
@@ -95,7 +115,7 @@ func RunSelfish(config SelfishConfig) (SelfishResult, error) {
 		result.HardDiscoveries++
 		if trail != nil {
 			resolved, err := advanceTrailRace(
-				config, &random, &result, trail, anchorSubsidy, shareReward,
+				config, &random, &result, trail, trailDepth, anchorSubsidy, shareReward,
 			)
 			if err != nil {
 				return SelfishResult{}, err
@@ -110,7 +130,7 @@ func RunSelfish(config SelfishConfig) (SelfishResult, error) {
 			if err != nil {
 				return SelfishResult{}, err
 			}
-			if !attackBranch && config.TrailRetry {
+			if !attackBranch && trailDepth > 0 {
 				trail = &trailRace{
 					attacker:     []forkCandidate{tie.attacker},
 					honest:       []forkCandidate{tie.honest, resolver},
@@ -331,6 +351,7 @@ func advanceTrailRace(
 	random *prng,
 	result *SelfishResult,
 	trail *trailRace,
+	trailDepth uint8,
 	anchorSubsidy uint64,
 	shareReward uint64,
 ) (bool, error) {
@@ -359,9 +380,8 @@ func advanceTrailRace(
 		return true, nil
 	}
 
-	var honestPool forkPool
 	attackerWon, err := mineSplitForkRound(
-		config, random, result, &honestPool, &trail.attackerPool,
+		config, random, result, &trail.honestPool, &trail.attackerPool,
 	)
 	if err != nil {
 		return false, err
@@ -370,12 +390,20 @@ func advanceTrailRace(
 		trail.attacker = append(trail.attacker,
 			makeForkCandidate(true, trail.attackerPool, config.OmitHonestShares, result))
 		trail.attackerPool = nil
-		trail.honestPool = honestPool
-		trail.tied = true
+		if len(trail.attacker) == len(trail.honest) {
+			trail.tied = true
+		} else if len(trail.attacker) > len(trail.honest) {
+			return false, ErrConfiguration
+		}
 		return false, nil
 	}
 	trail.honest = append(trail.honest,
-		makeForkCandidate(false, honestPool, false, result))
+		makeForkCandidate(false, trail.honestPool, false, result))
+	trail.honestPool = nil
+	deficit := len(trail.honest) - len(trail.attacker)
+	if deficit <= int(trailDepth) {
+		return false, nil
+	}
 	if err := commitForkCandidateSlice(
 		result, trail.honest, anchorSubsidy, shareReward, config.FeesPerBlock,
 	); err != nil {

@@ -429,10 +429,11 @@ Implemented in an isolated, not-yet-activated consensus package:
   defect: coverage selection is now separated from canonical Work-ID encoding,
   with a focused regression and repeated race coverage.
 - a versioned economic activation corpus now emits 155 standard-withholding,
-  155 one-block trail-retry, and 72 direct-versus-delayed private-fee points as
-  deterministic JSON. Its version-2 canonical SHA-256 digest is golden-tested,
-  while `ACTIVATION_REVIEW.md` separates passed internal reproduction from
-  still-open independent PoW/model review and public-testnet calibration gates.
+  620 bounded trail-depth, and 72 direct-versus-delayed private-fee points as
+  deterministic JSON. Its version-3 canonical SHA-256 digest is golden-tested;
+  depths one through four preserve branch-local share pools and none lowers the
+  standard profitability boundary. `ACTIVATION_REVIEW.md` separates this passed
+  internal reproduction from still-open independent review and testnet gates.
 - the PoW research harness now also has an integer-only, fixed-seed geometric
   solve process for active v0 and lagged v1. Golden observation digests cover
   baseline variance and an alternating 1x/4x campaign, while separate cases

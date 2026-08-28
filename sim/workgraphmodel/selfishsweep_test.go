@@ -84,6 +84,17 @@ func TestSelfishSweepRejectsNonCanonicalOrExcessiveInputs(t *testing.T) {
 	}
 }
 
+func TestTrailDepthSweepRejectsZeroAndExcessiveDepth(t *testing.T) {
+	t.Parallel()
+
+	config := testSelfishSweepConfig()
+	for _, depth := range []uint8{0, MaxTrailDepth + 1} {
+		if _, err := RunTrailDepthSweep(config, depth); !errors.Is(err, ErrConfiguration) {
+			t.Fatalf("depth %d error = %v, want ErrConfiguration", depth, err)
+		}
+	}
+}
+
 func testSelfishSweepConfig() SelfishSweepConfig {
 	return SelfishSweepConfig{
 		HardDiscoveries: 2_000,

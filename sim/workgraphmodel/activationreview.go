@@ -7,7 +7,7 @@ import (
 	"github.com/outcomemesh/outcomemesh/core/workgraph"
 )
 
-const ActivationReviewSchema = "outcomemesh/economic-activation-review/v2"
+const ActivationReviewSchema = "outcomemesh/economic-activation-review/v3"
 
 // ActivationReviewConfig freezes the deterministic economic corpus separately
 // from its results. A reviewer can therefore change one assumption, rerun the
@@ -19,8 +19,13 @@ type ActivationReviewConfig struct {
 
 type ActivationReviewResult struct {
 	SelfishMining    SelfishSweepResult
-	TrailRetry       SelfishSweepResult
+	TrailDepths      []ActivationTrailDepthResult
 	FeeFragmentation FeeFragmentationSweepResult
+}
+
+type ActivationTrailDepthResult struct {
+	Depth uint8
+	Sweep SelfishSweepResult
 }
 
 // ActivationReviewDocument is intentionally free of timestamps, platform
@@ -89,9 +94,13 @@ func RunActivationReview(config ActivationReviewConfig) (ActivationReviewDocumen
 	if err != nil {
 		return ActivationReviewDocument{}, err
 	}
-	trail, err := RunTrailRetrySweep(config.SelfishMining)
-	if err != nil {
-		return ActivationReviewDocument{}, err
+	trails := make([]ActivationTrailDepthResult, 0, MaxTrailDepth)
+	for depth := uint8(1); depth <= MaxTrailDepth; depth++ {
+		trail, err := RunTrailDepthSweep(config.SelfishMining, depth)
+		if err != nil {
+			return ActivationReviewDocument{}, err
+		}
+		trails = append(trails, ActivationTrailDepthResult{Depth: depth, Sweep: trail})
 	}
 	fees, err := RunFeeFragmentationSweep(config.FeeFragmentation)
 	if err != nil {
@@ -102,7 +111,7 @@ func RunActivationReview(config ActivationReviewConfig) (ActivationReviewDocumen
 		Config: config,
 		Result: ActivationReviewResult{
 			SelfishMining:    selfish,
-			TrailRetry:       trail,
+			TrailDepths:      trails,
 			FeeFragmentation: fees,
 		},
 	}, nil

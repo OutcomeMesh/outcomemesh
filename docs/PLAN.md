@@ -179,7 +179,7 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
 - Canonical Work-ID ordering after coverage-ranked parent selection and a
   parameterized four-node rollover/churn/loss convergence soak.
 - Versioned PoW/economic activation-review packet with a deterministic result
-  digest, fine standard/trail-retry selfish-mining and private-fee grids, and
+  digest, fine standard/bounded-trail selfish-mining and private-fee grids, and
   precommitted external pass/fail gates.
 - Integer-only stochastic PoW paths for both target rules with canonical
   observation digests and timestamp/hash-rate regression corpora.

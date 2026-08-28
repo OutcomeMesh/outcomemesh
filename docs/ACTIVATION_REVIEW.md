@@ -20,37 +20,40 @@ jq -r .digest_sha256 economic-review.json
 The canonical compact document currently has SHA-256:
 
 ```text
-2d0fc971286fd1076b20ad4df870d654b0d0844aa106474f37c48352d707a6a4
+1baabb849b82781aafec4dc27ce3bb962df829fc032afd8e43a442c36159bc8a
 ```
 
-`omreview` emits the complete configuration and all 382 aggregate result
+`omreview` emits the complete configuration and all 847 aggregate result
 points, not only the favorable boundaries. The document contains no wall-clock
 time, platform metadata, maps, floating point, or random seed from the host.
 Changing an assumption or result intentionally changes the digest.
 
 The selfish-mining corpus covers 31 attacker shares from 15% through 45% in 1%
 steps, five tie-adoption values, three fixed seeds, and 1,000 hard discoveries
-per seed for both standard lead withholding and a bounded one-block trail
-retry. After losing a published tie, the trail strategy mines its stale branch
-for one more anchor; a catch-up creates a final equal-height race, while another
-honest anchor ends the attempt. A point is called profitable only if its
+per seed for standard lead withholding and bounded trail deficits from one
+through four anchors. After losing a published tie, a trail strategy mines its
+stale branch while the public lead remains inside its configured limit; a
+catch-up creates a final equal-height race, while exceeding the limit ends the
+attempt. Branch-local weak-share pools survive every intermediate anchor. A
+point is called profitable only if its
 aggregate advantage is at least 5,000 ppm and it beats its paired
 immediate-publication baseline on every seed.
 
-| Honest hash adopting the attacker's tie | Standard first profitable | Trail-retry first profitable | Conservative first | Standard advantage at boundary |
-| ---: | ---: | ---: | ---: | ---: |
-| 0% | 34% | 37% | 34% | +14,699 ppm |
-| 25% | 33% | 33% | 33% | +27,570 ppm |
-| 50% | 27% | 27% | 27% | +13,148 ppm |
-| 75% | 23% | 23% | 23% | +7,324 ppm |
-| 100% | 16% | 16% | 16% | +12,216 ppm |
+| Tie adoption | Standard | Trail 1 | Trail 2 | Trail 3 | Trail 4 | Conservative first |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0% | 34% | 37% | 38% | 38% | 40% | 34% |
+| 25% | 33% | 33% | 34% | 36% | 38% | 33% |
+| 50% | 27% | 27% | 31% | 33% | 36% | 27% |
+| 75% | 23% | 23% | 25% | 25% | 25% | 23% |
+| 100% | 16% | 16% | 16% | 16% | 16% | 16% |
 
-These are discrete observations, not closed-form security thresholds. Trail
-retry does not lower the boundary in this corpus, but that does not cover
-lead-stubborn, equal-fork-stubborn, longer trailing, or adaptive combinations.
-At some prior points an attack failed the three-seed rule even when aggregate
-advantage was positive. That sensitivity is one reason an independent, longer
-stochastic implementation is mandatory.
+These are discrete observations, not closed-form security thresholds. No tested
+trail depth lowers the standard boundary; deeper trailing is generally less
+profitable here. This does not cover lead-stubborn, equal-fork-stubborn,
+unbounded/adaptive trailing, or combined policies. At some prior points an
+attack failed the three-seed rule even when aggregate advantage was positive.
+That sensitivity is one reason an independent, longer stochastic implementation
+is mandatory.
 
 The fee corpus compares direct fees and the implemented delayed fee pool for
 one miner able to use a private template while all other hash remains on a

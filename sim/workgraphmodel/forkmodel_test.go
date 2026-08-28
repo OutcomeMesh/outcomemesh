@@ -136,6 +136,22 @@ func TestTrailRetryRequiresWithholding(t *testing.T) {
 	}
 }
 
+func TestTrailConfigurationRejectsAmbiguousOrExcessiveDepth(t *testing.T) {
+	t.Parallel()
+
+	config := testSelfishConfig(250_000, true)
+	config.TrailRetry = true
+	config.TrailDepth = 1
+	if _, err := RunSelfish(config); err != ErrConfiguration {
+		t.Fatalf("ambiguous trail error = %v, want ErrConfiguration", err)
+	}
+	config.TrailRetry = false
+	config.TrailDepth = MaxTrailDepth + 1
+	if _, err := RunSelfish(config); err != ErrConfiguration {
+		t.Fatalf("excessive trail error = %v, want ErrConfiguration", err)
+	}
+}
+
 func FuzzRunSelfishStrategiesNeverBreakAccounting(f *testing.F) {
 	f.Add(uint64(1), uint32(250_000), uint32(500_000), uint16(32), byte(0b0111))
 	f.Add(uint64(0xcbbb9d5dc1059ed8), uint32(450_000), uint32(0), uint16(16), byte(0b0011))
@@ -150,6 +166,11 @@ func FuzzRunSelfishStrategiesNeverBreakAccounting(f *testing.F) {
 		attackerHash = attackerHash%999_999 + 1
 		tieAdoption %= uint32(PartsPerMillion) + 1
 		withhold := flags&1 != 0
+		trailRetry := withhold && flags&2 != 0
+		trailDepth := uint8(0)
+		if withhold && !trailRetry {
+			trailDepth = uint8(flags>>3) % (MaxTrailDepth + 1)
+		}
 		config := SelfishConfig{
 			HardDiscoveries:  int(discoveries%32) + 1,
 			Seed:             seed,
@@ -159,7 +180,8 @@ func FuzzRunSelfishStrategiesNeverBreakAccounting(f *testing.F) {
 			BlockSubsidy:     5_000_000_000,
 			FeesPerBlock:     100_000,
 			WithholdAnchors:  withhold,
-			TrailRetry:       withhold && flags&2 != 0,
+			TrailRetry:       trailRetry,
+			TrailDepth:       trailDepth,
 			OmitHonestShares: flags&4 != 0,
 		}
 		if _, err := RunSelfish(config); err != nil {
