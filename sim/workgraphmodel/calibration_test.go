@@ -72,20 +72,24 @@ func TestPublicTestnetCalibrationGateAndDigest(t *testing.T) {
 		LargestCoordinatedWork:   11_000,
 		ObservedWork:             50_000,
 		CoordinatedClusters:      64,
+		EvidenceRecords:          720,
+		EvidenceTailID:           "c539440ac6d71c9178b2ab3d7815ed40c9ba502da5b00f33e2282dba7c7113ed",
+		EvidenceVerified:         true,
 		MaximumUpperPPM:          PublicTestnetMaximumUpperPPM,
 	}
 	document, err := EvaluatePublicTestnetCalibration(config)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !document.Result.Pass || !document.Result.WindowPass || !document.Result.TieAdoptionPass || !document.Result.CoordinatedWorkPass {
+	if !document.Result.Pass || !document.Result.WindowPass || !document.Result.TieAdoptionPass ||
+		!document.Result.CoordinatedWorkPass || !document.Result.EvidencePass {
 		t.Fatalf("passing calibration = %+v", document.Result)
 	}
 	digest, err := document.Digest()
 	if err != nil {
 		t.Fatal(err)
 	}
-	const wantDigest = "3126281dfc8b5bc1e49cf960521ec33576c096cbc8228e7a9e66ffa4bb9ec3d4"
+	const wantDigest = "a31031b36ad9d570cdd0882d419badd8893f091e668192831721e96ac21176a4"
 	if got := hex.EncodeToString(digest[:]); got != wantDigest {
 		t.Fatalf("calibration digest = %s, want %s; result=%+v", got, wantDigest, document.Result)
 	}
@@ -108,6 +112,34 @@ func TestPublicTestnetCalibrationGateAndDigest(t *testing.T) {
 	}
 	if highDocument.Result.Pass || highDocument.Result.TieAdoptionPass {
 		t.Fatalf("high tie adoption passed: %+v", highDocument.Result)
+	}
+
+	missingEvidence := config
+	missingEvidence.EvidenceTailID = ""
+	missingDocument, err := EvaluatePublicTestnetCalibration(missingEvidence)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if missingDocument.Result.Pass || missingDocument.Result.EvidencePass {
+		t.Fatalf("missing evidence passed: %+v", missingDocument.Result)
+	}
+	unverified := config
+	unverified.EvidenceVerified = false
+	unverifiedDocument, err := EvaluatePublicTestnetCalibration(unverified)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unverifiedDocument.Result.Pass || unverifiedDocument.Result.EvidencePass {
+		t.Fatalf("unverified evidence passed: %+v", unverifiedDocument.Result)
+	}
+	shortEvidence := config
+	shortEvidence.EvidenceRecords--
+	shortEvidenceDocument, err := EvaluatePublicTestnetCalibration(shortEvidence)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if shortEvidenceDocument.Result.Pass || shortEvidenceDocument.Result.EvidencePass {
+		t.Fatalf("insufficient evidence records passed: %+v", shortEvidenceDocument.Result)
 	}
 }
 

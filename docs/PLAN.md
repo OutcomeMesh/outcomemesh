@@ -185,8 +185,9 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
   observation digests and timestamp/hash-rate regression corpora.
 - Versioned public-testnet calibration evidence with integer-only one-sided 99%
   upper bounds, family-wise mining-cluster selection correction, a 30-day
-  window gate, and a canonical digest. Live signed telemetry remains a
-  Milestone 9 deliverable.
+  window gate, signed gapless hourly manifests, trusted deployment/policy
+  bindings, published rollback checkpoints, and a canonical digest. Live
+  multi-observer collection remains a Milestone 9 deliverable.
 
 ### Exit gates
 

@@ -437,9 +437,12 @@ Implemented in an isolated, not-yet-activated consensus package:
 - the ER-5 public-testnet gate now has a versioned integer-only evaluator. It
   enforces the full 30-day window, conservative one-sided 99% Hoeffding bounds
   for controlled tie adoption and mining concentration, and a Bonferroni
-  selection correction across preclassified coordination clusters. Golden
-  tests freeze pass/fail examples and the canonical evidence digest; signed
-  telemetry, continuity, independence, and Sybil-cluster provenance remain
+  selection correction across preclassified coordination clusters. Its
+  version-2 evidence path verifies a bounded Ed25519-signed chain of gapless
+  hourly records, exact per-cluster work conservation, trusted network/genesis/
+  activation/policy bindings, and a published tail ID before `EvidencePass`.
+  A generated 720-record chain freezes the end-to-end digest. Live collection,
+  independent observers, observer honesty, and Sybil-cluster provenance remain
   open testnet work.
 - the PoW research harness now also has an integer-only, fixed-seed geometric
   solve process for active v0 and lagged v1. Golden observation digests cover

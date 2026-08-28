@@ -219,6 +219,8 @@ The CLI wallet is for development only.
   admission and transport-independent fork synchronization;
 - `node/discovery/`, `node/peers/`: signed peer advertisements, bounded
   anti-replay/reputation storage, rate limits, decaying scoring, and bans;
+- `node/calibration/`: signed hourly public-testnet telemetry chains, bounded
+  manifest persistence, and ER-5 evidence aggregation;
 - `node/snapshot/`: bounded chunk export and state-root verification without
   unsafe canonical-state import;
 - `node/transport/`: mutually authenticated TLS/TCP fallback and bounded
@@ -235,4 +237,5 @@ See [docs/PLAN.md](docs/PLAN.md), [docs/STATUS.md](docs/STATUS.md),
 [docs/PROTOCOL.md](docs/PROTOCOL.md), [docs/MINING.md](docs/MINING.md),
 [docs/WORKGRAPH.md](docs/WORKGRAPH.md), [docs/SIMULATIONS.md](docs/SIMULATIONS.md),
 [docs/ACTIVATION_REVIEW.md](docs/ACTIVATION_REVIEW.md),
+[docs/TESTNET_TELEMETRY.md](docs/TESTNET_TELEMETRY.md),
 [docs/P2P.md](docs/P2P.md), and [docs/SECURITY.md](docs/SECURITY.md).

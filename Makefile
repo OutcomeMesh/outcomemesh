@@ -42,6 +42,8 @@ test-fuzz-smoke:
 	$(GO) test ./node/snapshot -run '^$$' -fuzz '^FuzzDecodeManifestNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/snapshot -run '^$$' -fuzz '^FuzzDecodeChunkNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/activation -run '^$$' -fuzz '^FuzzDecodeRoutedBlockNeverPanics$$' -fuzztime=$(FUZZTIME)
+	$(GO) test ./node/calibration -run '^$$' -fuzz '^FuzzDecodeRecordNeverPanics$$' -fuzztime=$(FUZZTIME)
+	$(GO) test ./node/calibration -run '^$$' -fuzz '^FuzzDecodeManifestNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/workchain -run '^$$' -fuzz '^FuzzDecodeNodeMetadataNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/workchain -run '^$$' -fuzz '^FuzzDecodePersistedStateNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/workchain -run '^$$' -fuzz '^FuzzDecodeStateDeltaNeverPanics$$' -fuzztime=$(FUZZTIME)
@@ -62,6 +64,7 @@ economic-review:
 	@$(GO) run ./cmd/omreview
 
 test-calibration:
+	$(GO) test ./node/calibration -count=1 -v
 	$(GO) test ./sim/workgraphmodel -run '^(TestHoeffding.*Upper99PPM|TestPublicTestnetCalibration)' -count=1 -v
 
 test-all: fmt vet test-race

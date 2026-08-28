@@ -83,7 +83,7 @@ protocol; it is not waived by the other gates passing.
 | ER-2 independent PoW arithmetic | A reviewer independently derives ASERT, lagged target, MTP/future bounds, chain work, weak target, subsidy split, and overflow bounds; every discrepancy is resolved | Pending external work |
 | ER-3 independent strategy model | A separately implemented stochastic/discrete-event model tests at least immediate publication, lead withholding, stubborn variants, eclipse/partition recovery, difficulty oscillation, and private-template selection | Pending external work |
 | ER-4 conservative security margin | No reviewed strategy is profitable below 30% attacker hash when measured tie adoption is at most 25%; otherwise parameters or architecture change | Pending external work |
-| ER-5 public testnet calibration | Thirty continuous days show a one-sided 99% upper confidence bound of at most 25% for controlled tie adoption and no coordinated miner above 25% of observed work | Evaluator implemented; telemetry pending |
+| ER-5 public testnet calibration | Thirty continuous days show a one-sided 99% upper confidence bound of at most 25% for controlled tie adoption and no coordinated miner above 25% of observed work | Verifier implemented; live telemetry pending |
 | ER-6 fee-fragmentation stress | With a controlled miner up to 40% hash and an exclusive fee equal to 50% of subsidy, delayed fees retain the common template and matching-share inclusion; any split at or below that point fails | Pending public testnet |
 | ER-7 finding closure | All critical/high findings are fixed and retested; unresolved medium findings have an owner, deadline, and explicit launch decision | Pending external work |
 
@@ -95,11 +95,11 @@ the same measurements continue after launch and feed the incident process.
 
 ### Executable ER-5 calculation
 
-`omcalibrate` turns one aggregate telemetry snapshot into a versioned,
-digestible pass/fail document. It computes a one-sided Hoeffding upper bound in
-parts per million with no floating point. Both the observed proportion and the
-margin round upward. Rational upper approximations of `ln(100)` and `ln(2)`
-make the result conservative at integer boundaries.
+`omcalibrate` turns verified telemetry into a versioned, digestible pass/fail
+document. It computes a one-sided Hoeffding upper bound in parts per million
+with no floating point. Both the observed proportion and the margin round
+upward. Rational upper approximations of `ln(100)` and `ln(2)` make the result
+conservative at integer boundaries.
 
 Mining concentration needs an additional selection correction: the largest
 observed coordination cluster is chosen after comparing several clusters.
@@ -114,8 +114,8 @@ Run the focused golden tests with:
 make GO=.tools/go/bin/go test-calibration
 ```
 
-This synthetic example demonstrates a passing calculation; it is not testnet
-evidence:
+Raw counters can still preview the arithmetic, but cannot pass the evidence
+gate:
 
 ```sh
 .tools/go/bin/go run ./cmd/omcalibrate \
@@ -125,17 +125,41 @@ evidence:
   --coordinated-clusters 64
 ```
 
-It produces a tie-adoption upper bound of 215,175 ppm, a family-corrected
-concentration upper bound of 229,362 ppm, and canonical digest
-`3126281dfc8b5bc1e49cf960521ec33576c096cbc8228e7a9e66ffa4bb9ec3d4`.
-Reducing the window by one second or raising either bound above 250,000 ppm
-fails the conjunctive result.
+It produces a tie-adoption upper bound of 215,175 ppm and a family-corrected
+concentration upper bound of 229,362 ppm, while `EvidencePass` and the overall
+`Pass` remain false.
 
-The evaluator deliberately does not claim to prove telemetry provenance,
-30-day continuity, statistical independence, or that Sybil identities were
-grouped into the right coordination clusters. The public testnet must bind the
-input counters and cluster policy to a signed append-only telemetry manifest;
-independent review must challenge those assumptions before ER-5 can pass.
+The version-2 evidence path accepts a canonical manifest only with explicit
+trusted network, genesis, activation, clustering-policy, observer-key, and
+published-tail bindings:
+
+```sh
+.tools/go/bin/go run ./cmd/omcalibrate \
+  --manifest telemetry.omtm \
+  --network-id 20260826 \
+  --genesis-id <64-lowercase-hex> \
+  --activation-height <height> \
+  --cluster-policy-id <64-lowercase-hex> \
+  --coordinated-clusters 64 \
+  --observer-public-key <64-lowercase-hex> \
+  --evidence-tail-id <64-lowercase-hex>
+```
+
+Each signed record covers at most one hour; sequences, previous-record IDs, and
+interval boundaries must be gapless. The generated 720-record/30-day golden
+chain has tail
+`c539440ac6d71c9178b2ab3d7815ed40c9ba502da5b00f33e2282dba7c7113ed`
+and version-2 report digest
+`a31031b36ad9d570cdd0882d419badd8893f091e668192831721e96ac21176a4`.
+Reducing the window by one second, providing fewer than 720 records, omitting
+manifest verification, or raising either bound above 250,000 ppm fails the
+conjunctive result. The full format is specified in `TESTNET_TELEMETRY.md`.
+
+The manifest proves which observer signed the gapless claimed history and makes
+past mutation detectable; publication of its tail makes valid-prefix rollback
+detectable. It does not prove observer honesty, statistical independence, or
+that Sybil identities were grouped into the right coordination clusters.
+Independent review must challenge those assumptions before ER-5 can pass.
 
 ## Reviewer scope
 

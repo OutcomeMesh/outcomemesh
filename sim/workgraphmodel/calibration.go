@@ -2,6 +2,7 @@ package workgraphmodel
 
 import (
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"math/big"
 	"math/bits"
@@ -10,10 +11,11 @@ import (
 const (
 	// PublicTestnetCalibrationSchema versions the evidence snapshot separately
 	// from the deterministic economic review corpus.
-	PublicTestnetCalibrationSchema = "outcomemesh/public-testnet-calibration/v1"
+	PublicTestnetCalibrationSchema = "outcomemesh/public-testnet-calibration/v2"
 	PublicTestnetCalibrationMethod = "hoeffding-bonferroni-one-sided-99%-integer-ppm/v1"
 
 	PublicTestnetMinimumWindowSeconds uint64 = 30 * 24 * 60 * 60
+	PublicTestnetMaximumRecordSeconds uint64 = 60 * 60
 	PublicTestnetMaximumUpperPPM      uint32 = 250_000
 
 	// ln(100) is strictly less than 4.605171. Using the upper rational here
@@ -48,6 +50,9 @@ type PublicTestnetCalibrationConfig struct {
 	LargestCoordinatedWork   uint64
 	ObservedWork             uint64
 	CoordinatedClusters      uint64
+	EvidenceRecords          uint64
+	EvidenceTailID           string
+	EvidenceVerified         bool
 	MaximumUpperPPM          uint32
 }
 
@@ -57,6 +62,7 @@ type PublicTestnetCalibrationResult struct {
 	WindowPass          bool
 	TieAdoptionPass     bool
 	CoordinatedWorkPass bool
+	EvidencePass        bool
 	Pass                bool
 }
 
@@ -119,14 +125,30 @@ func EvaluatePublicTestnetCalibration(config PublicTestnetCalibrationConfig) (Pu
 		WindowPass:          config.ObservationWindowSeconds >= PublicTestnetMinimumWindowSeconds,
 		TieAdoptionPass:     tie.UpperPPM <= config.MaximumUpperPPM,
 		CoordinatedWorkPass: work.UpperPPM <= config.MaximumUpperPPM,
+		EvidencePass:        validEvidence(config),
 	}
-	result.Pass = result.WindowPass && result.TieAdoptionPass && result.CoordinatedWorkPass
+	result.Pass = result.WindowPass && result.TieAdoptionPass && result.CoordinatedWorkPass && result.EvidencePass
 	return PublicTestnetCalibrationDocument{
 		Schema: PublicTestnetCalibrationSchema,
 		Method: PublicTestnetCalibrationMethod,
 		Config: config,
 		Result: result,
 	}, nil
+}
+
+func validEvidence(config PublicTestnetCalibrationConfig) bool {
+	if !config.EvidenceVerified {
+		return false
+	}
+	decoded, err := hex.DecodeString(config.EvidenceTailID)
+	if err != nil || len(decoded) != sha256.Size || hex.EncodeToString(decoded) != config.EvidenceTailID {
+		return false
+	}
+	if config.ObservationWindowSeconds == 0 {
+		return false
+	}
+	minimumRecords := uint64(1) + (config.ObservationWindowSeconds-1)/PublicTestnetMaximumRecordSeconds
+	return config.EvidenceRecords >= minimumRecords
 }
 
 func (document PublicTestnetCalibrationDocument) CanonicalJSON() ([]byte, error) {
