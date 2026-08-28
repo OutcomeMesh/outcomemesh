@@ -185,9 +185,12 @@ Each of at most eight explicit peers owns an independent queue and worker; the
 mining callback performs no network I/O. A slow peer therefore cannot block
 hard search or another relay. A dial, timeout, resource, or context failure
 retains that peer's unpublished IDs during the round but does not reject a
-subsequently found hard anchor. Honest context mismatch caused by a changed tip
-is scored as stale data rather than an invalid-message attack. Explicit peers
-still do not provide Sybil-resistant selection or production gossip coverage.
+subsequently found hard anchor. Each worker flushes at the configured count or
+at the mandatory 8-second..1-minute partial-batch deadline. The default avoids
+the measured reward bias created when a low-hash miner cannot reach a 128-share
+batch before the anchor. Honest context mismatch caused by a changed tip is
+scored as stale data rather than an invalid-message attack. Explicit peers still
+do not provide Sybil-resistant selection or production gossip coverage.
 
 Anchor notification is separated from ordinary chain pull at the libp2p
 protocol ID, but deliberately reuses its verified session. The remote winner

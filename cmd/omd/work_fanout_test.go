@@ -63,7 +63,7 @@ func TestWorkShareFanoutIsolatesSlowPeer(t *testing.T) {
 		fastDone <- struct{}{}
 		return worksession.Stats{Announced: len(ids), Accepted: len(ids)}, nil
 	}
-	publisher, err := newWorkSharePublisher(context.Background(), []workPeerTarget{slow, fast}, 1, relay)
+	publisher, err := newWorkSharePublisher(context.Background(), []workPeerTarget{slow, fast}, 1, time.Minute, relay)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +106,7 @@ func TestWorkShareFanoutSortsAndHonorsNegotiatedPrefixes(t *testing.T) {
 		}
 		return worksession.Stats{Announced: 1}, nil
 	}
-	publisher, err := newWorkSharePublisher(context.Background(), []workPeerTarget{target}, 2, relay)
+	publisher, err := newWorkSharePublisher(context.Background(), []workPeerTarget{target}, 2, time.Minute, relay)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,6 +130,41 @@ func TestWorkShareFanoutSortsAndHonorsNegotiatedPrefixes(t *testing.T) {
 	}
 	if stats.Relayed != 2 || stats.Pending != 0 || stats.Failures != 0 {
 		t.Fatalf("prefix stats=%+v", stats)
+	}
+}
+
+func TestWorkShareFanoutFlushesPartialBatchOnTimer(t *testing.T) {
+	target := workPeerTarget{id: types.DomainHash("test/omd/fanout/timed-partial")}
+	relayed := make(chan []types.Hash, 1)
+	relay := func(_ context.Context, _ workPeerTarget, ids []types.Hash) (worksession.Stats, error) {
+		relayed <- append([]types.Hash(nil), ids...)
+		return worksession.Stats{Announced: len(ids), Accepted: len(ids)}, nil
+	}
+	publisher, err := newWorkSharePublisher(
+		context.Background(), []workPeerTarget{target}, 128, 10*time.Millisecond, relay,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	share := testFanoutShare(1)
+	id, err := share.ID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := publisher.Publish(share); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case ids := <-relayed:
+		if len(ids) != 1 || ids[0] != id {
+			t.Fatalf("timed relay ids=%v, want [%s]", ids, id)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("partial batch was not relayed on timer")
+	}
+	stats := publisher.Close()
+	if stats.Queued != 1 || stats.Relayed != 1 || stats.Pending != 0 || stats.Failures != 0 {
+		t.Fatalf("timed relay stats=%+v", stats)
 	}
 }
 

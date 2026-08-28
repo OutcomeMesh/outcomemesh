@@ -72,6 +72,25 @@ foreign-tip omission:
   be paid when their owner won, but poisoned public children with missing
   parents and lost credit on other winners.
 
+The same topology harness now models relay queues, full-batch thresholds,
+periodic partial flush, unreleased shares at the hard anchor, fixed WorkGraph
+subsidy rates, and reward per miner. At the 512:1 production ratio, one discovery
+event represents about 117 ms; the default eight-second flush is therefore the
+fixed 69-event calibration. In a 1,000-round, two-miner corpus with 10%/90%
+hash share and one-event link delay:
+
+- immediate relay gave the small miner 104,349 ppm of issued reward and included
+  496,602 shares;
+- waiting only for 128-share batches reduced it to 73,611 ppm, included 455,372
+  shares, and left 99,674 public-intended shares queued when anchors arrived;
+- the same 128-share batches plus the 69-event partial flush restored the small
+  miner to 102,033 ppm, included 490,321 shares, and reduced unreleased work to
+  32,784 shares.
+
+This fixed-seed result does not establish a universal fairness theorem, but it
+does reject batch-only relay and makes the eight-second maximum wait a tested
+economic invariant rather than a performance preference.
+
 The topology model exposed and caused removal of the earlier variable half-pool
 reward rule: a winner could maximize payment by committing an empty DAG. The
 implemented fixed pay-per-share rate makes inclusion of a foreign share neutral

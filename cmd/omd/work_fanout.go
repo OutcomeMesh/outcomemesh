@@ -19,7 +19,11 @@ import (
 
 const maxWorkMiningPeers = 8
 
-const workAnchorNotifyTimeout = 30 * time.Second
+const (
+	defaultWorkRelayInterval = 8 * time.Second
+	maxWorkRelayInterval     = time.Minute
+	workAnchorNotifyTimeout  = 30 * time.Second
+)
 
 type repeatedStringFlag []string
 
@@ -100,6 +104,7 @@ type workSharePublisher struct {
 type workShareWorker struct {
 	target     workPeerTarget
 	relayEvery int
+	interval   time.Duration
 	input      chan types.Hash
 	relay      workShareRelayFunc
 
@@ -115,17 +120,19 @@ func newWorkSharePublisher(
 	parent context.Context,
 	targets []workPeerTarget,
 	relayEvery int,
+	relayInterval time.Duration,
 	relay workShareRelayFunc,
 ) (*workSharePublisher, error) {
 	if parent == nil || len(targets) == 0 || len(targets) > maxWorkMiningPeers || relay == nil ||
-		relayEvery <= 0 || relayEvery > wire.MaxShareInventoryIDs {
+		relayEvery <= 0 || relayEvery > wire.MaxShareInventoryIDs ||
+		relayInterval <= 0 || relayInterval > maxWorkRelayInterval {
 		return nil, errors.New("invalid WorkGraph share fanout")
 	}
 	ctx, cancel := context.WithCancel(parent)
 	result := &workSharePublisher{cancel: cancel, workers: make([]*workShareWorker, 0, len(targets))}
 	for _, target := range targets {
 		worker := &workShareWorker{
-			target: target, relayEvery: relayEvery,
+			target: target, relayEvery: relayEvery, interval: relayInterval,
 			input: make(chan types.Hash, workgraph.MaxShares), relay: relay,
 		}
 		result.workers = append(result.workers, worker)
@@ -173,6 +180,8 @@ func (worker *workShareWorker) enqueue(id types.Hash) {
 func (worker *workShareWorker) run(ctx context.Context) {
 	pending := make([]types.Hash, 0, workgraph.MaxShares)
 	sinceAttempt := 0
+	flushTimer := time.NewTicker(worker.interval)
+	defer flushTimer.Stop()
 	for {
 		if ctx.Err() != nil {
 			return
@@ -186,6 +195,9 @@ func (worker *workShareWorker) run(ctx context.Context) {
 			if sinceAttempt < worker.relayEvery {
 				continue
 			}
+			sinceAttempt = 0
+			pending = worker.flush(ctx, pending)
+		case <-flushTimer.C:
 			sinceAttempt = 0
 			pending = worker.flush(ctx, pending)
 		}

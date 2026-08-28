@@ -38,11 +38,14 @@ func runWorkMineQUIC(arguments []string) error {
 	count := flags.Uint64("count", 1, "number of version-1 anchors")
 	startNonce := flags.Uint64("start-nonce", 0, "first WorkSeal nonce to test per round")
 	relayEvery := flags.Int("relay-every", 128, "unpublished weak shares collected before a relay attempt")
+	relayInterval := flags.Duration("relay-interval", defaultWorkRelayInterval, "maximum wait before relaying a partial weak-share batch")
 	if err := flags.Parse(arguments); err != nil {
 		return err
 	}
-	if *keyPath == "" || *count == 0 || *relayEvery <= 0 || *relayEvery > wire.MaxShareInventoryIDs {
-		return fmt.Errorf("key is required; count must be positive and relay-every must be 1..%d", wire.MaxShareInventoryIDs)
+	if *keyPath == "" || *count == 0 || *relayEvery <= 0 || *relayEvery > wire.MaxShareInventoryIDs ||
+		*relayInterval < defaultWorkRelayInterval || *relayInterval > maxWorkRelayInterval {
+		return fmt.Errorf("key is required; count must be positive, relay-every must be 1..%d, and relay-interval must be %s..%s",
+			wire.MaxShareInventoryIDs, defaultWorkRelayInterval, maxWorkRelayInterval)
 	}
 	targets, err := parseWorkPeerTargets(peerAddresses, peerIDs)
 	if err != nil {
@@ -106,8 +109,8 @@ func runWorkMineQUIC(arguments []string) error {
 		return err
 	}
 	defer notifier.Close()
-	fmt.Printf("mining_work_quic peer_id=%s libp2p_id=%s network=%d activation_height=%d peers=%d relay_every=%d listen=%s\n",
-		host.ID(), host.Libp2pID(), document.NetworkID, profile.ActivationHeight, len(targets), *relayEvery,
+	fmt.Printf("mining_work_quic peer_id=%s libp2p_id=%s network=%d activation_height=%d peers=%d relay_every=%d relay_interval=%s listen=%s\n",
+		host.ID(), host.Libp2pID(), document.NetworkID, profile.ActivationHeight, len(targets), *relayEvery, *relayInterval,
 		strings.Join(host.Addresses(), ","))
 	for minedCount := uint64(0); minedCount < *count; {
 		round, err := roundManager.Current()
@@ -124,7 +127,7 @@ func runWorkMineQUIC(arguments []string) error {
 		}
 		roundContext, finishRound := roundControl.Begin(ctx, miningContext.AnchorParent)
 		publisher, err := newWorkSharePublisher(
-			roundContext, targets, *relayEvery,
+			roundContext, targets, *relayEvery, *relayInterval,
 			func(relayContext context.Context, target workPeerTarget, ids []types.Hash) (worksession.Stats, error) {
 				return relayWorkShares(relayContext, round, host, peerManager, target, ids)
 			},

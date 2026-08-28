@@ -324,14 +324,17 @@ miner therefore gives each of at most eight explicit authenticated peers an
 independent bounded unpublished-ID queue and relay worker. Its mining callback
 only enqueues an admitted ID; it never dials, blocks on a stream, or waits for
 another peer. Each worker drops only successful prefixes and retries the suffix
-after a fresh batch without invalidating hard-PoW progress. The miner also
-installs the inbound round and chain-v1 handlers. Automatic peer discovery and
-topology-derived peer choice remain gated. A selected local anchor schedules a
-coalesced chain-notify-v1 session per configured peer in the background. Each
-receiver still initiates normal verified synchronization. A chain responder
-pins the canonical path advertised by its handshake, so mining the next anchor
-cannot change that in-flight response. If synchronization changes a peer's
-selected parent, its round is invalidated and stale hashing is canceled.
+after a fresh batch or periodic partial-batch tick without invalidating hard-PoW
+progress. The CLI requires a timer from 8 seconds to 1 minute and defaults to 8
+seconds; count-only batching measurably underpays a miner too small to reach 128
+shares in one round. The miner also installs the inbound round and chain-v1
+handlers. Automatic peer discovery and topology-derived peer choice remain
+gated. A selected local anchor schedules a coalesced chain-notify-v1 session per
+configured peer in the background. Each receiver still initiates normal
+verified synchronization. A chain responder pins the canonical path advertised
+by its handshake, so mining the next anchor cannot change that in-flight
+response. If synchronization changes a peer's selected parent, its round is
+invalidated and stale hashing is canceled.
 
 One maximal 1,024-ID relay is bounded to exactly 630,258 bytes of bidirectional
 application framing when a peer forces one maximum-size body per batch. The

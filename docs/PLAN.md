@@ -164,6 +164,7 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
 - Inclusion commitments carried by work shares.
 - Bounded explicit multi-peer relay with independent backpressure and verified
   anchor synchronization.
+- Count-or-time share flushing with a deterministic small-miner reward corpus.
 
 ### Exit gates
 

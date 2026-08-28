@@ -3,15 +3,22 @@ package workgraphmodel
 import (
 	"math"
 	"sort"
+
+	"github.com/outcomemesh/outcomemesh/core/types"
+	"github.com/outcomemesh/outcomemesh/core/workgraph"
 )
 
 const MaxTopologyMiners = 64
 
+const maxTopologyRelayIntervalEvents = 1_000_000
+
 type TopologyMiner struct {
-	HashUnits          uint64
-	WithholdPPM        uint32
-	OmitForeignTipsPPM uint32
-	Links              []int
+	HashUnits           uint64
+	WithholdPPM         uint32
+	OmitForeignTipsPPM  uint32
+	RelayBatchShares    int
+	RelayIntervalEvents uint64
+	Links               []int
 }
 
 type TopologyConfig struct {
@@ -19,6 +26,7 @@ type TopologyConfig struct {
 	Seed            uint64
 	ShareRatio      uint64
 	LinkDelayEvents uint64
+	BlockSubsidy    uint64
 	Miners          []TopologyMiner
 }
 
@@ -27,6 +35,7 @@ type TopologyMinerResult struct {
 	PublishedShares  uint64
 	IncludedShares   uint64
 	AnchorWins       uint64
+	Reward           uint64
 }
 
 type TopologyResult struct {
@@ -36,9 +45,12 @@ type TopologyResult struct {
 	IncludedShares           uint64
 	UnseenAtWinner           uint64
 	KnownButUncommitted      uint64
+	UnreleasedAtWinner       uint64
 	StrategicTipOmissions    uint64
 	RoundsOverFourWinnerTips uint64
 	MaxWinnerTips            uint64
+	ScheduledSubsidy         uint64
+	IssuedSubsidy            uint64
 	Miners                   []TopologyMinerResult
 }
 
@@ -60,14 +72,24 @@ type delivery struct {
 }
 
 // RunTopology is a discrete-event model of share-DAG propagation. A miner
-// builds each share on at most four tips in its local view. Published bodies
-// arrive after shortest-path link delay; children whose parents are missing
-// remain pending. The hard-anchor winner can only commit tips it actually
-// knows, so the result exposes both propagation loss and four-tip truncation.
+// builds each share on at most four tips in its local view. A miner may relay
+// immediately, in full batches, or flush a partial batch on a periodic timer.
+// Published bodies arrive after shortest-path link delay; children whose
+// parents are missing remain pending. The hard-anchor winner can only commit
+// tips it actually knows, so the result exposes batching delay, propagation
+// loss, four-tip truncation, and the resulting reward allocation.
 func RunTopology(config TopologyConfig) (TopologyResult, error) {
 	distances, totalHash, err := topologyDistances(config)
 	if err != nil {
 		return TopologyResult{}, err
+	}
+	var anchorSubsidy uint64
+	var shareReward uint64
+	if config.BlockSubsidy != 0 {
+		anchorSubsidy, shareReward, err = workgraph.RewardRates(config.BlockSubsidy)
+		if err != nil {
+			return TopologyResult{}, ErrConfiguration
+		}
 	}
 	random := prng{state: config.Seed}
 	if random.state == 0 {
@@ -84,14 +106,27 @@ func RunTopology(config TopologyConfig) (TopologyResult, error) {
 			views[index] = topologyView{tips: make(map[int]struct{}), pending: make(map[int]struct{})}
 		}
 		deliveries := make(map[uint64][]delivery)
+		relayQueues := make([][]int, len(config.Miners))
 		anchorMiner := -1
 		for event := uint64(0); event < maxEvents; event++ {
+			for miner, parameters := range config.Miners {
+				if parameters.RelayIntervalEvents != 0 && event != 0 && event%parameters.RelayIntervalEvents == 0 {
+					if err := publishTopologyQueue(
+						miner, event, &relayQueues[miner], distances, config.LinkDelayEvents, deliveries, &result,
+					); err != nil {
+						return TopologyResult{}, err
+					}
+				}
+			}
 			deliverAt(views, shares, deliveries[event])
 			delete(deliveries, event)
 			miner := chooseTopologyMiner(random.next(), totalHash, config.Miners)
 			if random.next()%config.ShareRatio == 0 {
 				anchorMiner = miner
 				result.Miners[miner].AnchorWins++
+				for _, queue := range relayQueues {
+					result.UnreleasedAtWinner += uint64(len(queue))
+				}
 				winnerTips := len(views[miner].tips)
 				if uint64(winnerTips) > result.MaxWinnerTips {
 					result.MaxWinnerTips = uint64(winnerTips)
@@ -111,8 +146,33 @@ func RunTopology(config TopologyConfig) (TopologyResult, error) {
 				result.UnseenAtWinner += uint64(len(shares) - known)
 				result.KnownButUncommitted += uint64(known - len(included))
 				result.IncludedShares += uint64(len(included))
+				if config.BlockSubsidy != 0 {
+					result.ScheduledSubsidy, err = types.AddAmount(result.ScheduledSubsidy, config.BlockSubsidy)
+					if err != nil {
+						return TopologyResult{}, ErrConfiguration
+					}
+					result.Miners[miner].Reward, err = types.AddAmount(result.Miners[miner].Reward, anchorSubsidy)
+					if err != nil {
+						return TopologyResult{}, ErrConfiguration
+					}
+					result.IssuedSubsidy, err = types.AddAmount(result.IssuedSubsidy, anchorSubsidy)
+					if err != nil {
+						return TopologyResult{}, ErrConfiguration
+					}
+				}
 				for share := range included {
-					result.Miners[shares[share].miner].IncludedShares++
+					owner := shares[share].miner
+					result.Miners[owner].IncludedShares++
+					if config.BlockSubsidy != 0 {
+						result.Miners[owner].Reward, err = types.AddAmount(result.Miners[owner].Reward, shareReward)
+						if err != nil {
+							return TopologyResult{}, ErrConfiguration
+						}
+						result.IssuedSubsidy, err = types.AddAmount(result.IssuedSubsidy, shareReward)
+						if err != nil {
+							return TopologyResult{}, ErrConfiguration
+						}
+					}
 				}
 				break
 			}
@@ -131,18 +191,17 @@ func RunTopology(config TopologyConfig) (TopologyResult, error) {
 			if uint32(random.next()%uint64(PartsPerMillion)) < config.Miners[miner].WithholdPPM {
 				continue
 			}
-			result.PublishedShares++
-			result.Miners[miner].PublishedShares++
-			for destination := range config.Miners {
-				if destination == miner {
-					continue
+			relayQueues[miner] = append(relayQueues[miner], shareID)
+			batchShares := config.Miners[miner].RelayBatchShares
+			if batchShares == 0 {
+				batchShares = 1
+			}
+			if len(relayQueues[miner]) >= batchShares {
+				if err := publishTopologyQueue(
+					miner, event, &relayQueues[miner], distances, config.LinkDelayEvents, deliveries, &result,
+				); err != nil {
+					return TopologyResult{}, err
 				}
-				delay := uint64(distances[miner][destination]) * config.LinkDelayEvents
-				if event > math.MaxUint64-delay {
-					return TopologyResult{}, ErrConfiguration
-				}
-				at := event + delay
-				deliveries[at] = append(deliveries[at], delivery{destination: destination, share: shareID})
 			}
 		}
 		if anchorMiner < 0 {
@@ -150,6 +209,42 @@ func RunTopology(config TopologyConfig) (TopologyResult, error) {
 		}
 	}
 	return result, nil
+}
+
+func publishTopologyQueue(
+	miner int,
+	event uint64,
+	queue *[]int,
+	distances [][]int,
+	linkDelay uint64,
+	deliveries map[uint64][]delivery,
+	result *TopologyResult,
+) error {
+	if len(*queue) == 0 {
+		return nil
+	}
+	for _, share := range *queue {
+		result.PublishedShares++
+		result.Miners[miner].PublishedShares++
+		for destination := range distances {
+			if destination == miner {
+				continue
+			}
+			distance := uint64(distances[miner][destination])
+			if distance != 0 && linkDelay > math.MaxUint64/distance {
+				return ErrConfiguration
+			}
+			delay := distance * linkDelay
+			if event > math.MaxUint64-delay {
+				return ErrConfiguration
+			}
+			deliveries[event+delay] = append(
+				deliveries[event+delay], delivery{destination: destination, share: share},
+			)
+		}
+	}
+	*queue = (*queue)[:0]
+	return nil
 }
 
 func topologyDistances(config TopologyConfig) ([][]int, uint64, error) {
@@ -163,7 +258,10 @@ func topologyDistances(config TopologyConfig) ([][]int, uint64, error) {
 	var totalHash uint64
 	for index, miner := range config.Miners {
 		if miner.HashUnits == 0 || miner.WithholdPPM > PartsPerMillion ||
-			miner.OmitForeignTipsPPM > PartsPerMillion || totalHash > math.MaxUint64-miner.HashUnits {
+			miner.OmitForeignTipsPPM > PartsPerMillion || miner.RelayBatchShares < 0 ||
+			miner.RelayBatchShares > workgraph.MaxShares ||
+			miner.RelayIntervalEvents > maxTopologyRelayIntervalEvents ||
+			totalHash > math.MaxUint64-miner.HashUnits {
 			return nil, 0, ErrConfiguration
 		}
 		totalHash += miner.HashUnits

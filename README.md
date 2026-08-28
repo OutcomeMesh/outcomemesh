@@ -131,7 +131,7 @@ genesis ID (the default 12-bit development target supports the required exact
 ./bin/omd work-mine-quic --data ./data/work-b --key node-b.key \
   --peer <multiaddress> --peer-id <outcomemesh-peer-id> \
   --peer <second-multiaddress> --peer-id <second-outcomemesh-peer-id> \
-  --count 1 --relay-every 128
+  --count 1 --relay-every 128 --relay-interval 8s
 ```
 
 `work-enable` writes an immutable, fsynced profile binding network, genesis,
@@ -146,10 +146,13 @@ while also accepting reciprocal shares and serving chain-v1. Repeat `--peer`;
 either omit every `--peer-id` or supply one matching pin after each peer. Every
 peer has its own full-round bounded queue and worker, while the mining callback
 performs no network I/O. A slow, incompatible, or unreachable peer therefore
-cannot stop hard-PoW search or a healthy peer's relay. Automatic peer discovery
-and topology-aware routing remain gated. When this miner wins, coalesced
-background chain-notify-v1 prompts make the configured peers initiate the
-existing trustless header-first pull; these are not trusted block pushes.
+cannot stop hard-PoW search or a healthy peer's relay. Each worker sends when
+either 128 new shares accumulate or the eight-second partial-batch timer fires;
+the time bound prevents a low-hash miner's shares from remaining private for an
+entire round. Automatic peer discovery and topology-aware routing remain gated.
+When this miner wins, coalesced background chain-notify-v1 prompts make the
+configured peers initiate the existing trustless header-first pull; these are
+not trusted block pushes.
 Transactions on the experimental path, migration tooling, and public activation
 also remain gated.
 

@@ -112,15 +112,19 @@ experiment publishes to as many as eight explicit peers. Each peer accumulates
 its own locally admitted, not-yet-announced IDs, sorts at the relay boundary,
 and lets negotiation shorten the prefix. The mining callback only enqueues IDs;
 independent workers perform all network I/O. Exact progress accounting removes
-successful prefixes and retains the rest until a fresh batch or round end.
-Transport/context failure cannot invalidate hard mining; attempts have bounded
-deadlines and every queue is capped by the 8,192-share round. The command also
-admits reciprocal shares into its live pool. Automatic discovery and public
-activation remain disabled. A winning local anchor queues one coalesced
-chain-notify-v1 prompt per peer without delaying the next mining round. Each
-peer becomes the initiator of normal header-first verification; the responder
-serves the canonical path pinned at handshake, and only a successfully selected
-new hard-work tip invalidates the receiver's round and cancels stale hashing.
+successful prefixes and retains the rest. A worker attempts relay after 128 new
+IDs or, by default, after eight seconds with any partial batch. The timer is
+bounded to 8 seconds..1 minute at the CLI: disabling it would systematically
+leave low-hash miners below the batch threshold during short rounds. A failed
+attempt retains the suffix for the next batch or timer tick. Transport/context
+failure cannot invalidate hard mining; attempts have bounded deadlines and
+every queue is capped by the 8,192-share round. The command also admits
+reciprocal shares into its live pool. Automatic discovery and public activation
+remain disabled. A winning local anchor queues one coalesced chain-notify-v1
+prompt per peer without delaying the next mining round. Each peer becomes the
+initiator of normal header-first verification; the responder serves the
+canonical path pinned at handshake, and only a successfully selected new
+hard-work tip invalidates the receiver's round and cancels stale hashing.
 
 ## Gates before public mining
 

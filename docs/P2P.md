@@ -168,10 +168,12 @@ independent round-bounded queue. `RelayInventory` proves every selected ID
 belongs to the local pool before opening the application exchange. If a peer
 advertises a smaller inventory limit, only that prefix is counted as announced
 and its tail remains queued. The mining callback performs no network I/O, so a
-slow peer cannot block another worker or hard-PoW progress. The command uses the
-same peer byte accounting, fixed-window WorkGraph stream limits, exact-context
-handshake, and separate chain-v1 handler as the server. It does not yet discover
-or select peers automatically.
+slow peer cannot block another worker or hard-PoW progress. Relay is attempted
+when 128 fresh IDs accumulate or an eight-second partial-batch timer expires,
+whichever happens first. Failures keep the suffix for a later attempt. The
+command uses the same peer byte accounting, fixed-window WorkGraph stream
+limits, exact-context handshake, and separate chain-v1 handler as the server.
+It does not yet discover or select peers automatically.
 
 `/outcomemesh/chain-notify/1` reuses the complete chain-v1 wire and validation
 state machine with inverted connection roles. The winning dialer serves; the

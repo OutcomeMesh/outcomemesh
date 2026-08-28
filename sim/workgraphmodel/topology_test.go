@@ -3,6 +3,8 @@ package workgraphmodel
 import (
 	"errors"
 	"testing"
+
+	"github.com/outcomemesh/outcomemesh/core/workgraph"
 )
 
 func TestFullMeshOneEventPropagationCommitsEveryPublishedShare(t *testing.T) {
@@ -78,6 +80,86 @@ func TestTopologyRejectsDisconnectedOrInvalidGraphs(t *testing.T) {
 	if !errors.Is(err, ErrConfiguration) {
 		t.Fatalf("disconnected graph error = %v", err)
 	}
+	_, err = RunTopology(TopologyConfig{
+		Rounds: 1, Seed: 1, ShareRatio: 2, LinkDelayEvents: 1,
+		Miners: []TopologyMiner{
+			{HashUnits: 1, RelayBatchShares: workgraph.MaxShares + 1, Links: []int{1}},
+			{HashUnits: 1, Links: []int{0}},
+		},
+	})
+	if !errors.Is(err, ErrConfiguration) {
+		t.Fatalf("oversized relay batch error = %v", err)
+	}
+}
+
+func TestTimedPartialRelayProtectsSmallMinerReward(t *testing.T) {
+	miners := fullMeshTopology(2)
+	miners[0].HashUnits = 1
+	miners[1].HashUnits = 9
+	config := TopologyConfig{
+		Rounds: 1_000, Seed: 0x6a09e667f3bcc909, ShareRatio: workgraph.ShareDifficultyRatio,
+		LinkDelayEvents: 1, BlockSubsidy: 5_000_000_000, Miners: miners,
+	}
+	immediate, err := RunTopology(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index := range config.Miners {
+		config.Miners[index].RelayBatchShares = 128
+	}
+	batchOnly, err := RunTopology(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index := range config.Miners {
+		config.Miners[index].RelayIntervalEvents = 69
+	}
+	timed, err := RunTopology(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	immediateSmallPPM, err := RewardSharePPM(immediate.Miners[0].Reward, immediate.Miners[1].Reward)
+	if err != nil {
+		t.Fatal(err)
+	}
+	batchSmallPPM, err := RewardSharePPM(batchOnly.Miners[0].Reward, batchOnly.Miners[1].Reward)
+	if err != nil {
+		t.Fatal(err)
+	}
+	timedSmallPPM, err := RewardSharePPM(timed.Miners[0].Reward, timed.Miners[1].Reward)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if batchSmallPPM+20_000 >= immediateSmallPPM {
+		t.Fatalf("full-batch-only relay did not expose small-miner bias: immediate=%d batch=%d", immediateSmallPPM, batchSmallPPM)
+	}
+	if timedSmallPPM <= batchSmallPPM+20_000 || absoluteDifference(timedSmallPPM, immediateSmallPPM) > 10_000 {
+		t.Fatalf("timed relay did not restore small-miner reward: immediate=%d batch=%d timed=%d",
+			immediateSmallPPM, batchSmallPPM, timedSmallPPM)
+	}
+	if timed.IncludedShares*100 < immediate.IncludedShares*90 ||
+		timed.UnreleasedAtWinner >= batchOnly.UnreleasedAtWinner || timed.IssuedSubsidy <= batchOnly.IssuedSubsidy {
+		t.Fatalf("timed relay failed delivery/issuance bounds: immediate=%+v batch=%+v timed=%+v",
+			immediate, batchOnly, timed)
+	}
+	if immediateSmallPPM != 104_349 || batchSmallPPM != 73_611 || timedSmallPPM != 102_033 ||
+		immediate.IncludedShares != 496_602 || batchOnly.IncludedShares != 455_372 ||
+		timed.IncludedShares != 490_321 || batchOnly.UnreleasedAtWinner != 99_674 ||
+		timed.UnreleasedAtWinner != 32_784 {
+		t.Fatalf("relay calibration corpus changed: immediate=%+v batch=%+v timed=%+v ppm=%d/%d/%d",
+			immediate, batchOnly, timed, immediateSmallPPM, batchSmallPPM, timedSmallPPM)
+	}
+	t.Logf("small_miner_reward_ppm immediate=%d batch_only=%d timed=%d", immediateSmallPPM, batchSmallPPM, timedSmallPPM)
+	t.Logf("relay_delivery immediate_included=%d batch_included=%d timed_included=%d batch_unreleased=%d timed_unreleased=%d",
+		immediate.IncludedShares, batchOnly.IncludedShares, timed.IncludedShares,
+		batchOnly.UnreleasedAtWinner, timed.UnreleasedAtWinner)
+}
+
+func absoluteDifference(left, right uint64) uint64 {
+	if left >= right {
+		return left - right
+	}
+	return right - left
 }
 
 func fullMeshTopology(count int) []TopologyMiner {

@@ -370,6 +370,10 @@ Implemented in an isolated, not-yet-activated consensus package:
   incompatible peers cannot block healthy relay or hard work. A
   selected-inventory API checks local ownership and reports the exact negotiated
   prefix, allowing each queue to retain only its unsent suffix.
+- relay workers now race the 128-share threshold against a mandatory partial
+  flush (eight seconds by default). The topology/reward corpus reproduces the
+  batch-only small-miner penalty at 10% hash share (73,611 ppm versus 104,349
+  ppm with immediate relay) and restores it to 102,033 ppm with the timed flush.
 - the distinct opt-in `/outcomemesh/chain-notify/1` protocol now reverses only
   chain session roles: a winning dialer serves, while the receiver initiates
   the same cumulative-work/header-first/full-replay synchronization. A selected
@@ -390,7 +394,7 @@ QUIC session remain isolated from every ordinary v0 chain/CLI path and are
 reachable only through the explicitly marked experimental commands;
 automatic versioned discovery/routing and topology-derived peer selection,
 history-anchored archival pruning, extended filesystem-fault/soak campaigns,
-production gossip-budget calibration, and finer/adaptive economic-strategy
+production gossip-budget calibration, and broader adaptive economic-strategy
 analysis remain before activation.
 
 ## Milestones 6–10 — not integrated
