@@ -404,6 +404,42 @@ ID, activation height, fee delay, tree cap, and forest-wide history budget.
 Peers still compare the consensus-relevant network/genesis/height values in
 `ChainHelloV1`; local storage limits are not negotiated as consensus.
 
+Activation-aware discovery uses a backwards-compatible signed peer-record
+version 1:
+
+```text
+PeerRecordV1 {
+    version:           uint16 = 1
+    network_id:        uint32
+    sequence:          uint64
+    expires_at:        uint64
+    features:          uint64
+    activation_height: uint64
+    public_key:        [32]byte
+    addresses:         list<bytes>
+    signature:         [64]byte
+}
+```
+
+The signature message is the domain-separated hash
+`SHA256("OMESH/p2p/advertisement/v1" || canonical_unsigned_record)`. Known
+feature bits advertise versioned-chain sync, WorkGraph relay, chain notify,
+and activation peer exchange. Unknown bits, a zero feature mask, or a zero
+activation height are invalid. These signed claims are routing hints, never
+proof that a live service exists.
+
+`ChainHelloV1` advertises a separate `peer_discovery_v1` capability. Only when
+that bit, network, genesis, and activation height negotiate successfully may a
+versioned session carry the existing bounded `GetPeers`/`Peers` exchange. A
+response contains at most 64 records and is shortened to a deterministic prefix
+that fits the chain-v1 frame limit negotiated by both peers. Each record must
+validate cryptographically, belong to the negotiated network, advertise
+versioned-chain support, and bind the exact negotiated activation height. The
+receiver merges the whole batch or none of it. A responder serves only matching
+v1 records from its bounded local book, and a session accepts at most eight
+discovery requests. Automatic mining routing still confirms the signed
+WorkGraph claim with a live inventory-free exact-context probe.
+
 The next hard target is known before mining and is independent of the current
 candidate timestamp:
 

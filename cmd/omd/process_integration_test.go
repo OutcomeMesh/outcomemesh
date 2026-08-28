@@ -127,6 +127,11 @@ func TestProcessWorkGraphActivationQUICRestart(t *testing.T) {
 		!strings.HasSuffix(fields["relay_peers"], "/3") {
 		t.Fatalf("cooperative miner output is incomplete: %s", minedQUIC)
 	}
+	if strings.Count(minedQUIC, "work_peerbook_refresh") != 3 ||
+		strings.Count(minedQUIC, "work_peerbook_refresh peer_id=") != 3 ||
+		strings.Count(minedQUIC, "result=ok") < 2 {
+		t.Fatalf("activation peerbook refresh did not cover compatible and legacy peers: %s", minedQUIC)
+	}
 	if fields := outputFields(minedQUIC, "work_mining_quic_done"); fields["peers"] != "3" ||
 		fields["notifications"] != "2/3" || fields["notification_failures"] != "1" {
 		t.Fatalf("multi-peer notification summary is incomplete: %s", minedQUIC)

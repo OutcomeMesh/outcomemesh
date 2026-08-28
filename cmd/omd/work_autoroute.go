@@ -17,11 +17,12 @@ import (
 const workAutoPeerProbeTimeout = 10 * time.Second
 
 type workAutoPeerConfig struct {
-	Count        int
-	AttemptLimit int
-	ASNMapPath   string
-	ASNMaxAge    time.Duration
-	MaxPerASN    int
+	Count            int
+	AttemptLimit     int
+	ActivationHeight uint64
+	ASNMapPath       string
+	ASNMaxAge        time.Duration
+	MaxPerASN        int
 }
 
 func selectAutomaticWorkPeers(
@@ -36,7 +37,7 @@ func selectAutomaticWorkPeers(
 ) ([]workPeerTarget, []routing.Result, error) {
 	if ctx == nil || data == "" || networkID == 0 || host == nil || round == nil || manager == nil ||
 		config.Count <= 0 || config.Count > maxWorkMiningPeers || config.AttemptLimit < config.Count ||
-		config.AttemptLimit > discovery.MaxBookRecords || config.ASNMapPath == "" ||
+		config.AttemptLimit > discovery.MaxBookRecords || config.ActivationHeight == 0 || config.ASNMapPath == "" ||
 		config.ASNMaxAge <= 0 || config.ASNMaxAge > routing.MaxASNTableAge ||
 		config.MaxPerASN <= 0 || config.MaxPerASN > discovery.MaxBookRecords {
 		return nil, nil, errors.New("invalid automatic WorkGraph peer selection")
@@ -71,6 +72,9 @@ func selectAutomaticWorkPeers(
 	results := router.RunUntil(
 		ctx, config.AttemptLimit, config.Count,
 		func(record discovery.Record) bool {
+			if !record.Supports(discovery.FeatureWorkGraphV1, config.ActivationHeight) {
+				return false
+			}
 			id, err := record.PeerID()
 			if err != nil {
 				return false

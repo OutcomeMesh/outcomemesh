@@ -19,11 +19,20 @@ import (
 
 const (
 	Version0        uint16 = 0
+	Version1        uint16 = 1
 	MaxAddresses           = 8
 	MaxAddressBytes        = 128
 	MaxRecordBytes         = 2_048
 	MaxBookRecords         = 4_096
 	MaxLifetime     uint64 = 24 * 60 * 60
+)
+
+const (
+	FeatureVersionedChainV1 uint64 = 1 << iota
+	FeatureWorkGraphV1
+	FeatureChainNotifyV1
+	FeaturePeerExchangeV1
+	KnownFeaturesV1 = FeatureVersionedChainV1 | FeatureWorkGraphV1 | FeatureChainNotifyV1 | FeaturePeerExchangeV1
 )
 
 var (
@@ -36,6 +45,7 @@ var (
 	ErrSignature    = errors.New("invalid peer advertisement signature")
 	ErrAddress      = errors.New("invalid peer advertisement address")
 	ErrAddressOrder = errors.New("peer advertisement addresses are not canonical")
+	ErrCapabilities = errors.New("invalid peer advertisement capabilities")
 	ErrStale        = errors.New("stale peer advertisement sequence")
 	ErrCapacity     = errors.New("peer address book capacity reached")
 	ErrDiversity    = errors.New("peer address diversity bucket is full")
@@ -43,16 +53,46 @@ var (
 )
 
 type Record struct {
-	Version   uint16
-	NetworkID uint32
-	Sequence  uint64
-	ExpiresAt uint64
-	PublicKey [ed25519.PublicKeySize]byte
-	Addresses []string
-	Signature [ed25519.SignatureSize]byte
+	Version          uint16
+	NetworkID        uint32
+	Sequence         uint64
+	ExpiresAt        uint64
+	Features         uint64
+	ActivationHeight uint64
+	PublicKey        [ed25519.PublicKeySize]byte
+	Addresses        []string
+	Signature        [ed25519.SignatureSize]byte
 }
 
 func Sign(privateKey ed25519.PrivateKey, networkID uint32, sequence, expiresAt uint64, addresses []string) (Record, error) {
+	return sign(privateKey, Version0, networkID, sequence, expiresAt, 0, 0, addresses)
+}
+
+// SignActivation creates a version-1 advertisement whose claimed protocols
+// are cryptographically bound to one exact activation height. Capabilities are
+// routing hints only; a live protocol handshake remains authoritative.
+func SignActivation(
+	privateKey ed25519.PrivateKey,
+	networkID uint32,
+	sequence uint64,
+	expiresAt uint64,
+	activationHeight uint64,
+	features uint64,
+	addresses []string,
+) (Record, error) {
+	return sign(privateKey, Version1, networkID, sequence, expiresAt, features, activationHeight, addresses)
+}
+
+func sign(
+	privateKey ed25519.PrivateKey,
+	version uint16,
+	networkID uint32,
+	sequence uint64,
+	expiresAt uint64,
+	features uint64,
+	activationHeight uint64,
+	addresses []string,
+) (Record, error) {
 	if len(privateKey) != ed25519.PrivateKeySize {
 		return Record{}, ErrPublicKey
 	}
@@ -66,10 +106,11 @@ func Sign(privateKey ed25519.PrivateKey, networkID uint32, sequence, expiresAt u
 		return Record{}, ErrExpired
 	}
 	result := Record{
-		Version:   Version0,
-		NetworkID: networkID,
-		Sequence:  sequence,
-		ExpiresAt: expiresAt,
+		Version: version, NetworkID: networkID, Sequence: sequence, ExpiresAt: expiresAt,
+		Features: features, ActivationHeight: activationHeight,
+	}
+	if err := result.validateCapabilities(); err != nil {
+		return Record{}, err
 	}
 	copy(result.PublicKey[:], privateKey.Public().(ed25519.PublicKey))
 	canonical, err := canonicalAddresses(addresses)
@@ -94,8 +135,8 @@ func (record Record) PeerID() (types.Hash, error) {
 }
 
 func (record Record) Validate(now uint64) error {
-	if record.Version != Version0 {
-		return ErrVersion
+	if err := record.validateCapabilities(); err != nil {
+		return err
 	}
 	if record.NetworkID == 0 {
 		return ErrNetwork
@@ -131,6 +172,14 @@ func (record Record) Validate(now uint64) error {
 	return nil
 }
 
+// Supports reports whether a signed activation advertisement claims every
+// requested feature at the exact local activation height.
+func (record Record) Supports(features, activationHeight uint64) bool {
+	return record.Version == Version1 && activationHeight != 0 &&
+		record.ActivationHeight == activationHeight && features != 0 &&
+		record.Features&features == features
+}
+
 func (record Record) CanonicalBytes() []byte {
 	encoder := codec.NewEncoder(256)
 	record.encodeUnsigned(encoder)
@@ -160,6 +209,18 @@ func Decode(input []byte) (Record, error) {
 	result.ExpiresAt, err = decoder.U64()
 	if err != nil {
 		return Record{}, err
+	}
+	if result.Version == Version1 {
+		result.Features, err = decoder.U64()
+		if err != nil {
+			return Record{}, err
+		}
+		result.ActivationHeight, err = decoder.U64()
+		if err != nil {
+			return Record{}, err
+		}
+	} else if result.Version != Version0 {
+		return Record{}, ErrVersion
 	}
 	publicKey, err := decoder.Fixed(ed25519.PublicKeySize)
 	if err != nil {
@@ -192,7 +253,11 @@ func Decode(input []byte) (Record, error) {
 func (record Record) signatureMessage() []byte {
 	encoder := codec.NewEncoder(256)
 	record.encodeUnsigned(encoder)
-	hash := types.DomainHash("OMESH/p2p/advertisement/v0", encoder.Bytes())
+	domain := "OMESH/p2p/advertisement/v0"
+	if record.Version == Version1 {
+		domain = "OMESH/p2p/advertisement/v1"
+	}
+	hash := types.DomainHash(domain, encoder.Bytes())
 	return hash[:]
 }
 
@@ -201,11 +266,31 @@ func (record Record) encodeUnsigned(encoder *codec.Encoder) {
 	encoder.U32(record.NetworkID)
 	encoder.U64(record.Sequence)
 	encoder.U64(record.ExpiresAt)
+	if record.Version == Version1 {
+		encoder.U64(record.Features)
+		encoder.U64(record.ActivationHeight)
+	}
 	encoder.Fixed(record.PublicKey[:])
 	encoder.Uvarint(uint64(len(record.Addresses)))
 	for _, address := range record.Addresses {
 		encoder.BytesField([]byte(address))
 	}
+}
+
+func (record Record) validateCapabilities() error {
+	switch record.Version {
+	case Version0:
+		if record.Features != 0 || record.ActivationHeight != 0 {
+			return ErrCapabilities
+		}
+	case Version1:
+		if record.Features == 0 || record.Features&^KnownFeaturesV1 != 0 || record.ActivationHeight == 0 {
+			return ErrCapabilities
+		}
+	default:
+		return ErrVersion
+	}
+	return nil
 }
 
 type Book struct {

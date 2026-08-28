@@ -451,6 +451,21 @@ func runWorkServeQUIC(arguments []string) error {
 		return err
 	}
 	defer host.Close()
+	now := unixNow()
+	addressBook, err := openPeerBook(*data, document.NetworkID, now)
+	if err != nil {
+		return err
+	}
+	if _, err := publishWorkDiscoveryRecord(
+		addressBook, privateKey, host.ID(), document.NetworkID, profile.ActivationHeight,
+		host.Addresses(), now, workDiscoverySuggestedSequence(),
+	); err != nil {
+		return err
+	}
+	if err := savePeerBook(*data, addressBook, now); err != nil {
+		return err
+	}
+	chainSession.AttachDiscovery(addressBook)
 	if err := host.SetVersionedChainHandler(func(handlerContext context.Context, peerID types.Hash, stream libp2pnetwork.Stream) {
 		if err := peerManager.Acquire(peerID); err != nil {
 			_ = stream.Reset()
@@ -517,10 +532,21 @@ func runWorkServeQUIC(arguments []string) error {
 	}); err != nil {
 		return err
 	}
-	fmt.Printf("serving_work_quic peer_id=%s libp2p_id=%s network=%d activation_height=%d protocols=chain-v1,chain-notify-v1,workgraph-v1 listen=%s\n",
+	fmt.Printf("serving_work_quic peer_id=%s libp2p_id=%s network=%d activation_height=%d protocols=chain-v1,chain-notify-v1,workgraph-v1,peer-discovery-v1 listen=%s\n",
 		host.ID(), host.Libp2pID(), document.NetworkID, profile.ActivationHeight, strings.Join(host.Addresses(), ","))
-	<-ctx.Done()
-	return nil
+	renewalErrors := renewWorkDiscoveryRecords(
+		ctx, *data, addressBook, privateKey, host.ID(), document.NetworkID,
+		profile.ActivationHeight, host.Addresses(),
+	)
+	select {
+	case <-ctx.Done():
+		return nil
+	case renewalErr, ok := <-renewalErrors:
+		if !ok {
+			return nil
+		}
+		return renewalErr
+	}
 }
 
 func recordWorkPeerSession(manager *peers.Manager, peerID types.Hash, sessionErr error) {

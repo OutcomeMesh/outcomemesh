@@ -3,6 +3,7 @@ package discovery
 import (
 	"bytes"
 	"crypto/ed25519"
+	"encoding/hex"
 	"errors"
 	"slices"
 	"strconv"
@@ -58,6 +59,52 @@ func TestSignedRecordCanonicalRoundTrip(t *testing.T) {
 	}
 	if gotID != wantID {
 		t.Fatalf("peer ID = %s, want %s", gotID, wantID)
+	}
+}
+
+func TestActivationRecordBindsCapabilitiesAndHeight(t *testing.T) {
+	t.Parallel()
+
+	key := testKey("activation")
+	record, err := SignActivation(
+		key, 91, 9, testNow+600, 25,
+		FeatureVersionedChainV1|FeatureWorkGraphV1|FeaturePeerExchangeV1,
+		[]string{"127.0.0.1:9845"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := record.Validate(testNow); err != nil {
+		t.Fatal(err)
+	}
+	if !record.Supports(FeatureWorkGraphV1|FeaturePeerExchangeV1, 25) ||
+		record.Supports(FeatureWorkGraphV1, 26) || record.Supports(FeatureChainNotifyV1, 25) {
+		t.Fatalf("unexpected capability match for %+v", record)
+	}
+	decoded, err := Decode(record.CanonicalBytes())
+	if err != nil || !bytes.Equal(decoded.CanonicalBytes(), record.CanonicalBytes()) {
+		t.Fatalf("activation round trip error=%v", err)
+	}
+	mutated := record
+	mutated.ActivationHeight++
+	if err := mutated.Validate(testNow); !errors.Is(err, ErrSignature) {
+		t.Fatalf("mutated activation error=%v", err)
+	}
+	mutated = record
+	mutated.Features |= FeatureChainNotifyV1
+	if err := mutated.Validate(testNow); !errors.Is(err, ErrSignature) {
+		t.Fatalf("mutated features error=%v", err)
+	}
+	if _, err := SignActivation(key, 91, 10, testNow+600, 0, FeatureWorkGraphV1, []string{"127.0.0.1:9845"}); !errors.Is(err, ErrCapabilities) {
+		t.Fatalf("zero activation error=%v", err)
+	}
+	if _, err := SignActivation(key, 91, 10, testNow+600, 25, 1<<63, []string{"127.0.0.1:9845"}); !errors.Is(err, ErrCapabilities) {
+		t.Fatalf("unknown feature error=%v", err)
+	}
+	gotVector := hex.EncodeToString(record.CanonicalBytes())
+	const wantVector = "00010000005b0000000000000009000000006b49d458000000000000000b000000000000001940b696ecad98757501f34b85ca2447eb10fb123aec8f75d96989d83df6ec3f62010e3132372e302e302e313a393834352147c8af64e13359d2a0bde5b1d45e074e5066bd9837201e2c72f29e1badcb68f67aef7b4295bf631ad44c6987d02c420ae9f54434ec352db27479c800e4d403"
+	if gotVector != wantVector {
+		t.Fatalf("activation record vector=%s", gotVector)
 	}
 }
 

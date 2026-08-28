@@ -391,6 +391,15 @@ Implemented in an isolated, not-yet-activated consensus package:
   exact-context probe. Reputation persists across runs; selector integration
   tests reject a higher-ranked incompatible peer and stop after the requested
   compatible count.
+- signed peer-record version 1 binds the activation height and chain/WorkGraph/
+  notify/exchange capability mask under a new Ed25519 domain while preserving
+  version-0 decoding. Chain-v1 negotiates peer exchange explicitly, serves only
+  exact-activation records, admits each response atomically, and caps requests.
+  Work servers renew their own record every 30 minutes; cooperative miners use
+  explicit and signed bootstrap peers to refresh/persist the book before ASN-
+  ranked selection, then confirm every WorkGraph claim with the existing live
+  inventory-free probe. The process fixture covers compatible refresh plus a
+  fail-closed authenticated legacy peer;
 - the distinct opt-in `/outcomemesh/chain-notify/1` protocol now reverses only
   chain session roles: a winning dialer serves, while the receiver initiates
   the same cumulative-work/header-first/full-replay synchronization. A selected
@@ -409,8 +418,8 @@ Implemented in an isolated, not-yet-activated consensus package:
 No WorkGraph field has entered a version-0 block yet. The v1 store and opt-in
 QUIC session remain isolated from every ordinary v0 chain/CLI path and are
 reachable only through the explicitly marked experimental commands;
-activation-safe signed-record refresh, long-round clock-skew/churn soaks, and
-topology-derived peer selection,
+bootstrap-rotation and long-round clock-skew/churn soaks, topology-derived peer
+selection,
 history-anchored archival pruning, extended filesystem-fault/soak campaigns,
 production gossip-budget calibration, and broader adaptive economic-strategy
 analysis remain before activation.

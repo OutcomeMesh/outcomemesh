@@ -257,16 +257,20 @@ shares in one round. The same host accepts reciprocal share sessions. A first
 pool admission is forwarded through the same workers except to its authenticated
 source; later copies stop at pool deduplication. Round control binds that path to
 the exact mining context and buffers at most 8,192 admissions during publisher
-handoff. The host also serves chain-v1, but automatic peer routing is not
-enabled unless explicitly requested.
+handoff. The host also serves chain-v1 and renews an activation-bound signed
+self-record, but automatic peer routing is not enabled unless explicitly
+requested.
 
-The opt-in startup selector can populate those same workers from an existing
-signed peerbook. The generic router distinguishes attempt budget from required
+The opt-in startup selector can populate those same workers after a bounded
+refresh of the signed peerbook from explicit and eligible activation bootstraps.
+The chain-v1 exchange negotiates discovery independently, accepts only records
+bound to the exact local activation height, and persists each validated batch
+atomically. The generic router distinguishes attempt budget from required
 successful connections and filters candidates before reserving dial state.
-WorkGraph selection filters for identity-bound direct QUIC addresses, uses
-score/latency/backoff plus mandatory ASN diversity, and counts success only
-after a no-inventory exact-context probe. Reputation is persisted; signed-record
-refresh for activated stores is intentionally still outside this component.
+WorkGraph selection filters for identity-bound direct QUIC addresses and a
+signed WorkGraph claim, uses score/latency/backoff plus mandatory ASN diversity,
+and counts success only after a live no-inventory exact-context probe.
+Reputation is persisted; bootstrap diversity remains local operator policy.
 
 Anchor propagation uses a third opt-in protocol role without a second sync
 grammar. On `/outcomemesh/chain-notify/1` the winning dialer runs the existing

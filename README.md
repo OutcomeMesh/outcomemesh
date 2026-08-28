@@ -133,7 +133,7 @@ genesis ID (the default 12-bit development target supports the required exact
   --peer <second-multiaddress> --peer-id <second-outcomemesh-peer-id> \
   --count 1 --relay-every 128 --relay-interval 8s
 
-# Or fill a bounded peer set from fresh signed records already in peers.bin.
+# Or refresh, rank, and fill a bounded peer set from signed activation records.
 ./bin/omd work-mine-quic --data ./data/work-b --key node-b.key \
   --auto-peers 4 --auto-attempts 16 --asn-map ./current-cidr-asn.csv \
   --max-per-asn 1 --count 1
@@ -156,16 +156,18 @@ while mining and admission callbacks perform no network I/O. A slow,
 incompatible, or unreachable peer therefore cannot stop hard-PoW search or a
 healthy peer's relay. Each worker sends when either 128 new shares accumulate or
 the eight-second partial-batch timer fires; the time bound prevents a low-hash
-miner's shares from remaining private for an entire round. Automatic peer
-discovery and topology-aware routing remain gated. When this miner wins,
+miner's shares from remaining private for an entire round. Activation-aware
+peer exchange and ASN-ranked routing are available only on this opt-in path.
+When this miner wins,
 coalesced background chain-notify-v1 prompts make the configured peers initiate
 the existing trustless header-first pull; these are not trusted block pushes.
-`--auto-peers` is an experimental bounded selector, not peer discovery: it ranks
-fresh signed records already in the local peerbook by persisted reputation and
-latency, applies the required operator-supplied ASN table, and performs an
-inventory-free WorkGraph/exact-context capability probe. It fails unless the
-requested number of compatible peers is found. Refreshing signed records after
-WorkGraph activation remains a separate gate.
+`--auto-peers` first refreshes the local book from explicit and eligible signed
+bootstraps over activation-bound chain-v1. Version-1 records sign their exact
+activation height and claimed capabilities; refreshed batches are validated
+atomically and persisted. The selector then ranks them by reputation/latency,
+applies the required operator-supplied ASN table, and performs an inventory-free
+WorkGraph/exact-context capability probe. Claims never replace the live probe,
+and the command fails unless the requested compatible count is reached.
 Transactions on the experimental path, migration tooling, and public activation
 also remain gated.
 

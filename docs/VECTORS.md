@@ -128,6 +128,21 @@ anchor_subsidy = 5,110
 share_reward   = 10
 ```
 
+## Signed activation peer advertisement version 1
+
+`TestActivationRecordBindsCapabilitiesAndHeight` fixes a short-lived signed
+record for network 91, sequence 9, expiry 1,800,000,600, activation height 25,
+and feature mask `0x0b` (`versioned-chain`, `WorkGraph`, and `peer-exchange`).
+Its one canonical address is `127.0.0.1:9845`:
+
+```text
+00010000005b0000000000000009000000006b49d458000000000000000b000000000000001940b696ecad98757501f34b85ca2447eb10fb123aec8f75d96989d83df6ec3f62010e3132372e302e302e313a393834352147c8af64e13359d2a0bde5b1d45e074e5066bd9837201e2c72f29e1badcb68f67aef7b4295bf631ad44c6987d02c420ae9f54434ec352db27479c800e4d403
+```
+
+The Ed25519 signature domain is `OMESH/p2p/advertisement/v1`. Changing the
+feature mask or activation height invalidates the signature. Version-0 peer
+records keep their original encoding and signature domain.
+
 ## WorkGraph relay hello version 1
 
 `TestWorkHelloGoldenFrame` fixes the complete length-prefixed frame for message

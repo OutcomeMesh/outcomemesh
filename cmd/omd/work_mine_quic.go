@@ -114,6 +114,41 @@ func runWorkMineQUIC(arguments []string) (resultErr error) {
 		return err
 	}
 	defer host.Close()
+	now := unixNow()
+	addressBook, err := openPeerBook(*data, document.NetworkID, now)
+	if err != nil {
+		return err
+	}
+	if _, err := publishWorkDiscoveryRecord(
+		addressBook, privateKey, host.ID(), document.NetworkID, profile.ActivationHeight,
+		host.Addresses(), now, workDiscoverySuggestedSequence(),
+	); err != nil {
+		return err
+	}
+	if err := savePeerBook(*data, addressBook, now); err != nil {
+		return err
+	}
+	chainSession.AttachDiscovery(addressBook)
+	renewalFailures := make(chan error, 1)
+	renewalErrors := renewWorkDiscoveryRecords(
+		ctx, *data, addressBook, privateKey, host.ID(), document.NetworkID,
+		profile.ActivationHeight, host.Addresses(),
+	)
+	go func() {
+		if renewalErr, ok := <-renewalErrors; ok {
+			renewalFailures <- renewalErr
+			cancel()
+		}
+	}()
+	defer func() {
+		select {
+		case renewalErr := <-renewalFailures:
+			if resultErr == nil || errors.Is(resultErr, context.Canceled) {
+				resultErr = renewalErr
+			}
+		default:
+		}
+	}()
 	for _, target := range targets {
 		if target.id == host.ID() {
 			return errors.New("cooperative peer list contains this miner's identity")
@@ -123,6 +158,26 @@ func runWorkMineQUIC(arguments []string) (resultErr error) {
 	if err := installWorkMiningHandlers(host, chainSession, roundManager, peerManager, roundControl); err != nil {
 		return err
 	}
+	if len(targets) > 0 || *autoPeers > 0 {
+		refreshAttempts := *autoAttempts
+		if *autoPeers == 0 {
+			refreshAttempts = len(targets)
+		}
+		refreshResults, err := refreshWorkPeerBook(
+			ctx, *data, document.NetworkID, profile.ActivationHeight, host, chainSession,
+			peerManager, addressBook, targets, refreshAttempts,
+		)
+		if err != nil {
+			return err
+		}
+		for _, result := range refreshResults {
+			if result.Err == nil {
+				fmt.Printf("work_peerbook_refresh peer_id=%s records=%d result=ok\n", result.PeerID, result.Records)
+			} else {
+				fmt.Printf("work_peerbook_refresh peer_id=%s records=0 result=failed error=%q\n", result.PeerID, result.Err)
+			}
+		}
+	}
 	if *autoPeers > 0 {
 		probeRound, err := roundManager.Current()
 		if err != nil {
@@ -131,8 +186,9 @@ func runWorkMineQUIC(arguments []string) (resultErr error) {
 		automatic, results, err := selectAutomaticWorkPeers(
 			ctx, *data, document.NetworkID, host, probeRound, peerManager, targets,
 			workAutoPeerConfig{
-				Count: *autoPeers, AttemptLimit: *autoAttempts, ASNMapPath: *asnMapPath,
-				ASNMaxAge: *asnMaxAge, MaxPerASN: *maxPerASN,
+				Count: *autoPeers, AttemptLimit: *autoAttempts, ActivationHeight: profile.ActivationHeight,
+				ASNMapPath: *asnMapPath,
+				ASNMaxAge:  *asnMaxAge, MaxPerASN: *maxPerASN,
 			},
 		)
 		for _, result := range results {

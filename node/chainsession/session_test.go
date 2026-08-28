@@ -2,6 +2,7 @@ package chainsession
 
 import (
 	"context"
+	"crypto/ed25519"
 	"errors"
 	"io"
 	"net"
@@ -15,6 +16,7 @@ import (
 	"github.com/outcomemesh/outcomemesh/core/workblock"
 	"github.com/outcomemesh/outcomemesh/core/workgraph"
 	"github.com/outcomemesh/outcomemesh/node/activation"
+	"github.com/outcomemesh/outcomemesh/node/discovery"
 	"github.com/outcomemesh/outcomemesh/node/wire"
 	"github.com/outcomemesh/outcomemesh/storage"
 	"github.com/outcomemesh/outcomemesh/storage/reference"
@@ -257,6 +259,158 @@ func TestSessionHandshakeRejectsDifferentActivationHeight(t *testing.T) {
 	_, _ = right.node.Synchronize(ctx, client)
 	if err := <-serverDone; !errors.Is(err, ErrActivation) {
 		t.Fatalf("activation mismatch error=%v", err)
+	}
+}
+
+func TestActivationSessionAtomicallyRefreshesSignedPeerbook(t *testing.T) {
+	t.Parallel()
+
+	source := newChainFixture(t, 740, 2, DefaultSessionConfig())
+	destination := newChainFixture(t, 740, 2, DefaultSessionConfig())
+	defer source.ledger.Close()
+	defer destination.ledger.Close()
+	now := uint64(time.Now().Unix())
+	seed := types.DomainHash("test/chainsession/discovery-key")
+	record, err := discovery.SignActivation(
+		ed25519.NewKeyFromSeed(seed[:]), 740, 1, now+600, 2,
+		discovery.FeatureVersionedChainV1|discovery.FeatureWorkGraphV1|discovery.FeaturePeerExchangeV1,
+		[]string{"127.0.0.1:9845"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceBook, _ := discovery.NewBook(740, 8)
+	destinationBook, _ := discovery.NewBook(740, 8)
+	if err := sourceBook.Add(record, now); err != nil {
+		t.Fatal(err)
+	}
+	source.node.AttachDiscovery(sourceBook)
+	destination.node.AttachDiscovery(destinationBook)
+
+	client, server := net.Pipe()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	serverDone := make(chan error, 1)
+	go func() { serverDone <- source.node.Serve(ctx, server) }()
+	records, err := destination.node.Discover(ctx, client, wire.MaxPeerRecords)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := <-serverDone; err != nil {
+		t.Fatal(err)
+	}
+	if len(records) != 1 || destinationBook.Len(now) != 1 ||
+		!records[0].Supports(discovery.FeatureWorkGraphV1|discovery.FeaturePeerExchangeV1, 2) {
+		t.Fatalf("discovered records=%+v book=%d", records, destinationBook.Len(now))
+	}
+}
+
+func TestActivationDiscoveryFitsNegotiatedFrameBudget(t *testing.T) {
+	t.Parallel()
+
+	source := newChainFixture(t, 742, 2, DefaultSessionConfig())
+	destinationConfig := DefaultSessionConfig()
+	destinationConfig.MaxFrameBytes = wire.MinVersionedChainFrameBodyBytes
+	destination := newChainFixture(t, 742, 2, destinationConfig)
+	defer source.ledger.Close()
+	defer destination.ledger.Close()
+	now := uint64(time.Now().Unix())
+	sourceBook, _ := discovery.NewBook(742, 8)
+	destinationBook, _ := discovery.NewBook(742, 8)
+	addresses := []string{
+		"127.0.0.1:9840", "127.0.0.1:9841", "127.0.0.1:9842", "127.0.0.1:9843",
+		"127.0.0.1:9844", "127.0.0.1:9845", "127.0.0.1:9846", "127.0.0.1:9847",
+	}
+	for index, address := range addresses {
+		seed := types.DomainHash("test/chainsession/frame-budget-discovery", []byte{byte(index)})
+		record, err := discovery.SignActivation(
+			ed25519.NewKeyFromSeed(seed[:]), 742, 1, now+600, 2,
+			discovery.FeatureVersionedChainV1|discovery.FeaturePeerExchangeV1,
+			[]string{address},
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := sourceBook.Add(record, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	source.node.AttachDiscovery(sourceBook)
+	destination.node.AttachDiscovery(destinationBook)
+
+	client, server := net.Pipe()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	serverDone := make(chan error, 1)
+	go func() { serverDone <- source.node.Serve(ctx, server) }()
+	records, err := destination.node.Discover(ctx, client, wire.MaxPeerRecords)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := <-serverDone; err != nil {
+		t.Fatal(err)
+	}
+	if len(records) == 0 || len(records) >= len(addresses) || destinationBook.Len(now) != len(records) {
+		t.Fatalf("frame-limited discovery returned=%d stored=%d", len(records), destinationBook.Len(now))
+	}
+}
+
+func TestActivationDiscoveryRejectsForeignHeightBatchAtomically(t *testing.T) {
+	t.Parallel()
+
+	source := newChainFixture(t, 741, 2, DefaultSessionConfig())
+	destination := newChainFixture(t, 741, 2, DefaultSessionConfig())
+	defer source.ledger.Close()
+	defer destination.ledger.Close()
+	destinationBook, _ := discovery.NewBook(741, 8)
+	destination.node.AttachDiscovery(destinationBook)
+	now := uint64(time.Now().Unix())
+	sign := func(label string, activationHeight uint64) discovery.Record {
+		seed := types.DomainHash("test/chainsession/foreign-discovery", []byte(label))
+		record, err := discovery.SignActivation(
+			ed25519.NewKeyFromSeed(seed[:]), 741, 1, now+600, activationHeight,
+			discovery.FeatureVersionedChainV1|discovery.FeaturePeerExchangeV1,
+			[]string{"127.0.0.1:9845"},
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return record
+	}
+	valid := sign("valid", 2)
+	foreign := sign("foreign", 3)
+	client, server := net.Pipe()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	serverDone := make(chan error, 1)
+	go func() {
+		defer server.Close()
+		if _, err := wire.ReadMessage(server); err != nil {
+			serverDone <- err
+			return
+		}
+		hello, err := source.node.Status()
+		if err == nil {
+			err = wire.WriteMessage(server, hello)
+		}
+		if err == nil {
+			_, err = wire.ReadMessage(server)
+		}
+		if err == nil {
+			err = wire.WriteMessage(server, wire.Peers{Version: wire.Version0, Records: [][]byte{
+				valid.CanonicalBytes(), foreign.CanonicalBytes(),
+			}})
+		}
+		serverDone <- err
+	}()
+	if _, err := destination.node.Discover(ctx, client, wire.MaxPeerRecords); !errors.Is(err, discovery.ErrCapabilities) {
+		t.Fatalf("foreign activation discovery error=%v", err)
+	}
+	if err := <-serverDone; err != nil {
+		t.Fatal(err)
+	}
+	if got := destinationBook.Len(now); got != 0 {
+		t.Fatalf("foreign activation batch partially applied records=%d", got)
 	}
 }
 

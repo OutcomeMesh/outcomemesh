@@ -29,7 +29,8 @@ type Config struct {
 func DefaultConfig(networkID uint32, genesisID types.Hash, activationHeight uint64) Config {
 	return Config{
 		NetworkID: networkID, GenesisID: genesisID, ActivationHeight: activationHeight,
-		Features: wire.ChainFeatureVersionedSyncV1, MaxFrameBytes: uint32(wire.MaxVersionedFrameBodyBytes),
+		Features:      wire.ChainFeatureVersionedSyncV1 | wire.ChainFeaturePeerDiscoveryV1,
+		MaxFrameBytes: uint32(wire.MaxVersionedFrameBodyBytes),
 	}
 }
 
@@ -39,6 +40,7 @@ type Protocol struct {
 
 type Limits struct {
 	MaxFrameBytes uint32
+	Features      uint64
 }
 
 func New(config Config) (*Protocol, error) {
@@ -104,7 +106,7 @@ func (protocol *Protocol) Negotiate(remote wire.ChainHello) (Limits, error) {
 	if maximum < wire.MinVersionedChainFrameBodyBytes {
 		return Limits{}, ErrNegotiation
 	}
-	return Limits{MaxFrameBytes: maximum}, nil
+	return Limits{MaxFrameBytes: maximum, Features: remote.Features & protocol.config.Features}, nil
 }
 
 // PeerIsBetter applies the same cumulative-hard-work and smaller-ID tie break

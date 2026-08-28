@@ -124,22 +124,25 @@ queued to every explicit peer except its authenticated source. Duplicate pool
 admission never triggers a second fanout, which terminates gossip loops without
 a separate unbounded seen-set. A bounded pre-attach buffer closes the small
 window between round creation and publisher startup. Output reports unique
-`gossip_shares` and resulting `gossip_copies`. Automatic discovery and public
-activation remain disabled. A winning local anchor queues one coalesced
+`gossip_shares` and resulting `gossip_copies`. Bounded activation-aware
+discovery is opt-in; public activation remains disabled. A winning local anchor queues one coalesced
 chain-notify-v1 prompt per peer without delaying the next mining round. Each
 peer becomes the initiator of normal header-first verification; the responder
 serves the canonical path pinned at handshake, and only a successfully selected
 new hard-work tip invalidates the receiver's round and cancels stale hashing.
 
 An optional `--auto-peers N` startup path fills part or all of the same eight
-slots from the existing signed local peerbook. It requires a fresh local ASN
-table, caps attempts and attempts per ASN, excludes self and explicit peers,
-ranks by persisted score/latency/backoff, and stops after exactly N successful
-WorkGraph probes. `Probe` performs only identity, protocol, and exact mining-
-context negotiation; it never announces pool inventory. Unsupported peers enter
-the normal dial backoff. The command persists reputation atomically. It does not
-fetch or refresh peer advertisements, so expired/pre-activation-only peerbooks
-remain an explicit testnet limitation.
+slots from the signed local peerbook. Before selection it contacts explicit
+bootstrap peers and eligible existing records over activation-bound chain-v1,
+fetches at most 64 signed advertisements per session, and atomically persists
+successful batches. Version-1 records sign both activation height and capability
+bits. The selector requires the exact local activation height and a WorkGraph
+claim, then applies a fresh local ASN table, bounded attempts/per-ASN, self and
+explicit-peer exclusion, and persisted score/latency/backoff ranking. `Probe`
+still performs live identity, protocol, and exact mining-context negotiation
+without announcing inventory. Signed claims therefore reduce wasted dials but
+never replace capability proof. At least one live explicit or unexpired signed
+bootstrap remains necessary when a local book has no usable records.
 
 The peer probe's stable context intentionally excludes each miner's candidate
 timestamp, but share admission still applies the winner-relative 120-second
@@ -154,6 +157,6 @@ into deduplicated per-peer queues, so pending work is not abandoned at handoff.
 
 - external PoW review and hash-rate simulations;
 - production calibration of fee delay, share gossip queues, and miner strategy;
-- activation-safe signed peer-record refresh and capability advertisement;
+- bootstrap-rotation and adversarial discovery soaks across diverse operators;
 - multi-node long-round rollover soaks with clock skew, churn, and relay loss;
 - extended filesystem-fault storage soaks and longer multi-node QUIC churn.

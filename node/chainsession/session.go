@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 	"sort"
+	"sync"
 	"time"
 
 	legacyblock "github.com/outcomemesh/outcomemesh/core/block"
@@ -15,6 +16,7 @@ import (
 	"github.com/outcomemesh/outcomemesh/core/types"
 	"github.com/outcomemesh/outcomemesh/core/workblock"
 	"github.com/outcomemesh/outcomemesh/node/activation"
+	"github.com/outcomemesh/outcomemesh/node/discovery"
 	"github.com/outcomemesh/outcomemesh/node/wire"
 	"github.com/outcomemesh/outcomemesh/storage"
 )
@@ -34,14 +36,15 @@ type Stream interface {
 }
 
 type SessionConfig struct {
-	HandshakeTimeout   time.Duration
-	RequestTimeout     time.Duration
-	MaxSyncBatches     int
-	MaxInboundMessages int
-	MaxBlockRequests   int
-	MaxHeaderRequests  int
-	BatchSize          uint16
-	MaxFrameBytes      uint32
+	HandshakeTimeout     time.Duration
+	RequestTimeout       time.Duration
+	MaxSyncBatches       int
+	MaxInboundMessages   int
+	MaxBlockRequests     int
+	MaxHeaderRequests    int
+	MaxDiscoveryRequests int
+	BatchSize            uint16
+	MaxFrameBytes        uint32
 }
 
 func DefaultSessionConfig() SessionConfig {
@@ -49,7 +52,8 @@ func DefaultSessionConfig() SessionConfig {
 		HandshakeTimeout: 5 * time.Second, RequestTimeout: 30 * time.Second,
 		MaxSyncBatches: 64, MaxInboundMessages: 4_096,
 		MaxBlockRequests: 64, MaxHeaderRequests: 64,
-		BatchSize: wire.MaxBlocksPerRequest, MaxFrameBytes: uint32(wire.MaxVersionedFrameBodyBytes),
+		MaxDiscoveryRequests: 8,
+		BatchSize:            wire.MaxBlocksPerRequest, MaxFrameBytes: uint32(wire.MaxVersionedFrameBodyBytes),
 	}
 }
 
@@ -59,6 +63,9 @@ type Node struct {
 	legacy   legacyblock.Parameters
 	work     workblock.Parameters
 	config   SessionConfig
+
+	discoveryMu sync.RWMutex
+	book        *discovery.Book
 }
 
 func NewNode(
@@ -88,6 +95,9 @@ func NewNode(
 	if config.MaxHeaderRequests == 0 {
 		config.MaxHeaderRequests = defaults.MaxHeaderRequests
 	}
+	if config.MaxDiscoveryRequests == 0 {
+		config.MaxDiscoveryRequests = defaults.MaxDiscoveryRequests
+	}
 	if config.BatchSize == 0 {
 		config.BatchSize = defaults.BatchSize
 	}
@@ -98,6 +108,7 @@ func NewNode(
 		config.MaxInboundMessages <= 0 || config.MaxInboundMessages > 1_000_000 ||
 		config.MaxBlockRequests <= 0 || config.MaxBlockRequests > config.MaxInboundMessages ||
 		config.MaxHeaderRequests <= 0 || config.MaxHeaderRequests > config.MaxInboundMessages ||
+		config.MaxDiscoveryRequests <= 0 || config.MaxDiscoveryRequests > config.MaxInboundMessages ||
 		config.MaxSyncBatches > config.MaxBlockRequests || config.MaxSyncBatches > config.MaxHeaderRequests ||
 		config.BatchSize > wire.MaxBlocksPerRequest || config.BatchSize > wire.MaxHeadersPerRequest ||
 		config.MaxFrameBytes < wire.MinVersionedChainFrameBodyBytes ||
@@ -122,7 +133,8 @@ func NewNode(
 	}
 	protocol, err := New(Config{
 		NetworkID: document.NetworkID, GenesisID: genesisID, ActivationHeight: work.ActivationHeight,
-		Features: wire.ChainFeatureVersionedSyncV1, MaxFrameBytes: config.MaxFrameBytes,
+		Features:      wire.ChainFeatureVersionedSyncV1 | wire.ChainFeaturePeerDiscoveryV1,
+		MaxFrameBytes: config.MaxFrameBytes,
 	})
 	if err != nil {
 		return nil, err
@@ -130,6 +142,17 @@ func NewNode(
 	return &Node{
 		router: router, protocol: protocol, legacy: legacy, work: work, config: config,
 	}, nil
+}
+
+// AttachDiscovery enables bounded signed-record exchange on activation-bound
+// versioned chain sessions. The book remains local policy state, not consensus.
+func (node *Node) AttachDiscovery(book *discovery.Book) {
+	if node == nil {
+		return
+	}
+	node.discoveryMu.Lock()
+	node.book = book
+	node.discoveryMu.Unlock()
 }
 
 func (node *Node) Status() (wire.ChainHello, error) {
@@ -344,7 +367,7 @@ func (node *Node) ApplyBlocks(blocks []chainblock.Block) (storage.Tip, error) {
 }
 
 // Serve performs a separate v1 handshake and responds only to bounded pull
-// requests. It is not registered by the active transport or CLI.
+// requests. It is registered only by the explicit WorkGraph activation CLI.
 func (node *Node) Serve(ctx context.Context, stream Stream) error {
 	if node == nil || stream == nil {
 		return ErrConfiguration
@@ -357,6 +380,7 @@ func (node *Node) Serve(ctx context.Context, stream Stream) error {
 	messages := 0
 	blockRequests := 0
 	headerRequests := 0
+	discoveryRequests := 0
 	var pending *servedHeaders
 	for {
 		message, err := node.read(ctx, stream, limits.MaxFrameBytes)
@@ -371,6 +395,30 @@ func (node *Node) Serve(ctx context.Context, stream Stream) error {
 			return ErrSessionBudget
 		}
 		switch value := message.(type) {
+		case wire.GetPeers:
+			if pending != nil || limits.Features&wire.ChainFeaturePeerDiscoveryV1 == 0 {
+				return ErrUnexpected
+			}
+			discoveryRequests++
+			if discoveryRequests > node.config.MaxDiscoveryRequests {
+				return ErrSessionBudget
+			}
+			records := node.discoveryRecords(int(value.Limit))
+			encoded := make([][]byte, len(records))
+			for index, record := range records {
+				encoded[index] = record.CanonicalBytes()
+			}
+			response := wire.Peers{Version: wire.Version0, Records: encoded}
+			for {
+				err = node.write(ctx, stream, response, limits.MaxFrameBytes)
+				if !errors.Is(err, wire.ErrFrameSize) || len(response.Records) == 0 {
+					break
+				}
+				response.Records = response.Records[:len(response.Records)/2]
+			}
+			if err != nil {
+				return err
+			}
 		case wire.GetVersionedHeaders:
 			if pending != nil {
 				return ErrUnexpected
@@ -429,6 +477,97 @@ func (node *Node) Serve(ctx context.Context, stream Stream) error {
 			return ErrUnexpected
 		}
 	}
+}
+
+// Discover performs an activation-bound chain handshake, requests a bounded
+// signed advertisement batch, validates it completely, then atomically merges
+// it into the attached peerbook.
+func (node *Node) Discover(ctx context.Context, stream Stream, limit uint16) ([]discovery.Record, error) {
+	if node == nil || stream == nil {
+		return nil, ErrConfiguration
+	}
+	defer stream.Close()
+	_, limits, err := node.initiatorHandshake(ctx, stream)
+	if err != nil {
+		return nil, err
+	}
+	if limits.Features&wire.ChainFeaturePeerDiscoveryV1 == 0 {
+		return nil, ErrNegotiation
+	}
+	request := wire.GetPeers{Version: wire.Version0, Limit: limit}
+	if err := request.Validate(); err != nil {
+		return nil, err
+	}
+	if err := node.write(ctx, stream, request, limits.MaxFrameBytes); err != nil {
+		return nil, err
+	}
+	message, err := node.read(ctx, stream, limits.MaxFrameBytes)
+	if err != nil {
+		return nil, err
+	}
+	response, ok := message.(wire.Peers)
+	if !ok || len(response.Records) > int(limit) {
+		return nil, ErrUnexpected
+	}
+	records := make([]discovery.Record, len(response.Records))
+	nowValue := time.Now().Unix()
+	if nowValue < 0 {
+		return nil, discovery.ErrExpired
+	}
+	now := uint64(nowValue)
+	for index, encoded := range response.Records {
+		record, err := discovery.Decode(encoded)
+		if err != nil {
+			return nil, err
+		}
+		if err := record.Validate(now); err != nil {
+			return nil, err
+		}
+		if record.NetworkID != node.protocol.config.NetworkID {
+			return nil, discovery.ErrNetwork
+		}
+		if !record.Supports(discovery.FeatureVersionedChainV1, node.protocol.config.ActivationHeight) {
+			return nil, discovery.ErrCapabilities
+		}
+		records[index] = record
+	}
+	node.discoveryMu.RLock()
+	book := node.book
+	node.discoveryMu.RUnlock()
+	if book != nil {
+		if err := book.MergeBatch(records, now); err != nil {
+			return nil, err
+		}
+	}
+	return records, nil
+}
+
+func (node *Node) discoveryRecords(limit int) []discovery.Record {
+	if limit <= 0 {
+		return nil
+	}
+	node.discoveryMu.RLock()
+	book := node.book
+	node.discoveryMu.RUnlock()
+	if book == nil {
+		return nil
+	}
+	now := time.Now().Unix()
+	if now < 0 {
+		return nil
+	}
+	listed := book.List(uint64(now), discovery.MaxBookRecords)
+	result := make([]discovery.Record, 0, min(limit, len(listed)))
+	for _, record := range listed {
+		if !record.Supports(discovery.FeatureVersionedChainV1, node.protocol.config.ActivationHeight) {
+			continue
+		}
+		result = append(result, record)
+		if len(result) == limit {
+			break
+		}
+	}
+	return result
 }
 
 // Synchronize downloads header-validated batches along one remote canonical

@@ -217,8 +217,24 @@ duplicates, and requires every selected peer to complete an inventory-free
 exact-context capability probe. Attempt and success counts are independently
 bounded; incompatible peers enter persisted exponential dial backoff. The
 selector does not treat a signed advertisement as proof of WorkGraph support.
-It also does not refresh advertisements after activation, so operators must not
-mistake this stage for autonomous bootstrap or Sybil-resistant discovery.
+
+WorkGraph servers and long-lived miners publish version-1 advertisements whose
+feature mask and exact activation height are covered by the peer identity
+signature, then renew them every 30 minutes with a monotonic sequence and a
+one-hour expiry. Peer exchange runs only after a chain-v1 hello has bound the
+network, genesis, activation height, and common discovery capability. Responses
+contain at most 64 records, are shortened to the negotiated frame budget, and a
+receiver validates and merges the entire batch atomically. A session accepts at
+most eight discovery requests. Only exact-activation version-1 records claiming
+versioned-chain support are served or admitted; a live WorkGraph probe remains
+authoritative before selection.
+
+These constraints limit parsing, replay, and accidental cross-activation risks;
+they do not make discovery Sybil-resistant. A bootstrap peer can still return a
+biased or eclipse-oriented view, signed capabilities do not prove reachability,
+and the ASN table is local operator input rather than a trusted network fact.
+Production bootstrap rotation, independent seeds, monitoring, and adversarial
+soak testing remain required.
 
 Anchor notification is separated from ordinary chain pull at the libp2p
 protocol ID, but deliberately reuses its verified session. The remote winner

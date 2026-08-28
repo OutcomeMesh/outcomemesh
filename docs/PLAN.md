@@ -170,6 +170,8 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
   exact-context WorkGraph capability probe.
 - Same-parent timestamp generations with retire/drain semantics, atomic DAG
   revalidation, concurrent-admission linearization, and gossip handoff.
+- Activation-bound peer exchange with signed height/capability records,
+  atomic refresh, persistent sequence renewal, and live WorkGraph confirmation.
 
 ### Exit gates
 

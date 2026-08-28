@@ -157,8 +157,9 @@ bounded pool totals. The pool is replaced rather than migrated when the parent
 changes. A real process fixture chain-syncs three WorkGraph-enabled Pebble
 nodes, relays fresh weak shares, then proves that two compatible peers converge
 after the miner wins while a third authenticated v0-only peer fails
-independently. Automatic peer discovery, topology-aware routing, and production
-activation remain separate gates.
+independently. Activation-aware peer exchange and topology-aware selection are
+available only on the explicit WorkGraph mining path; production activation
+remains a separate gate.
 
 `work-mine-quic` is the first explicit outbound fanout path. Up to eight direct
 QUIC peers are identity-derived from their `/p2p` multiaddresses; optional
@@ -181,16 +182,17 @@ separate chain-v1 handler as the server. It does not yet discover or select
 peers automatically unless the operator explicitly enables the bounded
 peerbook selector described below.
 
-`work-mine-quic --auto-peers` reuses the ordinary routing score, latency, dial
-backoff, and ASN-diversity policy against fresh signed records already stored in
-`peers.bin`. Automatic selection requires an operator-owned, age-checked ASN
-map. It excludes self and any explicit peer, considers only direct QUIC-v1
-addresses whose embedded libp2p identity matches the signed OutcomeMesh record,
-and spends at most `--auto-attempts`. A handshake-only `Probe` verifies the
-WorkGraph protocol and byte-identical mining context without announcing share
-IDs. Selection fails closed if it cannot reach the requested count; failed
-capability probes update persisted dial backoff. This path deliberately does not
-refresh peer records after activation yet.
+`work-mine-quic --auto-peers` first refreshes `peers.bin` from explicit and
+eligible signed bootstraps over activation-bound chain-v1, then reuses the
+ordinary routing score, latency, dial backoff, and ASN-diversity policy.
+Automatic selection requires an operator-owned, age-checked ASN map. It
+excludes self and any explicit peer, accepts only signed version-1 records
+claiming WorkGraph at the exact local activation height, considers only direct
+QUIC-v1 addresses whose embedded libp2p identity matches the record, and spends
+at most `--auto-attempts`. A handshake-only `Probe` remains authoritative: it
+verifies the live WorkGraph protocol and byte-identical mining context without
+announcing share IDs. Selection fails closed if it cannot reach the requested
+count; failed capability probes update persisted dial backoff.
 
 `/outcomemesh/chain-notify/1` reuses the complete chain-v1 wire and validation
 state machine with inverted connection roles. The winning dialer serves; the
@@ -216,6 +218,19 @@ multiaddress is rejected unless its embedded libp2p ID resolves to the same
 Ed25519 public key carried by the signed record. The signature covers the
 domain-separated hash of every unsigned field, and the OutcomeMesh peer ID is
 derived from that public key.
+
+Version 1 preserves those fields and adds a signed feature mask plus one exact
+activation height under the separate `OMESH/p2p/advertisement/v1` domain.
+Unknown feature bits, zero capabilities, and zero activation height fail
+closed. Chain-v1 negotiates `peer_discovery_v1` independently from versioned
+sync. Only after network, genesis, activation, and that feature agree may a
+peer request up to 64 records. The responder serves only exact-activation v1
+records, shortens the deterministic response prefix to the negotiated frame
+budget, and accepts at most eight requests per session. The receiver validates
+the entire batch before one atomic merge. WorkGraph servers and long-lived
+miners publish a one-hour self-record and replace it every 30 minutes with a
+monotonic sequence. These capability assertions optimize routing; only a live
+protocol handshake proves current support.
 
 Records live for at most 24 hours. The address book has a hard record cap,
 prunes expiry, rejects stale sequence numbers, returns detached deterministic

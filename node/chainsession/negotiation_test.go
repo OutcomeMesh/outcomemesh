@@ -22,13 +22,18 @@ func TestHelloDetachesTipAndNegotiatesSmallerFrame(t *testing.T) {
 	if hello.CumulativeWork[0] != 9 {
 		t.Fatal("hello retained caller-owned cumulative work")
 	}
+	if hello.Features != wire.ChainFeatureVersionedSyncV1|wire.ChainFeaturePeerDiscoveryV1 {
+		t.Fatalf("default features=%x", hello.Features)
+	}
 	hello.MaxFrameBytes = wire.MinVersionedChainFrameBodyBytes
+	hello.Features = wire.ChainFeatureVersionedSyncV1
 	limits, err := protocol.Negotiate(hello)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if limits.MaxFrameBytes != wire.MinVersionedChainFrameBodyBytes {
-		t.Fatalf("negotiated frame=%d", limits.MaxFrameBytes)
+	if limits.MaxFrameBytes != wire.MinVersionedChainFrameBodyBytes ||
+		limits.Features != wire.ChainFeatureVersionedSyncV1 {
+		t.Fatalf("negotiated limits=%+v", limits)
 	}
 }
 

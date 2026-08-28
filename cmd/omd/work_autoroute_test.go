@@ -74,7 +74,7 @@ func TestAutomaticWorkPeersProbeCapabilityAndStopAtRequestedCount(t *testing.T) 
 	selected, results, err := selectAutomaticWorkPeers(
 		ctx, data, networkID, client, round, manager, nil,
 		workAutoPeerConfig{
-			Count: 2, AttemptLimit: 4, ASNMapPath: asnPath,
+			Count: 2, AttemptLimit: 4, ActivationHeight: 5, ASNMapPath: asnPath,
 			ASNMaxAge: time.Hour, MaxPerASN: 4,
 		},
 	)
@@ -127,7 +127,11 @@ func testAutomaticWorkRecord(
 	host *libp2ptransport.Host,
 ) discovery.Record {
 	t.Helper()
-	record, err := discovery.Sign(key, networkID, 1, now+600, host.Addresses())
+	record, err := discovery.SignActivation(
+		key, networkID, 1, now+600, 5,
+		discovery.FeatureVersionedChainV1|discovery.FeatureWorkGraphV1|discovery.FeaturePeerExchangeV1,
+		host.Addresses(),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

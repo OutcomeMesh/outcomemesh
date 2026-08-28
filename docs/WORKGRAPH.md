@@ -340,8 +340,9 @@ after a fresh batch or periodic partial-batch tick without invalidating hard-PoW
 progress. The CLI requires a timer from 8 seconds to 1 minute and defaults to 8
 seconds; count-only batching measurably underpays a miner too small to reach 128
 shares in one round. The miner also installs the inbound round and chain-v1
-handlers. Automatic peer discovery and topology-derived peer choice remain
-gated. A selected local anchor schedules a coalesced chain-notify-v1 session per
+handlers. Activation-aware peer exchange and topology-derived peer choice
+remain restricted to the explicit opt-in selector. A selected local anchor
+schedules a coalesced chain-notify-v1 session per
 configured peer in the background. Each receiver still initiates normal
 verified synchronization. A chain responder pins the canonical path advertised
 by its handshake, so mining the next anchor cannot change that in-flight
@@ -359,14 +360,16 @@ round fixture proves that the middle node can serve the exact admitted body to
 the destination.
 
 The experimental miner can replace explicit addresses with a bounded ranked
-selection from its existing signed peerbook. Selection shares the ordinary
-reputation, latency, exponential-backoff, and ASN-diversity machinery, then
-requires a WorkGraph handshake against the current round before a peer becomes
-a target. The handshake-only probe exposes no share inventory. Explicit and
-automatic targets together remain capped at eight, and startup fails if the
-requested compatible count is unavailable. Activation-safe signed-record
-refresh remains unimplemented, so this is routing over an operator-seeded book,
-not autonomous peer discovery.
+selection from its signed peerbook. It first refreshes that book from explicit
+and eligible signed bootstraps using activation-bound chain-v1 peer exchange.
+Version-1 records bind capability bits and one exact activation height to the
+peer identity; batches are validated and persisted atomically. Selection then
+shares the ordinary reputation, latency, exponential-backoff, and ASN-diversity
+machinery and requires a live WorkGraph handshake against the current round
+before a peer becomes a target. The handshake-only probe exposes no share
+inventory. Explicit and automatic targets together remain capped at eight, and
+startup fails if the requested compatible count is unavailable. Bootstrap view
+bias and Sybil resistance remain operator/testnet concerns.
 
 One maximal 1,024-ID relay is bounded to exactly 630,258 bytes of bidirectional
 application framing when a peer forces one maximum-size body per batch. The

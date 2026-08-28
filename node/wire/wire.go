@@ -38,7 +38,10 @@ const (
 )
 
 const WorkFeatureShareRelayV1 uint64 = 1 << 0
-const ChainFeatureVersionedSyncV1 uint64 = 1 << 0
+const (
+	ChainFeatureVersionedSyncV1 uint64 = 1 << iota
+	ChainFeaturePeerDiscoveryV1
+)
 
 var (
 	ErrFrameSize        = errors.New("invalid wire frame size")
