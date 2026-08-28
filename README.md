@@ -71,8 +71,8 @@ loss, full DAG convergence, and final anchor closure. Override the bounded
 8..1,000 generation count with `WORKROLLOVERCYCLES=1000`.
 `test-economic-review` reruns the deterministic PoW cases and the frozen
 WorkGraph selfish-mining/private-fee activation corpus. `make economic-review`
-emits all 227 economic points plus their canonical SHA-256 digest as JSON; this
-is an external-review input, not an audit result.
+emits all 382 strategy/fee points plus their canonical SHA-256 digest as JSON;
+this is an external-review input, not an audit result.
 
 Create a wallet, initialize a local chain to that wallet, mine, transfer, and
 replay-verify it:

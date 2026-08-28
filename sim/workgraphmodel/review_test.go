@@ -13,9 +13,11 @@ func TestActivationReviewCorpus(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(document.Result.SelfishMining.Points) != 155 ||
+		len(document.Result.TrailRetry.Points) != 155 ||
 		len(document.Result.FeeFragmentation.Points) != 72 {
-		t.Fatalf("review dimensions: selfish=%d fees=%d",
-			len(document.Result.SelfishMining.Points), len(document.Result.FeeFragmentation.Points))
+		t.Fatalf("review dimensions: selfish=%d trail=%d fees=%d",
+			len(document.Result.SelfishMining.Points), len(document.Result.TrailRetry.Points),
+			len(document.Result.FeeFragmentation.Points))
 	}
 	wantSelfish := []SelfishProfitThreshold{
 		{TieAdoptionPPM: 0, FirstProfitableHashPPM: 340_000, Found: true},
@@ -28,11 +30,16 @@ func TestActivationReviewCorpus(t *testing.T) {
 		t.Fatalf("selfish thresholds:\n got: %+v\nwant: %+v",
 			document.Result.SelfishMining.Thresholds, wantSelfish)
 	}
+	wantTrail := activationTrailThresholds()
+	if !reflect.DeepEqual(document.Result.TrailRetry.Thresholds, wantTrail) {
+		t.Fatalf("trail thresholds:\n got: %+v\nwant: %+v",
+			document.Result.TrailRetry.Thresholds, wantTrail)
+	}
 	digest, err := document.Digest()
 	if err != nil {
 		t.Fatal(err)
 	}
-	const wantDigest = "083a21ff5b3e06a9cddcf5f00203e4ec173b35f1bffed71ebeb70af7b9c0fd2c"
+	const wantDigest = "2d0fc971286fd1076b20ad4df870d654b0d0844aa106474f37c48352d707a6a4"
 	if got := hex.EncodeToString(digest[:]); got != wantDigest {
 		t.Fatalf("review digest = %s, want %s", got, wantDigest)
 	}
@@ -42,8 +49,34 @@ func TestActivationReviewCorpus(t *testing.T) {
 		t.Fatalf("invalid review schema error = %v, want ErrConfiguration", err)
 	}
 	t.Logf("selfish_thresholds=%+v", document.Result.SelfishMining.Thresholds)
+	t.Logf("trail_thresholds=%+v", document.Result.TrailRetry.Thresholds)
 	t.Logf("fee_thresholds=%+v", document.Result.FeeFragmentation.Thresholds)
 	t.Logf("review_sha256=%s", hex.EncodeToString(digest[:]))
+}
+
+func TestTrailRetryActivationGrid(t *testing.T) {
+	result, err := RunTrailRetrySweep(CanonicalActivationReviewConfig().SelfishMining)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Points) != 155 || len(result.Thresholds) != 5 {
+		t.Fatalf("trail review dimensions: points=%d thresholds=%d",
+			len(result.Points), len(result.Thresholds))
+	}
+	if want := activationTrailThresholds(); !reflect.DeepEqual(result.Thresholds, want) {
+		t.Fatalf("trail thresholds:\n got: %+v\nwant: %+v", result.Thresholds, want)
+	}
+	t.Logf("trail_thresholds=%+v", result.Thresholds)
+}
+
+func activationTrailThresholds() []SelfishProfitThreshold {
+	return []SelfishProfitThreshold{
+		{TieAdoptionPPM: 0, FirstProfitableHashPPM: 370_000, Found: true},
+		{TieAdoptionPPM: 250_000, FirstProfitableHashPPM: 330_000, Found: true},
+		{TieAdoptionPPM: 500_000, FirstProfitableHashPPM: 270_000, Found: true},
+		{TieAdoptionPPM: 750_000, FirstProfitableHashPPM: 230_000, Found: true},
+		{TieAdoptionPPM: 1_000_000, FirstProfitableHashPPM: 160_000, Found: true},
+	}
 }
 
 func TestFeeFragmentationSweepActivationGrid(t *testing.T) {

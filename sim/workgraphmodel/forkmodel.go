@@ -16,6 +16,7 @@ type SelfishConfig struct {
 	BlockSubsidy     uint64
 	FeesPerBlock     uint64
 	WithholdAnchors  bool
+	TrailRetry       bool
 	OmitHonestShares bool
 }
 
@@ -50,6 +51,17 @@ type tieRace struct {
 	honest   forkCandidate
 }
 
+// trailRace keeps the losing private branch alive for one additional anchor.
+// Before tied is set the attacker trails the public branch by one. If it catches
+// up, both two-anchor branches enter one final public race.
+type trailRace struct {
+	attacker     []forkCandidate
+	honest       []forkCandidate
+	attackerPool forkPool
+	honestPool   forkPool
+	tied         bool
+}
+
 // RunSelfish models adaptive hard-anchor withholding across multiple rounds.
 // Work shares remain tied to the branch parent on which they were found. A
 // public and private candidate may commit the same pre-fork shares, but only
@@ -58,7 +70,7 @@ func RunSelfish(config SelfishConfig) (SelfishResult, error) {
 	if config.HardDiscoveries <= 0 || config.HardDiscoveries > 100_000 ||
 		config.ShareRatio != workgraph.ShareDifficultyRatio ||
 		config.AttackerHashPPM == 0 || config.AttackerHashPPM >= PartsPerMillion ||
-		config.TieAdoptionPPM > PartsPerMillion {
+		config.TieAdoptionPPM > PartsPerMillion || (config.TrailRetry && !config.WithholdAnchors) {
 		return SelfishResult{}, ErrConfiguration
 	}
 	anchorSubsidy, shareReward, err := workgraph.RewardRates(config.BlockSubsidy)
@@ -77,13 +89,38 @@ func RunSelfish(config SelfishConfig) (SelfishResult, error) {
 	var publicPool forkPool
 	var privatePool forkPool
 	var tie *tieRace
+	var trail *trailRace
 
 	for discovery := 0; discovery < config.HardDiscoveries; discovery++ {
 		result.HardDiscoveries++
-		if tie != nil {
-			resolver, attackBranch, err := mineTieRace(config, &random, &result)
+		if trail != nil {
+			resolved, err := advanceTrailRace(
+				config, &random, &result, trail, anchorSubsidy, shareReward,
+			)
 			if err != nil {
 				return SelfishResult{}, err
+			}
+			if resolved {
+				trail = nil
+			}
+			continue
+		}
+		if tie != nil {
+			resolver, attackBranch, losingPool, err := mineTieRace(config, &random, &result)
+			if err != nil {
+				return SelfishResult{}, err
+			}
+			if !attackBranch && config.TrailRetry {
+				trail = &trailRace{
+					attacker:     []forkCandidate{tie.attacker},
+					honest:       []forkCandidate{tie.honest, resolver},
+					attackerPool: losingPool,
+				}
+				tie = nil
+				publicPool = nil
+				privatePool = nil
+				private = private[:0]
+				continue
 			}
 			if attackBranch {
 				if err := commitForkCandidate(&result, tie.attacker, anchorSubsidy, shareReward, config.FeesPerBlock); err != nil {
@@ -167,7 +204,30 @@ func RunSelfish(config SelfishConfig) (SelfishResult, error) {
 	if tie != nil {
 		result.UnresolvedPrivateLead++
 	}
-	if result.IncludedShares > result.DiscoveredShares {
+	if trail != nil {
+		result.UnresolvedPrivateLead += uint64(len(trail.attacker))
+	}
+	foundShares, err := types.AddAmount(result.AttackerFoundShares, result.HonestFoundShares)
+	if err != nil {
+		return SelfishResult{}, ErrConfiguration
+	}
+	includedShares, err := types.AddAmount(result.AttackerIncluded, result.HonestIncluded)
+	if err != nil {
+		return SelfishResult{}, ErrConfiguration
+	}
+	canonicalBlocks, err := types.AddAmount(result.AttackerCanonical, result.HonestCanonical)
+	if err != nil {
+		return SelfishResult{}, ErrConfiguration
+	}
+	accountedRewards, err := types.AddAmount(result.AttackerReward, result.HonestReward)
+	if err != nil {
+		return SelfishResult{}, ErrConfiguration
+	}
+	resolvedAnchors, err := types.AddAmount(result.CanonicalBlocks, result.OrphanAnchors)
+	if err != nil || result.IncludedShares > result.DiscoveredShares ||
+		foundShares != result.DiscoveredShares || includedShares != result.IncludedShares ||
+		canonicalBlocks != result.CanonicalBlocks || accountedRewards != result.TotalIssued ||
+		resolvedAnchors > result.HardDiscoveries {
 		return SelfishResult{}, ErrConfiguration
 	}
 	return result, nil
@@ -227,9 +287,17 @@ func mineTieRace(
 	config SelfishConfig,
 	random *prng,
 	result *SelfishResult,
-) (resolver forkCandidate, attackBranch bool, err error) {
-	var attackPool forkPool
-	var honestPool forkPool
+) (resolver forkCandidate, attackBranch bool, losingPool forkPool, err error) {
+	return mineTieRaceWithPools(config, random, result, nil, nil)
+}
+
+func mineTieRaceWithPools(
+	config SelfishConfig,
+	random *prng,
+	result *SelfishResult,
+	attackPool forkPool,
+	honestPool forkPool,
+) (resolver forkCandidate, attackBranch bool, losingPool forkPool, err error) {
 	maximum := config.ShareRatio * 128
 	for event := uint64(0); event < maximum; event++ {
 		attacker := uint32(random.next()%uint64(PartsPerMillion)) < config.AttackerHashPPM
@@ -237,7 +305,10 @@ func mineTieRace(
 		if random.next()%config.ShareRatio == 0 {
 			resolver = makeForkCandidate(attacker, mapTiePool(branch, attackPool, honestPool),
 				config.OmitHonestShares && attacker, result)
-			return resolver, branch, nil
+			if branch {
+				return resolver, true, honestPool, nil
+			}
+			return resolver, false, attackPool, nil
 		}
 		result.DiscoveredShares++
 		if attacker {
@@ -252,7 +323,66 @@ func mineTieRace(
 			}
 		}
 	}
-	return forkCandidate{}, false, ErrConfiguration
+	return forkCandidate{}, false, nil, ErrConfiguration
+}
+
+func advanceTrailRace(
+	config SelfishConfig,
+	random *prng,
+	result *SelfishResult,
+	trail *trailRace,
+	anchorSubsidy uint64,
+	shareReward uint64,
+) (bool, error) {
+	if trail.tied {
+		resolver, attackBranch, _, err := mineTieRaceWithPools(
+			config, random, result, trail.attackerPool, trail.honestPool,
+		)
+		if err != nil {
+			return false, err
+		}
+		if attackBranch {
+			if err := commitForkCandidates(
+				result, trail.attacker, resolver, anchorSubsidy, shareReward, config.FeesPerBlock,
+			); err != nil {
+				return false, err
+			}
+			result.OrphanAnchors += uint64(len(trail.honest))
+		} else {
+			if err := commitForkCandidates(
+				result, trail.honest, resolver, anchorSubsidy, shareReward, config.FeesPerBlock,
+			); err != nil {
+				return false, err
+			}
+			result.OrphanAnchors += uint64(len(trail.attacker))
+		}
+		return true, nil
+	}
+
+	var honestPool forkPool
+	attackerWon, err := mineSplitForkRound(
+		config, random, result, &honestPool, &trail.attackerPool,
+	)
+	if err != nil {
+		return false, err
+	}
+	if attackerWon {
+		trail.attacker = append(trail.attacker,
+			makeForkCandidate(true, trail.attackerPool, config.OmitHonestShares, result))
+		trail.attackerPool = nil
+		trail.honestPool = honestPool
+		trail.tied = true
+		return false, nil
+	}
+	trail.honest = append(trail.honest,
+		makeForkCandidate(false, honestPool, false, result))
+	if err := commitForkCandidateSlice(
+		result, trail.honest, anchorSubsidy, shareReward, config.FeesPerBlock,
+	); err != nil {
+		return false, err
+	}
+	result.OrphanAnchors += uint64(len(trail.attacker))
+	return true, nil
 }
 
 func mapTiePool(attackBranch bool, attackPool, honestPool forkPool) forkPool {
@@ -275,6 +405,35 @@ func makeForkCandidate(attacker bool, pool forkPool, omitHonest bool, result *Se
 		bounded = append(bounded, owner)
 	}
 	return forkCandidate{attacker: attacker, shares: bounded}
+}
+
+func commitForkCandidates(
+	result *SelfishResult,
+	branch []forkCandidate,
+	resolver forkCandidate,
+	anchorSubsidy uint64,
+	shareReward uint64,
+	fees uint64,
+) error {
+	if err := commitForkCandidateSlice(result, branch, anchorSubsidy, shareReward, fees); err != nil {
+		return err
+	}
+	return commitForkCandidate(result, resolver, anchorSubsidy, shareReward, fees)
+}
+
+func commitForkCandidateSlice(
+	result *SelfishResult,
+	branch []forkCandidate,
+	anchorSubsidy uint64,
+	shareReward uint64,
+	fees uint64,
+) error {
+	for _, candidate := range branch {
+		if err := commitForkCandidate(result, candidate, anchorSubsidy, shareReward, fees); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func commitForkCandidate(

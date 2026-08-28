@@ -7,7 +7,7 @@ import (
 	"github.com/outcomemesh/outcomemesh/core/workgraph"
 )
 
-const ActivationReviewSchema = "outcomemesh/economic-activation-review/v1"
+const ActivationReviewSchema = "outcomemesh/economic-activation-review/v2"
 
 // ActivationReviewConfig freezes the deterministic economic corpus separately
 // from its results. A reviewer can therefore change one assumption, rerun the
@@ -19,6 +19,7 @@ type ActivationReviewConfig struct {
 
 type ActivationReviewResult struct {
 	SelfishMining    SelfishSweepResult
+	TrailRetry       SelfishSweepResult
 	FeeFragmentation FeeFragmentationSweepResult
 }
 
@@ -88,6 +89,10 @@ func RunActivationReview(config ActivationReviewConfig) (ActivationReviewDocumen
 	if err != nil {
 		return ActivationReviewDocument{}, err
 	}
+	trail, err := RunTrailRetrySweep(config.SelfishMining)
+	if err != nil {
+		return ActivationReviewDocument{}, err
+	}
 	fees, err := RunFeeFragmentationSweep(config.FeeFragmentation)
 	if err != nil {
 		return ActivationReviewDocument{}, err
@@ -97,6 +102,7 @@ func RunActivationReview(config ActivationReviewConfig) (ActivationReviewDocumen
 		Config: config,
 		Result: ActivationReviewResult{
 			SelfishMining:    selfish,
+			TrailRetry:       trail,
 			FeeFragmentation: fees,
 		},
 	}, nil

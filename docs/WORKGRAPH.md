@@ -443,7 +443,8 @@ work, history, nodes, and checkpoints, then extended with another valid block.
   orphan anchors, competing forks, a multi-seed selfish-strategy grid, and
   bandwidth;
 - a versioned activation-review document covering a one-percentage-point
-  selfish-mining grid and direct-versus-delayed private-fee fragmentation, with
-  an exact reproducibility digest and explicit external gates;
+  standard/trail-retry selfish-mining grid and direct-versus-delayed private-fee
+  fragmentation, with an exact reproducibility digest and explicit external
+  gates;
 - explicit block-version and cross-boundary reorg tests proving no implicit
   activation checkpoint or double payout.

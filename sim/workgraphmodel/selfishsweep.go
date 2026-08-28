@@ -70,6 +70,18 @@ type selfishBaseline struct {
 // common random seeds. Baselines are reused across tie-adoption values because
 // an immediate publisher never creates a tie in this model.
 func RunSelfishSweep(config SelfishSweepConfig) (SelfishSweepResult, error) {
+	return runSelfishStrategySweep(config, false)
+}
+
+// RunTrailRetrySweep applies the same paired profitability rule to a bounded
+// one-block trail-stubborn strategy. After losing a published tie, the attacker
+// mines the stale branch for one more anchor; a catch-up creates one final
+// equal-height race, while another honest anchor ends the attempt.
+func RunTrailRetrySweep(config SelfishSweepConfig) (SelfishSweepResult, error) {
+	return runSelfishStrategySweep(config, true)
+}
+
+func runSelfishStrategySweep(config SelfishSweepConfig, trailRetry bool) (SelfishSweepResult, error) {
 	if err := validateSelfishSweep(config); err != nil {
 		return SelfishSweepResult{}, err
 	}
@@ -77,7 +89,7 @@ func RunSelfishSweep(config SelfishSweepConfig) (SelfishSweepResult, error) {
 	for hashIndex, hashShare := range config.HashSharesPPM {
 		baseline := selfishBaseline{seedShares: make([]uint64, len(config.Seeds))}
 		for seedIndex, seed := range config.Seeds {
-			result, err := RunSelfish(sweepRunConfig(config, hashShare, 0, seed, false))
+			result, err := RunSelfish(sweepRunConfig(config, hashShare, 0, seed, false, false))
 			if err != nil {
 				return SelfishSweepResult{}, err
 			}
@@ -102,7 +114,9 @@ func RunSelfishSweep(config SelfishSweepConfig) (SelfishSweepResult, error) {
 	for _, tieAdoption := range config.TieAdoptionsPPM {
 		threshold := SelfishProfitThreshold{TieAdoptionPPM: tieAdoption}
 		for hashIndex, hashShare := range config.HashSharesPPM {
-			point, err := runSelfishSweepPoint(config, baselines[hashIndex], hashShare, tieAdoption)
+			point, err := runSelfishSweepPoint(
+				config, baselines[hashIndex], hashShare, tieAdoption, trailRetry,
+			)
 			if err != nil {
 				return SelfishSweepResult{}, err
 			}
@@ -122,6 +136,7 @@ func runSelfishSweepPoint(
 	baseline selfishBaseline,
 	hashShare uint32,
 	tieAdoption uint32,
+	trailRetry bool,
 ) (SelfishSweepPoint, error) {
 	point := SelfishSweepPoint{
 		AttackerHashPPM: hashShare,
@@ -131,7 +146,9 @@ func runSelfishSweepPoint(
 	var attackerReward uint64
 	var honestReward uint64
 	for seedIndex, seed := range config.Seeds {
-		result, err := RunSelfish(sweepRunConfig(config, hashShare, tieAdoption, seed, true))
+		result, err := RunSelfish(sweepRunConfig(
+			config, hashShare, tieAdoption, seed, true, trailRetry,
+		))
 		if err != nil {
 			return SelfishSweepPoint{}, err
 		}
@@ -181,6 +198,7 @@ func sweepRunConfig(
 	tieAdoption uint32,
 	seed uint64,
 	withhold bool,
+	trailRetry bool,
 ) SelfishConfig {
 	return SelfishConfig{
 		HardDiscoveries: config.HardDiscoveries,
@@ -191,6 +209,7 @@ func sweepRunConfig(
 		BlockSubsidy:    config.BlockSubsidy,
 		FeesPerBlock:    config.FeesPerBlock,
 		WithholdAnchors: withhold,
+		TrailRetry:      trailRetry,
 	}
 }
 

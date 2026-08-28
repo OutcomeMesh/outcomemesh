@@ -146,8 +146,11 @@ The activation-review corpus adds a finer 31 × 5 grid at one-percentage-point
 hash increments. With three fixed seeds and 1,000 hard discoveries per seed,
 its first profitable tested shares are 34%, 33%, 27%, 23%, and 16% at respective
 tie-adoption values of 0%, 25%, 50%, 75%, and 100%. The full 155 points and
-configuration are emitted by `omreview`; the frozen document digest and
-precommitted launch gates are in `ACTIVATION_REVIEW.md`.
+configuration are emitted by `omreview`. A second 155-point grid adds a bounded
+one-anchor trail retry after a lost tie. Its thresholds are 37%, 33%, 27%, 23%,
+and 16%, so it does not lower the conservative standard-strategy boundary in
+this corpus. The frozen version-2 document digest and precommitted launch gates
+are in `ACTIVATION_REVIEW.md`.
 
 WorkGraph therefore does not eliminate the classic selfish-mining threshold;
 the result is a measured protocol limit, not a failed invariant. The sweep also
