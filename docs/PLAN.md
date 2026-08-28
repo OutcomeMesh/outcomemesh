@@ -178,6 +178,9 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
   rejected atomically without preventing the next independent bootstrap.
 - Canonical Work-ID ordering after coverage-ranked parent selection and a
   parameterized four-node rollover/churn/loss convergence soak.
+- Versioned PoW/economic activation-review packet with a deterministic result
+  digest, fine selfish-mining and private-fee grids, and precommitted external
+  pass/fail gates.
 
 ### Exit gates
 
@@ -187,6 +190,8 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
 - Share bandwidth remains within the published node budget.
 - Long rounds preserve valid same-parent work across timestamp generations.
 - Formal analysis documents the remaining fairness assumptions.
+- Independent reviewers can reproduce the frozen corpus without trusting a
+  generated summary; internal reproduction is not labeled as an audit.
 
 ## Milestone 6: committee preconfirmations
 

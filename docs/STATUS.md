@@ -428,6 +428,11 @@ Implemented in an isolated, not-yet-activated consensus package:
   inventories and full final anchor closure. It found a ranked-parent ordering
   defect: coverage selection is now separated from canonical Work-ID encoding,
   with a focused regression and repeated race coverage.
+- a versioned economic activation corpus now emits 155 fine-grained
+  selfish-mining points and 72 direct-versus-delayed private-fee points as
+  deterministic JSON. Its canonical SHA-256 digest is golden-tested, while
+  `ACTIVATION_REVIEW.md` separates passed internal reproduction from still-open
+  independent PoW/model review and public-testnet calibration gates.
 
 No WorkGraph field has entered a version-0 block yet. The v1 store and opt-in
 QUIC session remain isolated from every ordinary v0 chain/CLI path and are

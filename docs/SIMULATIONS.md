@@ -119,8 +119,9 @@ exceed total discovered shares. In 10,000 fixed-seed hard discoveries:
   remove direct theft from omission, but cannot remove its relative-revenue
   and censorship motive.
 
-The reproducible profitability sweep replaces inference from those two points
-with a 7 × 5 parameter grid. It tests attacker hash shares from 15% through 45%
+The baseline reproducible profitability sweep replaces inference from those
+two points with a 7 × 5 parameter grid. It tests attacker hash shares from 15%
+through 45%
 in five-point increments, tie adoption from 0% through 100% in 25-point
 increments, and pairs immediate publication with withholding over three common
 random seeds and 2,000 hard discoveries per seed. A grid point is labelled
@@ -140,6 +141,13 @@ All 35 aggregate reward shares, per-seed win counts, orphan rates, and boundary
 values are exact golden-test inputs. These are discrete grid observations, not
 closed-form thresholds: for example, the true boundary between 30% and 35% at
 zero tie adoption is not identified by this corpus.
+
+The activation-review corpus adds a finer 31 × 5 grid at one-percentage-point
+hash increments. With three fixed seeds and 1,000 hard discoveries per seed,
+its first profitable tested shares are 34%, 33%, 27%, 23%, and 16% at respective
+tie-adoption values of 0%, 25%, 50%, 75%, and 100%. The full 155 points and
+configuration are emitted by `omreview`; the frozen document digest and
+precommitted launch gates are in `ACTIVATION_REVIEW.md`.
 
 WorkGraph therefore does not eliminate the classic selfish-mining threshold;
 the result is a measured protocol limit, not a failed invariant. The sweep also
@@ -165,6 +173,14 @@ miner alone able to use a private template:
 - an initially even split across equal-fee public templates converged to one
   template in two deterministic best-response passes, illustrating both useful
   coordination and the underlying network-effect centralization pressure.
+
+The activation-review fee sweep expands the single 10% example to six miner
+sizes and twelve private-fee levels. Direct-payment fragmentation first appears
+at 2,000,000,000 or 2,500,000,000 units across the tested range. Fee delay moves
+the first tested thresholds to 250,000,000,000 units at 1% hash,
+25,000,000,000 at 10%, and 4,000,000,000 at 40%. It materially reduces the
+incentive but does not eliminate fragmentation for a large miner or unbounded
+private order flow.
 
 The corresponding core prototype is stronger than an accounting assumption:
 its bounded immutable ring conserves `deposits = awards + balance`, commits the
@@ -249,9 +265,12 @@ The experimental `RunLagged` corpus separately proves:
 ## Interpretation and limits
 
 These results validate feedback direction, arithmetic bounds, and deterministic
-fork-weight accounting. They do not establish economic security. Before public
-mining, a separate stochastic/discrete-event harness must add nonce variance,
-network delay, partitions, selfish mining, block withholding, difficulty
-oscillation strategies, heterogeneous clocks, and miner entry/exit. Parameters
-also require independent review; passing this harness is a milestone gate, not
-an audit.
+fork-weight accounting. They do not establish economic security. The repository
+now covers network delay, bounded partitions/restarts, selfish anchor
+withholding, heterogeneous clocks, and deterministic private-template markets,
+but still lacks nonce-time variance, empirically calibrated Internet behavior,
+richer adaptive/stubborn strategies, difficulty oscillation campaigns, miner
+entry/exit, pool switching, and private transaction arrival processes.
+Parameters and model structure require independent review. Passing this harness
+and reproducing its digest are milestone gates, not an audit; the complete
+handoff and pass/fail rules are in `ACTIVATION_REVIEW.md`.

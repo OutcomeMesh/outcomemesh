@@ -54,6 +54,7 @@ Go 1.26.7 is the pinned toolchain. With it available as `go`:
 make test-all
 make test-process
 make test-work-rollover-soak
+make test-economic-review
 make build
 ```
 
@@ -68,6 +69,10 @@ v0 QUIC soak length with, for example,
 WorkGraph nodes with a 60-second clock spread, node churn, deterministic stream
 loss, full DAG convergence, and final anchor closure. Override the bounded
 8..1,000 generation count with `WORKROLLOVERCYCLES=1000`.
+`test-economic-review` reruns the deterministic PoW cases and the frozen
+WorkGraph selfish-mining/private-fee activation corpus. `make economic-review`
+emits all 227 economic points plus their canonical SHA-256 digest as JSON; this
+is an external-review input, not an audit result.
 
 Create a wallet, initialize a local chain to that wallet, mine, transfer, and
 replay-verify it:
@@ -221,10 +226,12 @@ The CLI wallet is for development only.
   activation-aware chain-v1 streams;
 - `wallet/`: deterministic resource selection and guarded transaction building;
 - `cmd/omd/`: standalone development CLI;
+- `cmd/omreview/`: deterministic economic activation-report generator;
 - `docs/`: protocol, architecture, security model, vectors, and gated roadmap.
 
 See [docs/PLAN.md](docs/PLAN.md), [docs/STATUS.md](docs/STATUS.md),
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md),
 [docs/PROTOCOL.md](docs/PROTOCOL.md), [docs/MINING.md](docs/MINING.md),
 [docs/WORKGRAPH.md](docs/WORKGRAPH.md), [docs/SIMULATIONS.md](docs/SIMULATIONS.md),
+[docs/ACTIVATION_REVIEW.md](docs/ACTIVATION_REVIEW.md),
 [docs/P2P.md](docs/P2P.md), and [docs/SECURITY.md](docs/SECURITY.md).

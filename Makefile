@@ -2,7 +2,7 @@ GO ?= go
 FUZZTIME ?= 3s
 WORKROLLOVERCYCLES ?= 256
 
-.PHONY: build fmt vet test test-race test-fuzz-smoke test-process test-work-rollover-soak test-all
+.PHONY: build fmt vet test test-race test-fuzz-smoke test-process test-work-rollover-soak test-economic-review economic-review test-all
 
 build:
 	$(GO) build -trimpath -o bin/omd ./cmd/omd
@@ -52,5 +52,12 @@ test-process:
 
 test-work-rollover-soak:
 	OUTCOMEMESH_WORK_ROLLOVER_SOAK_CYCLES=$(WORKROLLOVERCYCLES) $(GO) test ./cmd/omd -run '^TestMultiNodeWorkRolloverConvergesAcrossClockSkewChurnAndRelayLoss$$' -count=1 -timeout=5m
+
+test-economic-review:
+	$(GO) test ./sim/powmodel -count=1
+	$(GO) test ./sim/workgraphmodel -run '^TestActivationReviewCorpus$$' -count=1 -v
+
+economic-review:
+	@$(GO) run ./cmd/omreview
 
 test-all: fmt vet test-race

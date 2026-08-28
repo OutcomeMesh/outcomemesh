@@ -161,7 +161,8 @@ into deduplicated per-peer queues, so pending work is not abandoned at handoff.
 
 ## Gates before public mining
 
-- external PoW review and hash-rate simulations;
+- reproduce the frozen PoW/economic corpus and close the independent-review
+  gates in `ACTIVATION_REVIEW.md`;
 - production calibration of fee delay, share gossip queues, and miner strategy;
 - adversarial discovery/eclipse soaks across diverse operators and networks;
 - longer real-QUIC rollover soaks with clock skew and rapid parent churn;
