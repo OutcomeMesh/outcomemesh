@@ -404,7 +404,10 @@ Implemented in an isolated, not-yet-activated consensus package:
   peers every 30 minutes. Selected-bootstrap and learned tiers use a local-identity/epoch
   keyed order, removing fixed peer-ID prefix starvation while preserving the
   operator tier. Peerbook saves are serialized across renewal and learned-batch
-  persistence; rotation coverage and fatal maintenance shutdown run under race;
+  persistence; rotation coverage and fatal maintenance shutdown run under race.
+  A real in-process QUIC fixture proves that a mixed exact/foreign-activation
+  signed batch is rejected atomically while the pass continues to an independent
+  compatible bootstrap and persists only its learned WorkGraph record;
 - the distinct opt-in `/outcomemesh/chain-notify/1` protocol now reverses only
   chain session roles: a winning dialer serves, while the receiver initiates
   the same cumulative-work/header-first/full-replay synchronization. A selected

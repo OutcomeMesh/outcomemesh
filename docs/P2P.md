@@ -199,6 +199,10 @@ refresh every 30 minutes. Selected bootstrap entries stay ahead of other learned
 entries, while ordering inside each tier is the hash of local identity, refresh epoch, and
 candidate identity. That removes permanent fixed-prefix starvation under a
 small attempt budget without pretending to solve Sybil or eclipse attacks.
+An in-process QUIC adversarial fixture makes one authenticated bootstrap return
+a mixed exact/foreign-activation batch. The receiver admits none of that batch,
+continues to the next independent bootstrap, persists its compatible WorkGraph
+record, and recovers the same one-record book after reopen.
 
 `/outcomemesh/chain-notify/1` reuses the complete chain-v1 wire and validation
 state machine with inverted connection roles. The winning dialer serves; the

@@ -239,6 +239,10 @@ attempt budget from selecting one permanent lexicographic prefix. Renewal and
 learned-batch persistence share one process-local save lock so an older atomic
 snapshot cannot win a concurrent rename. Periodic network failure is fail-soft;
 a local persistence or manager failure cancels mining and is reported.
+The adversarial bootstrap fixture returns one validly signed local-activation
+record together with a validly signed foreign-activation record. Atomic
+validation leaves neither record behind, and the bounded pass still reaches an
+independent compatible bootstrap whose record survives persistence and reopen.
 
 These constraints limit parsing, replay, and accidental cross-activation risks;
 they do not make discovery Sybil-resistant. A bootstrap peer can still return a
