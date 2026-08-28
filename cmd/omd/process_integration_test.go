@@ -122,7 +122,8 @@ func TestProcessWorkGraphActivationQUICRestart(t *testing.T) {
 		"--count", "1", "--relay-every", "128",
 	)
 	if fields := outputFields(minedQUIC, "work_mined_quic"); fields["height"] != "6" || fields["relayed_shares"] == "" ||
-		fields["pending_relay"] == "" || fields["anchor_notify_queued"] != "3" ||
+		fields["pending_relay"] == "" || fields["gossip_shares"] == "" || fields["gossip_copies"] == "" ||
+		fields["anchor_notify_queued"] != "3" ||
 		!strings.HasSuffix(fields["relay_peers"], "/3") {
 		t.Fatalf("cooperative miner output is incomplete: %s", minedQUIC)
 	}

@@ -142,17 +142,19 @@ mixed chain. `work-mine` currently builds empty development payloads, but its
 v1 loop mines weak shares and the hard anchor in one nonce space, commits the
 bounded canonical share DAG, and reports both share counts. `work-mine-quic`
 adds authenticated, best-effort publication to as many as eight explicit peers
-while also accepting reciprocal shares and serving chain-v1. Repeat `--peer`;
-either omit every `--peer-id` or supply one matching pin after each peer. Every
-peer has its own full-round bounded queue and worker, while the mining callback
-performs no network I/O. A slow, incompatible, or unreachable peer therefore
-cannot stop hard-PoW search or a healthy peer's relay. Each worker sends when
-either 128 new shares accumulate or the eight-second partial-batch timer fires;
-the time bound prevents a low-hash miner's shares from remaining private for an
-entire round. Automatic peer discovery and topology-aware routing remain gated.
-When this miner wins, coalesced background chain-notify-v1 prompts make the
-configured peers initiate the existing trustless header-first pull; these are
-not trusted block pushes.
+while also accepting reciprocal shares, forwarding each first admission, and
+serving chain-v1. Repeat `--peer`; either omit every `--peer-id` or supply one
+matching pin after each peer. A forwarded share is never echoed directly to its
+authenticated source, and the round pool prevents a duplicate from triggering
+another fanout. Every peer has its own full-round bounded queue and worker,
+while mining and admission callbacks perform no network I/O. A slow,
+incompatible, or unreachable peer therefore cannot stop hard-PoW search or a
+healthy peer's relay. Each worker sends when either 128 new shares accumulate or
+the eight-second partial-batch timer fires; the time bound prevents a low-hash
+miner's shares from remaining private for an entire round. Automatic peer
+discovery and topology-aware routing remain gated. When this miner wins,
+coalesced background chain-notify-v1 prompts make the configured peers initiate
+the existing trustless header-first pull; these are not trusted block pushes.
 Transactions on the experimental path, migration tooling, and public activation
 also remain gated.
 

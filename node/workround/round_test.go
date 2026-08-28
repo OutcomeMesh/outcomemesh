@@ -83,6 +83,73 @@ func TestRemoteSharesBecomePartOfUnifiedAnchor(t *testing.T) {
 	}
 }
 
+func TestAcceptedRemoteSharesCanRelayAcrossSecondHop(t *testing.T) {
+	payload, _, _ := testPayload(t)
+	source, err := New(payload, worksession.DefaultConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	middle, err := New(payload, worksession.DefaultConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	destination, err := New(payload, worksession.DefaultConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	miningContext, _ := source.Context()
+	inclusion, _ := workgraph.InclusionRoot(nil)
+	template, err := payload.SealTemplate(testAddress("two-hop"), inclusion, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	share := mineWeak(t, miningContext, template, 0)
+	shareID, err := source.Add(share)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	firstClient, firstServer := net.Pipe()
+	firstServed := make(chan error, 1)
+	observed := make(chan types.Hash, 1)
+	go func() {
+		firstServed <- middle.ServeAccepted(ctx, firstServer, func(_ workgraph.Share, id types.Hash) {
+			observed <- id
+		})
+	}()
+	if _, err := source.RelayInventory(ctx, firstClient, []types.Hash{shareID}); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-firstServed; err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case id := <-observed:
+		if id != shareID {
+			t.Fatalf("middle observed=%s, want %s", id, shareID)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("middle did not observe first admission")
+	}
+
+	secondClient, secondServer := net.Pipe()
+	secondServed := make(chan error, 1)
+	go func() { secondServed <- destination.Serve(ctx, secondServer) }()
+	stats, err := middle.RelayInventory(ctx, secondClient, []types.Hash{shareID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := <-secondServed; err != nil {
+		t.Fatal(err)
+	}
+	status, err := destination.Status()
+	if err != nil || stats.Accepted != 1 || status.Shares != 1 || status.Accepted != 1 {
+		t.Fatalf("second-hop stats=%+v status=%+v error=%v", stats, status, err)
+	}
+}
+
 func TestFinalizeAcceptsExactExternalHardSolution(t *testing.T) {
 	payload, _, _ := testPayload(t)
 	round, err := New(payload, worksession.DefaultConfig())

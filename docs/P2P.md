@@ -170,10 +170,15 @@ advertises a smaller inventory limit, only that prefix is counted as announced
 and its tail remains queued. The mining callback performs no network I/O, so a
 slow peer cannot block another worker or hard-PoW progress. Relay is attempted
 when 128 fresh IDs accumulate or an eight-second partial-batch timer expires,
-whichever happens first. Failures keep the suffix for a later attempt. The
-command uses the same peer byte accounting, fixed-window WorkGraph stream
-limits, exact-context handshake, and separate chain-v1 handler as the server.
-It does not yet discover or select peers automatically.
+whichever happens first. A newly admitted inbound share is forwarded to the
+other explicit peers, never directly back to its authenticated source. Since
+only the first successful pool admission invokes forwarding, cycles terminate
+at the existing per-round deduplication boundary. Shares arriving just before
+publisher attachment wait in a bounded 8,192-entry lifecycle buffer. Failures
+keep the suffix for a later attempt. The command uses the same peer byte
+accounting, fixed-window WorkGraph stream limits, exact-context handshake, and
+separate chain-v1 handler as the server. It does not yet discover or select
+peers automatically.
 
 `/outcomemesh/chain-notify/1` reuses the complete chain-v1 wire and validation
 state machine with inverted connection roles. The winning dialer serves; the

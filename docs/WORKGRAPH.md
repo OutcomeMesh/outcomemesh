@@ -336,6 +336,16 @@ by its handshake, so mining the next anchor cannot change that in-flight
 response. If synchronization changes a peer's selected parent, its round is
 invalidated and stale hashing is canceled.
 
+The active QUIC miner also uses first-admission forwarding. `ServeAccepted`
+observes only a share newly inserted into the validated pool; idempotent
+duplicates still complete the wire protocol but cannot trigger fanout again.
+The publisher skips the authenticated source and sends the share through the
+same per-target queues, timers, limits, and selected-inventory proof as local
+work. A generation- and mining-context-bound buffer holds admissions that race
+publisher attachment, capped at 8,192 and cleared on parent change. A two-hop
+round fixture proves that the middle node can serve the exact admitted body to
+the destination.
+
 One maximal 1,024-ID relay is bounded to exactly 630,258 bytes of bidirectional
 application framing when a peer forces one maximum-size body per batch. The
 QUIC adapter's fixed-window defaults admit eight such streams per peer and 512

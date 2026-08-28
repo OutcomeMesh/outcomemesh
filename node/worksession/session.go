@@ -51,6 +51,11 @@ type Stats struct {
 	Batches   int
 }
 
+// AcceptFunc observes a share only after its first successful admission to the
+// parent-scoped pool. Implementations must return promptly; session processing
+// calls it synchronously and gives it an owned parent slice.
+type AcceptFunc func(workgraph.Share, types.Hash)
+
 type Node struct {
 	pool    *workpool.Pool
 	context wire.ShareContext
@@ -220,6 +225,12 @@ func (node *Node) relay(ctx context.Context, stream Stream, selected []types.Has
 // Serve receives one inventory, requests only unknown IDs in bounded batches,
 // and admits returned bodies through the full WorkGraph pool validator.
 func (node *Node) Serve(ctx context.Context, stream Stream) error {
+	return node.ServeAccepted(ctx, stream, nil)
+}
+
+// ServeAccepted is Serve with an optional first-admission observer. Duplicate
+// bodies remain protocol-accepted for idempotency but are never observed twice.
+func (node *Node) ServeAccepted(ctx context.Context, stream Stream, observe AcceptFunc) error {
 	if node == nil || stream == nil {
 		return ErrConfiguration
 	}
@@ -282,7 +293,15 @@ func (node *Node) Serve(ctx context.Context, stream Stream) error {
 				return ErrUnexpected
 			}
 			returned[id] = struct{}{}
-			if _, err := node.pool.Add(share); err == nil || errors.Is(err, workpool.ErrDuplicate) {
+			addedID, addErr := node.pool.Add(share)
+			if addErr == nil {
+				accepted++
+				if observe != nil {
+					observed := share
+					observed.Parents = append([]types.Hash(nil), share.Parents...)
+					observe(observed, addedID)
+				}
+			} else if errors.Is(addErr, workpool.ErrDuplicate) {
 				accepted++
 			} else {
 				rejected++

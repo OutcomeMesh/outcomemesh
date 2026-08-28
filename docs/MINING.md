@@ -119,12 +119,17 @@ leave low-hash miners below the batch threshold during short rounds. A failed
 attempt retains the suffix for the next batch or timer tick. Transport/context
 failure cannot invalidate hard mining; attempts have bounded deadlines and
 every queue is capped by the 8,192-share round. The command also admits
-reciprocal shares into its live pool. Automatic discovery and public activation
-remain disabled. A winning local anchor queues one coalesced chain-notify-v1
-prompt per peer without delaying the next mining round. Each peer becomes the
-initiator of normal header-first verification; the responder serves the
-canonical path pinned at handshake, and only a successfully selected new
-hard-work tip invalidates the receiver's round and cancels stale hashing.
+reciprocal shares into its live pool. A first successful remote admission is
+queued to every explicit peer except its authenticated source. Duplicate pool
+admission never triggers a second fanout, which terminates gossip loops without
+a separate unbounded seen-set. A bounded pre-attach buffer closes the small
+window between round creation and publisher startup. Output reports unique
+`gossip_shares` and resulting `gossip_copies`. Automatic discovery and public
+activation remain disabled. A winning local anchor queues one coalesced
+chain-notify-v1 prompt per peer without delaying the next mining round. Each
+peer becomes the initiator of normal header-first verification; the responder
+serves the canonical path pinned at handshake, and only a successfully selected
+new hard-work tip invalidates the receiver's round and cancels stale hashing.
 
 ## Gates before public mining
 

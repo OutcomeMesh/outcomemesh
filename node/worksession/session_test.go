@@ -118,6 +118,53 @@ func TestRelaySelectedInventoryReportsNegotiatedPrefix(t *testing.T) {
 	}
 }
 
+func TestServeAcceptedObservesOnlyFirstAdmission(t *testing.T) {
+	validation := testContext()
+	sourcePool, _ := workpool.New(validation)
+	destinationPool, _ := workpool.New(validation)
+	share := mineWeak(t, testShare(validation, "observed", nil), true)
+	shareID, err := sourcePool.Add(share)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := newNode(t, sourcePool, DefaultConfig())
+	destination := newNode(t, destinationPool, DefaultConfig())
+	observed := make(chan types.Hash, 2)
+	observe := func(value workgraph.Share, id types.Hash) {
+		if len(value.Parents) != len(share.Parents) {
+			t.Errorf("observed parents=%v, want %v", value.Parents, share.Parents)
+		}
+		observed <- id
+	}
+
+	for attempt := 0; attempt < 2; attempt++ {
+		client, server := net.Pipe()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		served := make(chan error, 1)
+		go func() { served <- destination.ServeAccepted(ctx, server, observe) }()
+		stats, relayErr := source.RelayInventory(ctx, client, []types.Hash{shareID})
+		serveErr := <-served
+		cancel()
+		if relayErr != nil || serveErr != nil || stats.Announced != 1 {
+			t.Fatalf("attempt=%d stats=%+v relay=%v serve=%v", attempt, stats, relayErr, serveErr)
+		}
+	}
+
+	select {
+	case id := <-observed:
+		if id != shareID {
+			t.Fatalf("observed id=%s, want %s", id, shareID)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("new admission was not observed")
+	}
+	select {
+	case id := <-observed:
+		t.Fatalf("duplicate admission was observed as %s", id)
+	default:
+	}
+}
+
 func TestHandshakeRejectsDifferentMiningContext(t *testing.T) {
 	t.Parallel()
 

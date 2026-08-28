@@ -374,6 +374,11 @@ Implemented in an isolated, not-yet-activated consensus package:
   flush (eight seconds by default). The topology/reward corpus reproduces the
   batch-only small-miner penalty at 10% hash share (73,611 ppm versus 104,349
   ppm with immediate relay) and restores it to 102,033 ppm with the timed flush.
+- successful first admission of a remote share now feeds the same bounded
+  publisher, excluding its authenticated source. Pool deduplication prevents
+  repeated fanout, exact-context round control buffers the publisher handoff,
+  and a two-hop fixture proves the middle node can serve the admitted body to a
+  third node. The mining callback and admission observer remain network-free.
 - the distinct opt-in `/outcomemesh/chain-notify/1` protocol now reverses only
   chain session roles: a winning dialer serves, while the receiver initiates
   the same cumulative-work/header-first/full-replay synchronization. A selected

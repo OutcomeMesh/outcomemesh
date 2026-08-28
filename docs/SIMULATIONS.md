@@ -59,7 +59,9 @@ The current reproducible cases show:
 The discrete-event topology corpus additionally models shortest-path link
 delay, a separate DAG/tip view per miner, missing-parent queues, at most four
 parents per new share/anchor, private withheld ancestors, and deliberate
-foreign-tip omission:
+foreign-tip omission. Its shortest-path propagation now has a concrete runtime
+counterpart: active QUIC miners forward each first-admitted share across their
+explicit peer graph, while per-round pool deduplication terminates cycles:
 
 - an eight-miner full mesh with one-event propagation committed all 258,660
   published shares across 2,000 rounds and never had more than one winner tip;

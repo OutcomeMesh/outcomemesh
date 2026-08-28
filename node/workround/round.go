@@ -131,3 +131,10 @@ func (round *Round) Serve(ctx context.Context, stream worksession.Stream) error 
 	}
 	return round.session.Serve(ctx, stream)
 }
+
+func (round *Round) ServeAccepted(ctx context.Context, stream worksession.Stream, observe worksession.AcceptFunc) error {
+	if round == nil || round.session == nil {
+		return ErrConfiguration
+	}
+	return round.session.ServeAccepted(ctx, stream, observe)
+}

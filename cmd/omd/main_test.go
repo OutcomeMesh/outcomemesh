@@ -12,6 +12,7 @@ import (
 	"github.com/outcomemesh/outcomemesh/core/genesis"
 	"github.com/outcomemesh/outcomemesh/core/resource"
 	"github.com/outcomemesh/outcomemesh/core/types"
+	"github.com/outcomemesh/outcomemesh/core/workgraph"
 )
 
 func TestWorkActivationProfileRoundTripAndPendingRecovery(t *testing.T) {
@@ -133,7 +134,7 @@ func TestWorkMiningRoundControlCancelsOnlyChangedParent(t *testing.T) {
 	control := new(workMiningRoundControl)
 	parentA := types.DomainHash("test/omd/round-parent-a")
 	parentB := types.DomainHash("test/omd/round-parent-b")
-	ctx, finish := control.Begin(context.Background(), parentA)
+	ctx, _, finish := control.Begin(context.Background(), workgraph.Context{AnchorParent: parentA})
 	control.Advance(parentA)
 	if err := ctx.Err(); err != nil {
 		t.Fatalf("unchanged parent canceled round: %v", err)
@@ -142,13 +143,13 @@ func TestWorkMiningRoundControlCancelsOnlyChangedParent(t *testing.T) {
 	if !errors.Is(ctx.Err(), context.Canceled) {
 		t.Fatalf("changed parent did not cancel round: %v", ctx.Err())
 	}
-	finish()
-	second, finishSecond := control.Begin(context.Background(), parentB)
-	finish()
+	_ = finish()
+	second, _, finishSecond := control.Begin(context.Background(), workgraph.Context{AnchorParent: parentB})
+	_ = finish()
 	if err := second.Err(); err != nil {
 		t.Fatalf("old generation finish canceled new round: %v", err)
 	}
-	finishSecond()
+	_ = finishSecond()
 }
 
 func TestStoragePolicyRoundTripControlsLedgerHistoryBudget(t *testing.T) {

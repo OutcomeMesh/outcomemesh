@@ -149,31 +149,51 @@ func newWorkSharePublisher(
 // so a slow or unreachable target cannot stall objective hard-PoW search or a
 // healthy peer's worker.
 func (publisher *workSharePublisher) Publish(share workgraph.Share) error {
+	_, err := publisher.publishExcept(types.Hash{}, share)
+	return err
+}
+
+// Forward queues a newly admitted remote share for every configured peer
+// except its authenticated source. The pool remains the deduplication boundary,
+// so one share can trigger this forwarding path at most once per round.
+func (publisher *workSharePublisher) Forward(source types.Hash, share workgraph.Share) (int, error) {
+	if source.IsZero() {
+		return 0, errors.New("WorkGraph forwarding source is zero")
+	}
+	return publisher.publishExcept(source, share)
+}
+
+func (publisher *workSharePublisher) publishExcept(source types.Hash, share workgraph.Share) (int, error) {
 	if publisher == nil {
-		return errors.New("WorkGraph share publisher is nil")
+		return 0, errors.New("WorkGraph share publisher is nil")
 	}
 	id, err := share.ID()
 	if err != nil {
-		return err
+		return 0, err
 	}
+	queued := 0
 	for _, worker := range publisher.workers {
-		worker.enqueue(id)
+		if worker.target.id != source && worker.enqueue(id) {
+			queued++
+		}
 	}
-	return nil
+	return queued, nil
 }
 
-func (worker *workShareWorker) enqueue(id types.Hash) {
+func (worker *workShareWorker) enqueue(id types.Hash) bool {
 	worker.mu.Lock()
 	defer worker.mu.Unlock()
 	if worker.queued >= workgraph.MaxShares {
 		worker.dropped++
-		return
+		return false
 	}
 	select {
 	case worker.input <- id:
 		worker.queued++
+		return true
 	default:
 		worker.dropped++
+		return false
 	}
 }
 

@@ -503,6 +503,11 @@ only attempted IDs and retain the suffix. This is local transport progress
 accounting and does not alter `ShareInventoryV1` encoding or consensus. The
 experimental miner applies it independently to at most eight explicit peers;
 peer-local bounded queues and workers likewise add no wire or consensus rule.
+On a first successful inbound pool admission, that miner may enqueue the same
+locally owned ID to its other explicit peers. It excludes the authenticated
+source and does not observe duplicate admission, so cycles terminate at the
+round pool. This forwarding policy, its count/time thresholds, and its bounded
+publisher-handoff buffer do not change any WorkGraph message or consensus rule.
 
 The opt-in `/outcomemesh/chain-notify/1` protocol adds no message type and no
 consensus rule. It reverses only stream roles: the node that found a selected

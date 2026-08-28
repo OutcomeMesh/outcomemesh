@@ -253,8 +253,12 @@ precisely the prefix that its negotiated relay reports as announced. Failed
 attempts retain that peer's suffix without delaying healthy workers or hard-PoW
 search. A count threshold and mandatory time threshold race on every worker, so
 a small miner publishes a partial batch even when it cannot accumulate 128
-shares in one round. The same host accepts reciprocal share sessions and serves
-chain-v1, but automatic peer routing is not implemented yet.
+shares in one round. The same host accepts reciprocal share sessions. A first
+pool admission is forwarded through the same workers except to its authenticated
+source; later copies stop at pool deduplication. Round control binds that path to
+the exact mining context and buffers at most 8,192 admissions during publisher
+handoff. The host also serves chain-v1, but automatic peer routing is not
+implemented yet.
 
 Anchor propagation uses a third opt-in protocol role without a second sync
 grammar. On `/outcomemesh/chain-notify/1` the winning dialer runs the existing

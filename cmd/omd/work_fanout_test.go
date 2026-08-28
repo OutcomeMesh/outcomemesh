@@ -168,6 +168,101 @@ func TestWorkShareFanoutFlushesPartialBatchOnTimer(t *testing.T) {
 	}
 }
 
+func TestWorkShareFanoutForwardsOnceWithoutEchoingSource(t *testing.T) {
+	source := workPeerTarget{id: types.DomainHash("test/omd/fanout/source")}
+	second := workPeerTarget{id: types.DomainHash("test/omd/fanout/second")}
+	third := workPeerTarget{id: types.DomainHash("test/omd/fanout/third")}
+	relayed := make(chan types.Hash, 2)
+	relay := func(_ context.Context, target workPeerTarget, ids []types.Hash) (worksession.Stats, error) {
+		if len(ids) != 1 {
+			t.Errorf("forwarded ids=%v", ids)
+		}
+		relayed <- target.id
+		return worksession.Stats{Announced: len(ids), Accepted: len(ids)}, nil
+	}
+	publisher, err := newWorkSharePublisher(
+		context.Background(), []workPeerTarget{source, second, third}, 1, time.Minute, relay,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	queued, err := publisher.Forward(source.id, testFanoutShare(1))
+	if err != nil || queued != 2 {
+		t.Fatalf("forward queued=%d error=%v", queued, err)
+	}
+	seen := make(map[types.Hash]struct{}, 2)
+	for range 2 {
+		select {
+		case peerID := <-relayed:
+			seen[peerID] = struct{}{}
+		case <-time.After(time.Second):
+			t.Fatal("forwarded relay did not reach both non-source peers")
+		}
+	}
+	stats := publisher.Close()
+	if _, echoed := seen[source.id]; echoed {
+		t.Fatal("remote share was echoed directly to its source")
+	}
+	if _, ok := seen[second.id]; !ok {
+		t.Fatal("second peer did not receive forwarded share")
+	}
+	if _, ok := seen[third.id]; !ok {
+		t.Fatal("third peer did not receive forwarded share")
+	}
+	if stats.Queued != 2 || stats.Relayed != 2 || stats.Pending != 0 {
+		t.Fatalf("forward stats=%+v", stats)
+	}
+}
+
+func TestWorkMiningRoundControlForwardsOnlyExactActiveContext(t *testing.T) {
+	source := workPeerTarget{id: types.DomainHash("test/omd/control/source")}
+	target := workPeerTarget{id: types.DomainHash("test/omd/control/target")}
+	relayed := make(chan struct{}, 1)
+	relay := func(_ context.Context, destination workPeerTarget, ids []types.Hash) (worksession.Stats, error) {
+		if destination.id != target.id || len(ids) != 1 {
+			t.Errorf("destination=%s ids=%v", destination.id, ids)
+		}
+		relayed <- struct{}{}
+		return worksession.Stats{Announced: len(ids), Accepted: len(ids)}, nil
+	}
+	publisher, err := newWorkSharePublisher(
+		context.Background(), []workPeerTarget{source, target}, 1, time.Minute, relay,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	control := new(workMiningRoundControl)
+	miningContext := workgraph.Context{
+		AnchorParent: types.DomainHash("test/omd/control/parent"),
+		PayloadRoot:  types.DomainHash("test/omd/control/payload"),
+	}
+	_, generation, finish := control.Begin(context.Background(), miningContext)
+	stale := miningContext
+	stale.PayloadRoot = types.DomainHash("test/omd/control/stale-payload")
+	if control.Forward(stale, source.id, testFanoutShare(1)) {
+		t.Fatal("share from a different mining context was forwarded")
+	}
+	if !control.Forward(miningContext, source.id, testFanoutShare(2)) {
+		t.Fatal("share from active mining context was not buffered before attach")
+	}
+	if !control.Attach(generation, publisher) {
+		t.Fatal("publisher was not attached to active generation")
+	}
+	select {
+	case <-relayed:
+	case <-time.After(time.Second):
+		t.Fatal("active-context forward did not reach target")
+	}
+	stats := finish()
+	publisher.Close()
+	if stats.Shares != 1 || stats.Copies != 1 {
+		t.Fatalf("gossip stats=%+v", stats)
+	}
+	if control.Forward(miningContext, source.id, testFanoutShare(3)) {
+		t.Fatal("finished generation accepted a forward")
+	}
+}
+
 func TestWorkAnchorNotifierCoalescesBusyPeerWithoutBlockingOthers(t *testing.T) {
 	fast := workPeerTarget{id: types.DomainHash("test/omd/notify/fast")}
 	slow := workPeerTarget{id: types.DomainHash("test/omd/notify/slow")}

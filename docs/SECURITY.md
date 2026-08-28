@@ -192,6 +192,15 @@ batch before the anchor. Honest context mismatch caused by a changed tip is
 scored as stale data rather than an invalid-message attack. Explicit peers still
 do not provide Sybil-resistant selection or production gossip coverage.
 
+Multi-hop forwarding is admission-driven rather than inventory-driven. Only a
+new share that has passed full context, PoW, size, miner-count, and pool-capacity
+validation can fan out, at most once per node and round. The authenticated source
+is excluded, and each accepted share creates at most eight bounded queue copies
+if the source was not one of the configured peers (seven otherwise). Duplicate
+inventories therefore cannot amplify recursively. The round-control handoff can
+buffer at most the same 8,192-share consensus maximum and discards it on parent
+change; callbacks only copy/enqueue and perform no network I/O.
+
 Anchor notification is separated from ordinary chain pull at the libp2p
 protocol ID, but deliberately reuses its verified session. The remote winner
 cannot send an unsolicited block: it waits while the receiver sends hello and

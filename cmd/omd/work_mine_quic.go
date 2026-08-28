@@ -125,7 +125,7 @@ func runWorkMineQUIC(arguments []string) error {
 		if err != nil {
 			return err
 		}
-		roundContext, finishRound := roundControl.Begin(ctx, miningContext.AnchorParent)
+		roundContext, generation, finishRound := roundControl.Begin(ctx, miningContext)
 		publisher, err := newWorkSharePublisher(
 			roundContext, targets, *relayEvery, *relayInterval,
 			func(relayContext context.Context, target workPeerTarget, ids []types.Hash) (worksession.Stats, error) {
@@ -133,12 +133,21 @@ func runWorkMineQUIC(arguments []string) error {
 			},
 		)
 		if err != nil {
-			finishRound()
+			_ = finishRound()
 			return err
+		}
+		if !roundControl.Attach(generation, publisher) {
+			_ = finishRound()
+			publisher.Close()
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			_ = roundManager.Invalidate()
+			continue
 		}
 		started := time.Now()
 		mined, err := round.Mine(roundContext, miner, inclusion, *startNonce, publisher.Publish)
-		finishRound()
+		gossipStats := finishRound()
 		relayStats := publisher.Close()
 		if err != nil {
 			if errors.Is(err, context.Canceled) && ctx.Err() == nil {
@@ -167,8 +176,9 @@ func runWorkMineQUIC(arguments []string) error {
 		if selected.ID == id {
 			notifyQueued = notifier.Notify()
 		}
-		fmt.Printf("work_mined_quic height=%d id=%s nonce=%d weak_shares=%d included_shares=%d relay_peers=%d/%d relay_failed_peers=%d relayed_shares=%d relay_rejected=%d relay_failures=%d relay_dropped=%d pending_relay=%d anchor_notify_queued=%d elapsed=%s state=%s\n",
+		fmt.Printf("work_mined_quic height=%d id=%s nonce=%d weak_shares=%d included_shares=%d gossip_shares=%d gossip_copies=%d relay_peers=%d/%d relay_failed_peers=%d relayed_shares=%d relay_rejected=%d relay_failures=%d relay_dropped=%d pending_relay=%d anchor_notify_queued=%d elapsed=%s state=%s\n",
 			selected.Height, id, mined.WinningNonce, mined.WeakShares, len(mined.Block.Shares),
+			gossipStats.Shares, gossipStats.Copies,
 			relayStats.ReachedPeers, relayStats.Peers, relayStats.FailedPeers, relayStats.Relayed, relayStats.Rejected,
 			relayStats.Failures, relayStats.Dropped, relayStats.Pending, notifyQueued,
 			time.Since(started).Round(time.Millisecond), selected.StateRoot)
@@ -218,7 +228,14 @@ func installWorkMiningHandlers(
 			return
 		}
 		limited := &peerLimitedStream{Stream: stream, manager: peerManager, peerID: peerID}
-		sessionErr := round.Serve(handlerContext, limited)
+		miningContext, err := round.Context()
+		if err != nil {
+			_ = stream.Reset()
+			return
+		}
+		sessionErr := round.ServeAccepted(handlerContext, limited, func(share workgraph.Share, _ types.Hash) {
+			roundControl.Forward(miningContext, peerID, share)
+		})
 		recordWorkPeerSession(peerManager, peerID, sessionErr)
 		if sessionErr != nil && handlerContext.Err() == nil {
 			fmt.Fprintf(os.Stderr, "WorkGraph QUIC peer session %s: %v\n", peerID, sessionErr)
@@ -299,13 +316,30 @@ func relayWorkShares(
 }
 
 type workMiningRoundControl struct {
-	mu         sync.Mutex
-	generation uint64
-	parent     types.Hash
-	cancel     context.CancelFunc
+	mu            sync.Mutex
+	generation    uint64
+	miningContext workgraph.Context
+	active        bool
+	cancel        context.CancelFunc
+	publisher     *workSharePublisher
+	pending       []workPendingForward
+	gossip        workMiningGossipStats
 }
 
-func (control *workMiningRoundControl) Begin(parent context.Context, parentID types.Hash) (context.Context, func()) {
+type workMiningGossipStats struct {
+	Shares uint64
+	Copies uint64
+}
+
+type workPendingForward struct {
+	source types.Hash
+	share  workgraph.Share
+}
+
+func (control *workMiningRoundControl) Begin(
+	parent context.Context,
+	miningContext workgraph.Context,
+) (context.Context, uint64, func() workMiningGossipStats) {
 	control.mu.Lock()
 	if control.cancel != nil {
 		control.cancel()
@@ -313,24 +347,82 @@ func (control *workMiningRoundControl) Begin(parent context.Context, parentID ty
 	control.generation++
 	generation := control.generation
 	result, cancel := context.WithCancel(parent)
-	control.parent = parentID
+	control.miningContext = miningContext
+	control.active = true
 	control.cancel = cancel
+	control.publisher = nil
+	control.pending = nil
+	control.gossip = workMiningGossipStats{}
 	control.mu.Unlock()
-	return result, func() {
-		cancel()
+	return result, generation, func() workMiningGossipStats {
 		control.mu.Lock()
-		defer control.mu.Unlock()
+		stats := workMiningGossipStats{}
 		if control.generation == generation {
-			control.parent = types.Hash{}
+			stats = control.gossip
+			control.active = false
+			control.miningContext = workgraph.Context{}
 			control.cancel = nil
+			control.publisher = nil
+			control.pending = nil
 		}
+		control.mu.Unlock()
+		cancel()
+		return stats
 	}
+}
+
+func (control *workMiningRoundControl) Attach(generation uint64, publisher *workSharePublisher) bool {
+	control.mu.Lock()
+	defer control.mu.Unlock()
+	if publisher == nil || !control.active || control.generation != generation {
+		return false
+	}
+	control.publisher = publisher
+	for _, pending := range control.pending {
+		control.forwardLocked(pending.source, pending.share)
+	}
+	control.pending = nil
+	return true
+}
+
+func (control *workMiningRoundControl) Forward(
+	miningContext workgraph.Context,
+	source types.Hash,
+	share workgraph.Share,
+) bool {
+	control.mu.Lock()
+	defer control.mu.Unlock()
+	if !control.active || control.miningContext != miningContext || source.IsZero() {
+		return false
+	}
+	if control.publisher == nil {
+		if len(control.pending) >= workgraph.MaxShares {
+			return false
+		}
+		share.Parents = append([]types.Hash(nil), share.Parents...)
+		control.pending = append(control.pending, workPendingForward{source: source, share: share})
+		return true
+	}
+	return control.forwardLocked(source, share)
+}
+
+func (control *workMiningRoundControl) forwardLocked(source types.Hash, share workgraph.Share) bool {
+	copies, err := control.publisher.Forward(source, share)
+	if err != nil || copies == 0 {
+		return false
+	}
+	control.gossip.Shares++
+	control.gossip.Copies += uint64(copies)
+	return true
 }
 
 func (control *workMiningRoundControl) Advance(parentID types.Hash) {
 	control.mu.Lock()
 	defer control.mu.Unlock()
-	if control.cancel != nil && control.parent != parentID {
+	if control.cancel != nil && control.miningContext.AnchorParent != parentID {
+		control.active = false
+		control.publisher = nil
+		control.pending = nil
 		control.cancel()
 	}
 }
