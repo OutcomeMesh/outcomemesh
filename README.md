@@ -227,6 +227,7 @@ The CLI wallet is for development only.
 - `wallet/`: deterministic resource selection and guarded transaction building;
 - `cmd/omd/`: standalone development CLI;
 - `cmd/omreview/`: deterministic economic activation-report generator;
+- `cmd/omcalibrate/`: integer-only public-testnet ER-5 evidence evaluator;
 - `docs/`: protocol, architecture, security model, vectors, and gated roadmap.
 
 See [docs/PLAN.md](docs/PLAN.md), [docs/STATUS.md](docs/STATUS.md),

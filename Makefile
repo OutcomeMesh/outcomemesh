@@ -2,7 +2,7 @@ GO ?= go
 FUZZTIME ?= 3s
 WORKROLLOVERCYCLES ?= 256
 
-.PHONY: build fmt vet test test-race test-fuzz-smoke test-process test-work-rollover-soak test-economic-review economic-review test-all
+.PHONY: build fmt vet test test-race test-fuzz-smoke test-process test-work-rollover-soak test-economic-review economic-review test-calibration test-all
 
 build:
 	$(GO) build -trimpath -o bin/omd ./cmd/omd
@@ -60,5 +60,8 @@ test-economic-review:
 
 economic-review:
 	@$(GO) run ./cmd/omreview
+
+test-calibration:
+	$(GO) test ./sim/workgraphmodel -run '^(TestHoeffding.*Upper99PPM|TestPublicTestnetCalibration)' -count=1 -v
 
 test-all: fmt vet test-race

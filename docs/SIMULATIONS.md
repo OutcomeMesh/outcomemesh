@@ -153,6 +153,16 @@ threshold rows are `37/33/27/23/16`, `38/34/31/25/16`, `38/36/33/25/16`, and
 boundary in this corpus. The frozen version-3 document digest and precommitted
 launch gates are in `ACTIVATION_REVIEW.md`.
 
+The separate `omcalibrate` path evaluates live ER-5 aggregates without changing
+the frozen economic corpus. Its integer-only one-sided 99% Hoeffding bound
+rounds every term upward. Tie adoption uses one predeclared series; mining
+concentration uses a Bonferroni family correction for the number of
+preclassified coordination clusters before selecting the largest observation.
+Golden vectors cover pass/fail boundaries, invalid evidence, the 30-day window,
+selection correction, and a canonical evidence digest. This calculator is not
+a substitute for the still-missing signed testnet telemetry and identity-
+clustering policy.
+
 WorkGraph therefore does not eliminate the classic selfish-mining threshold;
 the result is a measured protocol limit, not a failed invariant. The sweep also
 shows that relay topology and tie adoption are security parameters rather than

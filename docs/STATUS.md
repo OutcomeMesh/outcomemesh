@@ -1,6 +1,6 @@
 # Implementation status
 
-Updated: 2026-08-27
+Updated: 2026-08-28
 
 This file records evidence against `PLAN.md`. A milestone remains open until all
 of its exit gates pass; implementing most deliverables does not close it.
@@ -434,6 +434,13 @@ Implemented in an isolated, not-yet-activated consensus package:
   depths one through four preserve branch-local share pools and none lowers the
   standard profitability boundary. `ACTIVATION_REVIEW.md` separates this passed
   internal reproduction from still-open independent review and testnet gates.
+- the ER-5 public-testnet gate now has a versioned integer-only evaluator. It
+  enforces the full 30-day window, conservative one-sided 99% Hoeffding bounds
+  for controlled tie adoption and mining concentration, and a Bonferroni
+  selection correction across preclassified coordination clusters. Golden
+  tests freeze pass/fail examples and the canonical evidence digest; signed
+  telemetry, continuity, independence, and Sybil-cluster provenance remain
+  open testnet work.
 - the PoW research harness now also has an integer-only, fixed-seed geometric
   solve process for active v0 and lagged v1. Golden observation digests cover
   baseline variance and an alternating 1x/4x campaign, while separate cases
