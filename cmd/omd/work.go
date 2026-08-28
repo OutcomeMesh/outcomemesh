@@ -27,6 +27,7 @@ import (
 	"github.com/outcomemesh/outcomemesh/node/peers"
 	libp2ptransport "github.com/outcomemesh/outcomemesh/node/transport/libp2p"
 	"github.com/outcomemesh/outcomemesh/node/workchain"
+	"github.com/outcomemesh/outcomemesh/node/workminer"
 	"github.com/outcomemesh/outcomemesh/node/workround"
 	"github.com/outcomemesh/outcomemesh/node/worksession"
 	"github.com/outcomemesh/outcomemesh/storage"
@@ -339,9 +340,42 @@ func runWorkMine(arguments []string) error {
 		if err != nil {
 			return err
 		}
-		mined, err := round.Mine(ctx, miner, inclusion, *startNonce, nil)
-		if err != nil {
-			return err
+		var mined workminer.Result
+		var weakShares, capacityRejections uint64
+		for {
+			miningContext, err := round.Context()
+			if err != nil {
+				return err
+			}
+			mineContext, stopMining := context.WithTimeout(
+				ctx, workRoundRolloverDelay(miningContext.AnchorTimestamp, unixNow()),
+			)
+			generation, mineErr := round.Mine(mineContext, miner, inclusion, *startNonce, nil)
+			timedOut := errors.Is(mineContext.Err(), context.DeadlineExceeded) && ctx.Err() == nil
+			stopMining()
+			weakShares += generation.WeakShares
+			capacityRejections += generation.CapacityRejections
+			if !timedOut {
+				if mineErr != nil {
+					return mineErr
+				}
+				mined = generation
+				mined.WeakShares = weakShares
+				mined.CapacityRejections = capacityRejections
+				break
+			}
+			next, err := roundManager.RollForward(round)
+			if err != nil {
+				return err
+			}
+			nextContext, err := next.Context()
+			if err != nil {
+				return err
+			}
+			status, _ := next.Status()
+			fmt.Fprintf(os.Stderr, "work_round_rollover height=%d timestamp=%d->%d retained_shares=%d\n",
+				nextContext.Height, miningContext.AnchorTimestamp, nextContext.AnchorTimestamp, status.Shares)
+			round = next
 		}
 		routed, err := activation.Work(mined.Block, profile.ActivationHeight)
 		if err != nil {

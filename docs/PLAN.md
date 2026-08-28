@@ -168,6 +168,8 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
 - Admission-deduplicated multi-hop forwarding across the explicit peer graph.
 - Reputation/latency/ASN-ranked peerbook selection with an inventory-free,
   exact-context WorkGraph capability probe.
+- Same-parent timestamp generations with retire/drain semantics, atomic DAG
+  revalidation, concurrent-admission linearization, and gossip handoff.
 
 ### Exit gates
 
@@ -175,6 +177,7 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
 - Reward calculation is deterministic and bounded.
 - Honest small miners receive approximately proportional rewards in simulation.
 - Share bandwidth remains within the published node budget.
+- Long rounds preserve valid same-parent work across timestamp generations.
 - Formal analysis documents the remaining fairness assumptions.
 
 ## Milestone 6: committee preconfirmations

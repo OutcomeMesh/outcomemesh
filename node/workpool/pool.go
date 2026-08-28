@@ -38,14 +38,15 @@ type entry struct {
 // Pool owns detached shares. At most MaxRewardMiners-1 weak-share identities
 // are admitted, reserving one consensus slot for an unknown future anchor.
 type Pool struct {
-	mu       sync.RWMutex
-	context  workgraph.Context
-	entries  map[types.Hash]*entry
-	waiting  map[types.Hash][]types.Hash
-	tips     map[types.Hash]struct{}
-	miners   map[types.Address]int
-	bytes    int
-	accepted int
+	mu         sync.RWMutex
+	context    workgraph.Context
+	generation uint64
+	entries    map[types.Hash]*entry
+	waiting    map[types.Hash][]types.Hash
+	tips       map[types.Hash]struct{}
+	miners     map[types.Address]int
+	bytes      int
+	accepted   int
 }
 
 func New(context workgraph.Context) (*Pool, error) {
@@ -74,48 +75,115 @@ func (pool *Pool) Add(share workgraph.Share) (types.Hash, error) {
 		return types.Hash{}, ErrContext
 	}
 	share.Parents = append([]types.Hash(nil), share.Parents...)
-	if err := workgraph.ValidateShare(pool.context, share); err != nil {
-		return types.Hash{}, err
-	}
-	hard, err := workgraph.MeetsAnchor(share)
-	if err != nil {
-		return types.Hash{}, err
-	}
-	if hard {
-		return types.Hash{}, ErrAnchorShare
-	}
-	id, err := share.ID()
-	if err != nil {
-		return types.Hash{}, err
-	}
-	encodedBytes := len(share.CanonicalBytes())
+	// Validation is deliberately outside the write lock because proof checking
+	// hashes the full share. A generation check makes admission linearizable
+	// with a same-parent timestamp rollover: if the context moved meanwhile,
+	// the share is validated again before it can enter the pool.
+	for {
+		pool.mu.RLock()
+		context := pool.context
+		generation := pool.generation
+		pool.mu.RUnlock()
+		if err := workgraph.ValidateShare(context, share); err != nil {
+			pool.mu.RLock()
+			unchanged := generation == pool.generation
+			pool.mu.RUnlock()
+			if unchanged {
+				return types.Hash{}, err
+			}
+			continue
+		}
+		hard, err := workgraph.MeetsAnchor(share)
+		if err != nil {
+			return types.Hash{}, err
+		}
+		if hard {
+			return types.Hash{}, ErrAnchorShare
+		}
+		id, err := share.ID()
+		if err != nil {
+			return types.Hash{}, err
+		}
+		encodedBytes := len(share.CanonicalBytes())
 
+		pool.mu.Lock()
+		if generation != pool.generation {
+			pool.mu.Unlock()
+			continue
+		}
+		if _, exists := pool.entries[id]; exists {
+			pool.mu.Unlock()
+			return types.Hash{}, ErrDuplicate
+		}
+		if len(pool.entries) >= workgraph.MaxShares || pool.bytes > workgraph.MaxBatchCanonicalBytes-encodedBytes {
+			pool.mu.Unlock()
+			return types.Hash{}, ErrCapacity
+		}
+		if pool.miners[share.Miner] == 0 && len(pool.miners) >= workgraph.MaxRewardMiners-1 {
+			pool.mu.Unlock()
+			return types.Hash{}, ErrCapacity
+		}
+		item := &entry{share: share, id: id}
+		pool.entries[id] = item
+		pool.bytes += encodedBytes
+		pool.miners[share.Miner]++
+		for _, parent := range share.Parents {
+			parentEntry, exists := pool.entries[parent]
+			if !exists || !parentEntry.accepted {
+				item.missing++
+				pool.waiting[parent] = append(pool.waiting[parent], id)
+			}
+		}
+		if item.missing == 0 {
+			pool.acceptLocked(item)
+		}
+		pool.mu.Unlock()
+		return id, nil
+	}
+}
+
+// RollForward advances only the winner timestamp horizon for the same parent,
+// target, payload and MTP. The operation retains the exact DAG and atomically
+// changes the validation generation seen by concurrent admissions. Advancing
+// the horizon cannot invalidate an already admitted share, but all entries are
+// nevertheless revalidated defensively before the new context is published.
+func (pool *Pool) RollForward(context workgraph.Context) error {
+	if pool == nil {
+		return ErrContext
+	}
+	context.AnchorMiner = types.Address{}
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
-	if _, exists := pool.entries[id]; exists {
-		return types.Hash{}, ErrDuplicate
+	current := pool.context
+	if !sameRoundContext(current, context) || context.AnchorTimestamp <= current.AnchorTimestamp ||
+		context.AnchorTimestamp <= context.MedianTimePast || pool.generation == math.MaxUint64 {
+		return ErrContext
 	}
-	if len(pool.entries) >= workgraph.MaxShares || pool.bytes > workgraph.MaxBatchCanonicalBytes-encodedBytes {
-		return types.Hash{}, ErrCapacity
-	}
-	if pool.miners[share.Miner] == 0 && len(pool.miners) >= workgraph.MaxRewardMiners-1 {
-		return types.Hash{}, ErrCapacity
-	}
-	item := &entry{share: share, id: id}
-	pool.entries[id] = item
-	pool.bytes += encodedBytes
-	pool.miners[share.Miner]++
-	for _, parent := range share.Parents {
-		parentEntry, exists := pool.entries[parent]
-		if !exists || !parentEntry.accepted {
-			item.missing++
-			pool.waiting[parent] = append(pool.waiting[parent], id)
+	for _, item := range pool.entries {
+		if err := workgraph.ValidateShare(context, item.share); err != nil {
+			return ErrContext
 		}
 	}
-	if item.missing == 0 {
-		pool.acceptLocked(item)
+	pool.context = context
+	pool.generation++
+	return nil
+}
+
+// IDs snapshots every admitted share ID in canonical increasing order. It is
+// a local handoff primitive used to reseed bounded gossip after a timestamp
+// generation changes; network inventories remain capped separately.
+func (pool *Pool) IDs() []types.Hash {
+	if pool == nil {
+		return nil
 	}
-	return id, nil
+	pool.mu.RLock()
+	defer pool.mu.RUnlock()
+	ids := make([]types.Hash, 0, len(pool.entries))
+	for id := range pool.entries {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(left, right int) bool { return types.CompareHash(ids[left], ids[right]) < 0 })
+	return ids
 }
 
 func (pool *Pool) Status() Status {
@@ -330,4 +398,12 @@ func validateSortedIDs(ids []types.Hash) error {
 		}
 	}
 	return nil
+}
+
+func sameRoundContext(left, right workgraph.Context) bool {
+	left.AnchorMiner = types.Address{}
+	right.AnchorMiner = types.Address{}
+	left.AnchorTimestamp = 0
+	right.AnchorTimestamp = 0
+	return left == right
 }

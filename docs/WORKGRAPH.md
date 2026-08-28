@@ -65,12 +65,17 @@ the block timestamp exactly. Miners may therefore have bounded clock skew, as
 well as different payout addresses, nonces, parent-share links, and inclusion
 commitments, without changing the executable payload.
 
-The current round manager freezes its local candidate timestamp until the parent
-changes. Consequently, after a round lasts more than the 120-second lead window,
-an early miner can reject otherwise matching shares created by a much later
-joiner, even though the stable wire context still negotiates. This asymmetry is
-now an explicit activation gate: timestamp rollover must preserve/revalidate the
-same-parent pool without letting work cross target or payload boundaries.
+The round manager advances its local candidate timestamp after 60 seconds,
+halfway through the admission lead. It prepares a new payload for the same
+parent, retires and drains objective work on the old timestamp, then atomically
+rolls the existing DAG pool to the new validation generation. Every retained
+share is revalidated. Network, height, parent, target, payload root, and MTP must
+remain exact; any change requires an unrelated empty round. Because timestamp
+is deliberately absent from the stable WorkGraph session context, in-flight
+relay sessions keep using the same bounded pool. Local gossip reseeds all
+retained IDs with per-peer deduplication, closing the snapshot/admission race.
+Long-round clock-skew and churn behavior remains an activation soak target, not
+an unimplemented lifecycle boundary.
 
 ## Difficulty and validity
 

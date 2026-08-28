@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sort"
+	"sync"
 	"testing"
 
 	"github.com/outcomemesh/outcomemesh/core/types"
@@ -86,6 +87,107 @@ func TestInventoryMissingAndBodiesStayCanonicalAndDetached(t *testing.T) {
 	}
 	if _, err := pool.Add(first); !errors.Is(err, ErrDuplicate) {
 		t.Fatalf("duplicate error=%v", err)
+	}
+}
+
+func TestTimestampRolloverRetainsAndExtendsExactDAG(t *testing.T) {
+	t.Parallel()
+
+	validation := testContext()
+	pool, err := New(validation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	early := mineWeakOnly(t, testShare(validation, "early", nil))
+	earlyID, err := pool.Add(early)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	next := validation
+	next.AnchorTimestamp += workgraph.MaxShareTimestampLead / 2
+	if err := pool.RollForward(next); err != nil {
+		t.Fatal(err)
+	}
+	lateTemplate := testShare(next, "late", []types.Hash{earlyID})
+	late := mineWeakOnly(t, lateTemplate)
+	lateID, err := pool.Add(late)
+	if err != nil {
+		t.Fatal(err)
+	}
+	status := pool.Status()
+	ids := pool.IDs()
+	if status.Accepted != 2 || status.Pending != 0 || len(ids) != 2 ||
+		types.CompareHash(ids[0], ids[1]) >= 0 {
+		t.Fatalf("rolled pool status=%+v ids=%v", status, ids)
+	}
+
+	anchorTemplate := testShare(next, "new-anchor", []types.Hash{lateID})
+	anchor, _, err := workgraph.MineAnchor(context.Background(), anchorTemplate, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	committed, err := pool.CommittedShares(anchor)
+	if err != nil || len(committed) != 2 {
+		t.Fatalf("committed after rollover=%d error=%v", len(committed), err)
+	}
+	if _, err := workgraph.ValidateCommittedBatch(validationWithMiner(next, anchor.Miner), anchor, committed); err != nil {
+		t.Fatalf("rolled batch: %v", err)
+	}
+
+	invalid := next
+	invalid.PayloadRoot = types.DomainHash("test/workpool/different-payload")
+	if err := pool.RollForward(invalid); !errors.Is(err, ErrContext) {
+		t.Fatalf("cross-payload rollover error=%v", err)
+	}
+	if current := pool.Context(); current.AnchorTimestamp != next.AnchorTimestamp || current.PayloadRoot != next.PayloadRoot {
+		t.Fatalf("failed rollover mutated context=%+v", current)
+	}
+}
+
+func TestConcurrentAdmissionsLinearizeAcrossTimestampRollover(t *testing.T) {
+	t.Parallel()
+
+	validation := testContext()
+	pool, err := New(validation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const shareCount = 64
+	shares := make([]workgraph.Share, shareCount)
+	for index := range shares {
+		shares[index] = mineWeakOnly(t, testShare(validation, string(rune(index+1)), nil))
+	}
+	next := validation
+	next.AnchorTimestamp += workgraph.MaxShareTimestampLead / 2
+	start := make(chan struct{})
+	errorsFound := make(chan error, shareCount+1)
+	var wait sync.WaitGroup
+	wait.Add(shareCount + 1)
+	go func() {
+		defer wait.Done()
+		<-start
+		errorsFound <- pool.RollForward(next)
+	}()
+	for _, share := range shares {
+		share := share
+		go func() {
+			defer wait.Done()
+			<-start
+			_, addErr := pool.Add(share)
+			errorsFound <- addErr
+		}()
+	}
+	close(start)
+	wait.Wait()
+	close(errorsFound)
+	for operationErr := range errorsFound {
+		if operationErr != nil {
+			t.Fatal(operationErr)
+		}
+	}
+	if status := pool.Status(); status.Accepted != shareCount || status.Pending != 0 {
+		t.Fatalf("concurrent rollover status=%+v", status)
 	}
 }
 

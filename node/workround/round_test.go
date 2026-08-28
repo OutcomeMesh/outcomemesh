@@ -2,6 +2,7 @@ package workround
 
 import (
 	"context"
+	"errors"
 	"net"
 	"testing"
 	"time"
@@ -172,6 +173,54 @@ func TestFinalizeAcceptsExactExternalHardSolution(t *testing.T) {
 	id, _ := block.Header.ID()
 	if result.BlockID != id || len(block.Shares) != 0 {
 		t.Fatalf("external result=%+v shares=%d id=%s", result, len(block.Shares), id)
+	}
+}
+
+func TestTimestampRolloverCancelsAndDrainsOldObjectiveWork(t *testing.T) {
+	payload, position, parameters := testPayload(t)
+	round, err := New(payload, worksession.DefaultConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	activity, finish, err := round.begin(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	position.Timestamp += workgraph.MaxShareTimestampLead / 2
+	nextPayload, err := workblock.PreparePayload(state.Empty(), position, nil, nil, parameters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rolled := make(chan *Round, 1)
+	rollErrors := make(chan error, 1)
+	go func() {
+		next, rollErr := round.RollForward(nextPayload)
+		rolled <- next
+		rollErrors <- rollErr
+	}()
+	select {
+	case <-activity.Done():
+	case <-time.After(time.Second):
+		t.Fatal("retired generation did not cancel active objective work")
+	}
+	select {
+	case <-rolled:
+		t.Fatal("rollover completed before active objective work drained")
+	case <-time.After(20 * time.Millisecond):
+	}
+	finish()
+	next := <-rolled
+	if err := <-rollErrors; err != nil {
+		t.Fatal(err)
+	}
+	oldContext, _ := round.Context()
+	nextContext, _ := next.Context()
+	if nextContext.AnchorTimestamp <= oldContext.AnchorTimestamp {
+		t.Fatalf("timestamp did not advance %d -> %d", oldContext.AnchorTimestamp, nextContext.AnchorTimestamp)
+	}
+	inclusion, _ := workgraph.InclusionRoot(nil)
+	if _, err := round.Template(testAddress("retired-objective"), inclusion); !errors.Is(err, ErrRetired) {
+		t.Fatalf("retired template error=%v", err)
 	}
 }
 

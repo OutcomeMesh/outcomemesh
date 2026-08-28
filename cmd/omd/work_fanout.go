@@ -20,10 +20,26 @@ import (
 const maxWorkMiningPeers = 8
 
 const (
-	defaultWorkRelayInterval = 8 * time.Second
-	maxWorkRelayInterval     = time.Minute
-	workAnchorNotifyTimeout  = 30 * time.Second
+	defaultWorkRelayInterval         = 8 * time.Second
+	maxWorkRelayInterval             = time.Minute
+	defaultWorkRoundRolloverInterval = time.Duration(workgraph.MaxShareTimestampLead/2) * time.Second
+	workAnchorNotifyTimeout          = 30 * time.Second
 )
+
+func workRoundRolloverDelay(timestamp, now uint64) time.Duration {
+	if timestamp > ^uint64(0)-workgraph.MaxShareTimestampLead/2 {
+		return time.Millisecond
+	}
+	deadline := timestamp + workgraph.MaxShareTimestampLead/2
+	if now >= deadline {
+		return time.Millisecond
+	}
+	remainingSeconds := deadline - now
+	if remainingSeconds > uint64(defaultWorkRoundRolloverInterval/time.Second) {
+		return defaultWorkRoundRolloverInterval
+	}
+	return time.Duration(remainingSeconds) * time.Second
+}
 
 type repeatedStringFlag []string
 
@@ -94,6 +110,20 @@ type workShareFanoutStats struct {
 	Pending      uint64
 }
 
+func (stats *workShareFanoutStats) merge(next workShareFanoutStats) {
+	stats.Peers = max(stats.Peers, next.Peers)
+	stats.ReachedPeers = max(stats.ReachedPeers, next.ReachedPeers)
+	stats.FailedPeers = max(stats.FailedPeers, next.FailedPeers)
+	stats.Queued += next.Queued
+	stats.Relayed += next.Relayed
+	stats.Rejected += next.Rejected
+	stats.Failures += next.Failures
+	stats.Dropped += next.Dropped
+	// Pending is current-generation backlog. Earlier backlog is reseeded from
+	// the retained pool, so summing it would double-count the handoff.
+	stats.Pending = next.Pending
+}
+
 type workSharePublisher struct {
 	cancel    context.CancelFunc
 	workers   []*workShareWorker
@@ -107,6 +137,7 @@ type workShareWorker struct {
 	interval   time.Duration
 	input      chan types.Hash
 	relay      workShareRelayFunc
+	known      map[types.Hash]struct{}
 
 	mu       sync.Mutex
 	queued   uint64
@@ -134,6 +165,7 @@ func newWorkSharePublisher(
 		worker := &workShareWorker{
 			target: target, relayEvery: relayEvery, interval: relayInterval,
 			input: make(chan types.Hash, workgraph.MaxShares), relay: relay,
+			known: make(map[types.Hash]struct{}, workgraph.MaxShares),
 		}
 		result.workers = append(result.workers, worker)
 		result.wait.Add(1)
@@ -163,6 +195,29 @@ func (publisher *workSharePublisher) Forward(source types.Hash, share workgraph.
 	return publisher.publishExcept(source, share)
 }
 
+// Seed republishes a retained pool inventory after timestamp rollover. Worker
+// deduplication closes the snapshot/observer race: a concurrently admitted ID
+// is queued exactly once whether the snapshot or live forwarding sees it first.
+func (publisher *workSharePublisher) Seed(ids []types.Hash) (int, error) {
+	if publisher == nil || len(ids) > workgraph.MaxShares {
+		return 0, errors.New("invalid WorkGraph gossip handoff inventory")
+	}
+	for _, id := range ids {
+		if id.IsZero() {
+			return 0, errors.New("invalid WorkGraph gossip handoff ID")
+		}
+	}
+	copies := 0
+	for _, id := range ids {
+		for _, worker := range publisher.workers {
+			if worker.enqueue(id) {
+				copies++
+			}
+		}
+	}
+	return copies, nil
+}
+
 func (publisher *workSharePublisher) publishExcept(source types.Hash, share workgraph.Share) (int, error) {
 	if publisher == nil {
 		return 0, errors.New("WorkGraph share publisher is nil")
@@ -183,12 +238,16 @@ func (publisher *workSharePublisher) publishExcept(source types.Hash, share work
 func (worker *workShareWorker) enqueue(id types.Hash) bool {
 	worker.mu.Lock()
 	defer worker.mu.Unlock()
+	if _, exists := worker.known[id]; exists {
+		return false
+	}
 	if worker.queued >= workgraph.MaxShares {
 		worker.dropped++
 		return false
 	}
 	select {
 	case worker.input <- id:
+		worker.known[id] = struct{}{}
 		worker.queued++
 		return true
 	default:

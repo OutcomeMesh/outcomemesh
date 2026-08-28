@@ -1,6 +1,7 @@
 package workround
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -72,11 +73,109 @@ func TestManagerBoundsMovingTipRetries(t *testing.T) {
 	}
 }
 
+func TestManagerRollsTimestampWithoutLosingSameParentWork(t *testing.T) {
+	payload, position, parameters := testPayload(t)
+	_ = payload
+	now := position.Timestamp
+	source := &rolloverManagerSource{
+		tip: storage.Tip{
+			ID: position.ParentID, Height: position.Height - 1, Timestamp: position.ParentTimestamp,
+		},
+		position: position, parameters: parameters,
+	}
+	manager, err := NewManager(source, func() uint64 { return now }, worksession.DefaultConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := manager.Current()
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstContext, _ := first.Context()
+	inclusion, _ := workgraph.InclusionRoot(nil)
+	earlyTemplate, err := first.Template(testAddress("rollover-early"), inclusion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	early := mineWeak(t, firstContext, earlyTemplate, 0)
+	earlyID, err := first.Add(early)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	now += RolloverSeconds
+	second, err := manager.Current()
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondContext, _ := second.Context()
+	status, _ := second.Status()
+	if second == first || secondContext.AnchorTimestamp != now || status.Accepted != 1 || source.prepares != 2 {
+		t.Fatalf("rolled round=%p first=%p context=%+v status=%+v prepares=%d",
+			second, first, secondContext, status, source.prepares)
+	}
+	if _, err := first.Template(testAddress("retired"), inclusion); !errors.Is(err, ErrRetired) {
+		t.Fatalf("retired template error=%v", err)
+	}
+
+	lateTemplate, err := second.Template(testAddress("rollover-late"), inclusion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lateTemplate.Parents = []types.Hash{earlyID}
+	late := mineWeak(t, secondContext, lateTemplate, 0)
+	lateID, err := second.Add(late)
+	if err != nil {
+		t.Fatal(err)
+	}
+	anchorTemplate, err := second.Template(testAddress("rollover-anchor"), inclusion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(anchorTemplate.Parents) != 1 || anchorTemplate.Parents[0] != lateID {
+		t.Fatalf("rolled anchor parents=%v want [%s]", anchorTemplate.Parents, lateID)
+	}
+	anchor, _, err := workgraph.MineAnchor(context.Background(), anchorTemplate, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, _, err := second.Finalize(anchor)
+	if err != nil || len(block.Shares) != 2 {
+		t.Fatalf("rolled finalization shares=%d error=%v", len(block.Shares), err)
+	}
+}
+
 type managerSource struct {
 	tip      storage.Tip
 	payloads map[types.Hash]*workblock.Payload
 	prepares int
 	moveTip  bool
+}
+
+type rolloverManagerSource struct {
+	tip        storage.Tip
+	position   workblock.Position
+	parameters workblock.Parameters
+	prepares   int
+}
+
+func (source *rolloverManagerSource) Tip() (storage.Tip, error) {
+	return source.tip, nil
+}
+
+func (source *rolloverManagerSource) PrepareWork(
+	parent types.Hash,
+	timestamp uint64,
+	_ []outcome.Transaction,
+) (*workblock.Payload, workblock.Position, error) {
+	if parent != source.tip.ID {
+		return nil, workblock.Position{}, storage.ErrBlockNotFound
+	}
+	source.prepares++
+	position := source.position
+	position.Timestamp = timestamp
+	payload, err := workblock.PreparePayload(state.Empty(), position, nil, nil, source.parameters)
+	return payload, position, err
 }
 
 func (source *managerSource) Tip() (storage.Tip, error) {

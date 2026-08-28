@@ -173,10 +173,11 @@ Implemented in an isolated, not-yet-activated consensus package:
 - parent-timestamp lagged ASERT fixes the next target before mining, preventing
   a current miner's timestamp from easing its own proof while allowing a
   bounded 120-second timestamp window for otherwise matching shares;
-- stable WorkGraph negotiation excludes that local candidate timestamp, but the
-  round manager does not yet roll it forward. Long rounds beyond 120 seconds can
-  create early/late admission asymmetry; safe same-parent pool revalidation is
-  an explicit activation gate.
+- stable WorkGraph negotiation excludes the local candidate timestamp; after
+  60 seconds the round manager retires/drains old objective work and atomically
+  advances the same pool's validation generation. Retained shares are
+  revalidated, concurrent admissions retry across the generation boundary, and
+  gossip reseeds retained IDs without duplicate per-peer copies;
 - activation rejects a proof-of-work limit that would saturate the weak target,
   preserving the exact 512:1 rate assumed by pay-per-share issuance;
 - an integer-only lagged-ASERT fluid model covers the baseline schedule, a 4x
@@ -408,7 +409,7 @@ Implemented in an isolated, not-yet-activated consensus package:
 No WorkGraph field has entered a version-0 block yet. The v1 store and opt-in
 QUIC session remain isolated from every ordinary v0 chain/CLI path and are
 reachable only through the explicitly marked experimental commands;
-activation-safe signed-record refresh, same-parent timestamp rollover, and
+activation-safe signed-record refresh, long-round clock-skew/churn soaks, and
 topology-derived peer selection,
 history-anchored archival pruning, extended filesystem-fault/soak campaigns,
 production gossip-budget calibration, and broader adaptive economic-strategy

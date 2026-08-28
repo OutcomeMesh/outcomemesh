@@ -143,15 +143,17 @@ remain an explicit testnet limitation.
 
 The peer probe's stable context intentionally excludes each miner's candidate
 timestamp, but share admission still applies the winner-relative 120-second
-window. Because the current manager freezes one timestamp for the lifetime of a
-parent, rounds longer than that window can disadvantage a late joiner. A safe
-same-parent timestamp rollover with pool revalidation remains required before
-public mining.
+window. The manager rolls the candidate after 60 seconds without changing the
+stable context: it cancels/drains the old objective search, revalidates the same
+DAG pool under the later timestamp, and starts a new payload generation. Both
+the local and cooperative commands schedule the deadline from candidate age,
+not merely command start time. The cooperative path reseeds retained inventory
+into deduplicated per-peer queues, so pending work is not abandoned at handoff.
 
 ## Gates before public mining
 
 - external PoW review and hash-rate simulations;
 - production calibration of fee delay, share gossip queues, and miner strategy;
 - activation-safe signed peer-record refresh and capability advertisement;
-- same-parent timestamp rollover without losing or miscrediting valid work;
+- multi-node long-round rollover soaks with clock skew, churn, and relay loss;
 - extended filesystem-fault storage soaks and longer multi-node QUIC churn.

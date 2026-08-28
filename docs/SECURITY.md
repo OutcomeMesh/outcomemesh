@@ -110,12 +110,15 @@ with lagged ASERT: a current miner cannot future-date its own header to receive
 an easier target. Shares may differ from the winning timestamp only inside the
 MTP-valid, winner-relative 120-second window and must still use the exact same
 target and payload.
-The current prototype does not yet roll a live same-parent round's candidate
-timestamp forward. A round lasting beyond that window can therefore produce
-asymmetric admission between an early miner and a late joiner. Capability
-negotiation deliberately uses only the stable network/height/parent/target/
-payload tuple, but public activation still requires a bounded rollover design
-that revalidates retained shares against the eventual winner timestamp.
+The live round now rolls its candidate timestamp after 60 seconds while keeping
+the exact same parent/target/payload/MTP tuple. The old objective miner is
+cancelled and drained before the pool's validation generation changes; the
+pool then revalidates every retained share under the later timestamp. Concurrent
+admission retries if it observed the old generation, so there is no copy window
+or unlocked migration. Capability negotiation continues to use only the stable
+network/height/parent/target/payload tuple, and gossip reseeds retained IDs after
+each rollover. Public activation still requires long-running clock-skew, relay
+failure, and rapid-parent-change tests of this boundary.
 
 Directly paying current transaction fees to the current anchor creates a
 separate payload-fragmentation incentive. Version 1 therefore prototypes a

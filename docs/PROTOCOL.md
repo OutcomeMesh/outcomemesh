@@ -419,6 +419,17 @@ bound. The configured proof-of-work limit must also keep
 `((target+1)*512)-1 <= 2^256-1`; a saturated weak target is invalid because it
 would break the fixed reward-rate assumption.
 
+Candidate timestamp is a local objective generation, not part of the stable
+WorkGraph session context. A node advances it after 60 seconds while the parent
+is unchanged. Before publishing the new generation it cancels and drains the
+old objective miner/finalizer, then atomically revalidates the existing share
+pool under the later timestamp. Network, height, parent, target, payload root,
+and median-time-past must be identical across this operation. Concurrent share
+admission is generation-checked and retries validation if rollover won the
+race. A changed stable field instead creates an unrelated empty pool. Retained
+inventory is reannounced through bounded per-peer queues; the wire inventory
+and request limits below do not change.
+
 The canonical version-1 header is:
 
 ```text

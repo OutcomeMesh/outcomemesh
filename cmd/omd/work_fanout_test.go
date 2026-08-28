@@ -50,6 +50,19 @@ func TestWorkPeerTargetsRequireUniqueAuthenticatedIdentities(t *testing.T) {
 	}
 }
 
+func TestWorkRoundRolloverDelayTracksCandidateAge(t *testing.T) {
+	const timestamp uint64 = 1_700_000_000
+	if delay := workRoundRolloverDelay(timestamp, timestamp); delay != defaultWorkRoundRolloverInterval {
+		t.Fatalf("fresh delay=%s", delay)
+	}
+	if delay := workRoundRolloverDelay(timestamp, timestamp+45); delay != 15*time.Second {
+		t.Fatalf("aged delay=%s", delay)
+	}
+	if delay := workRoundRolloverDelay(timestamp, timestamp+60); delay != time.Millisecond {
+		t.Fatalf("due delay=%s", delay)
+	}
+}
+
 func TestWorkShareFanoutIsolatesSlowPeer(t *testing.T) {
 	fast := workPeerTarget{id: types.DomainHash("test/omd/fanout/fast")}
 	slow := workPeerTarget{id: types.DomainHash("test/omd/fanout/slow")}
@@ -218,7 +231,44 @@ func TestWorkShareFanoutForwardsOnceWithoutEchoingSource(t *testing.T) {
 	}
 }
 
-func TestWorkMiningRoundControlForwardsOnlyExactActiveContext(t *testing.T) {
+func TestWorkShareFanoutSeedsRetainedInventoryWithoutDuplicateCopies(t *testing.T) {
+	target := workPeerTarget{id: types.DomainHash("test/omd/fanout/rollover-seed")}
+	relayed := make(chan []types.Hash, 1)
+	relay := func(_ context.Context, _ workPeerTarget, ids []types.Hash) (worksession.Stats, error) {
+		relayed <- append([]types.Hash(nil), ids...)
+		return worksession.Stats{Announced: len(ids), Accepted: len(ids)}, nil
+	}
+	publisher, err := newWorkSharePublisher(
+		context.Background(), []workPeerTarget{target}, 2, time.Minute, relay,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := testFanoutShare(1)
+	second := testFanoutShare(2)
+	firstID, _ := first.ID()
+	secondID, _ := second.ID()
+	if copies, err := publisher.Seed([]types.Hash{firstID, secondID}); err != nil || copies != 2 {
+		t.Fatalf("seed copies=%d error=%v", copies, err)
+	}
+	if err := publisher.Publish(first); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case ids := <-relayed:
+		if len(ids) != 2 || ids[0] == ids[1] {
+			t.Fatalf("seed relay IDs=%v", ids)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("retained inventory did not relay")
+	}
+	stats := publisher.Close()
+	if stats.Queued != 2 || stats.Relayed != 2 || stats.Pending != 0 || stats.Dropped != 0 {
+		t.Fatalf("seed stats=%+v", stats)
+	}
+}
+
+func TestWorkMiningRoundControlForwardsAcrossTimestampGenerationOnly(t *testing.T) {
 	source := workPeerTarget{id: types.DomainHash("test/omd/control/source")}
 	target := workPeerTarget{id: types.DomainHash("test/omd/control/target")}
 	relayed := make(chan struct{}, 1)
@@ -237,8 +287,9 @@ func TestWorkMiningRoundControlForwardsOnlyExactActiveContext(t *testing.T) {
 	}
 	control := new(workMiningRoundControl)
 	miningContext := workgraph.Context{
-		AnchorParent: types.DomainHash("test/omd/control/parent"),
-		PayloadRoot:  types.DomainHash("test/omd/control/payload"),
+		AnchorParent:    types.DomainHash("test/omd/control/parent"),
+		PayloadRoot:     types.DomainHash("test/omd/control/payload"),
+		AnchorTimestamp: 1_700_000_000,
 	}
 	_, generation, finish := control.Begin(context.Background(), miningContext)
 	stale := miningContext
@@ -246,8 +297,10 @@ func TestWorkMiningRoundControlForwardsOnlyExactActiveContext(t *testing.T) {
 	if control.Forward(stale, source.id, testFanoutShare(1)) {
 		t.Fatal("share from a different mining context was forwarded")
 	}
-	if !control.Forward(miningContext, source.id, testFanoutShare(2)) {
-		t.Fatal("share from active mining context was not buffered before attach")
+	rolled := miningContext
+	rolled.AnchorTimestamp += workgraph.MaxShareTimestampLead / 2
+	if !control.Forward(rolled, source.id, testFanoutShare(2)) {
+		t.Fatal("share from the same stable context after timestamp rollover was not buffered")
 	}
 	if !control.Attach(generation, publisher) {
 		t.Fatal("publisher was not attached to active generation")

@@ -7,13 +7,22 @@ import (
 	"github.com/outcomemesh/outcomemesh/core/outcome"
 	"github.com/outcomemesh/outcomemesh/core/types"
 	"github.com/outcomemesh/outcomemesh/core/workblock"
+	"github.com/outcomemesh/outcomemesh/core/workgraph"
 	"github.com/outcomemesh/outcomemesh/node/worksession"
 	"github.com/outcomemesh/outcomemesh/storage"
 )
 
-var ErrUnstableChain = errors.New("chain changed while preparing WorkGraph round")
+var (
+	ErrUnstableChain = errors.New("chain changed while preparing WorkGraph round")
+	ErrRoundChanged  = errors.New("WorkGraph round changed before timestamp rollover")
+)
 
 const maxBuildAttempts = 3
+
+// RolloverSeconds advances the local winner timestamp halfway through the
+// admission lead. This leaves another full half-window for honest clock and
+// network skew while preserving all same-parent work in the shared DAG.
+const RolloverSeconds uint64 = workgraph.MaxShareTimestampLead / 2
 
 // Source is the narrow activation-router surface needed to build an ephemeral
 // mining round. Keeping this interface small makes the round lifecycle
@@ -63,8 +72,21 @@ func (manager *Manager) Current() (*Round, error) {
 				return nil, err
 			}
 			if miningContext.AnchorParent == tip.ID && miningContext.Height == tip.Height+1 {
-				return manager.current, nil
+				now := manager.now()
+				if !rolloverDue(miningContext.AnchorTimestamp, now) {
+					return manager.current, nil
+				}
+				next, stable, err := manager.rollForwardLocked(manager.current, tip, now)
+				if err != nil {
+					return nil, err
+				}
+				if stable {
+					return next, nil
+				}
+				continue
 			}
+			manager.current.retire()
+			manager.current = nil
 		}
 		timestamp, err := nextTimestamp(manager.now(), tip.Timestamp)
 		if err != nil {
@@ -90,6 +112,33 @@ func (manager *Manager) Current() (*Round, error) {
 	return nil, ErrUnstableChain
 }
 
+// RollForward explicitly advances an expected current round. It is used by a
+// miner's wall-clock timer when no inbound session has called Current recently.
+// The parent is checked before and after payload preparation; a moving chain is
+// never mistaken for a timestamp-only generation change.
+func (manager *Manager) RollForward(expected *Round) (*Round, error) {
+	if manager == nil || manager.source == nil || manager.now == nil || expected == nil {
+		return nil, ErrConfiguration
+	}
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+	if manager.current != expected {
+		return nil, ErrRoundChanged
+	}
+	tip, err := manager.source.Tip()
+	if err != nil {
+		return nil, err
+	}
+	next, stable, err := manager.rollForwardLocked(expected, tip, manager.now())
+	if err != nil {
+		return nil, err
+	}
+	if !stable {
+		return nil, ErrUnstableChain
+	}
+	return next, nil
+}
+
 // Invalidate forces the next Current call to rebuild even if the source has
 // not advanced yet. It is used after a local hard solution and in tests of
 // explicit lifecycle boundaries.
@@ -99,8 +148,64 @@ func (manager *Manager) Invalidate() error {
 	}
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
+	if manager.current != nil {
+		manager.current.retire()
+	}
 	manager.current = nil
 	return nil
+}
+
+func (manager *Manager) rollForwardLocked(
+	expected *Round,
+	tip storage.Tip,
+	now uint64,
+) (*Round, bool, error) {
+	miningContext, err := expected.Context()
+	if err != nil {
+		return nil, false, err
+	}
+	if tip.Height == ^uint64(0) || miningContext.AnchorParent != tip.ID ||
+		miningContext.Height != tip.Height+1 {
+		expected.retire()
+		manager.current = nil
+		return nil, false, nil
+	}
+	base := tip.Timestamp
+	if miningContext.AnchorTimestamp > base {
+		base = miningContext.AnchorTimestamp
+	}
+	timestamp, err := nextTimestamp(now, base)
+	if err != nil {
+		return nil, false, err
+	}
+	payload, _, err := manager.source.PrepareWork(tip.ID, timestamp, nil)
+	if err != nil {
+		return nil, false, err
+	}
+	confirmed, err := manager.source.Tip()
+	if err != nil {
+		return nil, false, err
+	}
+	if confirmed.ID != tip.ID || confirmed.Height != tip.Height {
+		expected.retire()
+		manager.current = nil
+		return nil, false, nil
+	}
+	next, err := expected.RollForward(payload)
+	if err != nil {
+		expected.retire()
+		manager.current = nil
+		return nil, false, err
+	}
+	manager.current = next
+	return next, true, nil
+}
+
+func rolloverDue(timestamp, now uint64) bool {
+	if now < timestamp {
+		return false
+	}
+	return now-timestamp >= RolloverSeconds
 }
 
 func nextTimestamp(now, parent uint64) (uint64, error) {

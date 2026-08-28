@@ -160,77 +160,144 @@ func runWorkMineQUIC(arguments []string) (resultErr error) {
 	fmt.Printf("mining_work_quic peer_id=%s libp2p_id=%s network=%d activation_height=%d peers=%d auto_peers=%d relay_every=%d relay_interval=%s listen=%s\n",
 		host.ID(), host.Libp2pID(), document.NetworkID, profile.ActivationHeight, len(targets), *autoPeers, *relayEvery, *relayInterval,
 		strings.Join(host.Addresses(), ","))
+anchorLoop:
 	for minedCount := uint64(0); minedCount < *count; {
-		round, err := roundManager.Current()
-		if err != nil {
-			return err
-		}
-		inclusion, err := workgraph.InclusionRoot(nil)
-		if err != nil {
-			return err
-		}
-		miningContext, err := round.Context()
-		if err != nil {
-			return err
-		}
-		roundContext, generation, finishRound := roundControl.Begin(ctx, miningContext)
-		publisher, err := newWorkSharePublisher(
-			roundContext, targets, *relayEvery, *relayInterval,
-			func(relayContext context.Context, target workPeerTarget, ids []types.Hash) (worksession.Stats, error) {
-				return relayWorkShares(relayContext, round, host, peerManager, target, ids)
-			},
-		)
-		if err != nil {
-			_ = finishRound()
-			return err
-		}
-		if !roundControl.Attach(generation, publisher) {
-			_ = finishRound()
-			publisher.Close()
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			_ = roundManager.Invalidate()
-			continue
-		}
 		started := time.Now()
-		mined, err := round.Mine(roundContext, miner, inclusion, *startNonce, publisher.Publish)
-		gossipStats := finishRound()
-		relayStats := publisher.Close()
-		if err != nil {
-			if errors.Is(err, context.Canceled) && ctx.Err() == nil {
-				_ = roundManager.Invalidate()
-				fmt.Fprintln(os.Stderr, "restart WorkGraph mining on notified chain tip")
+		var totalWeakShares, totalCapacityRejections uint64
+		var totalGossip workMiningGossipStats
+		var totalRelay workShareFanoutStats
+		for {
+			round, err := roundManager.Current()
+			if err != nil {
+				return err
+			}
+			inclusion, err := workgraph.InclusionRoot(nil)
+			if err != nil {
+				return err
+			}
+			miningContext, err := round.Context()
+			if err != nil {
+				return err
+			}
+			roundContext, generation, finishRound := roundControl.Begin(ctx, miningContext)
+			mineContext, stopMining := context.WithTimeout(
+				roundContext, workRoundRolloverDelay(miningContext.AnchorTimestamp, unixNow()),
+			)
+			publisher, err := newWorkSharePublisher(
+				mineContext, targets, *relayEvery, *relayInterval,
+				func(relayContext context.Context, target workPeerTarget, ids []types.Hash) (worksession.Stats, error) {
+					return relayWorkShares(relayContext, round, host, peerManager, target, ids)
+				},
+			)
+			if err != nil {
+				stopMining()
+				_ = finishRound()
+				return err
+			}
+			if !roundControl.Attach(generation, publisher) {
+				stopMining()
+				_ = finishRound()
+				publisher.Close()
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
 				continue
 			}
-			return err
+			retained, err := round.IDs()
+			if err != nil {
+				stopMining()
+				_ = finishRound()
+				publisher.Close()
+				return err
+			}
+			if _, err := publisher.Seed(retained); err != nil {
+				stopMining()
+				_ = finishRound()
+				publisher.Close()
+				return err
+			}
+			mined, err := round.Mine(mineContext, miner, inclusion, *startNonce, publisher.Publish)
+			timedOut := errors.Is(mineContext.Err(), context.DeadlineExceeded) && ctx.Err() == nil
+			stopMining()
+			gossipStats := finishRound()
+			relayStats := publisher.Close()
+			totalWeakShares += mined.WeakShares
+			totalCapacityRejections += mined.CapacityRejections
+			totalGossip.Shares += gossipStats.Shares
+			totalGossip.Copies += gossipStats.Copies
+			totalRelay.merge(relayStats)
+			if err != nil {
+				if timedOut {
+					next, rolloverErr := roundManager.RollForward(round)
+					if errors.Is(rolloverErr, workround.ErrRoundChanged) || errors.Is(rolloverErr, workround.ErrUnstableChain) {
+						next, rolloverErr = roundManager.Current()
+					}
+					if rolloverErr != nil {
+						return rolloverErr
+					}
+					nextContext, contextErr := next.Context()
+					if contextErr != nil {
+						return contextErr
+					}
+					if !sameWorkRoundContext(miningContext, nextContext) {
+						fmt.Fprintln(os.Stderr, "restart WorkGraph mining on advanced chain tip")
+						continue anchorLoop
+					}
+					status, _ := next.Status()
+					fmt.Fprintf(os.Stderr, "work_round_rollover height=%d timestamp=%d->%d retained_shares=%d relayed=%d pending=%d\n",
+						nextContext.Height, miningContext.AnchorTimestamp, nextContext.AnchorTimestamp,
+						status.Shares, relayStats.Relayed, relayStats.Pending)
+					continue
+				}
+				if errors.Is(err, context.Canceled) && ctx.Err() == nil {
+					current, currentErr := roundManager.Current()
+					if currentErr != nil {
+						return currentErr
+					}
+					currentContext, currentErr := current.Context()
+					if currentErr != nil {
+						return currentErr
+					}
+					if sameWorkRoundContext(miningContext, currentContext) {
+						fmt.Fprintf(os.Stderr, "continue WorkGraph mining after timestamp rollover %d->%d\n",
+							miningContext.AnchorTimestamp, currentContext.AnchorTimestamp)
+						continue
+					}
+					fmt.Fprintln(os.Stderr, "restart WorkGraph mining on notified chain tip")
+					continue anchorLoop
+				}
+				return err
+			}
+			mined.WeakShares = totalWeakShares
+			mined.CapacityRejections = totalCapacityRejections
+			routed, err := activation.Work(mined.Block, profile.ActivationHeight)
+			if err != nil {
+				return err
+			}
+			selected, err := router.Submit(routed)
+			if err != nil {
+				return err
+			}
+			if err := roundManager.Invalidate(); err != nil {
+				return err
+			}
+			id, err := mined.Block.Header.ID()
+			if err != nil {
+				return err
+			}
+			notifyQueued := 0
+			if selected.ID == id {
+				notifyQueued = notifier.Notify()
+			}
+			fmt.Printf("work_mined_quic height=%d id=%s nonce=%d weak_shares=%d included_shares=%d gossip_shares=%d gossip_copies=%d relay_peers=%d/%d relay_failed_peers=%d relayed_shares=%d relay_rejected=%d relay_failures=%d relay_dropped=%d pending_relay=%d anchor_notify_queued=%d elapsed=%s state=%s\n",
+				selected.Height, id, mined.WinningNonce, mined.WeakShares, len(mined.Block.Shares),
+				totalGossip.Shares, totalGossip.Copies,
+				totalRelay.ReachedPeers, totalRelay.Peers, totalRelay.FailedPeers, totalRelay.Relayed, totalRelay.Rejected,
+				totalRelay.Failures, totalRelay.Dropped, totalRelay.Pending, notifyQueued,
+				time.Since(started).Round(time.Millisecond), selected.StateRoot)
+			minedCount++
+			continue anchorLoop
 		}
-		routed, err := activation.Work(mined.Block, profile.ActivationHeight)
-		if err != nil {
-			return err
-		}
-		selected, err := router.Submit(routed)
-		if err != nil {
-			return err
-		}
-		if err := roundManager.Invalidate(); err != nil {
-			return err
-		}
-		id, err := mined.Block.Header.ID()
-		if err != nil {
-			return err
-		}
-		notifyQueued := 0
-		if selected.ID == id {
-			notifyQueued = notifier.Notify()
-		}
-		fmt.Printf("work_mined_quic height=%d id=%s nonce=%d weak_shares=%d included_shares=%d gossip_shares=%d gossip_copies=%d relay_peers=%d/%d relay_failed_peers=%d relayed_shares=%d relay_rejected=%d relay_failures=%d relay_dropped=%d pending_relay=%d anchor_notify_queued=%d elapsed=%s state=%s\n",
-			selected.Height, id, mined.WinningNonce, mined.WeakShares, len(mined.Block.Shares),
-			gossipStats.Shares, gossipStats.Copies,
-			relayStats.ReachedPeers, relayStats.Peers, relayStats.FailedPeers, relayStats.Relayed, relayStats.Rejected,
-			relayStats.Failures, relayStats.Dropped, relayStats.Pending, notifyQueued,
-			time.Since(started).Round(time.Millisecond), selected.StateRoot)
-		minedCount++
 	}
 	notifyStats := notifier.Close()
 	fmt.Printf("work_mining_quic_done peers=%d notifications=%d/%d notification_failures=%d notification_coalesced=%d\n",
@@ -440,7 +507,7 @@ func (control *workMiningRoundControl) Forward(
 ) bool {
 	control.mu.Lock()
 	defer control.mu.Unlock()
-	if !control.active || control.miningContext != miningContext || source.IsZero() {
+	if !control.active || !sameWorkRoundContext(control.miningContext, miningContext) || source.IsZero() {
 		return false
 	}
 	if control.publisher == nil {
@@ -452,6 +519,14 @@ func (control *workMiningRoundControl) Forward(
 		return true
 	}
 	return control.forwardLocked(source, share)
+}
+
+func sameWorkRoundContext(left, right workgraph.Context) bool {
+	left.AnchorMiner = types.Address{}
+	right.AnchorMiner = types.Address{}
+	left.AnchorTimestamp = 0
+	right.AnchorTimestamp = 0
+	return left == right
 }
 
 func (control *workMiningRoundControl) forwardLocked(source types.Hash, share workgraph.Share) bool {

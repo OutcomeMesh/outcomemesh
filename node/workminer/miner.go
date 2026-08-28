@@ -72,24 +72,24 @@ func (miner *Miner) Mine(ctx context.Context, start uint64) (Result, error) {
 			miner.miner, miner.inclusionRoot, miner.pool.Parents(),
 		)
 		if err != nil {
-			return Result{}, err
+			return result, err
 		}
 		share, _, err := workgraph.Mine(ctx, template, next)
 		if err != nil {
-			return Result{}, err
+			return result, err
 		}
 		hard, err := workgraph.MeetsAnchor(share)
 		if err != nil {
-			return Result{}, err
+			return result, err
 		}
 		if hard {
 			committed, err := miner.pool.CommittedShares(share)
 			if err != nil {
-				return Result{}, err
+				return result, err
 			}
 			block, execution, err := miner.payload.Finalize(share, committed)
 			if err != nil {
-				return Result{}, err
+				return result, err
 			}
 			result.Block = block
 			result.Execution = execution
@@ -98,11 +98,11 @@ func (miner *Miner) Mine(ctx context.Context, start uint64) (Result, error) {
 		}
 		if _, err := miner.pool.Add(share); err != nil {
 			if !errors.Is(err, workpool.ErrCapacity) {
-				return Result{}, err
+				return result, err
 			}
 			result.CapacityRejections++
 			if share.Nonce == math.MaxUint64 {
-				return Result{}, ErrNonceSpace
+				return result, ErrNonceSpace
 			}
 			next = share.Nonce + 1
 			continue
@@ -112,7 +112,7 @@ func (miner *Miner) Mine(ctx context.Context, start uint64) (Result, error) {
 			published := share
 			published.Parents = append([]types.Hash(nil), share.Parents...)
 			if err := miner.publish(published); err != nil {
-				return Result{}, err
+				return result, err
 			}
 		}
 		// Admission makes this share a new accepted tip, changing the work
