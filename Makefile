@@ -50,6 +50,7 @@ test-fuzz-smoke:
 	$(GO) test ./node/calibration -run '^$$' -fuzz '^FuzzDecodeTieTrialReceiptNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/calibration -run '^$$' -fuzz '^FuzzDecodeTieReceiptManifestNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/calibration -run '^$$' -fuzz '^FuzzDecodeTiePendingNeverPanics$$' -fuzztime=$(FUZZTIME)
+	$(GO) test ./node/tieexchange -run '^$$' -fuzz '^FuzzReadRequestNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/tieproducer -run '^$$' -fuzz '^FuzzDecodePairNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/workchain -run '^$$' -fuzz '^FuzzDecodeNodeMetadataNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/workchain -run '^$$' -fuzz '^FuzzDecodePersistedStateNeverPanics$$' -fuzztime=$(FUZZTIME)
@@ -57,7 +58,7 @@ test-fuzz-smoke:
 	$(GO) test ./sim/workgraphmodel -run '^$$' -fuzz '^FuzzRunSelfishStrategiesNeverBreakAccounting$$' -fuzztime=$(FUZZTIME)
 
 test-process:
-	$(GO) test -tags=integration ./cmd/omd -run '^TestProcess(QUICRestartSoak|WorkGraphActivationQUICRestart|ControlledTieProducerRecoversWaitingState)$$' -count=1 -timeout=10m
+	$(GO) test -tags=integration ./cmd/omd -run '^TestProcess(QUICRestartSoak|WorkGraphActivationQUICRestart|ControlledTieProducerRecoversWaitingState|TiePairQUICReachesIndependentV2ObserversAndRecoversAck)$$' -count=1 -timeout=10m
 	$(GO) test -tags=integration ./node/workchain -run '^TestPebbleProcessCrashAtomicity$$' -count=1 -timeout=2m
 
 test-work-rollover-soak:

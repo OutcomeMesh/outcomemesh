@@ -468,9 +468,16 @@ Implemented in an isolated, not-yet-activated consensus package:
   observer signing: its creation never mutates the chain, and admission
   independently replays plan-derived nonce searches before ordered Submit.
   Version-2 plans now bind 2–64 sorted independent observer keys under one plan
-  ID while retaining separate signed receipt chains. Authenticated network
-  transport, cross-observer disagreement policy, observer honesty, and Sybil-
-  cluster provenance remain open testnet work.
+  ID while retaining separate signed receipt chains. A dedicated authenticated
+  QUIC stream now distributes the identical published artifact to independently
+  keyed observers with mutual transport pinning, pre-allocation bounds, separate
+  rate/resource scopes, durable receipt acknowledgements, coordinator
+  confirmation, and restart-safe lost-ack recovery. A separate-process fixture
+  rejects an unlisted coordinator, reaches two version-2 observers, compares
+  their role-labelled blocks and selected tips, and proves a retry returns the
+  original receipt without duplicate admission. Cross-observer disagreement
+  policy, multi-slot orchestration, observer honesty, and Sybil-cluster
+  provenance remain open testnet work.
 - the PoW research harness now also has an integer-only, fixed-seed geometric
   solve process for active v0 and lagged v1. Golden observation digests cover
   baseline variance and an alternating 1x/4x campaign, while separate cases

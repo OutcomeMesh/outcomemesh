@@ -29,6 +29,7 @@ const (
 	WorkGraphProtocol      protocol.ID = "/outcomemesh/workgraph/1"
 	VersionedChainProtocol protocol.ID = "/outcomemesh/chain/1"
 	ChainNotifyProtocol    protocol.ID = "/outcomemesh/chain-notify/1"
+	TiePairProtocol        protocol.ID = "/outcomemesh/tie-pair/1"
 	maxListenAddresses                 = 8
 	maxAddressBytes                    = 256
 	// MaxConnectionLimit and MaxStreamsPerPeerLimit are hard implementation
@@ -43,6 +44,10 @@ const (
 	MaxVersionedChainStreamsPerPeerLimit         = 2
 	MaxVersionedChainStreamsPerMinuteLimit       = 30
 	MaxVersionedChainStreamsGlobalPerMinuteLimit = 1_024
+	MaxTiePairStreamsLimit                       = 16
+	MaxTiePairStreamsPerPeerLimit                = 1
+	MaxTiePairStreamsPerMinuteLimit              = 4
+	MaxTiePairStreamsGlobalPerMinuteLimit        = 128
 	MaxFileDescriptorLimit                       = 4_096
 )
 
@@ -66,6 +71,10 @@ type Config struct {
 	MaxVersionedChainStreamsPerPeer         int
 	MaxVersionedChainStreamsPerMinute       int
 	MaxVersionedChainStreamsGlobalPerMinute int
+	MaxTiePairStreams                       int
+	MaxTiePairStreamsPerPeer                int
+	MaxTiePairStreamsPerMinute              int
+	MaxTiePairStreamsGlobalPerMinute        int
 	MemoryBytes                             int64
 	MaxFileDescriptors                      int
 	GracePeriod                             time.Duration
@@ -83,6 +92,10 @@ func DefaultConfig() Config {
 		MaxVersionedChainStreamsPerPeer:         1,
 		MaxVersionedChainStreamsPerMinute:       4,
 		MaxVersionedChainStreamsGlobalPerMinute: 128,
+		MaxTiePairStreams:                       2,
+		MaxTiePairStreamsPerPeer:                1,
+		MaxTiePairStreamsPerMinute:              2,
+		MaxTiePairStreamsGlobalPerMinute:        32,
 		MemoryBytes:                             64 << 20,
 		MaxFileDescriptors:                      128,
 		GracePeriod:                             30 * time.Second,
@@ -107,6 +120,12 @@ type Host struct {
 	versionedChainPeerCounts                map[types.Hash]int
 	maxVersionedChainStreamsPerMinute       int
 	maxGlobalVersionedChainStreamsPerMinute int
+	tiePairMu                               sync.Mutex
+	tiePairWindowStart                      time.Time
+	tiePairGlobalCount                      int
+	tiePairPeerCounts                       map[types.Hash]int
+	maxTiePairStreamsPerMinute              int
+	maxGlobalTiePairStreamsPerMinute        int
 }
 
 func New(ctx context.Context, privateKey ed25519.PrivateKey, config Config, handler Handler) (*Host, error) {
@@ -159,6 +178,9 @@ func New(ctx context.Context, privateKey ed25519.PrivateKey, config Config, hand
 		versionedChainPeerCounts:                make(map[types.Hash]int),
 		maxVersionedChainStreamsPerMinute:       config.MaxVersionedChainStreamsPerMinute,
 		maxGlobalVersionedChainStreamsPerMinute: config.MaxVersionedChainStreamsGlobalPerMinute,
+		tiePairPeerCounts:                       make(map[types.Hash]int),
+		maxTiePairStreamsPerMinute:              config.MaxTiePairStreamsPerMinute,
+		maxGlobalTiePairStreamsPerMinute:        config.MaxTiePairStreamsGlobalPerMinute,
 	}
 	result.setHandler(SessionProtocol, handler)
 	return result, nil
@@ -196,6 +218,24 @@ func (value *Host) SetChainNotifyHandler(handler Handler) error {
 	return nil
 }
 
+// SetTiePairHandler explicitly enables bounded controlled-tie artifact
+// delivery for one preconfigured coordinator transport identity. Unlisted
+// authenticated peers are rejected before consuming the protocol rate budget.
+func (value *Host) SetTiePairHandler(expectedRemote types.Hash, handler Handler) error {
+	if value == nil || value.inner == nil || expectedRemote.IsZero() || handler == nil {
+		return ErrConfiguration
+	}
+	value.inner.SetStreamHandler(TiePairProtocol, func(stream network.Stream) {
+		remoteID, err := outcomeIDFromPublicKey(stream.Conn().RemotePublicKey())
+		if err != nil || remoteID != expectedRemote || !value.allowTiePairStream(remoteID, time.Now()) {
+			_ = stream.Reset()
+			return
+		}
+		handler(value.context, remoteID, stream)
+	})
+	return nil
+}
+
 func (value *Host) setHandler(protocolID protocol.ID, handler Handler) {
 	value.inner.SetStreamHandler(protocolID, func(stream network.Stream) {
 		remoteID, err := outcomeIDFromPublicKey(stream.Conn().RemotePublicKey())
@@ -214,6 +254,24 @@ func (value *Host) setHandler(protocolID protocol.ID, handler Handler) {
 		}
 		handler(value.context, remoteID, stream)
 	})
+}
+
+func (value *Host) allowTiePairStream(remoteID types.Hash, now time.Time) bool {
+	value.tiePairMu.Lock()
+	defer value.tiePairMu.Unlock()
+	if value.tiePairWindowStart.IsZero() ||
+		now.Sub(value.tiePairWindowStart) >= time.Minute || now.Before(value.tiePairWindowStart) {
+		value.tiePairWindowStart = now
+		value.tiePairGlobalCount = 0
+		clear(value.tiePairPeerCounts)
+	}
+	if value.tiePairGlobalCount >= value.maxGlobalTiePairStreamsPerMinute ||
+		value.tiePairPeerCounts[remoteID] >= value.maxTiePairStreamsPerMinute {
+		return false
+	}
+	value.tiePairGlobalCount++
+	value.tiePairPeerCounts[remoteID]++
+	return true
 }
 
 func (value *Host) allowVersionedChainStream(remoteID types.Hash, now time.Time) bool {
@@ -320,6 +378,12 @@ func (value *Host) OpenVersionedChainStream(ctx context.Context, address string,
 // OpenChainNotifyStream opens only the inverted chain-notification protocol.
 func (value *Host) OpenChainNotifyStream(ctx context.Context, address string, expected *types.Hash) (network.Stream, types.Hash, error) {
 	return value.openStream(ctx, address, expected, ChainNotifyProtocol)
+}
+
+// OpenTiePairStream opens only the authenticated controlled-tie artifact
+// protocol. The expected observer transport identity should always be pinned.
+func (value *Host) OpenTiePairStream(ctx context.Context, address string, expected *types.Hash) (network.Stream, types.Hash, error) {
+	return value.openStream(ctx, address, expected, TiePairProtocol)
 }
 
 func (value *Host) openStream(
@@ -452,6 +516,14 @@ func validateConfig(ctx context.Context, privateKey ed25519.PrivateKey, config C
 		config.MaxVersionedChainStreamsPerMinute > MaxVersionedChainStreamsPerMinuteLimit ||
 		config.MaxVersionedChainStreamsGlobalPerMinute < config.MaxVersionedChainStreamsPerMinute ||
 		config.MaxVersionedChainStreamsGlobalPerMinute > MaxVersionedChainStreamsGlobalPerMinuteLimit ||
+		config.MaxTiePairStreams <= 0 || config.MaxTiePairStreams > MaxTiePairStreamsLimit ||
+		config.MaxTiePairStreamsPerPeer <= 0 ||
+		config.MaxTiePairStreamsPerPeer > MaxTiePairStreamsPerPeerLimit ||
+		config.MaxTiePairStreams < config.MaxTiePairStreamsPerPeer ||
+		config.MaxTiePairStreamsPerMinute <= 0 ||
+		config.MaxTiePairStreamsPerMinute > MaxTiePairStreamsPerMinuteLimit ||
+		config.MaxTiePairStreamsGlobalPerMinute < config.MaxTiePairStreamsPerMinute ||
+		config.MaxTiePairStreamsGlobalPerMinute > MaxTiePairStreamsGlobalPerMinuteLimit ||
 		config.MemoryBytes < 16<<20 || config.MemoryBytes > 2<<30 ||
 		config.MaxFileDescriptors < config.MaxConnections || config.MaxFileDescriptors > MaxFileDescriptorLimit ||
 		config.GracePeriod < 0 {
@@ -475,9 +547,9 @@ func newResourceManager(config Config) (network.ResourceManager, error) {
 	// below enforces the exact application-stream limit.
 	const internalStreamsPerPeer = 8
 	peerStreams := config.MaxStreamsPerPeer + config.MaxWorkStreamsPerPeer +
-		2*config.MaxVersionedChainStreamsPerPeer + internalStreamsPerPeer
+		2*config.MaxVersionedChainStreamsPerPeer + config.MaxTiePairStreamsPerPeer + internalStreamsPerPeer
 	totalStreams := config.MaxConnections*(config.MaxStreamsPerPeer+config.MaxWorkStreamsPerPeer+internalStreamsPerPeer) +
-		2*config.MaxVersionedChainStreams
+		2*config.MaxVersionedChainStreams + config.MaxTiePairStreams
 	system := rcmgr.ResourceLimits{
 		Streams:         rcmgr.LimitVal(totalStreams),
 		StreamsInbound:  rcmgr.LimitVal(totalStreams),
@@ -516,6 +588,12 @@ func newResourceManager(config Config) (network.ResourceManager, error) {
 		StreamsOutbound: rcmgr.LimitVal(config.MaxVersionedChainStreamsPerPeer),
 		Memory:          4 << 20,
 	}
+	tiePairPerPeer := rcmgr.ResourceLimits{
+		Streams:         rcmgr.LimitVal(config.MaxTiePairStreamsPerPeer),
+		StreamsInbound:  rcmgr.LimitVal(config.MaxTiePairStreamsPerPeer),
+		StreamsOutbound: rcmgr.LimitVal(config.MaxTiePairStreamsPerPeer),
+		Memory:          32 << 20,
+	}
 	partial := rcmgr.PartialLimitConfig{
 		System:      system,
 		Transient:   system,
@@ -545,12 +623,19 @@ func newResourceManager(config Config) (network.ResourceManager, error) {
 				StreamsOutbound: rcmgr.LimitVal(config.MaxVersionedChainStreams),
 				Memory:          rcmgr.LimitVal64(config.MemoryBytes / 2),
 			},
+			TiePairProtocol: {
+				Streams:         rcmgr.LimitVal(config.MaxTiePairStreams),
+				StreamsInbound:  rcmgr.LimitVal(config.MaxTiePairStreams),
+				StreamsOutbound: rcmgr.LimitVal(config.MaxTiePairStreams),
+				Memory:          rcmgr.LimitVal64(config.MemoryBytes / 2),
+			},
 		},
 		ProtocolPeer: map[protocol.ID]rcmgr.ResourceLimits{
 			SessionProtocol:        applicationPerPeer,
 			WorkGraphProtocol:      workGraphPerPeer,
 			VersionedChainProtocol: versionedChainPerPeer,
 			ChainNotifyProtocol:    versionedChainPerPeer,
+			TiePairProtocol:        tiePairPerPeer,
 		},
 		Conn: rcmgr.ResourceLimits{
 			Conns: 1, ConnsInbound: 1, ConnsOutbound: 1, FD: 1, Memory: 4 << 20,

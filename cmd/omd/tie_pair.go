@@ -104,10 +104,10 @@ func runWorkTelemetryTiePairAdmit(arguments []string) (resultErr error) {
 		return errors.New("observer key, plan/pair IDs, coordinator public key, sequence, and input are required")
 	}
 	if *receiptPath == "" {
-		*receiptPath = filepath.Join(*data, "work-tie-receipts.omtr")
+		*receiptPath = defaultTieReceiptPath(*data)
 	}
 	if *pendingPath == "" {
-		*pendingPath = filepath.Join(*data, "work-tie-receipts.pending")
+		*pendingPath = defaultTiePendingPath(*data)
 	}
 	observerKey, err := loadPrivateKey(*observerKeyPath)
 	if err != nil {
@@ -193,6 +193,14 @@ func runWorkTelemetryTiePairAdmit(arguments []string) (resultErr error) {
 		status.LastReceiptID,
 	)
 	return nil
+}
+
+func defaultTieReceiptPath(data string) string {
+	return filepath.Join(data, "work-tie-receipts.omtr")
+}
+
+func defaultTiePendingPath(data string) string {
+	return filepath.Join(data, "work-tie-receipts.pending")
 }
 
 func loadPublishedTiePlan(

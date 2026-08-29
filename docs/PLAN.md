@@ -197,9 +197,11 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
   persistent-router CLI harness plus wait/crash/restart process coverage, and a
   transport-neutral pair artifact with observer-side deterministic mining
   replay, a canonical digest, and version-2 plans sharing one campaign ID across
-  up to 64 observer keys. Multi-slot scheduling, authenticated artifact
-  transport, and cross-observer disagreement policy remain Milestone 9
-  deliverables.
+  up to 64 observer keys. A separately rate-limited authenticated QUIC pair
+  protocol now pins both transport identities and published IDs, returns a
+  durable signed-receipt acknowledgement, confirms its delivery, and recovers
+  lost acknowledgements without duplicate admission. Multi-slot orchestration
+  and cross-observer disagreement policy remain Milestone 9 deliverables.
 
 ### Exit gates
 

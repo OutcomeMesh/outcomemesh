@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strconv"
@@ -344,6 +345,198 @@ func TestProcessControlledTieProducerRecoversWaitingState(t *testing.T) {
 	}
 }
 
+func TestProcessTiePairQUICReachesIndependentV2ObserversAndRecoversAck(t *testing.T) {
+	root := t.TempDir()
+	coordinatorData := root + "/coordinator"
+	observerDataA := root + "/observer-a"
+	observerDataB := root + "/observer-b"
+	planPath := root + "/tie-plan-v2.omtp"
+	pairPath := root + "/tie-pair.omtpair"
+	coordinatorTransportKey := root + "/coordinator-transport.key"
+	rogueTransportKey := root + "/rogue-transport.key"
+	observerTransportKeyA := root + "/observer-a-transport.key"
+	observerTransportKeyB := root + "/observer-b-transport.key"
+	observerReceiptKeyA := root + "/observer-a-receipt.key"
+	observerReceiptKeyB := root + "/observer-b-receipt.key"
+	writeProcessKey(t, coordinatorTransportKey, "tie-pair-coordinator-transport")
+	writeProcessKey(t, rogueTransportKey, "tie-pair-rogue-transport")
+	writeProcessKey(t, observerTransportKeyA, "tie-pair-observer-a-transport")
+	writeProcessKey(t, observerTransportKeyB, "tie-pair-observer-b-transport")
+	writeProcessKey(t, observerReceiptKeyA, "tie-pair-observer-a-receipt")
+	writeProcessKey(t, observerReceiptKeyB, "tie-pair-observer-b-receipt")
+
+	runProcessCommand(t, 20*time.Second,
+		"init", "--data", coordinatorData, "--network", "20260831", "--timestamp", "1700000000",
+		"--difficulty-bits", "9", "--max-history-bytes", strconv.FormatUint(minimumHistoryBytes, 10),
+	)
+	document, err := loadGenesis(coordinatorData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	genesisID, err := document.ID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	runProcessCommand(t, 20*time.Second,
+		"work-enable", "--data", coordinatorData, "--activation-height", "2",
+		"--confirm-genesis", genesisID.String(), "--max-trees", "4",
+		"--max-history-bytes", strconv.FormatUint(minimumHistoryBytes, 10),
+	)
+	runProcessCommand(t, 20*time.Second, "work-mine", "--data", coordinatorData, "--count", "1")
+	parentID := workTip(t, coordinatorData)
+	if err := os.CopyFS(observerDataA, os.DirFS(coordinatorData)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.CopyFS(observerDataB, os.DirFS(coordinatorData)); err != nil {
+		t.Fatal(err)
+	}
+
+	observerKeyA, err := loadPrivateKey(observerReceiptKeyA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	observerKeyB, err := loadPrivateKey(observerReceiptKeyB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	coordinatorPlanSeed := types.DomainHash("test/process/tie-pair-v2-plan-coordinator")
+	coordinatorPlanKey := ed25519.NewKeyFromSeed(coordinatorPlanSeed[:])
+	var observerA, observerB [ed25519.PublicKeySize]byte
+	copy(observerA[:], observerKeyA.Public().(ed25519.PublicKey))
+	copy(observerB[:], observerKeyB.Public().(ed25519.PublicKey))
+	observers := [][ed25519.PublicKeySize]byte{observerA, observerB}
+	if bytes.Compare(observers[0][:], observers[1][:]) > 0 {
+		observers[0], observers[1] = observers[1], observers[0]
+	}
+	startedAt := unixNow() + 1
+	plan := calibration.TiePlan{
+		Version: calibration.TiePlanVersion2, NetworkID: document.NetworkID, GenesisID: genesisID,
+		ActivationHeight:        2,
+		TestedMiner:             types.Address(types.DomainHash("test/process/tie-pair-v2-tested")),
+		ControlMiner:            types.Address(types.DomainHash("test/process/tie-pair-v2-control")),
+		MaximumPairDelaySeconds: 10,
+		ObserverPublicKeys:      observers,
+		Slots: []calibration.TiePlanSlot{{
+			StartedAt: startedAt, EndedAt: startedAt + 180, FirstRole: calibration.TieRoleTested,
+		}},
+	}
+	plan, err = calibration.SignTiePlan(coordinatorPlanKey, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := calibration.SaveTiePlanFile(planPath, plan, plan.Binding()); err != nil {
+		t.Fatal(err)
+	}
+	planID, err := plan.ID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	coordinatorPublicKey := bytesToLowerHex(coordinatorPlanKey.Public().(ed25519.PublicKey))
+	observerPublicKeyA := bytesToLowerHex(observerKeyA.Public().(ed25519.PublicKey))
+	observerPublicKeyB := bytesToLowerHex(observerKeyB.Public().(ed25519.PublicKey))
+	created := runProcessCommand(t, 30*time.Second,
+		"work-telemetry-tie-pair-create", "--data", coordinatorData,
+		"--plan", planPath, "--plan-id", planID.String(),
+		"--coordinator-public-key", coordinatorPublicKey,
+		"--observer-public-key", observerPublicKeyA,
+		"--sequence", "1", "--output", pairPath,
+	)
+	pairID := outputFields(created, "work_tie_pair_created")["pair"]
+	if pairID == "" || workTip(t, coordinatorData) != parentID {
+		t.Fatalf("pair creation output=%s", created)
+	}
+	coordinatorTransportID := processTransportPeerID(t, coordinatorTransportKey)
+	receiverA, observerTransportIDA, addressA := startTieReceiverProcess(t,
+		observerDataA, observerTransportKeyA, observerReceiptKeyA, coordinatorTransportID.String(),
+		planPath, planID.String(), coordinatorPublicKey, pairID,
+	)
+	receiverB, observerTransportIDB, addressB := startTieReceiverProcess(t,
+		observerDataB, observerTransportKeyB, observerReceiptKeyB, coordinatorTransportID.String(),
+		planPath, planID.String(), coordinatorPublicKey, pairID,
+	)
+
+	if output, err := runProcessCommandError(10*time.Second,
+		"work-telemetry-tie-pair-send-quic", "--key", rogueTransportKey,
+		"--peer", addressA, "--observer-peer-id", observerTransportIDA,
+		"--observer-public-key", observerPublicKeyA, "--plan-id", planID.String(),
+		"--sequence", "1", "--pair-id", pairID, "--input", pairPath, "--timeout", "5s",
+	); err == nil {
+		t.Fatalf("unlisted coordinator transport was accepted: %s", output)
+	}
+	sentA, sendErrA := runProcessCommandError(30*time.Second,
+		"work-telemetry-tie-pair-send-quic", "--key", coordinatorTransportKey,
+		"--peer", addressA, "--observer-peer-id", observerTransportIDA,
+		"--observer-public-key", observerPublicKeyA, "--plan-id", planID.String(),
+		"--sequence", "1", "--pair-id", pairID, "--input", pairPath,
+	)
+	if sendErrA != nil {
+		_ = waitTieReceiverProcess(t, receiverA)
+		t.Fatalf("send observer A: %v output=%s", sendErrA, sentA)
+	}
+	sentB, sendErrB := runProcessCommandError(30*time.Second,
+		"work-telemetry-tie-pair-send-quic", "--key", coordinatorTransportKey,
+		"--peer", addressB, "--observer-peer-id", observerTransportIDB,
+		"--observer-public-key", observerPublicKeyB, "--plan-id", planID.String(),
+		"--sequence", "1", "--pair-id", pairID, "--input", pairPath,
+	)
+	if sendErrB != nil {
+		_ = waitTieReceiverProcess(t, receiverB)
+		t.Fatalf("send observer B: %v output=%s", sendErrB, sentB)
+	}
+	receivedA := waitTieReceiverProcess(t, receiverA)
+	receivedB := waitTieReceiverProcess(t, receiverB)
+	sentFieldsA := outputFields(sentA, "work_tie_pair_sent")
+	sentFieldsB := outputFields(sentB, "work_tie_pair_sent")
+	receivedFieldsA := outputFields(receivedA, "work_tie_pair_received")
+	receivedFieldsB := outputFields(receivedB, "work_tie_pair_received")
+	if sentFieldsA["receipt_tail"] == "" || sentFieldsB["receipt_tail"] == "" ||
+		sentFieldsA["receipt_tail"] != receivedFieldsA["receipt_tail"] ||
+		sentFieldsB["receipt_tail"] != receivedFieldsB["receipt_tail"] ||
+		receivedFieldsA["recovered"] != "false" || receivedFieldsB["recovered"] != "false" {
+		t.Fatalf("incomplete multi-observer exchange\nsent-a: %s\nreceived-a: %s\nsent-b: %s\nreceived-b: %s",
+			sentA, receivedA, sentB, receivedB)
+	}
+	if sentFieldsA["receipt_tail"] == sentFieldsB["receipt_tail"] {
+		t.Fatal("independent observer signatures unexpectedly produced one receipt ID")
+	}
+
+	recovery, recoveryTransportID, recoveryAddress := startTieReceiverProcess(t,
+		observerDataA, observerTransportKeyA, observerReceiptKeyA, coordinatorTransportID.String(),
+		planPath, planID.String(), coordinatorPublicKey, pairID,
+	)
+	if recoveryTransportID != observerTransportIDA {
+		t.Fatalf("observer transport identity changed across restart: %s != %s", recoveryTransportID, observerTransportIDA)
+	}
+	recoveredSend := runProcessCommand(t, 30*time.Second,
+		"work-telemetry-tie-pair-send-quic", "--key", coordinatorTransportKey,
+		"--peer", recoveryAddress, "--observer-peer-id", recoveryTransportID,
+		"--observer-public-key", observerPublicKeyA, "--plan-id", planID.String(),
+		"--sequence", "1", "--pair-id", pairID, "--input", pairPath,
+	)
+	recoveredReceive := waitTieReceiverProcess(t, recovery)
+	if fields := outputFields(recoveredReceive, "work_tie_pair_received"); fields["recovered"] != "true" ||
+		fields["receipt_tail"] != sentFieldsA["receipt_tail"] ||
+		outputFields(recoveredSend, "work_tie_pair_sent")["receipt_tail"] != sentFieldsA["receipt_tail"] {
+		t.Fatalf("lost-ack recovery changed receipt\nsend: %s\nreceive: %s", recoveredSend, recoveredReceive)
+	}
+
+	bindingA := plan.Binding()
+	bindingA.ObserverPublicKey = observerA
+	bindingB := plan.Binding()
+	bindingB.ObserverPublicKey = observerB
+	_, receiptsA, aggregateA, errA := calibration.LoadTieReceiptFile(defaultTieReceiptPath(observerDataA), bindingA)
+	_, receiptsB, aggregateB, errB := calibration.LoadTieReceiptFile(defaultTieReceiptPath(observerDataB), bindingB)
+	if errA != nil || errB != nil || len(receiptsA) != 1 || len(receiptsB) != 1 ||
+		!aggregateA.Complete || !aggregateB.Complete ||
+		receiptsA[0].TestedAnchorID != receiptsB[0].TestedAnchorID ||
+		receiptsA[0].ControlAnchorID != receiptsB[0].ControlAnchorID ||
+		receiptsA[0].ObserverPublicKey == receiptsB[0].ObserverPublicKey ||
+		workTip(t, observerDataA) != workTip(t, observerDataB) {
+		t.Fatalf("independent receipts diverged receipts-a=%+v aggregate-a=%+v err-a=%v receipts-b=%+v aggregate-b=%+v err-b=%v",
+			receiptsA, aggregateA, errA, receiptsB, aggregateB, errB)
+	}
+}
+
 // TestOMDHelperProcess executes exactly one CLI command in a separate process.
 func TestOMDHelperProcess(t *testing.T) {
 	if os.Getenv(helperProcessEnvironment) != "1" {
@@ -370,6 +563,107 @@ func TestOMDHelperProcess(t *testing.T) {
 type serverProcess struct {
 	command *exec.Cmd
 	stderr  *bytes.Buffer
+}
+
+type tieReceiverProcess struct {
+	command    *exec.Cmd
+	stderr     *bytes.Buffer
+	stdout     *bytes.Buffer
+	stdoutDone chan struct{}
+}
+
+func startTieReceiverProcess(
+	t testing.TB,
+	data string,
+	transportKey string,
+	receiptKey string,
+	coordinatorTransportID string,
+	planPath string,
+	planID string,
+	coordinatorPublicKey string,
+	pairID string,
+) (*tieReceiverProcess, string, string) {
+	t.Helper()
+	command := helperCommand(nil,
+		"work-telemetry-tie-pair-receive-quic", "--data", data,
+		"--key", transportKey, "--listen", "/ip4/127.0.0.1/udp/0/quic-v1",
+		"--coordinator-peer-id", coordinatorTransportID, "--observer-key", receiptKey,
+		"--plan", planPath, "--plan-id", planID, "--coordinator-public-key", coordinatorPublicKey,
+		"--sequence", "1", "--pair-id", pairID,
+	)
+	pipe, err := command.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stderr := new(bytes.Buffer)
+	command.Stderr = stderr
+	if err := command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	reader := bufio.NewReader(pipe)
+	lineResult := make(chan string, 1)
+	go func() {
+		line, _ := reader.ReadString('\n')
+		lineResult <- line
+	}()
+	var line string
+	select {
+	case line = <-lineResult:
+	case <-time.After(30 * time.Second):
+		_ = command.Process.Kill()
+		_ = command.Wait()
+		t.Fatalf("tie-pair receiver startup timeout stderr=%s", stderr.String())
+	}
+	values := outputFields(line, "work_tie_pair_receiving")
+	peerID := values["transport_peer_id"]
+	address := strings.Split(values["listen"], ",")[0]
+	if peerID == "" || address == "" {
+		_ = command.Process.Kill()
+		_ = command.Wait()
+		t.Fatalf("invalid tie-pair receiver line %q stderr=%s", line, stderr.String())
+	}
+	stdout := new(bytes.Buffer)
+	stdout.WriteString(line)
+	stdoutDone := make(chan struct{})
+	go func() {
+		_, _ = io.Copy(stdout, reader)
+		close(stdoutDone)
+	}()
+	result := &tieReceiverProcess{command: command, stderr: stderr, stdout: stdout, stdoutDone: stdoutDone}
+	t.Cleanup(func() {
+		if command.ProcessState == nil || !command.ProcessState.Exited() {
+			_ = command.Process.Kill()
+			_ = command.Wait()
+		}
+	})
+	return result, peerID, address
+}
+
+func waitTieReceiverProcess(t testing.TB, receiver *tieReceiverProcess) string {
+	t.Helper()
+	done := make(chan error, 1)
+	go func() { done <- receiver.command.Wait() }()
+	select {
+	case err := <-done:
+		<-receiver.stdoutDone
+		if err != nil {
+			t.Fatalf("tie-pair receiver: %v\nstdout=%s\nstderr=%s", err, receiver.stdout.String(), receiver.stderr.String())
+		}
+		return receiver.stdout.String()
+	case <-time.After(30 * time.Second):
+		_ = receiver.command.Process.Kill()
+		t.Fatalf("tie-pair receiver completion timeout stderr=%s", receiver.stderr.String())
+		return ""
+	}
+}
+
+func processTransportPeerID(t testing.TB, path string) types.Hash {
+	t.Helper()
+	privateKey, err := loadPrivateKey(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return types.DomainHash("OMESH/p2p/ed25519/v0", privateKey.Public().(ed25519.PublicKey))
 }
 
 func startQUICServerProcess(t testing.TB, data, key string) (*serverProcess, string, string) {

@@ -60,9 +60,10 @@ make build
 
 `test-process` runs three real v0 QUIC server restart/sync/replay cycles, a
 separate three-node v0→v1 WorkGraph enable/mine/fanout/restart cycle with one
-incompatible authenticated peer, and kills the WorkGraph Pebble process on both
-sides of commit, replay-checkpoint rotation, and stale-fork pruning durability
-boundaries. Raise the
+incompatible authenticated peer, a two-observer authenticated controlled-tie
+artifact delivery/restart recovery, and kills the WorkGraph Pebble process on
+both sides of commit, replay-checkpoint rotation, and stale-fork pruning
+durability boundaries. Raise the
 v0 QUIC soak length with, for example,
 `OUTCOMEMESH_SOAK_CYCLES=25 make test-process` (hard cap: 100 cycles).
 `test-work-rollover-soak` runs 256 timestamp generations across four in-memory
@@ -224,6 +225,9 @@ The CLI wallet is for development only.
   persistence, and ER-5 evidence aggregation;
 - `node/snapshot/`: bounded chunk export and state-root verification without
   unsafe canonical-state import;
+- `node/tieproducer/`, `node/tieexchange/`: deterministic role-labelled sibling
+  production, portable pair validation/replay, and bounded authenticated
+  observer delivery with durable acknowledgement recovery;
 - `node/transport/`: mutually authenticated TLS/TCP fallback and bounded
   go-libp2p QUIC-v1 adapter, including distinct opt-in WorkGraph-v1 and
   activation-aware chain-v1 streams;

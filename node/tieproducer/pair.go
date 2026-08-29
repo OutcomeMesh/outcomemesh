@@ -103,7 +103,17 @@ func (pair Pair) ID(
 	if err != nil {
 		return types.Hash{}, err
 	}
-	return types.DomainHash("OMESH/testnet/calibration/tie-pair/id/v0", encoded), nil
+	return ArtifactID(encoded)
+}
+
+// ArtifactID authenticates the exact portable bytes against a separately
+// published pair ID without requiring an observer's local plan binding. Full
+// structural and consensus validation still happens in DecodePair.
+func ArtifactID(input []byte) (types.Hash, error) {
+	if len(input) == 0 || len(input) > MaximumPairArtifactBytes {
+		return types.Hash{}, ErrPairArtifact
+	}
+	return types.DomainHash("OMESH/testnet/calibration/tie-pair/id/v0", input), nil
 }
 
 func DecodePair(

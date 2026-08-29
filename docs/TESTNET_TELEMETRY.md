@@ -310,6 +310,52 @@ therefore rejected rather than sampled. Pair ID
 `ae313ca7a0a3c9614c14c5d9347090eddcec8dda6f4a26361543a5262be3ac0d`
 is the frozen deterministic transport vector.
 
+The same published artifact can be delivered to each independent observer over
+the dedicated authenticated QUIC protocol. Start a one-shot receiver on an
+observer whose node is synchronized to the coordinator's frozen parent:
+
+```sh
+.tools/go/bin/go run ./cmd/omd work-telemetry-tie-pair-receive-quic \
+  --data observer-a-data \
+  --key observer-a-transport.key \
+  --listen /ip4/0.0.0.0/udp/9846/quic-v1 \
+  --coordinator-peer-id <pinned-coordinator-transport-id> \
+  --observer-key observer-a-receipt.key \
+  --plan tie-plan.omtp --plan-id <published-plan-id> \
+  --coordinator-public-key <plan-coordinator-public-key> \
+  --sequence 1 --pair-id <published-pair-id>
+```
+
+The coordinator sends the already-created file to the printed direct address:
+
+```sh
+.tools/go/bin/go run ./cmd/omd work-telemetry-tie-pair-send-quic \
+  --key coordinator-transport.key \
+  --peer <receiver-multiaddress> \
+  --observer-peer-id <pinned-observer-transport-id> \
+  --observer-public-key <observer-a-receipt-public-key> \
+  --plan-id <published-plan-id> --sequence 1 \
+  --pair-id <published-pair-id> --input tie-pair-1.omtpair
+```
+
+Repeat the receiver/send pair for every key in a version-2 plan; all observers
+receive identical artifact bytes but retain separate chain state, signing keys,
+and receipt manifests. Transport keys are deliberately separate from plan and
+receipt keys. Both QUIC endpoints pin the expected OutcomeMesh transport ID;
+the receiver rejects an authenticated but unlisted coordinator before reading
+or replaying the artifact.
+
+`/outcomemesh/tie-pair/1` checks the published plan ID, pair ID, and sequence in
+a fixed header before allocating the bounded body. The observer then checks the
+exact artifact digest, fully decodes both blocks, reruns deterministic mining,
+admits them in the signed role order, and durably writes its signed receipt.
+The application exchange is three-phase: request, durable receipt
+acknowledgement, and coordinator confirmation. If the acknowledgement is lost
+after commit, restarting the same one-shot receiver verifies the artifact
+against the existing completed receipt and returns the same receipt ID without
+submitting either block again. Per-peer/global stream concurrency and fixed-
+window rate budgets bound replay-driven CPU and memory exposure.
+
 The tested and control payout addresses must be dedicated to the harness during
 their planned slots. Ordinary mining under either address is intentionally not
 distinguishable from the scheduled attempt; an extra distinct anchor for that

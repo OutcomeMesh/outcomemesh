@@ -216,6 +216,31 @@ worker per explicit peer and coalesce repeated wins to one pending prompt. The
 responder pins the canonical chain path advertised in its hello, preventing a
 concurrent next-round win from changing an in-flight header/body response.
 
+## Controlled-tie artifact exchange
+
+The opt-in `/outcomemesh/tie-pair/1` stream carries one prepublished portable
+controlled-tie artifact from a coordinator to an independent observer. It is
+not registered by ordinary hosts. The observer installs it only for a specific
+plan ID, pair ID, slot sequence, and allowlisted coordinator transport ID; the
+sender pins the observer transport ID embedded in the direct QUIC address.
+
+The request begins with a fixed-size versioned header containing both IDs, the
+sequence, and a uint64 body length. A zero length or a length above 23,071,744
+bytes is rejected before allocation. The exact body digest must equal the
+published pair ID before full decoding and deterministic mining replay. At most
+one valid request may claim the one-shot receiver, and the libp2p resource
+manager gives this protocol separate active-stream and fixed-window per-peer/
+global budgets.
+
+After ordered local admission has durably created the observer-signed receipt,
+the receiver returns an acknowledgement bound to the request, receipt observer
+public key, and receipt-tail ID. The sender must return a matching confirmation
+before the receiver tears down its host. A retry after an acknowledgement loss
+does not readmit blocks: the restarted receiver requires the same published
+artifact to match the already validated completed receipt and returns its
+original ID. The authenticated channel protects the exchange endpoints; the
+receipt signature remains the portable audit evidence.
+
 ## Signed peer advertisements
 
 `node/discovery` defines an OutcomeMesh-native discovery record rather than
