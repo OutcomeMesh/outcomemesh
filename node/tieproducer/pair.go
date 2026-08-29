@@ -40,7 +40,8 @@ func (pair Pair) Validate(
 	if err := plan.Verify(binding); err != nil {
 		return err
 	}
-	if plan.Version != calibration.TiePlanVersion1 || pair.Sequence > uint64(len(plan.Slots)) {
+	if (plan.Version != calibration.TiePlanVersion1 && plan.Version != calibration.TiePlanVersion2) ||
+		pair.Sequence > uint64(len(plan.Slots)) {
 		return ErrPairArtifact
 	}
 	planID, err := plan.ID()

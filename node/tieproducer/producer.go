@@ -341,7 +341,8 @@ func validateConfig(config Config) (types.Hash, error) {
 	if err := config.Plan.Verify(config.Binding); err != nil {
 		return types.Hash{}, err
 	}
-	if config.Plan.Version != calibration.TiePlanVersion1 || config.Sequence > uint64(len(config.Plan.Slots)) {
+	if (config.Plan.Version != calibration.TiePlanVersion1 && config.Plan.Version != calibration.TiePlanVersion2) ||
+		config.Sequence > uint64(len(config.Plan.Slots)) {
 		return types.Hash{}, ErrConfiguration
 	}
 	planID, err := config.Plan.ID()

@@ -75,12 +75,13 @@ mutation detection.
 
 Controlled equal-work races use a separate signed raw-evidence chain. They are
 not accepted as manually supplied success/trial counters. Before either sibling
-anchor ID exists, a coordinator signs and externally publishes a version-1
-`TiePlan` and its ID. The plan fixes:
+anchor ID exists, a coordinator signs and externally publishes a `TiePlan` and
+its ID. Version 1 binds one observer; version 2 binds a canonical set of 2–64
+independent observers under the same plan ID. The plan fixes:
 
 - the network, genesis, and WorkGraph activation height;
 - distinct tested and control miner payout addresses;
-- the observer and coordinator Ed25519 public keys;
+- the allowed observer key or key set and the coordinator Ed25519 public key;
 - at most 10,000 ordered, non-overlapping half-open time slots of at most one
   hour each;
 - the miner role that must be admitted first in every individual slot;
@@ -114,11 +115,15 @@ The plan is limited to 256 KiB, a receipt to 1 KiB, and the raw manifest to
 verification hashes the plan once so 10,000 receipts remain linear-time.
 Version-0 plans/receipts remain decodable for archival compatibility but cannot
 enter an ER-5 evidence bundle or the live writer because they did not commit
-delivery order. Version-1 plan ID
+delivery order. Version 2 uses separate signature/ID domains and requires
+strictly sorted unique observer keys; a receipt is valid only when its signer
+belongs to that published set. Version-1 plan ID
 `6eef06dab78e377167086422f36497d238924aa42c7eee6f8dc9f85f0b6443e2`
 and receipt-chain tail
 `10d385b8140946ffe21871735fe18067b81582d937ed1f8f68bf0bd71740340a`
-are frozen deterministic test vectors.
+remain frozen deterministic test vectors. Version-2 two-observer plan ID
+`29162d81295f1ec43c1226623e7b2c0ab39389e71b9829bc256e804a0dc0d742`
+freezes the shared-campaign encoding.
 
 These signatures prove provenance, binding, continuity, and explicit slot
 closure—not observer honesty. An auditor still needs the underlying version-1
@@ -206,6 +211,18 @@ first slot:
   --pair-delay-seconds 5 --first-role control \
   --output tie-plan.omtp
 ```
+
+For a shared multi-observer campaign replace `--observer-public-key` with a
+comma-separated canonical membership input; the command sorts it before
+signing and emits a version-2 plan:
+
+```sh
+  --observer-public-keys <observer-a-hex>,<observer-b-hex>[,...]
+```
+
+Every observer supplies its own key and manifest paths when running the live
+writer or pair-admit command. All members verify the same plan/pair IDs, while
+their receipt chains and tail checkpoints remain separate.
 
 Then add the plan to the observer command shown above:
 
@@ -372,11 +389,10 @@ and its version-3 report digest is
 
 ## Remaining operational work
 
-- carry the bounded pair artifact over authenticated network transport and
-  introduce a plan version that binds multiple distinct observer keys under one
-  campaign ID. File delivery now separates coordinator mining from one
-  observer's signing key and independently replays the deterministic search,
-  but version-1 still binds only one observer key;
+- carry the bounded pair artifact over authenticated network transport. Version
+  2 now binds up to 64 distinct observer keys under one plan ID, and file
+  delivery separates coordinator mining from observer signing with independent
+  deterministic replay;
 - publish each plan ID before its first slot and publish the final receipt tail
   outside the manifest storage path;
 - deploy and publish the clustering policy and its digest before each real

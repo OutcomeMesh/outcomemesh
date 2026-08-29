@@ -11,6 +11,7 @@ import (
 const (
 	TieReceiptVersion0     uint16 = 0
 	TieReceiptVersion1     uint16 = 1
+	TieReceiptVersion2     uint16 = 2
 	MaximumTieReceiptBytes        = 1024
 )
 
@@ -135,7 +136,8 @@ func DecodeTieTrialReceipt(input []byte) (TieTrialReceipt, error) {
 	if receipt.Version, err = decoder.U16(); err != nil {
 		return TieTrialReceipt{}, err
 	}
-	if receipt.Version != TieReceiptVersion0 && receipt.Version != TieReceiptVersion1 {
+	if receipt.Version != TieReceiptVersion0 && receipt.Version != TieReceiptVersion1 &&
+		receipt.Version != TieReceiptVersion2 {
 		return TieTrialReceipt{}, ErrVersion
 	}
 	if err := decodeTieReceiptHash(decoder, &receipt.PlanID); err != nil {
@@ -169,7 +171,7 @@ func DecodeTieTrialReceipt(input []byte) (TieTrialReceipt, error) {
 	if err := decodeTieReceiptHash(decoder, &receipt.SelectedAnchorID); err != nil {
 		return TieTrialReceipt{}, err
 	}
-	if receipt.Version == TieReceiptVersion1 {
+	if receipt.Version == TieReceiptVersion1 || receipt.Version == TieReceiptVersion2 {
 		if err := decodeTieReceiptHash(decoder, &receipt.FirstObservedAnchorID); err != nil {
 			return TieTrialReceipt{}, err
 		}
@@ -219,21 +221,23 @@ func (receipt TieTrialReceipt) encodeUnsigned(encoder *codec.Encoder) {
 	encoder.U64(receipt.TestedObservedAt)
 	encoder.U64(receipt.ControlObservedAt)
 	encoder.Fixed(receipt.SelectedAnchorID[:])
-	if receipt.Version == TieReceiptVersion1 {
+	if receipt.Version == TieReceiptVersion1 || receipt.Version == TieReceiptVersion2 {
 		encoder.Fixed(receipt.FirstObservedAnchorID[:])
 	}
 	encoder.Fixed(receipt.ObserverPublicKey[:])
 }
 
 func (receipt TieTrialReceipt) validateShape(plan TiePlan, planID types.Hash) error {
-	if receipt.Version != TieReceiptVersion0 && receipt.Version != TieReceiptVersion1 {
+	if receipt.Version != TieReceiptVersion0 && receipt.Version != TieReceiptVersion1 &&
+		receipt.Version != TieReceiptVersion2 {
 		return ErrVersion
 	}
 	if (plan.Version == TiePlanVersion0 && receipt.Version != TieReceiptVersion0) ||
-		(plan.Version == TiePlanVersion1 && receipt.Version != TieReceiptVersion1) {
+		(plan.Version == TiePlanVersion1 && receipt.Version != TieReceiptVersion1) ||
+		(plan.Version == TiePlanVersion2 && receipt.Version != TieReceiptVersion2) {
 		return ErrVersion
 	}
-	if receipt.PlanID != planID || receipt.ObserverPublicKey != plan.ObserverPublicKey {
+	if receipt.PlanID != planID || !plan.AllowsObserver(receipt.ObserverPublicKey) {
 		return ErrBinding
 	}
 	if receipt.Sequence == 0 || receipt.Sequence > uint64(len(plan.Slots)) ||
@@ -282,12 +286,18 @@ func (receipt TieTrialReceipt) signatureDomain() string {
 	if receipt.Version == TieReceiptVersion1 {
 		return "OMESH/testnet/calibration/tie-receipt/signature/v1"
 	}
+	if receipt.Version == TieReceiptVersion2 {
+		return "OMESH/testnet/calibration/tie-receipt/signature/v2"
+	}
 	return tieReceiptSignatureDomain
 }
 
 func (receipt TieTrialReceipt) idDomain() string {
 	if receipt.Version == TieReceiptVersion1 {
 		return "OMESH/testnet/calibration/tie-receipt/id/v1"
+	}
+	if receipt.Version == TieReceiptVersion2 {
+		return "OMESH/testnet/calibration/tie-receipt/id/v2"
 	}
 	return tieReceiptIDDomain
 }

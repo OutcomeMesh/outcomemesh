@@ -261,6 +261,29 @@ func TestWorkTelemetryTiePlanCommandBuildsBoundedSignedSchedule(t *testing.T) {
 		plan.TestedMiner != tested || plan.ControlMiner != control || plan.Slots[1].FirstRole != calibration.TieRoleControl {
 		t.Fatalf("generated plan=%+v", plan)
 	}
+	secondSeed := types.DomainHash("test/omd/tie-plan-command-observer-second")
+	secondObserver := ed25519.NewKeyFromSeed(secondSeed[:])
+	multiPath := filepath.Join(root, "plan-v2.omtp")
+	if err := runWorkTelemetryTiePlan([]string{
+		"--data", data, "--coordinator-key", coordinatorPath,
+		"--observer-public-keys", bytesToLowerHex(observer.Public().(ed25519.PublicKey)) + "," +
+			bytesToLowerHex(secondObserver.Public().(ed25519.PublicKey)),
+		"--tested-miner", tested.String(), "--control-miner", control.String(),
+		"--start", strconv.FormatUint(firstStart, 10), "--slots", "3", "--slot-seconds", "30",
+		"--spacing-seconds", "60", "--pair-delay-seconds", "5", "--first-role", "control",
+		"--output", multiPath,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	multi, err := calibration.LoadTiePlanFile(multiPath, binding)
+	if err != nil || multi.Version != calibration.TiePlanVersion2 || len(multi.ObserverPublicKeys) != 2 {
+		t.Fatalf("multi-observer plan=%+v err=%v", multi, err)
+	}
+	secondBinding := binding
+	copy(secondBinding.ObserverPublicKey[:], secondObserver.Public().(ed25519.PublicKey))
+	if err := multi.Verify(secondBinding); err != nil {
+		t.Fatalf("second observer binding: %v", err)
+	}
 }
 
 func bytesToLowerHex(input []byte) string {

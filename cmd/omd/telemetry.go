@@ -2,12 +2,14 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"errors"
 	"flag"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -52,6 +54,7 @@ func runWorkTelemetryTiePlan(arguments []string) error {
 	data := flags.String("data", defaultDataDirectory, "WorkGraph-enabled node data directory")
 	coordinatorKeyPath := flags.String("coordinator-key", "", "Ed25519 coordinator seed file")
 	observerPublicKeyText := flags.String("observer-public-key", "", "observer Ed25519 public key")
+	observerPublicKeysText := flags.String("observer-public-keys", "", "comma-separated canonical observer key set for a version-2 plan")
 	testedMinerText := flags.String("tested-miner", "", "tested miner payout address")
 	controlMinerText := flags.String("control-miner", "", "control miner payout address")
 	startedAt := flags.Uint64("start", 0, "first slot start as Unix seconds")
@@ -64,7 +67,7 @@ func runWorkTelemetryTiePlan(arguments []string) error {
 	if err := flags.Parse(arguments); err != nil {
 		return err
 	}
-	if *coordinatorKeyPath == "" || *observerPublicKeyText == "" || *testedMinerText == "" ||
+	if *coordinatorKeyPath == "" || (*observerPublicKeyText == "") == (*observerPublicKeysText == "") || *testedMinerText == "" ||
 		*controlMinerText == "" || *startedAt == 0 || *slotCount == 0 ||
 		*slotCount > calibration.MaximumTiePlanSlots || *slotSeconds == 0 ||
 		*slotSeconds > calibration.MaximumTieSlotSeconds || *spacingSeconds < *slotSeconds ||
@@ -105,10 +108,6 @@ func runWorkTelemetryTiePlan(arguments []string) error {
 	if err != nil {
 		return err
 	}
-	observerKey, err := parseHash(*observerPublicKeyText)
-	if err != nil {
-		return fmt.Errorf("observer-public-key: %w", err)
-	}
 	testedMiner, err := parseAddress(*testedMinerText)
 	if err != nil {
 		return fmt.Errorf("tested-miner: %w", err)
@@ -132,7 +131,30 @@ func runWorkTelemetryTiePlan(arguments []string) error {
 		MaximumPairDelaySeconds: *pairDelaySeconds,
 		Slots:                   make([]calibration.TiePlanSlot, int(count)),
 	}
-	copy(plan.ObserverPublicKey[:], observerKey[:])
+	if *observerPublicKeyText != "" {
+		observerKey, err := parseHash(*observerPublicKeyText)
+		if err != nil {
+			return fmt.Errorf("observer-public-key: %w", err)
+		}
+		copy(plan.ObserverPublicKey[:], observerKey[:])
+	} else {
+		keys := strings.Split(*observerPublicKeysText, ",")
+		if len(keys) < 2 || len(keys) > calibration.MaximumTieObservers {
+			return fmt.Errorf("observer-public-keys must contain 2..%d keys", calibration.MaximumTieObservers)
+		}
+		plan.Version = calibration.TiePlanVersion2
+		plan.ObserverPublicKeys = make([][ed25519.PublicKeySize]byte, len(keys))
+		for index, text := range keys {
+			key, parseErr := parseHash(strings.TrimSpace(text))
+			if parseErr != nil {
+				return fmt.Errorf("observer-public-keys[%d]: %w", index, parseErr)
+			}
+			copy(plan.ObserverPublicKeys[index][:], key[:])
+		}
+		sort.Slice(plan.ObserverPublicKeys, func(left, right int) bool {
+			return bytes.Compare(plan.ObserverPublicKeys[left][:], plan.ObserverPublicKeys[right][:]) < 0
+		})
+	}
 	for index := range plan.Slots {
 		start := *startedAt + uint64(index)*spacing
 		plan.Slots[index] = calibration.TiePlanSlot{
@@ -150,8 +172,13 @@ func runWorkTelemetryTiePlan(arguments []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("work_telemetry_tie_plan id=%s slots=%d first_start=%d final_end=%d output=%s\n",
-		identifier, len(plan.Slots), plan.Slots[0].StartedAt, plan.Slots[len(plan.Slots)-1].EndedAt, *outputPath)
+	observerCount := 1
+	if plan.Version == calibration.TiePlanVersion2 {
+		observerCount = len(plan.ObserverPublicKeys)
+	}
+	fmt.Printf("work_telemetry_tie_plan id=%s version=%d observers=%d slots=%d first_start=%d final_end=%d output=%s\n",
+		identifier, plan.Version, observerCount, len(plan.Slots), plan.Slots[0].StartedAt,
+		plan.Slots[len(plan.Slots)-1].EndedAt, *outputPath)
 	return nil
 }
 

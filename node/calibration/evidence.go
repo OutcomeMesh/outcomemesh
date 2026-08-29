@@ -68,14 +68,16 @@ func validateEvidenceAggregates(
 	tie TieReceiptAggregate,
 	expected EvidenceBinding,
 ) (EvidenceAggregate, error) {
-	if !validEvidenceBinding(expected) || telemetry.Binding != expected.Telemetry ||
-		plan.Binding() != expected.TiePlan {
+	if !validEvidenceBinding(expected) || telemetry.Binding != expected.Telemetry {
+		return EvidenceAggregate{}, ErrEvidence
+	}
+	if err := plan.Verify(expected.TiePlan); err != nil {
 		return EvidenceAggregate{}, ErrEvidence
 	}
 	if telemetry.ControlledTieAdoptions != 0 || telemetry.ControlledTieTrials != 0 {
 		return EvidenceAggregate{}, ErrEvidence
 	}
-	if plan.Version != TiePlanVersion1 {
+	if plan.Version != TiePlanVersion1 && plan.Version != TiePlanVersion2 {
 		return EvidenceAggregate{}, ErrEvidence
 	}
 	if telemetry.LastRecordID != expected.TelemetryTailID ||

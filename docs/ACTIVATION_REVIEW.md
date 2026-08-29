@@ -174,8 +174,9 @@ Each signed hourly record covers at most one hour; sequences, previous-record
 IDs, and interval boundaries must be gapless. Manual tie counters in those
 records invalidate evidence mode. The second file must close every precommitted
 slot with a signed completed or `NoPair` receipt; `NoPair` is charged as an
-adoption. Version-1 also binds the first-delivery role before either anchor ID
-exists; older unordered plans cannot enter evidence mode. The generated
+adoption. Tie-plan versions 1 and 2 also bind the first-delivery role before
+either anchor ID exists; version 2 additionally binds a sorted observer set
+under one plan ID. Older unordered plans cannot enter evidence mode. The generated
 720-record/10,000-receipt/30-day golden bundle has
 hourly tail
 `8498100edacc5868a99f555f523280e4039aa8bf2be9f1c972e6bf7f687b616c`,

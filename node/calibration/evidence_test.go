@@ -1,6 +1,7 @@
 package calibration
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"errors"
 	"path/filepath"
@@ -118,6 +119,43 @@ func TestLegacyUnorderedTieEvidenceRemainsDecodableButCannotPassER5(t *testing.T
 	}
 	if _, err := ValidateEvidenceBundle(records, plan, []TieTrialReceipt{receipt}, legacyBinding); !errors.Is(err, ErrEvidence) {
 		t.Fatalf("legacy unordered evidence error=%v, want ErrEvidence", err)
+	}
+}
+
+func TestEvidenceBundleAcceptsOneViewFromSharedMultiObserverPlan(t *testing.T) {
+	records, _, _, current := testEvidenceBundle(t)
+	observer := testKey()
+	secondSeed := types.DomainHash("test/calibration/evidence/multi-observer/second")
+	second := ed25519.NewKeyFromSeed(secondSeed[:])
+	unsigned := unsignedTiePlan()
+	unsigned.Version = TiePlanVersion2
+	unsigned.NetworkID = current.Telemetry.NetworkID
+	unsigned.GenesisID = current.Telemetry.GenesisID
+	unsigned.ActivationHeight = current.Telemetry.ActivationHeight
+	unsigned.ObserverPublicKey = [ed25519.PublicKeySize]byte{}
+	unsigned.ObserverPublicKeys = [][ed25519.PublicKeySize]byte{
+		[ed25519.PublicKeySize]byte(observer.Public().(ed25519.PublicKey)),
+		[ed25519.PublicKeySize]byte(second.Public().(ed25519.PublicKey)),
+	}
+	if bytes.Compare(unsigned.ObserverPublicKeys[0][:], unsigned.ObserverPublicKeys[1][:]) > 0 {
+		unsigned.ObserverPublicKeys[0], unsigned.ObserverPublicKeys[1] =
+			unsigned.ObserverPublicKeys[1], unsigned.ObserverPublicKeys[0]
+	}
+	plan, err := SignTiePlan(testTieCoordinatorKey(), unsigned)
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipts := testTieReceiptsWithKey(t, plan, observer)
+	planID, _ := plan.ID()
+	receiptTail, _ := receipts[len(receipts)-1].ID(plan)
+	binding := current
+	binding.TiePlan = plan.Binding()
+	copy(binding.TiePlan.ObserverPublicKey[:], observer.Public().(ed25519.PublicKey))
+	binding.PublishedTiePlanID = planID
+	binding.PublishedTieReceiptID = receiptTail
+	aggregate, err := ValidateEvidenceBundle(records, plan, receipts, binding)
+	if err != nil || aggregate.ControlledTieTrials != 3 {
+		t.Fatalf("multi-observer evidence=%+v err=%v", aggregate, err)
 	}
 }
 

@@ -467,8 +467,10 @@ Implemented in an isolated, not-yet-activated consensus package:
   A bounded canonical pair artifact now separates coordinator mining from
   observer signing: its creation never mutates the chain, and admission
   independently replays plan-derived nonce searches before ordered Submit.
-  Authenticated network transport, a multi-key observer plan version, observer
-  honesty, and Sybil-cluster provenance remain open testnet work.
+  Version-2 plans now bind 2–64 sorted independent observer keys under one plan
+  ID while retaining separate signed receipt chains. Authenticated network
+  transport, cross-observer disagreement policy, observer honesty, and Sybil-
+  cluster provenance remain open testnet work.
 - the PoW research harness now also has an integer-only, fixed-seed geometric
   solve process for active v0 and lagged v1. Golden observation digests cover
   baseline variance and an alternating 1x/4x campaign, while separate cases

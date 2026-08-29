@@ -196,8 +196,10 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
   commit receipt writer, an isolated-pool two-miner producer with a one-slot
   persistent-router CLI harness plus wait/crash/restart process coverage, and a
   transport-neutral pair artifact with observer-side deterministic mining
-  replay, and a canonical digest. Multi-slot scheduling, authenticated artifact
-  transport, and a multi-key observer plan remain Milestone 9 deliverables.
+  replay, a canonical digest, and version-2 plans sharing one campaign ID across
+  up to 64 observer keys. Multi-slot scheduling, authenticated artifact
+  transport, and cross-observer disagreement policy remain Milestone 9
+  deliverables.
 
 ### Exit gates
 

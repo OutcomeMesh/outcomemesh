@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sort"
 	"testing"
 
 	"github.com/outcomemesh/outcomemesh/core/codec"
@@ -104,6 +105,71 @@ func TestTiePlanFileAndDecoderBounds(t *testing.T) {
 	}
 	if _, err := DecodeTiePlan(make([]byte, MaximumTiePlanBytes+1)); !errors.Is(err, ErrTiePlanLimit) {
 		t.Fatalf("oversize tie plan error = %v", err)
+	}
+}
+
+func TestTiePlanVersion2SharesOnePlanAcrossIndependentObservers(t *testing.T) {
+	first := testTieObserverKey()
+	secondSeed := types.DomainHash("test/calibration/tie/observer-key/v2/second")
+	second := ed25519.NewKeyFromSeed(secondSeed[:])
+	plan := unsignedTiePlan()
+	plan.Version = TiePlanVersion2
+	plan.ObserverPublicKey = [ed25519.PublicKeySize]byte{}
+	plan.ObserverPublicKeys = [][ed25519.PublicKeySize]byte{
+		[ed25519.PublicKeySize]byte(first.Public().(ed25519.PublicKey)),
+		[ed25519.PublicKeySize]byte(second.Public().(ed25519.PublicKey)),
+	}
+	sort.Slice(plan.ObserverPublicKeys, func(left, right int) bool {
+		return bytes.Compare(plan.ObserverPublicKeys[left][:], plan.ObserverPublicKeys[right][:]) < 0
+	})
+	plan, err := SignTiePlan(testTieCoordinatorKey(), plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	planID, err := plan.ID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := planID.String(), "29162d81295f1ec43c1226623e7b2c0ab39389e71b9829bc256e804a0dc0d742"; got != want {
+		t.Fatalf("version-2 plan ID=%s want=%s", got, want)
+	}
+	decoded, err := DecodeTiePlan(plan.CanonicalBytes())
+	if err != nil || !bytes.Equal(decoded.CanonicalBytes(), plan.CanonicalBytes()) {
+		t.Fatalf("version-2 round trip equal=%t err=%v", bytes.Equal(decoded.CanonicalBytes(), plan.CanonicalBytes()), err)
+	}
+	for _, observer := range []ed25519.PrivateKey{first, second} {
+		binding := plan.Binding()
+		copy(binding.ObserverPublicKey[:], observer.Public().(ed25519.PublicKey))
+		if err := plan.Verify(binding); err != nil {
+			t.Fatalf("observer binding rejected: %v", err)
+		}
+		unsigned := unsignedCompletedTieReceipt(1, types.Hash{})
+		unsigned.Version = TieReceiptVersion2
+		receipt, err := SignTieTrialReceipt(observer, unsigned, plan)
+		if err != nil || receipt.Validate(plan) != nil {
+			t.Fatalf("observer receipt=%+v err=%v", receipt, err)
+		}
+	}
+	foreignSeed := types.DomainHash("test/calibration/tie/observer-key/v2/foreign")
+	foreign := ed25519.NewKeyFromSeed(foreignSeed[:])
+	foreignBinding := plan.Binding()
+	copy(foreignBinding.ObserverPublicKey[:], foreign.Public().(ed25519.PublicKey))
+	if err := plan.Verify(foreignBinding); !errors.Is(err, ErrBinding) {
+		t.Fatalf("foreign observer binding error=%v", err)
+	}
+	unsigned := unsignedCompletedTieReceipt(1, types.Hash{})
+	unsigned.Version = TieReceiptVersion2
+	if _, err := SignTieTrialReceipt(foreign, unsigned, plan); !errors.Is(err, ErrBinding) {
+		t.Fatalf("foreign observer receipt error=%v", err)
+	}
+
+	unsorted := plan
+	unsorted.Signature = [ed25519.SignatureSize]byte{}
+	unsorted.ObserverPublicKeys = append([][ed25519.PublicKeySize]byte(nil), plan.ObserverPublicKeys...)
+	unsorted.ObserverPublicKeys[0], unsorted.ObserverPublicKeys[1] =
+		unsorted.ObserverPublicKeys[1], unsorted.ObserverPublicKeys[0]
+	if _, err := SignTiePlan(testTieCoordinatorKey(), unsorted); !errors.Is(err, ErrPublicKey) {
+		t.Fatalf("unsorted observer set error=%v", err)
 	}
 }
 

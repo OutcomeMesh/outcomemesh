@@ -110,7 +110,13 @@ func testTieReceipts(t testing.TB, plan TiePlan) []TieTrialReceipt {
 
 func testTieReceiptsWithKey(t testing.TB, plan TiePlan, observer ed25519.PrivateKey) []TieTrialReceipt {
 	t.Helper()
-	first, err := SignTieTrialReceipt(observer, unsignedCompletedTieReceipt(1, types.Hash{}), plan)
+	version := TieReceiptVersion1
+	if plan.Version == TiePlanVersion2 {
+		version = TieReceiptVersion2
+	}
+	firstUnsigned := unsignedCompletedTieReceipt(1, types.Hash{})
+	firstUnsigned.Version = version
+	first, err := SignTieTrialReceipt(observer, firstUnsigned, plan)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +125,7 @@ func testTieReceiptsWithKey(t testing.TB, plan TiePlan, observer ed25519.Private
 		t.Fatal(err)
 	}
 	second, err := SignTieTrialReceipt(observer, TieTrialReceipt{
-		Version: TieReceiptVersion1, Sequence: 2, Status: TieTrialNoPair, PreviousID: firstID,
+		Version: version, Sequence: 2, Status: TieTrialNoPair, PreviousID: firstID,
 	}, plan)
 	if err != nil {
 		t.Fatal(err)
@@ -129,6 +135,7 @@ func testTieReceiptsWithKey(t testing.TB, plan TiePlan, observer ed25519.Private
 		t.Fatal(err)
 	}
 	thirdUnsigned := unsignedCompletedTieReceipt(3, secondID)
+	thirdUnsigned.Version = version
 	thirdUnsigned.TestedObservedAt = plan.Slots[2].StartedAt + 3
 	thirdUnsigned.ControlObservedAt = plan.Slots[2].StartedAt + 1
 	thirdUnsigned.SelectedAnchorID = thirdUnsigned.ControlAnchorID

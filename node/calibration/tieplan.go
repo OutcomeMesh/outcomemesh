@@ -1,10 +1,12 @@
 package calibration
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"errors"
 	"io"
 	"os"
+	"slices"
 
 	"github.com/outcomemesh/outcomemesh/core/codec"
 	"github.com/outcomemesh/outcomemesh/core/types"
@@ -13,7 +15,9 @@ import (
 const (
 	TiePlanVersion0       uint16 = 0
 	TiePlanVersion1       uint16 = 1
+	TiePlanVersion2       uint16 = 2
 	MaximumTiePlanSlots          = 10_000
+	MaximumTieObservers          = 64
 	MaximumTiePlanBytes          = 256 * 1024
 	MaximumTieSlotSeconds uint64 = 60 * 60
 )
@@ -50,6 +54,7 @@ type TiePlan struct {
 	MaximumPairDelaySeconds uint64
 	Slots                   []TiePlanSlot
 	ObserverPublicKey       [ed25519.PublicKeySize]byte
+	ObserverPublicKeys      [][ed25519.PublicKeySize]byte
 	CoordinatorPublicKey    [ed25519.PublicKeySize]byte
 	Signature               [ed25519.SignatureSize]byte
 }
@@ -69,6 +74,7 @@ func SignTiePlan(privateKey ed25519.PrivateKey, plan TiePlan) (TiePlan, error) {
 		return TiePlan{}, ErrPublicKey
 	}
 	plan.Slots = append([]TiePlanSlot(nil), plan.Slots...)
+	plan.ObserverPublicKeys = append([][ed25519.PublicKeySize]byte(nil), plan.ObserverPublicKeys...)
 	copy(plan.CoordinatorPublicKey[:], privateKey.Public().(ed25519.PublicKey))
 	plan.Signature = [ed25519.SignatureSize]byte{}
 	if err := plan.validateShape(); err != nil {
@@ -96,18 +102,39 @@ func (plan TiePlan) Verify(expected TiePlanBinding) error {
 	if err := plan.Validate(); err != nil {
 		return err
 	}
-	if !validTiePlanBinding(expected) || plan.Binding() != expected {
+	if !validTiePlanBinding(expected) || plan.NetworkID != expected.NetworkID ||
+		plan.GenesisID != expected.GenesisID || plan.ActivationHeight != expected.ActivationHeight ||
+		plan.CoordinatorPublicKey != expected.CoordinatorPublicKey || !plan.AllowsObserver(expected.ObserverPublicKey) {
 		return ErrBinding
 	}
 	return nil
 }
 
 func (plan TiePlan) Binding() TiePlanBinding {
+	observer := plan.ObserverPublicKey
+	if plan.Version == TiePlanVersion2 && len(plan.ObserverPublicKeys) != 0 {
+		observer = plan.ObserverPublicKeys[0]
+	}
 	return TiePlanBinding{
 		NetworkID: plan.NetworkID, GenesisID: plan.GenesisID,
-		ActivationHeight: plan.ActivationHeight, ObserverPublicKey: plan.ObserverPublicKey,
+		ActivationHeight: plan.ActivationHeight, ObserverPublicKey: observer,
 		CoordinatorPublicKey: plan.CoordinatorPublicKey,
 	}
+}
+
+func (plan TiePlan) AllowsObserver(observer [ed25519.PublicKeySize]byte) bool {
+	if observer == [ed25519.PublicKeySize]byte{} {
+		return false
+	}
+	if plan.Version != TiePlanVersion2 {
+		return plan.ObserverPublicKey == observer
+	}
+	index, exists := slices.BinarySearchFunc(plan.ObserverPublicKeys, observer, func(
+		left, right [ed25519.PublicKeySize]byte,
+	) int {
+		return bytes.Compare(left[:], right[:])
+	})
+	return exists && index < len(plan.ObserverPublicKeys)
 }
 
 func (plan TiePlan) ID() (types.Hash, error) {
@@ -134,7 +161,7 @@ func DecodeTiePlan(input []byte) (TiePlan, error) {
 	if plan.Version, err = decoder.U16(); err != nil {
 		return TiePlan{}, err
 	}
-	if plan.Version != TiePlanVersion0 && plan.Version != TiePlanVersion1 {
+	if plan.Version != TiePlanVersion0 && plan.Version != TiePlanVersion1 && plan.Version != TiePlanVersion2 {
 		return TiePlan{}, ErrVersion
 	}
 	if plan.NetworkID, err = decoder.U32(); err != nil {
@@ -173,7 +200,7 @@ func DecodeTiePlan(input []byte) (TiePlan, error) {
 		if plan.Slots[index].EndedAt, err = decoder.U64(); err != nil {
 			return TiePlan{}, err
 		}
-		if plan.Version == TiePlanVersion1 {
+		if plan.Version == TiePlanVersion1 || plan.Version == TiePlanVersion2 {
 			role, roleErr := decoder.U8()
 			if roleErr != nil {
 				return TiePlan{}, roleErr
@@ -181,7 +208,20 @@ func DecodeTiePlan(input []byte) (TiePlan, error) {
 			plan.Slots[index].FirstRole = TieTrialRole(role)
 		}
 	}
-	if value, decodeErr := decoder.Fixed(ed25519.PublicKeySize); decodeErr != nil {
+	if plan.Version == TiePlanVersion2 {
+		count, countErr := decoder.ListLength(MaximumTieObservers)
+		if countErr != nil {
+			return TiePlan{}, countErr
+		}
+		plan.ObserverPublicKeys = make([][ed25519.PublicKeySize]byte, count)
+		for index := range plan.ObserverPublicKeys {
+			value, decodeErr := decoder.Fixed(ed25519.PublicKeySize)
+			if decodeErr != nil {
+				return TiePlan{}, decodeErr
+			}
+			copy(plan.ObserverPublicKeys[index][:], value)
+		}
+	} else if value, decodeErr := decoder.Fixed(ed25519.PublicKeySize); decodeErr != nil {
 		return TiePlan{}, decodeErr
 	} else {
 		copy(plan.ObserverPublicKey[:], value)
@@ -258,16 +298,23 @@ func (plan TiePlan) encodeUnsigned(encoder *codec.Encoder) {
 	for _, slot := range plan.Slots {
 		encoder.U64(slot.StartedAt)
 		encoder.U64(slot.EndedAt)
-		if plan.Version == TiePlanVersion1 {
+		if plan.Version == TiePlanVersion1 || plan.Version == TiePlanVersion2 {
 			encoder.U8(uint8(slot.FirstRole))
 		}
 	}
-	encoder.Fixed(plan.ObserverPublicKey[:])
+	if plan.Version == TiePlanVersion2 {
+		encoder.Uvarint(uint64(len(plan.ObserverPublicKeys)))
+		for _, observer := range plan.ObserverPublicKeys {
+			encoder.Fixed(observer[:])
+		}
+	} else {
+		encoder.Fixed(plan.ObserverPublicKey[:])
+	}
 	encoder.Fixed(plan.CoordinatorPublicKey[:])
 }
 
 func (plan TiePlan) validateShape() error {
-	if plan.Version != TiePlanVersion0 && plan.Version != TiePlanVersion1 {
+	if plan.Version != TiePlanVersion0 && plan.Version != TiePlanVersion1 && plan.Version != TiePlanVersion2 {
 		return ErrVersion
 	}
 	if plan.NetworkID == 0 || plan.GenesisID.IsZero() || plan.ActivationHeight == 0 {
@@ -276,9 +323,22 @@ func (plan TiePlan) validateShape() error {
 	if plan.TestedMiner.IsZero() || plan.ControlMiner.IsZero() || plan.TestedMiner == plan.ControlMiner {
 		return ErrTiePlan
 	}
-	if plan.ObserverPublicKey == [ed25519.PublicKeySize]byte{} ||
-		plan.CoordinatorPublicKey == [ed25519.PublicKeySize]byte{} ||
-		plan.ObserverPublicKey == plan.CoordinatorPublicKey {
+	if plan.CoordinatorPublicKey == [ed25519.PublicKeySize]byte{} {
+		return ErrPublicKey
+	}
+	if plan.Version == TiePlanVersion2 {
+		if plan.ObserverPublicKey != [ed25519.PublicKeySize]byte{} ||
+			len(plan.ObserverPublicKeys) < 2 || len(plan.ObserverPublicKeys) > MaximumTieObservers {
+			return ErrPublicKey
+		}
+		for index, observer := range plan.ObserverPublicKeys {
+			if observer == [ed25519.PublicKeySize]byte{} || observer == plan.CoordinatorPublicKey ||
+				(index > 0 && bytes.Compare(plan.ObserverPublicKeys[index-1][:], observer[:]) >= 0) {
+				return ErrPublicKey
+			}
+		}
+	} else if plan.ObserverPublicKey == [ed25519.PublicKeySize]byte{} ||
+		len(plan.ObserverPublicKeys) != 0 || plan.ObserverPublicKey == plan.CoordinatorPublicKey {
 		return ErrPublicKey
 	}
 	if len(plan.Slots) == 0 {
@@ -296,7 +356,7 @@ func (plan TiePlan) validateShape() error {
 			plan.MaximumPairDelaySeconds > slot.EndedAt-slot.StartedAt ||
 			(index > 0 && slot.StartedAt < plan.Slots[index-1].EndedAt) ||
 			(plan.Version == TiePlanVersion0 && slot.FirstRole != TieRoleUnspecified) ||
-			(plan.Version == TiePlanVersion1 &&
+			((plan.Version == TiePlanVersion1 || plan.Version == TiePlanVersion2) &&
 				slot.FirstRole != TieRoleTested && slot.FirstRole != TieRoleControl) {
 			return ErrTiePlan
 		}
@@ -308,12 +368,18 @@ func (plan TiePlan) signatureDomain() string {
 	if plan.Version == TiePlanVersion1 {
 		return "OMESH/testnet/calibration/tie-plan/signature/v1"
 	}
+	if plan.Version == TiePlanVersion2 {
+		return "OMESH/testnet/calibration/tie-plan/signature/v2"
+	}
 	return tiePlanSignatureDomain
 }
 
 func (plan TiePlan) idDomain() string {
 	if plan.Version == TiePlanVersion1 {
 		return "OMESH/testnet/calibration/tie-plan/id/v1"
+	}
+	if plan.Version == TiePlanVersion2 {
+		return "OMESH/testnet/calibration/tie-plan/id/v2"
 	}
 	return tiePlanIDDomain
 }

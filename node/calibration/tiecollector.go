@@ -77,7 +77,7 @@ func OpenTieCollector(config TieCollectorConfig, now uint64) (*TieCollector, err
 	if err := config.Plan.Verify(config.Binding); err != nil {
 		return nil, err
 	}
-	if config.Plan.Version != TiePlanVersion1 {
+	if config.Plan.Version != TiePlanVersion1 && config.Plan.Version != TiePlanVersion2 {
 		return nil, ErrTieCollectorConfig
 	}
 	if !bytes.Equal(config.PrivateKey.Public().(ed25519.PublicKey), config.Binding.ObserverPublicKey[:]) {
@@ -226,7 +226,7 @@ func (collector *TieCollector) completePendingPairLocked() (bool, error) {
 		return false, saveTiePending(collector.pendingPath, collector.pending, collector.plan, collector.planID)
 	}
 	receipt := TieTrialReceipt{
-		Version: TieReceiptVersion1, Sequence: collector.pending.Sequence, Status: TieTrialCompleted,
+		Version: collector.receiptVersion(), Sequence: collector.pending.Sequence, Status: TieTrialCompleted,
 		PreviousID: collector.pending.PreviousID, ParentID: collector.pending.Tested.ParentID,
 		Height: collector.pending.Tested.Height, TestedAnchorID: collector.pending.Tested.ID,
 		ControlAnchorID:   collector.pending.Control.ID,
@@ -300,7 +300,7 @@ func (collector *TieCollector) advanceLocked(now uint64) error {
 			return nil
 		}
 		receipt := TieTrialReceipt{
-			Version: TieReceiptVersion1, Sequence: collector.pending.Sequence,
+			Version: collector.receiptVersion(), Sequence: collector.pending.Sequence,
 			Status: TieTrialNoPair, PreviousID: collector.pending.PreviousID,
 		}
 		if err := collector.appendReceiptLocked(receipt); err != nil {
@@ -355,6 +355,13 @@ func (collector *TieCollector) appendReceiptLocked(unsigned TieTrialReceipt) err
 
 func (collector *TieCollector) completeLocked() bool {
 	return len(collector.receipts) == len(collector.plan.Slots)
+}
+
+func (collector *TieCollector) receiptVersion() uint16 {
+	if collector.plan.Version == TiePlanVersion2 {
+		return TieReceiptVersion2
+	}
+	return TieReceiptVersion1
 }
 
 func validLiveTiePair(pending tiePendingState, plan TiePlan) bool {
