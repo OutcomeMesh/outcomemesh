@@ -190,8 +190,10 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
   upper bounds, family-wise mining-cluster selection correction, a 30-day
   window gate, signed gapless hourly manifests, trusted deployment/policy
   bindings, published rollback checkpoints, a crash-safe first-admission hard-
-  anchor collector, and a canonical digest. Controlled tie experiments and
-  live multi-observer deployment remain Milestone 9 deliverables.
+  anchor collector, canonical precommitted tie plans, one signed raw receipt per
+  planned slot with conservative failure accounting, and a canonical digest.
+  Live tie-harness integration and multi-observer deployment remain Milestone 9
+  deliverables.
 
 ### Exit gates
 

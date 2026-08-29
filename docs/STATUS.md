@@ -447,7 +447,12 @@ Implemented in an isolated, not-yet-activated consensus package:
   now has an opt-in `work-serve-quic` path: post-commit first-admission events
   enter a crash-safe unique-ID journal, completed/empty hours are signed, and a
   canonical published mapping places unknown payout addresses in a conservative
-  catch-all cluster. Independent observer deployment, controlled tie trials,
+  catch-all cluster. Controlled races now have a separate coordinator-signed
+  precommit fixing miner roles and up to 10,000 time slots, plus an observer-
+  signed receipt chain that explicitly closes every slot as completed or
+  `NoPair`. Only a complete chain yields ER-5 inputs, and every `NoPair` is
+  conservatively charged as an adoption so selective completion cannot improve
+  the result. Live harness/collector binding, independent observer deployment,
   observer honesty, and Sybil-cluster provenance remain open testnet work.
 - the PoW research harness now also has an integer-only, fixed-seed geometric
   solve process for active v0 and lagged v1. Golden observation digests cover

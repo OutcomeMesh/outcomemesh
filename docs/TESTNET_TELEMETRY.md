@@ -1,7 +1,7 @@
 # Public-testnet calibration telemetry
 
-Status: opt-in hard-anchor collector implemented; independent observers and
-controlled tie harness not yet deployed
+Status: opt-in hard-anchor collector and canonical controlled-tie evidence
+formats implemented; live tie harness and independent observers not yet deployed
 
 This format supplies reproducible inputs to ER-5 without making telemetry part
 of consensus. A valid manifest proves that one expected Ed25519 observer signed
@@ -69,6 +69,57 @@ The file is materialized through a mode-0600 temporary file, file `fsync`,
 atomic rename, and directory `fsync`. This protects local crash recovery. The
 cryptographic chain, not filesystem append semantics, provides historical
 mutation detection.
+
+## Precommitted controlled-tie trials
+
+Controlled equal-work races use a separate signed raw-evidence chain. They are
+not accepted as manually supplied success/trial counters. Before either sibling
+anchor ID exists, a coordinator signs and externally publishes a version-0
+`TiePlan` and its ID. The plan fixes:
+
+- the network, genesis, and WorkGraph activation height;
+- distinct tested and control miner payout addresses;
+- the observer and coordinator Ed25519 public keys;
+- at most 10,000 ordered, non-overlapping half-open time slots of at most one
+  hour each;
+- the maximum allowed delay between observing the two anchors.
+
+The verifier obtains both public keys and the deployment binding independently.
+The coordinator signature authenticates the plan but cannot by itself prove
+that it was published before the experiment. A timestamped external publication
+of the plan ID is therefore part of the operational protocol.
+
+Every precommitted slot has exactly one observer-signed receipt. A completed
+receipt commits to the plan ID, sequence, predecessor receipt, common parent,
+height, role-labelled tested and control anchor IDs, their observation times,
+and the locally selected anchor. Both observations must fall inside that slot,
+their delay must be within the plan bound, and the selection must be one of the
+two siblings. The adoption counter is derived from the selected and tested IDs;
+there is no signed mutable `adopted` boolean.
+
+If no valid pair was obtained, the observer must instead sign a `NoPair`
+receipt whose anchor, parent, height, time, and selection fields are all zero.
+It cannot silently omit the slot. Receipts form a sequence- and ID-linked chain;
+the manifest embeds the signed plan and may hold an exact live prefix, but only
+a chain with one receipt for every planned slot is `Complete`. Final ER-5
+counters are fail-closed: every `NoPair` slot is charged as a tested-branch
+adoption and the denominator is the full precommitted slot count. Selectively
+turning unfavorable attempts into failures therefore cannot improve the bound.
+
+The plan is limited to 256 KiB, a receipt to 1 KiB, and the raw manifest to
+8 MiB. Canonical decoders enforce all bounds before allocation, and full-plan
+verification hashes the plan once so 10,000 receipts remain linear-time.
+Plan ID `897f6a1dd581297c763ef25ac908d2472cda297064e867a43dd464f498ca142e`
+and receipt-chain tail
+`11ec379be3bad4de59cf154c39e9678bdd59e90ac1d861876b83830af1ce7717`
+are frozen deterministic test vectors.
+
+These signatures prove provenance, binding, continuity, and explicit slot
+closure—not observer honesty. An auditor still needs the underlying version-1
+blocks to verify their common parent, height, PoW, and payout addresses, plus an
+independently published receipt-tail checkpoint to detect rollback. Different
+observers' correlated views must be reported separately; they are not
+independent samples merely because they carry different signatures.
 
 ## Live hard-anchor collector
 
@@ -167,16 +218,16 @@ and its version-2 report digest is
 
 ## Remaining operational work
 
-- build the live collector that obtains controlled tie outcomes and canonical
-  outcomes from an independently reproducible network experiment (hard-anchor
-  first admission and work classification are now connected). Trials must
-  precommit the tested branch and delivery schedule, record each miner's local
-  version-1 incumbent, and never select trials after seeing either block ID;
+- connect the signed tie plan and receipt chain to a live two-miner harness and
+  the hourly ER-5 collector. The existing record-v0 counters are not yet derived
+  from raw receipts, so this document does not claim a deployable tie result;
+- publish each plan ID before its first slot and publish the final receipt tail
+  outside the manifest storage path;
 - deploy and publish the clustering policy and its digest before each real
   observation window;
 - operate multiple independently controlled observers and document how their
   correlated views are handled rather than naively pooling them;
-- publish signed tail checkpoints outside the manifest storage path;
+- publish hourly telemetry tail checkpoints outside the manifest storage path;
 - define privacy retention for the raw identifiers used to derive pseudonymous
   cluster IDs;
 - chaos-test missed intervals, observer restart, disk-full behavior, and
