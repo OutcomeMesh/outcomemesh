@@ -30,7 +30,6 @@ func TestProduceSubmitsOnlyInPrecommittedRoleOrder(t *testing.T) {
 			source := producerFixture(t, plan)
 			result, err := Produce(context.Background(), source, Config{
 				Plan: plan, Binding: binding, ExpectedPlanID: planID, Sequence: 1,
-				TestedStartNonce: 11, ControlStartNonce: 29,
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -77,6 +76,84 @@ func TestProduceRejectsSubstitutedPlanAndClosedSlotBeforeMining(t *testing.T) {
 	if !errors.Is(err, ErrOutsideSlot) || source.prepareCalls != 0 {
 		t.Fatalf("closed slot error=%v prepare_calls=%d", err, source.prepareCalls)
 	}
+}
+
+func TestPortablePairRoundTripsBeforeIndependentAdmission(t *testing.T) {
+	plan, binding := producerPlan(t, calibration.TieRoleControl)
+	planID, _ := plan.ID()
+	coordinatorSource := producerFixture(t, plan)
+	pair, mined, err := MinePair(context.Background(), coordinatorSource, Config{
+		Plan: plan, Binding: binding, ExpectedPlanID: planID, Sequence: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(coordinatorSource.submissions) != 0 {
+		t.Fatalf("coordinator admitted portable pair locally: %+v", coordinatorSource.submissions)
+	}
+	encoded, err := pair.CanonicalBytes(plan, binding, planID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pairID, err := pair.ID(plan, binding, planID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := pairID.String(), "ae313ca7a0a3c9614c14c5d9347090eddcec8dda6f4a26361543a5262be3ac0d"; got != want {
+		t.Fatalf("pair ID=%s want=%s", got, want)
+	}
+	decoded, err := DecodePair(encoded, plan, binding, planID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	roundTrip, err := decoded.CanonicalBytes(plan, binding, planID)
+	if err != nil || !bytes.Equal(roundTrip, encoded) {
+		t.Fatalf("pair round trip equal=%t err=%v", bytes.Equal(roundTrip, encoded), err)
+	}
+	observerSource := producerFixture(t, plan)
+	admitted, err := AdmitPair(context.Background(), observerSource, Config{
+		Plan: plan, Binding: binding, ExpectedPlanID: planID, Sequence: 1,
+	}, decoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(observerSource.submissions) != 2 || observerSource.submissions[0].miner != plan.ControlMiner ||
+		observerSource.submissions[1].miner != plan.TestedMiner || admitted.Tested.ID != mined.Tested.ID ||
+		admitted.Control.ID != mined.Control.ID {
+		t.Fatalf("portable admission=%+v submissions=%+v mined=%+v", admitted, observerSource.submissions, mined)
+	}
+	if _, err := DecodePair(append(encoded, 0), plan, binding, planID); err == nil {
+		t.Fatal("pair artifact with trailing bytes was accepted")
+	}
+	if _, err := DecodePair(make([]byte, MaximumPairArtifactBytes+1), plan, binding, planID); !errors.Is(err, ErrPairArtifact) {
+		t.Fatalf("oversize pair error=%v", err)
+	}
+	swapped := pair
+	swapped.Tested, swapped.Control = swapped.Control, swapped.Tested
+	if err := swapped.Validate(plan, binding, planID); !errors.Is(err, ErrPairArtifact) {
+		t.Fatalf("role-swapped pair error=%v", err)
+	}
+}
+
+func FuzzDecodePairNeverPanics(f *testing.F) {
+	plan, binding := producerPlan(f, calibration.TieRoleControl)
+	planID, _ := plan.ID()
+	source := producerFixture(f, plan)
+	pair, _, err := MinePair(context.Background(), source, Config{
+		Plan: plan, Binding: binding, ExpectedPlanID: planID, Sequence: 1,
+	})
+	if err != nil {
+		f.Fatal(err)
+	}
+	encoded, err := pair.CanonicalBytes(plan, binding, planID)
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Add(encoded)
+	f.Add([]byte{})
+	f.Fuzz(func(t *testing.T, input []byte) {
+		_, _ = DecodePair(input, plan, binding, planID)
+	})
 }
 
 type producerSubmission struct {

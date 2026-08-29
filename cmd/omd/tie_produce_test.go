@@ -80,7 +80,7 @@ func TestWorkTelemetryTieProduceRunsThroughPersistentRouterAndReceiptWriter(t *t
 		"--plan-id", planID.String(),
 		"--coordinator-public-key", bytesToLowerHex(coordinator.Public().(ed25519.PublicKey)),
 		"--sequence", "1", "--receipt-manifest", receiptPath, "--pending", pendingPath,
-		"--tested-start-nonce", "11", "--control-start-nonce", "29", "--wait=false",
+		"--wait=false",
 	}
 	if err := runWorkTelemetryTieProduce(arguments); err != nil {
 		t.Fatal(err)

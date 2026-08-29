@@ -28,8 +28,6 @@ func runWorkTelemetryTieProduce(arguments []string) (resultErr error) {
 	sequence := flags.Uint64("sequence", 0, "one-based planned slot sequence")
 	receiptPath := flags.String("receipt-manifest", "", "signed raw tie receipt path (default under data)")
 	pendingPath := flags.String("pending", "", "crash-safe partial tie state path (default under data)")
-	testedStartNonce := flags.Uint64("tested-start-nonce", 0, "first tested-miner nonce")
-	controlStartNonce := flags.Uint64("control-start-nonce", 0, "first control-miner nonce")
 	wait := flags.Bool("wait", true, "wait for the signed slot start")
 	if err := flags.Parse(arguments); err != nil {
 		return err
@@ -127,7 +125,6 @@ func runWorkTelemetryTieProduce(arguments []string) (resultErr error) {
 	defer func() { resultErr = errors.Join(resultErr, router.Close()) }()
 	production, err := tieproducer.Produce(ctx, router, tieproducer.Config{
 		Plan: plan, Binding: binding, ExpectedPlanID: expectedPlanID, Sequence: *sequence,
-		TestedStartNonce: *testedStartNonce, ControlStartNonce: *controlStartNonce,
 	})
 	if err != nil {
 		return err

@@ -3,7 +3,9 @@
 package tieproducer
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"time"
@@ -26,23 +28,30 @@ var (
 	ErrPair          = errors.New("controlled-tie producer did not create an exact sibling pair")
 )
 
-// Source is the exact activation-router surface used by a producer. Admission
-// time and Submit must come from the same router clock so slot checks cannot be
-// performed against a different clock.
-type Source interface {
+type MiningSource interface {
 	AdmissionTime() (uint64, error)
 	Tip() (storage.Tip, error)
 	PrepareWork(types.Hash, uint64, []outcome.Transaction) (*workblock.Payload, workblock.Position, error)
+}
+
+// AdmissionSource keeps admission time and Submit on the same router clock so
+// slot checks cannot be performed against a different clock.
+type AdmissionSource interface {
+	AdmissionTime() (uint64, error)
+	Tip() (storage.Tip, error)
 	Submit(activation.Block) (storage.Tip, error)
 }
 
+type Source interface {
+	MiningSource
+	AdmissionSource
+}
+
 type Config struct {
-	Plan              calibration.TiePlan
-	Binding           calibration.TiePlanBinding
-	ExpectedPlanID    types.Hash
-	Sequence          uint64
-	TestedStartNonce  uint64
-	ControlStartNonce uint64
+	Plan           calibration.TiePlan
+	Binding        calibration.TiePlanBinding
+	ExpectedPlanID types.Hash
+	Sequence       uint64
 }
 
 type MinedAnchor struct {
@@ -75,58 +84,67 @@ type roleResult struct {
 // branch that determines submission order reads the signed slot FirstRole; IDs
 // are never compared, sorted, or used to choose an order.
 func Produce(ctx context.Context, source Source, config Config) (Result, error) {
-	if ctx == nil || source == nil || config.ExpectedPlanID.IsZero() || config.Sequence == 0 {
-		return Result{}, ErrConfiguration
-	}
-	if err := config.Plan.Verify(config.Binding); err != nil {
-		return Result{}, err
-	}
-	if config.Plan.Version != calibration.TiePlanVersion1 || config.Sequence > uint64(len(config.Plan.Slots)) {
-		return Result{}, ErrConfiguration
-	}
-	planID, err := config.Plan.ID()
+	pair, result, err := MinePair(ctx, source, config)
 	if err != nil {
 		return Result{}, err
 	}
-	if planID != config.ExpectedPlanID {
-		return Result{}, ErrConfiguration
+	firstSelected, finalSelected, err := admitPair(source, config, pair)
+	if err != nil {
+		return Result{}, err
+	}
+	result.FirstSelected = firstSelected
+	result.FinalSelected = finalSelected
+	return result, nil
+}
+
+// MinePair creates a portable pair without admitting either block. This is the
+// coordinator path used when observers are operated by separate parties.
+func MinePair(ctx context.Context, source MiningSource, config Config) (Pair, Result, error) {
+	if ctx == nil || source == nil {
+		return Pair{}, Result{}, ErrConfiguration
+	}
+	planID, err := validateConfig(config)
+	if err != nil {
+		return Pair{}, Result{}, err
 	}
 	slot := config.Plan.Slots[config.Sequence-1]
 	now, err := source.AdmissionTime()
 	if err != nil {
-		return Result{}, err
+		return Pair{}, Result{}, err
 	}
 	if now < slot.StartedAt || now >= slot.EndedAt {
-		return Result{}, ErrOutsideSlot
+		return Pair{}, Result{}, ErrOutsideSlot
 	}
 	parent, err := source.Tip()
 	if err != nil {
-		return Result{}, err
+		return Pair{}, Result{}, err
 	}
 	if parent.Height == ^uint64(0) || parent.Height+1 < config.Plan.ActivationHeight {
-		return Result{}, ErrConfiguration
+		return Pair{}, Result{}, ErrConfiguration
 	}
-	timestamp := now
+	timestamp := slot.StartedAt
 	if timestamp <= parent.Timestamp {
 		if parent.Timestamp == ^uint64(0) {
-			return Result{}, ErrConfiguration
+			return Pair{}, Result{}, ErrConfiguration
 		}
 		timestamp = parent.Timestamp + 1
 	}
 	payload, _, err := source.PrepareWork(parent.ID, timestamp, nil)
 	if err != nil {
-		return Result{}, err
+		return Pair{}, Result{}, err
 	}
 	remaining := slot.EndedAt - now
 	mineContext, cancel := context.WithTimeout(ctx, secondsDuration(remaining))
 	defer cancel()
-	pair := make(chan roleResult, 2)
-	go mineRole(mineContext, payload, config.Plan.TestedMiner, config.TestedStartNonce, calibration.TieRoleTested, pair)
-	go mineRole(mineContext, payload, config.Plan.ControlMiner, config.ControlStartNonce, calibration.TieRoleControl, pair)
+	results := make(chan roleResult, 2)
+	go mineRole(mineContext, payload, config.Plan.TestedMiner,
+		StartNonce(planID, config.Sequence, calibration.TieRoleTested), calibration.TieRoleTested, results)
+	go mineRole(mineContext, payload, config.Plan.ControlMiner,
+		StartNonce(planID, config.Sequence, calibration.TieRoleControl), calibration.TieRoleControl, results)
 
 	var tested, control workminer.Result
 	for completed := 0; completed < 2; completed++ {
-		mined := <-pair
+		mined := <-results
 		if mined.err != nil {
 			cancel()
 		}
@@ -136,65 +154,112 @@ func Produce(ctx context.Context, source Source, config Config) (Result, error) 
 		case calibration.TieRoleControl:
 			control = mined.mined
 		default:
-			return Result{}, ErrPair
+			return Pair{}, Result{}, ErrPair
 		}
 		if mined.err != nil {
 			// Still drain the second worker before returning so no mining goroutine
 			// can outlive the caller or retain the payload.
 			if completed == 0 {
-				other := <-pair
+				other := <-results
 				if other.err != nil && !errors.Is(other.err, context.Canceled) {
-					return Result{}, errors.Join(mined.err, other.err)
+					return Pair{}, Result{}, errors.Join(mined.err, other.err)
 				}
 			}
-			return Result{}, mined.err
+			return Pair{}, Result{}, mined.err
 		}
 	}
+	pair := Pair{
+		Version: PairVersion0, PlanID: planID, Sequence: config.Sequence,
+		Tested: tested.Block, Control: control.Block,
+	}
+	if err := pair.Validate(config.Plan, config.Binding, config.ExpectedPlanID); err != nil {
+		return Pair{}, Result{}, err
+	}
+	result, err := minedPairResult(config, parent, tested, control)
+	if err != nil {
+		return Pair{}, Result{}, err
+	}
+	return pair, result, nil
+}
 
-	result, err := validatePair(config, parent, tested, control)
+// AdmitPair is the observer-side path for a previously mined portable pair.
+func AdmitPair(ctx context.Context, source Source, config Config, pair Pair) (Result, error) {
+	if ctx == nil || source == nil {
+		return Result{}, ErrConfiguration
+	}
+	if _, err := validateConfig(config); err != nil {
+		return Result{}, err
+	}
+	if err := pair.Validate(config.Plan, config.Binding, config.ExpectedPlanID); err != nil {
+		return Result{}, err
+	}
+	expected, _, err := MinePair(ctx, source, config)
 	if err != nil {
 		return Result{}, err
 	}
+	if !bytes.Equal(expected.Tested.CanonicalBytes(), pair.Tested.CanonicalBytes()) ||
+		!bytes.Equal(expected.Control.CanonicalBytes(), pair.Control.CanonicalBytes()) {
+		return Result{}, ErrPair
+	}
+	result, err := artifactPairResult(config, pair)
+	if err != nil {
+		return Result{}, err
+	}
+	firstSelected, finalSelected, err := admitPair(source, config, pair)
+	if err != nil {
+		return Result{}, err
+	}
+	result.FirstSelected = firstSelected
+	result.FinalSelected = finalSelected
+	return result, nil
+}
+
+func admitPair(source AdmissionSource, config Config, pair Pair) (types.Hash, types.Hash, error) {
+	slot := config.Plan.Slots[config.Sequence-1]
 	admissionTime, err := source.AdmissionTime()
 	if err != nil {
-		return Result{}, err
+		return types.Hash{}, types.Hash{}, err
 	}
 	if admissionTime < slot.StartedAt || admissionTime >= slot.EndedAt {
-		return Result{}, ErrOutsideSlot
+		return types.Hash{}, types.Hash{}, ErrOutsideSlot
 	}
-
-	first := tested.Block
-	second := control.Block
+	parent, err := source.Tip()
+	if err != nil {
+		return types.Hash{}, types.Hash{}, err
+	}
+	if parent.ID != pair.Tested.Header.Seal.AnchorParent || parent.Height+1 != pair.Tested.Header.Seal.Height {
+		return types.Hash{}, types.Hash{}, ErrPair
+	}
+	first := pair.Tested
+	second := pair.Control
 	if slot.FirstRole == calibration.TieRoleControl {
-		first, second = control.Block, tested.Block
+		first, second = pair.Control, pair.Tested
 	}
 	firstRouted, err := activation.Work(first, config.Plan.ActivationHeight)
 	if err != nil {
-		return Result{}, err
+		return types.Hash{}, types.Hash{}, err
 	}
 	secondRouted, err := activation.Work(second, config.Plan.ActivationHeight)
 	if err != nil {
-		return Result{}, err
+		return types.Hash{}, types.Hash{}, err
 	}
 	firstTip, err := source.Submit(firstRouted)
 	if err != nil {
-		return Result{}, fmt.Errorf("submit first precommitted role: %w", err)
+		return types.Hash{}, types.Hash{}, fmt.Errorf("submit first precommitted role: %w", err)
 	}
 	secondAdmissionTime, err := source.AdmissionTime()
 	if err != nil {
-		return Result{}, err
+		return types.Hash{}, types.Hash{}, err
 	}
 	if secondAdmissionTime >= slot.EndedAt || secondAdmissionTime < admissionTime ||
 		secondAdmissionTime-admissionTime > config.Plan.MaximumPairDelaySeconds {
-		return Result{}, ErrOutsideSlot
+		return types.Hash{}, types.Hash{}, ErrOutsideSlot
 	}
 	finalTip, err := source.Submit(secondRouted)
 	if err != nil {
-		return Result{}, fmt.Errorf("submit second precommitted role: %w", err)
+		return types.Hash{}, types.Hash{}, fmt.Errorf("submit second precommitted role: %w", err)
 	}
-	result.FirstSelected = firstTip.ID
-	result.FinalSelected = finalTip.ID
-	return result, nil
+	return firstTip.ID, finalTip.ID, nil
 }
 
 func mineRole(
@@ -219,7 +284,7 @@ func mineRole(
 	result <- roleResult{role: role, mined: mined, err: err}
 }
 
-func validatePair(
+func minedPairResult(
 	config Config,
 	parent storage.Tip,
 	tested workminer.Result,
@@ -251,6 +316,55 @@ func validatePair(
 			IncludedShares: uint64(len(control.Block.Shares)), CapacityRejections: control.CapacityRejections,
 		},
 	}, nil
+}
+
+func artifactPairResult(config Config, pair Pair) (Result, error) {
+	testedID, testedErr := pair.Tested.Header.ID()
+	controlID, controlErr := pair.Control.Header.ID()
+	if testedErr != nil || controlErr != nil {
+		return Result{}, ErrPair
+	}
+	return Result{
+		Sequence: config.Sequence, ParentID: pair.Tested.Header.Seal.AnchorParent,
+		Height: pair.Tested.Header.Seal.Height, FirstRole: config.Plan.Slots[config.Sequence-1].FirstRole,
+		Tested: MinedAnchor{ID: testedID, WinningNonce: pair.Tested.Header.Seal.Nonce,
+			IncludedShares: uint64(len(pair.Tested.Shares))},
+		Control: MinedAnchor{ID: controlID, WinningNonce: pair.Control.Header.Seal.Nonce,
+			IncludedShares: uint64(len(pair.Control.Shares))},
+	}, nil
+}
+
+func validateConfig(config Config) (types.Hash, error) {
+	if config.ExpectedPlanID.IsZero() || config.Sequence == 0 {
+		return types.Hash{}, ErrConfiguration
+	}
+	if err := config.Plan.Verify(config.Binding); err != nil {
+		return types.Hash{}, err
+	}
+	if config.Plan.Version != calibration.TiePlanVersion1 || config.Sequence > uint64(len(config.Plan.Slots)) {
+		return types.Hash{}, ErrConfiguration
+	}
+	planID, err := config.Plan.ID()
+	if err != nil {
+		return types.Hash{}, err
+	}
+	if planID != config.ExpectedPlanID {
+		return types.Hash{}, ErrConfiguration
+	}
+	return planID, nil
+}
+
+// StartNonce derives the only valid initial nonce for one planned role. The
+// published plan ID and sequence make the search path immutable before the
+// parent and resulting anchor IDs exist.
+func StartNonce(planID types.Hash, sequence uint64, role calibration.TieTrialRole) uint64 {
+	var sequenceBytes [8]byte
+	binary.BigEndian.PutUint64(sequenceBytes[:], sequence)
+	hash := types.DomainHash(
+		"OMESH/testnet/calibration/tie-producer/start-nonce/v0",
+		planID[:], sequenceBytes[:], []byte{byte(role)},
+	)
+	return binary.BigEndian.Uint64(hash[:8])
 }
 
 func secondsDuration(seconds uint64) time.Duration {

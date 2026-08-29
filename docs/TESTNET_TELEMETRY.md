@@ -248,6 +248,51 @@ ordered blocks to separately controlled observers without giving the
 coordinator their keys. `--wait=false` is available to supervisors that already
 enforce schedule timing.
 
+Coordinator and observer key custody can be separated with a portable pair
+artifact. On a coordinator node synchronized to the observer's parent:
+
+```sh
+.tools/go/bin/go run ./cmd/omd work-telemetry-tie-pair-create \
+  --data coordinator-data \
+  --plan tie-plan.omtp \
+  --plan-id <published-plan-id> \
+  --coordinator-public-key <64-lowercase-hex> \
+  --observer-public-key <64-lowercase-hex> \
+  --sequence 1 --output tie-pair-1.omtpair
+```
+
+The observer receives the immutable file and admits it with its own key:
+
+```sh
+.tools/go/bin/go run ./cmd/omd work-telemetry-tie-pair-admit \
+  --data observer-data \
+  --observer-key observer.key \
+  --plan tie-plan.omtp \
+  --plan-id <published-plan-id> \
+  --coordinator-public-key <64-lowercase-hex> \
+  --sequence 1 --input tie-pair-1.omtpair \
+  --pair-id <published-pair-id> \
+  --receipt-manifest observer-data/work-tie-receipts.omtr \
+  --pending observer-data/work-tie-receipts.pending
+```
+
+The artifact is bounded to 23,071,744 bytes and canonically binds the plan ID,
+slot sequence, and both complete role-labelled WorkGraph blocks. It needs no
+additional signature: the blocks carry proof of work, while the prepublished
+plan authenticates the schedule and roles. The create command does not submit
+either block and never receives the observer private key. Files are installed
+with no-overwrite atomic linking and the containing directory is synchronized.
+
+Portable delivery does not reintroduce selection grinding. Each role's initial
+nonce is derived from the published plan ID, sequence, and role; the block
+timestamp is derived from the signed slot and current parent; transactions and
+inclusion roots are canonical empty values. Before admitting anything, the
+observer independently reruns both isolated-pool miners and requires byte-for-
+byte equality with the artifact. A structurally valid alternative pair is
+therefore rejected rather than sampled. Pair ID
+`ae313ca7a0a3c9614c14c5d9347090eddcec8dda6f4a26361543a5262be3ac0d`
+is the frozen deterministic transport vector.
+
 The tested and control payout addresses must be dedicated to the harness during
 their planned slots. Ordinary mining under either address is intentionally not
 distinguishable from the scheduled attempt; an extra distinct anchor for that
@@ -327,10 +372,11 @@ and its version-3 report digest is
 
 ## Remaining operational work
 
-- add authenticated ordered pair delivery to independently operated observers.
-  The one-shot CLI now has a separate-process wait/kill/restart test over its
-  persistent pending state, but the local harness intentionally does not claim
-  observer independence;
+- carry the bounded pair artifact over authenticated network transport and
+  introduce a plan version that binds multiple distinct observer keys under one
+  campaign ID. File delivery now separates coordinator mining from one
+  observer's signing key and independently replays the deterministic search,
+  but version-1 still binds only one observer key;
 - publish each plan ID before its first slot and publish the final receipt tail
   outside the manifest storage path;
 - deploy and publish the clustering policy and its digest before each real

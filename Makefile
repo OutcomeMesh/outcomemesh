@@ -50,6 +50,7 @@ test-fuzz-smoke:
 	$(GO) test ./node/calibration -run '^$$' -fuzz '^FuzzDecodeTieTrialReceiptNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/calibration -run '^$$' -fuzz '^FuzzDecodeTieReceiptManifestNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/calibration -run '^$$' -fuzz '^FuzzDecodeTiePendingNeverPanics$$' -fuzztime=$(FUZZTIME)
+	$(GO) test ./node/tieproducer -run '^$$' -fuzz '^FuzzDecodePairNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/workchain -run '^$$' -fuzz '^FuzzDecodeNodeMetadataNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/workchain -run '^$$' -fuzz '^FuzzDecodePersistedStateNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/workchain -run '^$$' -fuzz '^FuzzDecodeStateDeltaNeverPanics$$' -fuzztime=$(FUZZTIME)
