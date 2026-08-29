@@ -223,6 +223,31 @@ data directory. A telemetry write error stops the observer service. Because
 `NoPair` is conservative evidence, a missed or ambiguous pair damages the
 experiment result instead of silently improving it.
 
+For local end-to-end qualification, one precommitted slot can be produced
+through the persistent activation router and the live receipt writer:
+
+```sh
+.tools/go/bin/go run ./cmd/omd work-telemetry-tie-produce \
+  --data observer-data \
+  --observer-key observer.key \
+  --plan tie-plan.omtp \
+  --plan-id <published-plan-id> \
+  --coordinator-public-key <64-lowercase-hex> \
+  --sequence 1 \
+  --receipt-manifest observer-data/work-tie-receipts.omtr \
+  --pending observer-data/work-tie-receipts.pending
+```
+
+The command waits for the slot by default, refuses a substituted plan or an
+unexpected receipt sequence, freezes the current parent and payload, mines the
+two roles in isolated pools, and submits them only in `FirstRole` order. It
+holds the node data directory exclusively and is deliberately a local harness:
+because it has the observer signing key, its output is not evidence of an
+independently operated observer. Production deployment must deliver the same
+ordered blocks to separately controlled observers without giving the
+coordinator their keys. `--wait=false` is available to supervisors that already
+enforce schedule timing.
+
 The tested and control payout addresses must be dedicated to the harness during
 their planned slots. Ordinary mining under either address is intentionally not
 distinguishable from the scheduled attempt; an extra distinct anchor for that
@@ -302,10 +327,10 @@ and its version-3 report digest is
 
 ## Remaining operational work
 
-- expose and process-test the deterministic two-miner producer through the node
-  CLI. The producer core now mines two isolated-pool anchors from one frozen
-  payload and submits them only in the signed role order, but scheduled command
-  execution and deployment are not yet complete;
+- process-test the one-shot two-miner CLI as a separate binary and add network
+  delivery to independently operated observers. The persistent-router harness
+  and its signed receipt path are implemented, but it intentionally does not
+  claim observer independence;
 - publish each plan ID before its first slot and publish the final receipt tail
   outside the manifest storage path;
 - deploy and publish the clustering policy and its digest before each real

@@ -461,9 +461,10 @@ Implemented in an isolated, not-yet-activated consensus package:
   expired/ambiguous slot as `NoPair`, and reconciles receipt-versus-pending
   crashes. A two-miner producer core now freezes one parent/payload, mines the
   role-labelled siblings in isolated pools, and submits them solely in the
-  precommitted role order. Scheduled CLI/process automation, independent
-  observer deployment, observer honesty, and Sybil-cluster provenance remain
-  open testnet work.
+  precommitted role order. A one-shot CLI now exercises that path through a
+  persistent router and the live signed-receipt callback. Separate-binary soak,
+  independent observer network delivery, observer honesty, and Sybil-cluster
+  provenance remain open testnet work.
 - the PoW research harness now also has an integer-only, fixed-seed geometric
   solve process for active v0 and lagged v1. Golden observation digests cover
   baseline variance and an alternating 1x/4x campaign, while separate cases
