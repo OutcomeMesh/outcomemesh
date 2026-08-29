@@ -178,14 +178,42 @@ func TestTieCollectorRejectsClockRollbackAndMalformedAdmission(t *testing.T) {
 	}
 }
 
+func TestTieCollectorChargesWrongPrecommittedDeliveryOrderAsNoPair(t *testing.T) {
+	collector, config := testTieCollector(t, testStartedAt)
+	plan := config.Plan
+	control := liveTieAdmission(plan, 0, plan.ControlMiner, "wrong-order-control", types.Hash{})
+	control.SelectedID = control.ID
+	if _, err := collector.Observe(control); err != nil {
+		t.Fatal(err)
+	}
+	tested := liveTieAdmission(plan, 0, plan.TestedMiner, "wrong-order-tested", control.ID)
+	if _, err := collector.Observe(tested); err != nil {
+		t.Fatal(err)
+	}
+	status, err := collector.Status()
+	if err != nil || !status.InvalidCurrent || status.ClosedSlots != 0 {
+		t.Fatalf("wrong-order status=%+v err=%v", status, err)
+	}
+	if err := collector.Advance(plan.Slots[0].EndedAt + TieReceiptClosureGraceSeconds); err != nil {
+		t.Fatal(err)
+	}
+	_, receipts, aggregate, err := LoadTieReceiptFile(config.ReceiptPath, plan.Binding())
+	if err != nil || len(receipts) != 1 || receipts[0].Status != TieTrialNoPair ||
+		aggregate.NoPairSlots != 1 || aggregate.ConservativeAdoptions != 1 {
+		t.Fatalf("wrong-order receipts=%+v aggregate=%+v err=%v", receipts, aggregate, err)
+	}
+}
+
 func TestTiePendingCanonicalRoundTripAndBounds(t *testing.T) {
 	plan, _ := testTiePlan(t)
 	planID, _ := plan.ID()
 	pending := newTiePending(planID, 1, types.Hash{})
+	pending.FirstRole = TieRoleTested
+	pending.LatestSelectedID = types.DomainHash("test/tie-pending/selected")
 	pending.Tested = tieCandidate{
 		Present: true, ID: types.DomainHash("test/tie-pending/id"),
 		ParentID: types.DomainHash("test/tie-pending/parent"), Height: plan.ActivationHeight,
-		ObservedAt: plan.Slots[0].StartedAt, SelectedID: types.DomainHash("test/tie-pending/selected"),
+		ObservedAt: plan.Slots[0].StartedAt, SelectedID: pending.LatestSelectedID,
 	}
 	encoded, err := pending.canonicalBytes(plan, planID)
 	if err != nil {
@@ -194,6 +222,12 @@ func TestTiePendingCanonicalRoundTripAndBounds(t *testing.T) {
 	decoded, err := decodeTiePending(encoded, plan, planID)
 	if err != nil || decoded != pending {
 		t.Fatalf("decoded pending=%+v err=%v", decoded, err)
+	}
+	legacy := append([]byte(nil), encoded...)
+	legacy[len(tiePendingMagic)] = 0
+	legacy[len(tiePendingMagic)+1] = 0
+	if _, err := decodeTiePending(legacy, plan, planID); !errors.Is(err, ErrPending) {
+		t.Fatalf("legacy pending error=%v", err)
 	}
 	if _, err := decodeTiePending(append(encoded, 0), plan, planID); !errors.Is(err, codec.ErrTrailingBytes) {
 		t.Fatalf("trailing pending error=%v", err)

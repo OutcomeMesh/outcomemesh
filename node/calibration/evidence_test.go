@@ -83,6 +83,44 @@ func TestEvidenceBundleFileRoundTrip(t *testing.T) {
 	}
 }
 
+func TestLegacyUnorderedTieEvidenceRemainsDecodableButCannotPassER5(t *testing.T) {
+	records, _, _, currentBinding := testEvidenceBundle(t)
+	observer := testKey()
+	unsigned := unsignedTiePlan()
+	unsigned.Version = TiePlanVersion0
+	unsigned.NetworkID = currentBinding.Telemetry.NetworkID
+	unsigned.GenesisID = currentBinding.Telemetry.GenesisID
+	unsigned.ActivationHeight = currentBinding.Telemetry.ActivationHeight
+	unsigned.Slots = unsigned.Slots[:1]
+	unsigned.Slots[0].FirstRole = TieRoleUnspecified
+	copy(unsigned.ObserverPublicKey[:], observer.Public().(ed25519.PublicKey))
+	plan, err := SignTiePlan(testTieCoordinatorKey(), unsigned)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := DecodeTiePlan(plan.CanonicalBytes())
+	if err != nil || decoded.Version != TiePlanVersion0 {
+		t.Fatalf("legacy plan decode=%+v err=%v", decoded, err)
+	}
+	receiptUnsigned := unsignedCompletedTieReceipt(1, types.Hash{})
+	receiptUnsigned.Version = TieReceiptVersion0
+	receiptUnsigned.FirstObservedAnchorID = types.Hash{}
+	receipt, err := SignTieTrialReceipt(observer, receiptUnsigned, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	planID, _ := plan.ID()
+	receiptTail, _ := receipt.ID(plan)
+	legacyBinding := EvidenceBinding{
+		Telemetry: currentBinding.Telemetry, TiePlan: plan.Binding(),
+		TelemetryTailID:    currentBinding.TelemetryTailID,
+		PublishedTiePlanID: planID, PublishedTieReceiptID: receiptTail,
+	}
+	if _, err := ValidateEvidenceBundle(records, plan, []TieTrialReceipt{receipt}, legacyBinding); !errors.Is(err, ErrEvidence) {
+		t.Fatalf("legacy unordered evidence error=%v, want ErrEvidence", err)
+	}
+}
+
 func testEvidenceBundle(t testing.TB) ([]Record, TiePlan, []TieTrialReceipt, EvidenceBinding) {
 	t.Helper()
 	observer := testKey()

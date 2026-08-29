@@ -77,6 +77,9 @@ func OpenTieCollector(config TieCollectorConfig, now uint64) (*TieCollector, err
 	if err := config.Plan.Verify(config.Binding); err != nil {
 		return nil, err
 	}
+	if config.Plan.Version != TiePlanVersion1 {
+		return nil, ErrTieCollectorConfig
+	}
 	if !bytes.Equal(config.PrivateKey.Public().(ed25519.PublicKey), config.Binding.ObserverPublicKey[:]) {
 		return nil, ErrTieCollectorConfig
 	}
@@ -161,11 +164,14 @@ func (collector *TieCollector) Observe(admission TieAdmission) (bool, error) {
 		return false, nil
 	}
 	var target *tieCandidate
+	var role TieTrialRole
 	switch admission.Miner {
 	case collector.plan.TestedMiner:
 		target = &collector.pending.Tested
+		role = TieRoleTested
 	case collector.plan.ControlMiner:
 		target = &collector.pending.Control
+		role = TieRoleControl
 	default:
 		return false, nil
 	}
@@ -175,6 +181,12 @@ func (collector *TieCollector) Observe(admission TieAdmission) (bool, error) {
 	}
 	if *target == candidate {
 		return false, nil
+	}
+	if !collector.pending.Tested.Present && !collector.pending.Control.Present {
+		collector.pending.FirstRole = role
+		if role != slot.FirstRole {
+			collector.pending.Invalid = true
+		}
 	}
 	if target.Present {
 		collector.pending.Invalid = true
@@ -211,13 +223,18 @@ func (collector *TieCollector) completePendingPairLocked() (bool, error) {
 		return false, saveTiePending(collector.pendingPath, collector.pending, collector.plan, collector.planID)
 	}
 	receipt := TieTrialReceipt{
-		Version: TieReceiptVersion0, Sequence: collector.pending.Sequence, Status: TieTrialCompleted,
+		Version: TieReceiptVersion1, Sequence: collector.pending.Sequence, Status: TieTrialCompleted,
 		PreviousID: collector.pending.PreviousID, ParentID: collector.pending.Tested.ParentID,
 		Height: collector.pending.Tested.Height, TestedAnchorID: collector.pending.Tested.ID,
 		ControlAnchorID:   collector.pending.Control.ID,
 		TestedObservedAt:  collector.pending.Tested.ObservedAt,
 		ControlObservedAt: collector.pending.Control.ObservedAt,
 		SelectedAnchorID:  collector.pending.LatestSelectedID,
+	}
+	if collector.pending.FirstRole == TieRoleTested {
+		receipt.FirstObservedAnchorID = collector.pending.Tested.ID
+	} else {
+		receipt.FirstObservedAnchorID = collector.pending.Control.ID
 	}
 	if err := collector.appendReceiptLocked(receipt); err != nil {
 		return false, err
@@ -280,7 +297,7 @@ func (collector *TieCollector) advanceLocked(now uint64) error {
 			return nil
 		}
 		receipt := TieTrialReceipt{
-			Version: TieReceiptVersion0, Sequence: collector.pending.Sequence,
+			Version: TieReceiptVersion1, Sequence: collector.pending.Sequence,
 			Status: TieTrialNoPair, PreviousID: collector.pending.PreviousID,
 		}
 		if err := collector.appendReceiptLocked(receipt); err != nil {
@@ -307,7 +324,7 @@ func (collector *TieCollector) appendReceiptLocked(unsigned TieTrialReceipt) err
 	if len(collector.receipts) == 0 {
 		aggregate = TieReceiptAggregate{PlanID: collector.planID, PlannedSlots: uint64(len(collector.plan.Slots))}
 	}
-	identifier := types.DomainHash(tieReceiptIDDomain, receipt.CanonicalBytes())
+	identifier := types.DomainHash(receipt.idDomain(), receipt.CanonicalBytes())
 	if aggregate.ReceiptCount == 0 {
 		aggregate.FirstReceiptID = identifier
 	}

@@ -75,6 +75,9 @@ func validateEvidenceAggregates(
 	if telemetry.ControlledTieAdoptions != 0 || telemetry.ControlledTieTrials != 0 {
 		return EvidenceAggregate{}, ErrEvidence
 	}
+	if plan.Version != TiePlanVersion1 {
+		return EvidenceAggregate{}, ErrEvidence
+	}
 	if telemetry.LastRecordID != expected.TelemetryTailID ||
 		tie.PlanID != expected.PublishedTiePlanID ||
 		tie.LastReceiptID != expected.PublishedTieReceiptID {

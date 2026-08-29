@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	tiePendingVersion      uint16 = 0
+	tiePendingVersion      uint16 = 1
 	MaximumTiePendingBytes        = 1024
 )
 
@@ -29,6 +29,7 @@ type tiePendingState struct {
 	Sequence         uint64
 	PreviousID       types.Hash
 	Invalid          bool
+	FirstRole        TieTrialRole
 	LatestSelectedID types.Hash
 	Tested           tieCandidate
 	Control          tieCandidate
@@ -49,6 +50,7 @@ func (pending tiePendingState) canonicalBytes(plan TiePlan, planID types.Hash) (
 	encoder.U64(pending.Sequence)
 	encoder.Fixed(pending.PreviousID[:])
 	encodeTiePendingBool(encoder, pending.Invalid)
+	encoder.U8(uint8(pending.FirstRole))
 	encoder.Fixed(pending.LatestSelectedID[:])
 	encodeTieCandidate(encoder, pending.Tested)
 	encodeTieCandidate(encoder, pending.Control)
@@ -85,6 +87,11 @@ func decodeTiePending(input []byte, plan TiePlan, planID types.Hash) (tiePending
 	if pending.Invalid, err = decodeTiePendingBool(decoder); err != nil {
 		return tiePendingState{}, err
 	}
+	role, err := decoder.U8()
+	if err != nil {
+		return tiePendingState{}, err
+	}
+	pending.FirstRole = TieTrialRole(role)
 	if err := decodeTieReceiptHash(decoder, &pending.LatestSelectedID); err != nil {
 		return tiePendingState{}, err
 	}
@@ -159,7 +166,7 @@ func (pending tiePendingState) validate(plan TiePlan, planID types.Hash) error {
 		return ErrPending
 	}
 	if pending.Sequence == uint64(len(plan.Slots))+1 {
-		if pending.Invalid || !pending.LatestSelectedID.IsZero() ||
+		if pending.Invalid || pending.FirstRole != TieRoleUnspecified || !pending.LatestSelectedID.IsZero() ||
 			pending.Tested != (tieCandidate{}) || pending.Control != (tieCandidate{}) {
 			return ErrPending
 		}
@@ -172,7 +179,11 @@ func (pending tiePendingState) validate(plan TiePlan, planID types.Hash) error {
 	if err := validateTieCandidate(pending.Control, plan, slot); err != nil {
 		return err
 	}
-	if !pending.Tested.Present && !pending.Control.Present && !pending.LatestSelectedID.IsZero() {
+	if !pending.Tested.Present && !pending.Control.Present {
+		if pending.FirstRole != TieRoleUnspecified || !pending.LatestSelectedID.IsZero() {
+			return ErrPending
+		}
+	} else if pending.FirstRole != TieRoleTested && pending.FirstRole != TieRoleControl {
 		return ErrPending
 	}
 	return nil

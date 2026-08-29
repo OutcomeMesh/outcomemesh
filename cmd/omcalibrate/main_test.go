@@ -40,12 +40,14 @@ func TestRunEvidenceModeUsesRawTieReceiptsAndPublishedCheckpoints(t *testing.T) 
 		t.Fatal(err)
 	}
 	planUnsigned := telemetry.TiePlan{
-		Version: telemetry.TiePlanVersion0, NetworkID: binding.NetworkID, GenesisID: binding.GenesisID,
+		Version: telemetry.TiePlanVersion1, NetworkID: binding.NetworkID, GenesisID: binding.GenesisID,
 		ActivationHeight:        binding.ActivationHeight,
 		TestedMiner:             types.Address(types.DomainHash("test/omcalibrate/tested-miner")),
 		ControlMiner:            types.Address(types.DomainHash("test/omcalibrate/control-miner")),
 		MaximumPairDelaySeconds: 5,
-		Slots:                   []telemetry.TiePlanSlot{{StartedAt: startedAt + 10, EndedAt: startedAt + 20}},
+		Slots: []telemetry.TiePlanSlot{{
+			StartedAt: startedAt + 10, EndedAt: startedAt + 20, FirstRole: telemetry.TieRoleTested,
+		}},
 	}
 	copy(planUnsigned.ObserverPublicKey[:], observer.Public().(ed25519.PublicKey))
 	plan, err := telemetry.SignTiePlan(coordinator, planUnsigned)
@@ -59,11 +61,11 @@ func TestRunEvidenceModeUsesRawTieReceiptsAndPublishedCheckpoints(t *testing.T) 
 	tested := types.DomainHash("test/omcalibrate/tested-anchor")
 	control := types.DomainHash("test/omcalibrate/control-anchor")
 	receipt, err := telemetry.SignTieTrialReceipt(observer, telemetry.TieTrialReceipt{
-		Version: telemetry.TieReceiptVersion0, Sequence: 1, Status: telemetry.TieTrialCompleted,
+		Version: telemetry.TieReceiptVersion1, Sequence: 1, Status: telemetry.TieTrialCompleted,
 		ParentID: types.DomainHash("test/omcalibrate/parent"), Height: binding.ActivationHeight,
 		TestedAnchorID: tested, ControlAnchorID: control,
 		TestedObservedAt: startedAt + 12, ControlObservedAt: startedAt + 14,
-		SelectedAnchorID: control,
+		SelectedAnchorID: control, FirstObservedAnchorID: tested,
 	}, plan)
 	if err != nil {
 		t.Fatal(err)

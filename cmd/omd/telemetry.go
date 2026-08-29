@@ -59,6 +59,7 @@ func runWorkTelemetryTiePlan(arguments []string) error {
 	slotSeconds := flags.Uint64("slot-seconds", 0, "half-open slot duration")
 	spacingSeconds := flags.Uint64("spacing-seconds", 0, "seconds between slot starts")
 	pairDelaySeconds := flags.Uint64("pair-delay-seconds", 0, "maximum observation delay between siblings")
+	firstRoleText := flags.String("first-role", "", "precommitted first delivery role: tested or control")
 	outputPath := flags.String("output", "", "signed tie plan output path")
 	if err := flags.Parse(arguments); err != nil {
 		return err
@@ -67,7 +68,7 @@ func runWorkTelemetryTiePlan(arguments []string) error {
 		*controlMinerText == "" || *startedAt == 0 || *slotCount == 0 ||
 		*slotCount > calibration.MaximumTiePlanSlots || *slotSeconds == 0 ||
 		*slotSeconds > calibration.MaximumTieSlotSeconds || *spacingSeconds < *slotSeconds ||
-		*pairDelaySeconds == 0 || *pairDelaySeconds > *slotSeconds || *outputPath == "" {
+		*pairDelaySeconds == 0 || *pairDelaySeconds > *slotSeconds || *firstRoleText == "" || *outputPath == "" {
 		return errors.New("coordinator/observer/miners, bounded schedule, pair delay, and output are required")
 	}
 	if *startedAt <= unixNow() {
@@ -116,8 +117,17 @@ func runWorkTelemetryTiePlan(arguments []string) error {
 	if err != nil {
 		return fmt.Errorf("control-miner: %w", err)
 	}
+	var firstRole calibration.TieTrialRole
+	switch *firstRoleText {
+	case "tested":
+		firstRole = calibration.TieRoleTested
+	case "control":
+		firstRole = calibration.TieRoleControl
+	default:
+		return errors.New("first-role must be tested or control")
+	}
 	plan := calibration.TiePlan{
-		Version: calibration.TiePlanVersion0, NetworkID: document.NetworkID, GenesisID: genesisID,
+		Version: calibration.TiePlanVersion1, NetworkID: document.NetworkID, GenesisID: genesisID,
 		ActivationHeight: profile.ActivationHeight, TestedMiner: testedMiner, ControlMiner: controlMiner,
 		MaximumPairDelaySeconds: *pairDelaySeconds,
 		Slots:                   make([]calibration.TiePlanSlot, int(count)),
@@ -125,7 +135,9 @@ func runWorkTelemetryTiePlan(arguments []string) error {
 	copy(plan.ObserverPublicKey[:], observerKey[:])
 	for index := range plan.Slots {
 		start := *startedAt + uint64(index)*spacing
-		plan.Slots[index] = calibration.TiePlanSlot{StartedAt: start, EndedAt: start + duration}
+		plan.Slots[index] = calibration.TiePlanSlot{
+			StartedAt: start, EndedAt: start + duration, FirstRole: firstRole,
+		}
 	}
 	plan, err = calibration.SignTiePlan(coordinatorKey, plan)
 	if err != nil {

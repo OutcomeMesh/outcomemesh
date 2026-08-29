@@ -64,9 +64,9 @@ func TestThirtyDayManifestFeedsPublicTestnetGate(t *testing.T) {
 		t.Fatal(err)
 	}
 	const wantTelemetryTail = "8498100edacc5868a99f555f523280e4039aa8bf2be9f1c972e6bf7f687b616c"
-	const wantTiePlan = "11e7ebfa5abad07ded642273af2cc19eb9571049a31a2b0b5eea12a1e9014eb7"
-	const wantTieTail = "6b3eb05e94add29cf870abeea5464ae28c5c20c206392cc7fae99103aea4044a"
-	const wantDigest = "0c74b8a0b46cf4d1f49bfa18e2f57f0cd43a48d7ff08b7c1aae0bd14a7441d80"
+	const wantTiePlan = "5066c5b78d96483c7aa99b1c35166d52fda67344005103e885ee1881a9d65676"
+	const wantTieTail = "fd13185e9b02fb5d6bf2998eaa0ca8239db644538f01e10ad0a325b21069f3a7"
+	const wantDigest = "a4007470bc67bb957deb825d2abacaafbc2ca907d3173c1abefe7387ec2f2cf6"
 	if aggregate.LastRecordID.String() != wantTelemetryTail || planID.String() != wantTiePlan ||
 		receiptTail.String() != wantTieTail || hex.EncodeToString(digest[:]) != wantDigest {
 		t.Fatalf("telemetry=%s plan=%s tie=%s digest=%s", aggregate.LastRecordID, planID,
@@ -149,7 +149,7 @@ func testThirtyDayTieEvidence(t testing.TB, binding Binding) (TiePlan, []TieTria
 	t.Helper()
 	observer := testKey()
 	unsigned := TiePlan{
-		Version: TiePlanVersion0, NetworkID: binding.NetworkID, GenesisID: binding.GenesisID,
+		Version: TiePlanVersion1, NetworkID: binding.NetworkID, GenesisID: binding.GenesisID,
 		ActivationHeight:        binding.ActivationHeight,
 		TestedMiner:             types.Address(types.DomainHash("test/calibration/thirty-day-tested-miner")),
 		ControlMiner:            types.Address(types.DomainHash("test/calibration/thirty-day-control-miner")),
@@ -159,7 +159,9 @@ func testThirtyDayTieEvidence(t testing.TB, binding Binding) (TiePlan, []TieTria
 	copy(unsigned.ObserverPublicKey[:], observer.Public().(ed25519.PublicKey))
 	for index := range unsigned.Slots {
 		startedAt := testStartedAt + uint64(index)*259
-		unsigned.Slots[index] = TiePlanSlot{StartedAt: startedAt, EndedAt: startedAt + 2}
+		unsigned.Slots[index] = TiePlanSlot{
+			StartedAt: startedAt, EndedAt: startedAt + 2, FirstRole: TieRoleControl,
+		}
 	}
 	plan, err := SignTiePlan(testTieCoordinatorKey(), unsigned)
 	if err != nil {
@@ -181,12 +183,13 @@ func testThirtyDayTieEvidence(t testing.TB, binding Binding) (TiePlan, []TieTria
 			selected = tested
 		}
 		receipt := TieTrialReceipt{
-			Version: TieReceiptVersion0, PlanID: planID, Sequence: uint64(index) + 1,
+			Version: TieReceiptVersion1, PlanID: planID, Sequence: uint64(index) + 1,
 			Status: TieTrialCompleted, PreviousID: previousID,
 			ParentID: types.DomainHash("test/calibration/thirty-day-parent", sequence[:]),
 			Height:   binding.ActivationHeight + uint64(index), TestedAnchorID: tested,
 			ControlAnchorID: control, TestedObservedAt: slot.StartedAt,
 			ControlObservedAt: slot.StartedAt, SelectedAnchorID: selected,
+			FirstObservedAnchorID: control,
 		}
 		copy(receipt.ObserverPublicKey[:], observer.Public().(ed25519.PublicKey))
 		if err := receipt.validateShape(plan, planID); err != nil {
@@ -194,7 +197,7 @@ func testThirtyDayTieEvidence(t testing.TB, binding Binding) (TiePlan, []TieTria
 		}
 		copy(receipt.Signature[:], ed25519.Sign(observer, receipt.signatureMessage()))
 		receipts[index] = receipt
-		previousID = types.DomainHash(tieReceiptIDDomain, receipt.CanonicalBytes())
+		previousID = types.DomainHash(receipt.idDomain(), receipt.CanonicalBytes())
 	}
 	return plan, receipts
 }

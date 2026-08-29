@@ -10,6 +10,7 @@ import (
 
 const (
 	TieReceiptVersion0     uint16 = 0
+	TieReceiptVersion1     uint16 = 1
 	MaximumTieReceiptBytes        = 1024
 )
 
@@ -25,6 +26,14 @@ var (
 
 type TieTrialStatus uint8
 
+type TieTrialRole uint8
+
+const (
+	TieRoleUnspecified TieTrialRole = iota
+	TieRoleTested
+	TieRoleControl
+)
+
 const (
 	// TieTrialNoPair explicitly closes a precommitted slot without a valid pair.
 	// It is evidence of completeness, not a successful statistical trial.
@@ -36,20 +45,21 @@ const (
 // TestedAnchorID and ControlAnchorID are role-labelled before Adopted is
 // derived, preventing a caller from submitting a mutable success counter.
 type TieTrialReceipt struct {
-	Version           uint16
-	PlanID            types.Hash
-	Sequence          uint64
-	Status            TieTrialStatus
-	PreviousID        types.Hash
-	ParentID          types.Hash
-	Height            uint64
-	TestedAnchorID    types.Hash
-	ControlAnchorID   types.Hash
-	TestedObservedAt  uint64
-	ControlObservedAt uint64
-	SelectedAnchorID  types.Hash
-	ObserverPublicKey [ed25519.PublicKeySize]byte
-	Signature         [ed25519.SignatureSize]byte
+	Version               uint16
+	PlanID                types.Hash
+	Sequence              uint64
+	Status                TieTrialStatus
+	PreviousID            types.Hash
+	ParentID              types.Hash
+	Height                uint64
+	TestedAnchorID        types.Hash
+	ControlAnchorID       types.Hash
+	TestedObservedAt      uint64
+	ControlObservedAt     uint64
+	SelectedAnchorID      types.Hash
+	FirstObservedAnchorID types.Hash
+	ObserverPublicKey     [ed25519.PublicKeySize]byte
+	Signature             [ed25519.SignatureSize]byte
 }
 
 func SignTieTrialReceipt(privateKey ed25519.PrivateKey, receipt TieTrialReceipt, plan TiePlan) (TieTrialReceipt, error) {
@@ -96,7 +106,7 @@ func (receipt TieTrialReceipt) ID(plan TiePlan) (types.Hash, error) {
 	if err := receipt.Validate(plan); err != nil {
 		return types.Hash{}, err
 	}
-	return types.DomainHash(tieReceiptIDDomain, receipt.CanonicalBytes()), nil
+	return types.DomainHash(receipt.idDomain(), receipt.CanonicalBytes()), nil
 }
 
 func (receipt TieTrialReceipt) Adopted() (bool, error) {
@@ -125,7 +135,7 @@ func DecodeTieTrialReceipt(input []byte) (TieTrialReceipt, error) {
 	if receipt.Version, err = decoder.U16(); err != nil {
 		return TieTrialReceipt{}, err
 	}
-	if receipt.Version != TieReceiptVersion0 {
+	if receipt.Version != TieReceiptVersion0 && receipt.Version != TieReceiptVersion1 {
 		return TieTrialReceipt{}, ErrVersion
 	}
 	if err := decodeTieReceiptHash(decoder, &receipt.PlanID); err != nil {
@@ -159,6 +169,11 @@ func DecodeTieTrialReceipt(input []byte) (TieTrialReceipt, error) {
 	if err := decodeTieReceiptHash(decoder, &receipt.SelectedAnchorID); err != nil {
 		return TieTrialReceipt{}, err
 	}
+	if receipt.Version == TieReceiptVersion1 {
+		if err := decodeTieReceiptHash(decoder, &receipt.FirstObservedAnchorID); err != nil {
+			return TieTrialReceipt{}, err
+		}
+	}
 	if value, decodeErr := decoder.Fixed(ed25519.PublicKeySize); decodeErr != nil {
 		return TieTrialReceipt{}, decodeErr
 	} else {
@@ -187,7 +202,7 @@ func decodeTieReceiptHash(decoder *codec.Decoder, target *types.Hash) error {
 func (receipt TieTrialReceipt) signatureMessage() []byte {
 	encoder := codec.NewEncoder(288)
 	receipt.encodeUnsigned(encoder)
-	hash := types.DomainHash(tieReceiptSignatureDomain, encoder.Bytes())
+	hash := types.DomainHash(receipt.signatureDomain(), encoder.Bytes())
 	return hash[:]
 }
 
@@ -204,11 +219,18 @@ func (receipt TieTrialReceipt) encodeUnsigned(encoder *codec.Encoder) {
 	encoder.U64(receipt.TestedObservedAt)
 	encoder.U64(receipt.ControlObservedAt)
 	encoder.Fixed(receipt.SelectedAnchorID[:])
+	if receipt.Version == TieReceiptVersion1 {
+		encoder.Fixed(receipt.FirstObservedAnchorID[:])
+	}
 	encoder.Fixed(receipt.ObserverPublicKey[:])
 }
 
 func (receipt TieTrialReceipt) validateShape(plan TiePlan, planID types.Hash) error {
-	if receipt.Version != TieReceiptVersion0 {
+	if receipt.Version != TieReceiptVersion0 && receipt.Version != TieReceiptVersion1 {
+		return ErrVersion
+	}
+	if (plan.Version == TiePlanVersion0 && receipt.Version != TieReceiptVersion0) ||
+		(plan.Version == TiePlanVersion1 && receipt.Version != TieReceiptVersion1) {
 		return ErrVersion
 	}
 	if receipt.PlanID != planID || receipt.ObserverPublicKey != plan.ObserverPublicKey {
@@ -222,7 +244,7 @@ func (receipt TieTrialReceipt) validateShape(plan TiePlan, planID types.Hash) er
 		if !receipt.ParentID.IsZero() || receipt.Height != 0 ||
 			!receipt.TestedAnchorID.IsZero() || !receipt.ControlAnchorID.IsZero() ||
 			receipt.TestedObservedAt != 0 || receipt.ControlObservedAt != 0 ||
-			!receipt.SelectedAnchorID.IsZero() {
+			!receipt.SelectedAnchorID.IsZero() || !receipt.FirstObservedAnchorID.IsZero() {
 			return ErrTieReceipt
 		}
 		return nil
@@ -240,7 +262,34 @@ func (receipt TieTrialReceipt) validateShape(plan TiePlan, planID types.Hash) er
 		absoluteDifference(receipt.TestedObservedAt, receipt.ControlObservedAt) > plan.MaximumPairDelaySeconds {
 		return ErrTieReceipt
 	}
+	if receipt.Version == TieReceiptVersion0 {
+		if !receipt.FirstObservedAnchorID.IsZero() {
+			return ErrTieReceipt
+		}
+	} else {
+		expectedFirst := receipt.TestedAnchorID
+		if slot.FirstRole == TieRoleControl {
+			expectedFirst = receipt.ControlAnchorID
+		}
+		if receipt.FirstObservedAnchorID != expectedFirst {
+			return ErrTieReceipt
+		}
+	}
 	return nil
+}
+
+func (receipt TieTrialReceipt) signatureDomain() string {
+	if receipt.Version == TieReceiptVersion1 {
+		return "OMESH/testnet/calibration/tie-receipt/signature/v1"
+	}
+	return tieReceiptSignatureDomain
+}
+
+func (receipt TieTrialReceipt) idDomain() string {
+	if receipt.Version == TieReceiptVersion1 {
+		return "OMESH/testnet/calibration/tie-receipt/id/v1"
+	}
+	return tieReceiptIDDomain
 }
 
 func absoluteDifference(left, right uint64) uint64 {

@@ -56,7 +56,7 @@ func ValidateTieReceiptManifest(plan TiePlan, receipts []TieTrialReceipt, expect
 	}
 	// Verify above authenticates these exact canonical bytes. Hash once so a
 	// 10,000-slot manifest remains O(N), not O(N^2) in plan slots.
-	planID := types.DomainHash(tiePlanIDDomain, plan.CanonicalBytes())
+	planID := types.DomainHash(plan.idDomain(), plan.CanonicalBytes())
 	result := TieReceiptAggregate{
 		PlanID: planID, PlannedSlots: uint64(len(plan.Slots)),
 		ReceiptCount: uint64(len(receipts)), Complete: len(receipts) == len(plan.Slots),
@@ -76,7 +76,7 @@ func ValidateTieReceiptManifest(plan TiePlan, receipts []TieTrialReceipt, expect
 		if err := receipt.validate(plan, planID); err != nil {
 			return TieReceiptAggregate{}, err
 		}
-		identifier := types.DomainHash(tieReceiptIDDomain, receipt.CanonicalBytes())
+		identifier := types.DomainHash(receipt.idDomain(), receipt.CanonicalBytes())
 		if index == 0 {
 			result.FirstReceiptID = identifier
 		}

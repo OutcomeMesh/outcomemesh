@@ -123,7 +123,9 @@ func TestMaximumTieReceiptManifestFitsPublishedBound(t *testing.T) {
 	unsigned.Slots = make([]TiePlanSlot, MaximumTiePlanSlots)
 	for index := range unsigned.Slots {
 		startedAt := testStartedAt + uint64(index)*60
-		unsigned.Slots[index] = TiePlanSlot{StartedAt: startedAt, EndedAt: startedAt + 60}
+		unsigned.Slots[index] = TiePlanSlot{
+			StartedAt: startedAt, EndedAt: startedAt + 60, FirstRole: TieRoleTested,
+		}
 	}
 	plan, err := SignTiePlan(testTieCoordinatorKey(), unsigned)
 	if err != nil {
@@ -138,7 +140,7 @@ func TestMaximumTieReceiptManifestFitsPublishedBound(t *testing.T) {
 	var previousID types.Hash
 	for index := range receipts {
 		receipt := TieTrialReceipt{
-			Version: TieReceiptVersion0, PlanID: planID, Sequence: uint64(index) + 1,
+			Version: TieReceiptVersion1, PlanID: planID, Sequence: uint64(index) + 1,
 			Status: TieTrialNoPair, PreviousID: previousID,
 		}
 		copy(receipt.ObserverPublicKey[:], observer.Public().(ed25519.PublicKey))
@@ -147,7 +149,7 @@ func TestMaximumTieReceiptManifestFitsPublishedBound(t *testing.T) {
 		}
 		copy(receipt.Signature[:], ed25519.Sign(observer, receipt.signatureMessage()))
 		receipts[index] = receipt
-		previousID = types.DomainHash(tieReceiptIDDomain, receipt.CanonicalBytes())
+		previousID = types.DomainHash(receipt.idDomain(), receipt.CanonicalBytes())
 	}
 	encoded, aggregate, err := EncodeTieReceiptManifest(plan, receipts, plan.Binding())
 	if err != nil {

@@ -174,15 +174,17 @@ Each signed hourly record covers at most one hour; sequences, previous-record
 IDs, and interval boundaries must be gapless. Manual tie counters in those
 records invalidate evidence mode. The second file must close every precommitted
 slot with a signed completed or `NoPair` receipt; `NoPair` is charged as an
-adoption. The generated 720-record/10,000-receipt/30-day golden bundle has
+adoption. Version-1 also binds the first-delivery role before either anchor ID
+exists; older unordered plans cannot enter evidence mode. The generated
+720-record/10,000-receipt/30-day golden bundle has
 hourly tail
 `8498100edacc5868a99f555f523280e4039aa8bf2be9f1c972e6bf7f687b616c`,
 plan ID
-`11e7ebfa5abad07ded642273af2cc19eb9571049a31a2b0b5eea12a1e9014eb7`,
+`5066c5b78d96483c7aa99b1c35166d52fda67344005103e885ee1881a9d65676`,
 receipt tail
-`6b3eb05e94add29cf870abeea5464ae28c5c20c206392cc7fae99103aea4044a`,
+`fd13185e9b02fb5d6bf2998eaa0ca8239db644538f01e10ad0a325b21069f3a7`,
 and version-3 report digest
-`0c74b8a0b46cf4d1f49bfa18e2f57f0cd43a48d7ff08b7c1aae0bd14a7441d80`.
+`a4007470bc67bb957deb825d2abacaafbc2ca907d3173c1abefe7387ec2f2cf6`.
 Reducing the window by one second, providing fewer than 720 records, omitting a
 raw receipt or any checkpoint, or raising either bound above 250,000 ppm fails
 the conjunctive result. The full format is specified in

@@ -190,11 +190,11 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
   upper bounds, family-wise mining-cluster selection correction, a 30-day
   window gate, signed gapless hourly manifests, trusted deployment/policy
   bindings, published rollback checkpoints, a crash-safe first-admission hard-
-  anchor collector, canonical precommitted tie plans, one signed raw receipt per
-  planned slot with conservative failure accounting, a fail-closed dual-manifest
-  evidence bundle, a crash-safe post-commit receipt writer, and a canonical
-  digest. Two-miner harness automation and multi-observer deployment remain
-  Milestone 9 deliverables.
+  anchor collector, canonical tie plans precommitting miner and first-delivery
+  roles, one signed raw receipt per planned slot with conservative failure
+  accounting, a fail-closed dual-manifest evidence bundle, a crash-safe post-
+  commit receipt writer, and a canonical digest. Two-miner harness automation
+  and multi-observer deployment remain Milestone 9 deliverables.
 
 ### Exit gates
 

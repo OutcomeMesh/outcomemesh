@@ -12,6 +12,7 @@ import (
 
 const (
 	TiePlanVersion0       uint16 = 0
+	TiePlanVersion1       uint16 = 1
 	MaximumTiePlanSlots          = 10_000
 	MaximumTiePlanBytes          = 256 * 1024
 	MaximumTieSlotSeconds uint64 = 60 * 60
@@ -32,6 +33,7 @@ var (
 type TiePlanSlot struct {
 	StartedAt uint64
 	EndedAt   uint64
+	FirstRole TieTrialRole
 }
 
 // TiePlan fixes the deployment, miner roles, timing, and observer before any
@@ -112,7 +114,7 @@ func (plan TiePlan) ID() (types.Hash, error) {
 	if err := plan.Validate(); err != nil {
 		return types.Hash{}, err
 	}
-	return types.DomainHash(tiePlanIDDomain, plan.CanonicalBytes()), nil
+	return types.DomainHash(plan.idDomain(), plan.CanonicalBytes()), nil
 }
 
 func (plan TiePlan) CanonicalBytes() []byte {
@@ -132,7 +134,7 @@ func DecodeTiePlan(input []byte) (TiePlan, error) {
 	if plan.Version, err = decoder.U16(); err != nil {
 		return TiePlan{}, err
 	}
-	if plan.Version != TiePlanVersion0 {
+	if plan.Version != TiePlanVersion0 && plan.Version != TiePlanVersion1 {
 		return TiePlan{}, ErrVersion
 	}
 	if plan.NetworkID, err = decoder.U32(); err != nil {
@@ -170,6 +172,13 @@ func DecodeTiePlan(input []byte) (TiePlan, error) {
 		}
 		if plan.Slots[index].EndedAt, err = decoder.U64(); err != nil {
 			return TiePlan{}, err
+		}
+		if plan.Version == TiePlanVersion1 {
+			role, roleErr := decoder.U8()
+			if roleErr != nil {
+				return TiePlan{}, roleErr
+			}
+			plan.Slots[index].FirstRole = TieTrialRole(role)
 		}
 	}
 	if value, decodeErr := decoder.Fixed(ed25519.PublicKeySize); decodeErr != nil {
@@ -233,7 +242,7 @@ func LoadTiePlanFile(path string, expected TiePlanBinding) (TiePlan, error) {
 func (plan TiePlan) signatureMessage() []byte {
 	encoder := codec.NewEncoder(192 + len(plan.Slots)*16)
 	plan.encodeUnsigned(encoder)
-	hash := types.DomainHash(tiePlanSignatureDomain, encoder.Bytes())
+	hash := types.DomainHash(plan.signatureDomain(), encoder.Bytes())
 	return hash[:]
 }
 
@@ -249,13 +258,16 @@ func (plan TiePlan) encodeUnsigned(encoder *codec.Encoder) {
 	for _, slot := range plan.Slots {
 		encoder.U64(slot.StartedAt)
 		encoder.U64(slot.EndedAt)
+		if plan.Version == TiePlanVersion1 {
+			encoder.U8(uint8(slot.FirstRole))
+		}
 	}
 	encoder.Fixed(plan.ObserverPublicKey[:])
 	encoder.Fixed(plan.CoordinatorPublicKey[:])
 }
 
 func (plan TiePlan) validateShape() error {
-	if plan.Version != TiePlanVersion0 {
+	if plan.Version != TiePlanVersion0 && plan.Version != TiePlanVersion1 {
 		return ErrVersion
 	}
 	if plan.NetworkID == 0 || plan.GenesisID.IsZero() || plan.ActivationHeight == 0 {
@@ -282,11 +294,28 @@ func (plan TiePlan) validateShape() error {
 		if slot.StartedAt == 0 || slot.EndedAt <= slot.StartedAt ||
 			slot.EndedAt-slot.StartedAt > MaximumTieSlotSeconds ||
 			plan.MaximumPairDelaySeconds > slot.EndedAt-slot.StartedAt ||
-			(index > 0 && slot.StartedAt < plan.Slots[index-1].EndedAt) {
+			(index > 0 && slot.StartedAt < plan.Slots[index-1].EndedAt) ||
+			(plan.Version == TiePlanVersion0 && slot.FirstRole != TieRoleUnspecified) ||
+			(plan.Version == TiePlanVersion1 &&
+				slot.FirstRole != TieRoleTested && slot.FirstRole != TieRoleControl) {
 			return ErrTiePlan
 		}
 	}
 	return nil
+}
+
+func (plan TiePlan) signatureDomain() string {
+	if plan.Version == TiePlanVersion1 {
+		return "OMESH/testnet/calibration/tie-plan/signature/v1"
+	}
+	return tiePlanSignatureDomain
+}
+
+func (plan TiePlan) idDomain() string {
+	if plan.Version == TiePlanVersion1 {
+		return "OMESH/testnet/calibration/tie-plan/id/v1"
+	}
+	return tiePlanIDDomain
 }
 
 func validTiePlanBinding(binding TiePlanBinding) bool {

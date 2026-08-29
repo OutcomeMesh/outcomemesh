@@ -36,7 +36,7 @@ func TestTieReceiptCanonicalRoundTripAndGoldenTail(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const wantTail = "11ec379be3bad4de59cf154c39e9678bdd59e90ac1d861876b83830af1ce7717"
+	const wantTail = "10d385b8140946ffe21871735fe18067b81582d937ed1f8f68bf0bd71740340a"
 	if tail.String() != wantTail {
 		t.Fatalf("tie receipt tail = %s, want %s", tail, wantTail)
 	}
@@ -66,7 +66,12 @@ func TestTieReceiptRejectsMutationInvalidRoleTimeAndNoPairData(t *testing.T) {
 	if _, err := SignTieTrialReceipt(testTieObserverKey(), base, plan); !errors.Is(err, ErrTieReceipt) {
 		t.Fatalf("outside slot error = %v, want ErrTieReceipt", err)
 	}
-	noPair := TieTrialReceipt{Version: TieReceiptVersion0, Sequence: 1, Status: TieTrialNoPair, Height: 1}
+	base = unsignedCompletedTieReceipt(1, types.Hash{})
+	base.FirstObservedAnchorID = base.ControlAnchorID
+	if _, err := SignTieTrialReceipt(testTieObserverKey(), base, plan); !errors.Is(err, ErrTieReceipt) {
+		t.Fatalf("wrong first role error = %v, want ErrTieReceipt", err)
+	}
+	noPair := TieTrialReceipt{Version: TieReceiptVersion1, Sequence: 1, Status: TieTrialNoPair, Height: 1}
 	if _, err := SignTieTrialReceipt(testTieObserverKey(), noPair, plan); !errors.Is(err, ErrTieReceipt) {
 		t.Fatalf("no-pair data error = %v, want ErrTieReceipt", err)
 	}
@@ -114,7 +119,7 @@ func testTieReceiptsWithKey(t testing.TB, plan TiePlan, observer ed25519.Private
 		t.Fatal(err)
 	}
 	second, err := SignTieTrialReceipt(observer, TieTrialReceipt{
-		Version: TieReceiptVersion0, Sequence: 2, Status: TieTrialNoPair, PreviousID: firstID,
+		Version: TieReceiptVersion1, Sequence: 2, Status: TieTrialNoPair, PreviousID: firstID,
 	}, plan)
 	if err != nil {
 		t.Fatal(err)
@@ -138,10 +143,10 @@ func unsignedCompletedTieReceipt(sequence uint64, previous types.Hash) TieTrialR
 	tested := types.DomainHash("test/calibration/tie/tested-anchor")
 	control := types.DomainHash("test/calibration/tie/control-anchor")
 	return TieTrialReceipt{
-		Version: TieReceiptVersion0, Sequence: sequence, Status: TieTrialCompleted,
+		Version: TieReceiptVersion1, Sequence: sequence, Status: TieTrialCompleted,
 		PreviousID: previous, ParentID: types.DomainHash("test/calibration/tie/parent"), Height: 30,
 		TestedAnchorID: tested, ControlAnchorID: control,
 		TestedObservedAt: testStartedAt + 2, ControlObservedAt: testStartedAt + 4,
-		SelectedAnchorID: tested,
+		SelectedAnchorID: tested, FirstObservedAnchorID: tested,
 	}
 }

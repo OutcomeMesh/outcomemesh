@@ -448,7 +448,8 @@ Implemented in an isolated, not-yet-activated consensus package:
   enter a crash-safe unique-ID journal, completed/empty hours are signed, and a
   canonical published mapping places unknown payout addresses in a conservative
   catch-all cluster. Controlled races now have a separate coordinator-signed
-  precommit fixing miner roles and up to 10,000 time slots, plus an observer-
+  version-1 precommit fixing miner roles, first-delivery role, and up to 10,000
+  time slots, plus an observer-
   signed receipt chain that explicitly closes every slot as completed or
   `NoPair`. Only a complete chain yields ER-5 inputs, and every `NoPair` is
   conservatively charged as an adoption so selective completion cannot improve

@@ -75,7 +75,7 @@ mutation detection.
 
 Controlled equal-work races use a separate signed raw-evidence chain. They are
 not accepted as manually supplied success/trial counters. Before either sibling
-anchor ID exists, a coordinator signs and externally publishes a version-0
+anchor ID exists, a coordinator signs and externally publishes a version-1
 `TiePlan` and its ID. The plan fixes:
 
 - the network, genesis, and WorkGraph activation height;
@@ -83,6 +83,7 @@ anchor ID exists, a coordinator signs and externally publishes a version-0
 - the observer and coordinator Ed25519 public keys;
 - at most 10,000 ordered, non-overlapping half-open time slots of at most one
   hour each;
+- the miner role that must be admitted first in every individual slot;
 - the maximum allowed delay between observing the two anchors.
 
 The verifier obtains both public keys and the deployment binding independently.
@@ -93,10 +94,11 @@ of the plan ID is therefore part of the operational protocol.
 Every precommitted slot has exactly one observer-signed receipt. A completed
 receipt commits to the plan ID, sequence, predecessor receipt, common parent,
 height, role-labelled tested and control anchor IDs, their observation times,
-and the locally selected anchor. Both observations must fall inside that slot,
-their delay must be within the plan bound, and the selection must be one of the
-two siblings. The adoption counter is derived from the selected and tested IDs;
-there is no signed mutable `adopted` boolean.
+the first observed anchor ID, and the locally selected anchor. The first ID must
+match the role precommitted for that slot. Both observations must fall inside
+that slot, their delay must be within the plan bound, and the selection must be
+one of the two siblings. The adoption counter is derived from the selected and
+tested IDs; there is no signed mutable `adopted` boolean.
 
 If no valid pair was obtained, the observer must instead sign a `NoPair`
 receipt whose anchor, parent, height, time, and selection fields are all zero.
@@ -110,9 +112,12 @@ turning unfavorable attempts into failures therefore cannot improve the bound.
 The plan is limited to 256 KiB, a receipt to 1 KiB, and the raw manifest to
 8 MiB. Canonical decoders enforce all bounds before allocation, and full-plan
 verification hashes the plan once so 10,000 receipts remain linear-time.
-Plan ID `897f6a1dd581297c763ef25ac908d2472cda297064e867a43dd464f498ca142e`
+Version-0 plans/receipts remain decodable for archival compatibility but cannot
+enter an ER-5 evidence bundle or the live writer because they did not commit
+delivery order. Version-1 plan ID
+`6eef06dab78e377167086422f36497d238924aa42c7eee6f8dc9f85f0b6443e2`
 and receipt-chain tail
-`11ec379be3bad4de59cf154c39e9678bdd59e90ac1d861876b83830af1ce7717`
+`10d385b8140946ffe21871735fe18067b81582d937ed1f8f68bf0bd71740340a`
 are frozen deterministic test vectors.
 
 These signatures prove provenance, binding, continuity, and explicit slot
@@ -171,7 +176,9 @@ creating a completed receipt. The two anchors must be distinct siblings at the
 same height, arrive inside the slot and within its delay bound, and the selected
 ID after the second ordered admission must name one of them. A second distinct
 anchor for either role, mismatched parent/height, or unrelated selection marks
-the slot invalid; the writer never chooses one candidate after inspecting IDs.
+the slot invalid. Receiving the wrong role first also invalidates the slot, so
+the coordinator cannot inspect both IDs and then choose a favorable delivery
+order.
 
 At the slot boundary the writer waits a fixed 60-second callback grace, then
 signs `NoPair` for every uncompleted or invalid slot. This avoids racing a block
@@ -196,7 +203,8 @@ first slot:
   --control-miner <64-lowercase-hex> \
   --start <unix-seconds> --slots 10000 \
   --slot-seconds 30 --spacing-seconds 259 \
-  --pair-delay-seconds 5 --output tie-plan.omtp
+  --pair-delay-seconds 5 --first-role control \
+  --output tie-plan.omtp
 ```
 
 Then add the plan to the observer command shown above:
@@ -286,11 +294,11 @@ The generated end-to-end vector uses 720 signed hourly records, a complete
 comparison budget its hourly tail is
 `8498100edacc5868a99f555f523280e4039aa8bf2be9f1c972e6bf7f687b616c`,
 tie plan ID is
-`11e7ebfa5abad07ded642273af2cc19eb9571049a31a2b0b5eea12a1e9014eb7`,
+`5066c5b78d96483c7aa99b1c35166d52fda67344005103e885ee1881a9d65676`,
 receipt tail is
-`6b3eb05e94add29cf870abeea5464ae28c5c20c206392cc7fae99103aea4044a`,
+`fd13185e9b02fb5d6bf2998eaa0ca8239db644538f01e10ad0a325b21069f3a7`,
 and its version-3 report digest is
-`0c74b8a0b46cf4d1f49bfa18e2f57f0cd43a48d7ff08b7c1aae0bd14a7441d80`.
+`a4007470bc67bb957deb825d2abacaafbc2ca907d3173c1abefe7387ec2f2cf6`.
 
 ## Remaining operational work
 

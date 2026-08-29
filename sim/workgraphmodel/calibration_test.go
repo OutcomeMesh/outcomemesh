@@ -76,9 +76,9 @@ func TestPublicTestnetCalibrationGateAndDigest(t *testing.T) {
 		EvidenceRecords:          720,
 		EvidenceTailID:           "8498100edacc5868a99f555f523280e4039aa8bf2be9f1c972e6bf7f687b616c",
 		EvidenceVerified:         true,
-		TiePlanID:                "11e7ebfa5abad07ded642273af2cc19eb9571049a31a2b0b5eea12a1e9014eb7",
+		TiePlanID:                "5066c5b78d96483c7aa99b1c35166d52fda67344005103e885ee1881a9d65676",
 		TieEvidenceReceipts:      10_000,
-		TieEvidenceTailID:        "6b3eb05e94add29cf870abeea5464ae28c5c20c206392cc7fae99103aea4044a",
+		TieEvidenceTailID:        "fd13185e9b02fb5d6bf2998eaa0ca8239db644538f01e10ad0a325b21069f3a7",
 		TieEvidenceVerified:      true,
 		MaximumUpperPPM:          PublicTestnetMaximumUpperPPM,
 	}
@@ -94,7 +94,7 @@ func TestPublicTestnetCalibrationGateAndDigest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const wantDigest = "0c74b8a0b46cf4d1f49bfa18e2f57f0cd43a48d7ff08b7c1aae0bd14a7441d80"
+	const wantDigest = "a4007470bc67bb957deb825d2abacaafbc2ca907d3173c1abefe7387ec2f2cf6"
 	if got := hex.EncodeToString(digest[:]); got != wantDigest {
 		t.Fatalf("calibration digest = %s, want %s; result=%+v", got, wantDigest, document.Result)
 	}

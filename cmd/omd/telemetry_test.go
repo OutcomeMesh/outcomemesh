@@ -145,12 +145,14 @@ func TestLiveWorkTelemetryWritesControlledTieReceiptFromOrderedAdmissions(t *tes
 	coordinatorSeed := types.DomainHash("test/omd/live-tie-coordinator")
 	coordinator := ed25519.NewKeyFromSeed(coordinatorSeed[:])
 	planUnsigned := calibration.TiePlan{
-		Version: calibration.TiePlanVersion0, NetworkID: document.NetworkID, GenesisID: genesisID,
+		Version: calibration.TiePlanVersion1, NetworkID: document.NetworkID, GenesisID: genesisID,
 		ActivationHeight:        profile.ActivationHeight,
 		TestedMiner:             types.Address(types.DomainHash("test/omd/live-tie-tested-miner")),
 		ControlMiner:            types.Address(types.DomainHash("test/omd/live-tie-control-miner")),
 		MaximumPairDelaySeconds: 5,
-		Slots:                   []calibration.TiePlanSlot{{StartedAt: now, EndedAt: now + 60}},
+		Slots: []calibration.TiePlanSlot{{
+			StartedAt: now, EndedAt: now + 60, FirstRole: calibration.TieRoleTested,
+		}},
 	}
 	copy(planUnsigned.ObserverPublicKey[:], observer.Public().(ed25519.PublicKey))
 	plan, err := calibration.SignTiePlan(coordinator, planUnsigned)
@@ -235,7 +237,8 @@ func TestWorkTelemetryTiePlanCommandBuildsBoundedSignedSchedule(t *testing.T) {
 		"--observer-public-key", bytesToLowerHex(observer.Public().(ed25519.PublicKey)),
 		"--tested-miner", tested.String(), "--control-miner", control.String(),
 		"--start", strconv.FormatUint(firstStart, 10), "--slots", "3", "--slot-seconds", "30",
-		"--spacing-seconds", "60", "--pair-delay-seconds", "5", "--output", planPath,
+		"--spacing-seconds", "60", "--pair-delay-seconds", "5", "--first-role", "control",
+		"--output", planPath,
 	}
 	if err := runWorkTelemetryTiePlan(arguments); err != nil {
 		t.Fatal(err)
@@ -255,7 +258,7 @@ func TestWorkTelemetryTiePlanCommandBuildsBoundedSignedSchedule(t *testing.T) {
 	}
 	if len(plan.Slots) != 3 || plan.Slots[0].StartedAt != firstStart ||
 		plan.Slots[2].EndedAt != firstStart+150 || plan.MaximumPairDelaySeconds != 5 ||
-		plan.TestedMiner != tested || plan.ControlMiner != control {
+		plan.TestedMiner != tested || plan.ControlMiner != control || plan.Slots[1].FirstRole != calibration.TieRoleControl {
 		t.Fatalf("generated plan=%+v", plan)
 	}
 }

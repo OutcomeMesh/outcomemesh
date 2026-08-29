@@ -28,7 +28,7 @@ func TestTiePlanCanonicalRoundTripBindingAndGoldenID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const wantID = "897f6a1dd581297c763ef25ac908d2472cda297064e867a43dd464f498ca142e"
+	const wantID = "6eef06dab78e377167086422f36497d238924aa42c7eee6f8dc9f85f0b6443e2"
 	if identifier.String() != wantID {
 		t.Fatalf("tie plan ID = %s, want %s", identifier, wantID)
 	}
@@ -62,6 +62,11 @@ func TestTiePlanRejectsMutationWrongBindingAndBadSchedule(t *testing.T) {
 	base.ControlMiner = base.TestedMiner
 	if _, err := SignTiePlan(testTieCoordinatorKey(), base); !errors.Is(err, ErrTiePlan) {
 		t.Fatalf("same miner roles error = %v, want ErrTiePlan", err)
+	}
+	base = unsignedTiePlan()
+	base.Slots[0].FirstRole = TieRoleUnspecified
+	if _, err := SignTiePlan(testTieCoordinatorKey(), base); !errors.Is(err, ErrTiePlan) {
+		t.Fatalf("missing first role error = %v, want ErrTiePlan", err)
 	}
 	base = unsignedTiePlan()
 	copy(base.ObserverPublicKey[:], testTieCoordinatorKey().Public().(ed25519.PublicKey))
@@ -126,15 +131,15 @@ func testTiePlan(t testing.TB) (TiePlan, TiePlanBinding) {
 func unsignedTiePlan() TiePlan {
 	observer := testTieObserverKey()
 	plan := TiePlan{
-		Version: TiePlanVersion0, NetworkID: 91,
+		Version: TiePlanVersion1, NetworkID: 91,
 		GenesisID: types.DomainHash("test/calibration/tie/genesis"), ActivationHeight: 25,
 		TestedMiner:             types.Address(types.DomainHash("test/calibration/tie/tested-miner")),
 		ControlMiner:            types.Address(types.DomainHash("test/calibration/tie/control-miner")),
 		MaximumPairDelaySeconds: 5,
 		Slots: []TiePlanSlot{
-			{StartedAt: testStartedAt, EndedAt: testStartedAt + 60},
-			{StartedAt: testStartedAt + 120, EndedAt: testStartedAt + 180},
-			{StartedAt: testStartedAt + 240, EndedAt: testStartedAt + 300},
+			{StartedAt: testStartedAt, EndedAt: testStartedAt + 60, FirstRole: TieRoleTested},
+			{StartedAt: testStartedAt + 120, EndedAt: testStartedAt + 180, FirstRole: TieRoleTested},
+			{StartedAt: testStartedAt + 240, EndedAt: testStartedAt + 300, FirstRole: TieRoleTested},
 		},
 	}
 	copy(plan.ObserverPublicKey[:], observer.Public().(ed25519.PublicKey))
