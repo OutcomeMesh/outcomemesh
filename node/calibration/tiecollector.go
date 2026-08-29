@@ -163,6 +163,9 @@ func (collector *TieCollector) Observe(admission TieAdmission) (bool, error) {
 	if admission.ObservedAt < slot.StartedAt {
 		return false, nil
 	}
+	if admission.ObservedAt >= slot.EndedAt {
+		return false, nil
+	}
 	var target *tieCandidate
 	var role TieTrialRole
 	switch admission.Miner {

@@ -193,8 +193,9 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
   anchor collector, canonical tie plans precommitting miner and first-delivery
   roles, one signed raw receipt per planned slot with conservative failure
   accounting, a fail-closed dual-manifest evidence bundle, a crash-safe post-
-  commit receipt writer, and a canonical digest. Two-miner harness automation
-  and multi-observer deployment remain Milestone 9 deliverables.
+  commit receipt writer, an isolated-pool two-miner producer core, and a
+  canonical digest. Scheduled CLI/process automation and multi-observer
+  deployment remain Milestone 9 deliverables.
 
 ### Exit gates
 

@@ -302,9 +302,10 @@ and its version-3 report digest is
 
 ## Remaining operational work
 
-- build the deterministic two-miner coordinator that delivers exactly one
-  tested/control sibling pair per slot. The observer writer is live, but trial
-  production is not yet automated or deployed;
+- expose and process-test the deterministic two-miner producer through the node
+  CLI. The producer core now mines two isolated-pool anchors from one frozen
+  payload and submits them only in the signed role order, but scheduled command
+  execution and deployment are not yet complete;
 - publish each plan ID before its first slot and publish the final receipt tail
   outside the manifest storage path;
 - deploy and publish the clustering policy and its digest before each real

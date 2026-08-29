@@ -204,6 +204,30 @@ func TestTieCollectorChargesWrongPrecommittedDeliveryOrderAsNoPair(t *testing.T)
 	}
 }
 
+func TestTieCollectorIgnoresPostSlotAdmissionDuringClosureGrace(t *testing.T) {
+	collector, config := testTieCollector(t, testStartedAt)
+	plan := config.Plan
+	late := liveTieAdmission(plan, 0, plan.TestedMiner, "post-slot", types.Hash{})
+	late.ObservedAt = plan.Slots[0].EndedAt
+	late.SelectedID = late.ID
+	added, err := collector.Observe(late)
+	if err != nil || added {
+		t.Fatalf("post-slot admission added=%t err=%v", added, err)
+	}
+	status, err := collector.Status()
+	if err != nil || status.ClosedSlots != 0 || status.InvalidCurrent {
+		t.Fatalf("post-slot grace status=%+v err=%v", status, err)
+	}
+	if err := collector.Advance(plan.Slots[0].EndedAt + TieReceiptClosureGraceSeconds); err != nil {
+		t.Fatal(err)
+	}
+	_, receipts, aggregate, err := LoadTieReceiptFile(config.ReceiptPath, plan.Binding())
+	if err != nil || len(receipts) != 1 || receipts[0].Status != TieTrialNoPair ||
+		aggregate.NoPairSlots != 1 {
+		t.Fatalf("post-slot receipts=%+v aggregate=%+v err=%v", receipts, aggregate, err)
+	}
+}
+
 func TestTiePendingCanonicalRoundTripAndBounds(t *testing.T) {
 	plan, _ := testTiePlan(t)
 	planID, _ := plan.ID()
