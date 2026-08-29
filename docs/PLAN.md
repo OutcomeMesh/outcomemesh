@@ -191,9 +191,9 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
   window gate, signed gapless hourly manifests, trusted deployment/policy
   bindings, published rollback checkpoints, a crash-safe first-admission hard-
   anchor collector, canonical precommitted tie plans, one signed raw receipt per
-  planned slot with conservative failure accounting, and a canonical digest.
-  Live tie-harness integration and multi-observer deployment remain Milestone 9
-  deliverables.
+  planned slot with conservative failure accounting, a fail-closed dual-manifest
+  evidence bundle, and a canonical digest. Live tie-harness integration and
+  multi-observer deployment remain Milestone 9 deliverables.
 
 ### Exit gates
 

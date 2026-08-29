@@ -265,7 +265,8 @@ func (plan TiePlan) validateShape() error {
 		return ErrTiePlan
 	}
 	if plan.ObserverPublicKey == [ed25519.PublicKeySize]byte{} ||
-		plan.CoordinatorPublicKey == [ed25519.PublicKeySize]byte{} {
+		plan.CoordinatorPublicKey == [ed25519.PublicKeySize]byte{} ||
+		plan.ObserverPublicKey == plan.CoordinatorPublicKey {
 		return ErrPublicKey
 	}
 	if len(plan.Slots) == 0 {
@@ -291,5 +292,6 @@ func (plan TiePlan) validateShape() error {
 func validTiePlanBinding(binding TiePlanBinding) bool {
 	return binding.NetworkID != 0 && !binding.GenesisID.IsZero() && binding.ActivationHeight != 0 &&
 		binding.ObserverPublicKey != [ed25519.PublicKeySize]byte{} &&
-		binding.CoordinatorPublicKey != [ed25519.PublicKeySize]byte{}
+		binding.CoordinatorPublicKey != [ed25519.PublicKeySize]byte{} &&
+		binding.ObserverPublicKey != binding.CoordinatorPublicKey
 }

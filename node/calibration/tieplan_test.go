@@ -63,6 +63,11 @@ func TestTiePlanRejectsMutationWrongBindingAndBadSchedule(t *testing.T) {
 	if _, err := SignTiePlan(testTieCoordinatorKey(), base); !errors.Is(err, ErrTiePlan) {
 		t.Fatalf("same miner roles error = %v, want ErrTiePlan", err)
 	}
+	base = unsignedTiePlan()
+	copy(base.ObserverPublicKey[:], testTieCoordinatorKey().Public().(ed25519.PublicKey))
+	if _, err := SignTiePlan(testTieCoordinatorKey(), base); !errors.Is(err, ErrPublicKey) {
+		t.Fatalf("same coordinator and observer error = %v, want ErrPublicKey", err)
+	}
 }
 
 func TestTiePlanFileAndDecoderBounds(t *testing.T) {

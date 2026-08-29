@@ -149,35 +149,48 @@ It produces a tie-adoption upper bound of 215,175 ppm and a family-corrected
 concentration upper bound of 229,362 ppm, while `EvidencePass` and the overall
 `Pass` remain false.
 
-The version-2 evidence path accepts a canonical manifest only with explicit
-trusted network, genesis, activation, clustering-policy, observer-key, and
-published-tail bindings:
+The version-3 evidence path accepts the hourly and raw controlled-tie manifests
+only with explicit trusted network, genesis, activation, clustering-policy,
+observer-key, coordinator-key, and three externally published checkpoint
+bindings:
 
 ```sh
 .tools/go/bin/go run ./cmd/omcalibrate \
   --manifest telemetry.omtm \
+  --tie-manifest tie-receipts.omtr \
   --network-id 20260826 \
   --genesis-id <64-lowercase-hex> \
   --activation-height <height> \
   --cluster-policy-id <64-lowercase-hex> \
   --coordinated-clusters 64 \
   --observer-public-key <64-lowercase-hex> \
-  --evidence-tail-id <64-lowercase-hex>
+  --coordinator-public-key <64-lowercase-hex> \
+  --evidence-tail-id <64-lowercase-hex> \
+  --tie-plan-id <64-lowercase-hex> \
+  --tie-tail-id <64-lowercase-hex>
 ```
 
-Each signed record covers at most one hour; sequences, previous-record IDs, and
-interval boundaries must be gapless. The generated 720-record/30-day golden
-chain has tail
-`c539440ac6d71c9178b2ab3d7815ed40c9ba502da5b00f33e2282dba7c7113ed`
-and version-2 report digest
-`a31031b36ad9d570cdd0882d419badd8893f091e668192831721e96ac21176a4`.
-Reducing the window by one second, providing fewer than 720 records, omitting
-manifest verification, or raising either bound above 250,000 ppm fails the
-conjunctive result. The full format is specified in `TESTNET_TELEMETRY.md`.
+Each signed hourly record covers at most one hour; sequences, previous-record
+IDs, and interval boundaries must be gapless. Manual tie counters in those
+records invalidate evidence mode. The second file must close every precommitted
+slot with a signed completed or `NoPair` receipt; `NoPair` is charged as an
+adoption. The generated 720-record/10,000-receipt/30-day golden bundle has
+hourly tail
+`8498100edacc5868a99f555f523280e4039aa8bf2be9f1c972e6bf7f687b616c`,
+plan ID
+`11e7ebfa5abad07ded642273af2cc19eb9571049a31a2b0b5eea12a1e9014eb7`,
+receipt tail
+`6b3eb05e94add29cf870abeea5464ae28c5c20c206392cc7fae99103aea4044a`,
+and version-3 report digest
+`0c74b8a0b46cf4d1f49bfa18e2f57f0cd43a48d7ff08b7c1aae0bd14a7441d80`.
+Reducing the window by one second, providing fewer than 720 records, omitting a
+raw receipt or any checkpoint, or raising either bound above 250,000 ppm fails
+the conjunctive result. The full format is specified in
+`TESTNET_TELEMETRY.md`.
 
-The manifest proves which observer signed the gapless claimed history and makes
-past mutation detectable; publication of its tail makes valid-prefix rollback
-detectable. It does not prove observer honesty, statistical independence, or
+The manifests prove which coordinator committed the schedule and which observer
+signed the gapless claimed histories. Published tails make valid-prefix rollback
+detectable. They do not prove observer honesty, statistical independence, or
 that Sybil identities were grouped into the right coordination clusters.
 Independent review must challenge those assumptions before ER-5 can pass.
 
@@ -186,8 +199,8 @@ successful admission of each version-1 hard anchor, persists unique event IDs
 in a crash-safe current-hour journal, emits signed empty hours, and stops the
 observer service on telemetry failure. The clustering policy and expected ID
 are mandatory startup inputs; unknown miners enter one conservative catch-all.
-Controlled tie experiments and multiple independent observer deployments are
-still required before the 30-day clock can start.
+A live two-miner receipt writer and multiple independent observer deployments
+are still required before the 30-day clock can start.
 
 ## Reviewer scope
 

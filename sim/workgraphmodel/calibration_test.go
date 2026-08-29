@@ -69,12 +69,17 @@ func TestPublicTestnetCalibrationGateAndDigest(t *testing.T) {
 		ObservationWindowSeconds: PublicTestnetMinimumWindowSeconds,
 		ControlledTieAdoptions:   2_000,
 		ControlledTieTrials:      10_000,
+		TieCompletedTrials:       10_000,
 		LargestCoordinatedWork:   11_000,
 		ObservedWork:             50_000,
 		CoordinatedClusters:      64,
 		EvidenceRecords:          720,
-		EvidenceTailID:           "c539440ac6d71c9178b2ab3d7815ed40c9ba502da5b00f33e2282dba7c7113ed",
+		EvidenceTailID:           "8498100edacc5868a99f555f523280e4039aa8bf2be9f1c972e6bf7f687b616c",
 		EvidenceVerified:         true,
+		TiePlanID:                "11e7ebfa5abad07ded642273af2cc19eb9571049a31a2b0b5eea12a1e9014eb7",
+		TieEvidenceReceipts:      10_000,
+		TieEvidenceTailID:        "6b3eb05e94add29cf870abeea5464ae28c5c20c206392cc7fae99103aea4044a",
+		TieEvidenceVerified:      true,
 		MaximumUpperPPM:          PublicTestnetMaximumUpperPPM,
 	}
 	document, err := EvaluatePublicTestnetCalibration(config)
@@ -89,7 +94,7 @@ func TestPublicTestnetCalibrationGateAndDigest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const wantDigest = "a31031b36ad9d570cdd0882d419badd8893f091e668192831721e96ac21176a4"
+	const wantDigest = "0c74b8a0b46cf4d1f49bfa18e2f57f0cd43a48d7ff08b7c1aae0bd14a7441d80"
 	if got := hex.EncodeToString(digest[:]); got != wantDigest {
 		t.Fatalf("calibration digest = %s, want %s; result=%+v", got, wantDigest, document.Result)
 	}
@@ -131,6 +136,44 @@ func TestPublicTestnetCalibrationGateAndDigest(t *testing.T) {
 	}
 	if unverifiedDocument.Result.Pass || unverifiedDocument.Result.EvidencePass {
 		t.Fatalf("unverified evidence passed: %+v", unverifiedDocument.Result)
+	}
+	unverifiedTie := config
+	unverifiedTie.TieEvidenceVerified = false
+	unverifiedTieDocument, err := EvaluatePublicTestnetCalibration(unverifiedTie)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unverifiedTieDocument.Result.Pass || unverifiedTieDocument.Result.EvidencePass {
+		t.Fatalf("unverified tie evidence passed: %+v", unverifiedTieDocument.Result)
+	}
+	missingReceipt := config
+	missingReceipt.TieEvidenceReceipts--
+	missingReceiptDocument, err := EvaluatePublicTestnetCalibration(missingReceipt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if missingReceiptDocument.Result.Pass || missingReceiptDocument.Result.EvidencePass {
+		t.Fatalf("missing tie receipt passed: %+v", missingReceiptDocument.Result)
+	}
+	missingPlan := config
+	missingPlan.TiePlanID = ""
+	missingPlanDocument, err := EvaluatePublicTestnetCalibration(missingPlan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if missingPlanDocument.Result.Pass || missingPlanDocument.Result.EvidencePass {
+		t.Fatalf("missing tie plan checkpoint passed: %+v", missingPlanDocument.Result)
+	}
+	selectiveFailure := config
+	selectiveFailure.TieCompletedTrials--
+	selectiveFailure.TieNoPairSlots++
+	selectiveFailure.ControlledTieAdoptions = 0
+	selectiveFailureDocument, err := EvaluatePublicTestnetCalibration(selectiveFailure)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selectiveFailureDocument.Result.EvidencePass {
+		t.Fatalf("unaccounted no-pair penalty passed: %+v", selectiveFailureDocument.Result)
 	}
 	shortEvidence := config
 	shortEvidence.EvidenceRecords--

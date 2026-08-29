@@ -11,7 +11,7 @@ import (
 const (
 	// PublicTestnetCalibrationSchema versions the evidence snapshot separately
 	// from the deterministic economic review corpus.
-	PublicTestnetCalibrationSchema = "outcomemesh/public-testnet-calibration/v2"
+	PublicTestnetCalibrationSchema = "outcomemesh/public-testnet-calibration/v3"
 	PublicTestnetCalibrationMethod = "hoeffding-bonferroni-one-sided-99%-integer-ppm/v1"
 
 	PublicTestnetMinimumWindowSeconds uint64 = 30 * 24 * 60 * 60
@@ -39,20 +39,26 @@ type OneSidedUpperBound struct {
 }
 
 // PublicTestnetCalibrationConfig contains the aggregate counters required by
-// ER-5. ControlledTieAdoptions counts honest miners selecting the tested branch
-// in independent controlled equal-height races. LargestCoordinatedWork counts
-// work attributed to one coordination cluster whose definition was frozen
-// before the observation window.
+// ER-5. In verified mode ControlledTieAdoptions is the raw tested-branch
+// selections plus every NoPair slot, while ControlledTieTrials is the full
+// precommitted slot count. LargestCoordinatedWork counts work attributed to one
+// coordination cluster whose definition was frozen before the window.
 type PublicTestnetCalibrationConfig struct {
 	ObservationWindowSeconds uint64
 	ControlledTieAdoptions   uint64
 	ControlledTieTrials      uint64
+	TieCompletedTrials       uint64
+	TieNoPairSlots           uint64
 	LargestCoordinatedWork   uint64
 	ObservedWork             uint64
 	CoordinatedClusters      uint64
 	EvidenceRecords          uint64
 	EvidenceTailID           string
 	EvidenceVerified         bool
+	TiePlanID                string
+	TieEvidenceReceipts      uint64
+	TieEvidenceTailID        string
+	TieEvidenceVerified      bool
 	MaximumUpperPPM          uint32
 }
 
@@ -137,18 +143,30 @@ func EvaluatePublicTestnetCalibration(config PublicTestnetCalibrationConfig) (Pu
 }
 
 func validEvidence(config PublicTestnetCalibrationConfig) bool {
-	if !config.EvidenceVerified {
+	if !config.EvidenceVerified || !config.TieEvidenceVerified {
 		return false
 	}
-	decoded, err := hex.DecodeString(config.EvidenceTailID)
-	if err != nil || len(decoded) != sha256.Size || hex.EncodeToString(decoded) != config.EvidenceTailID {
+	if !validCanonicalHash(config.EvidenceTailID) || !validCanonicalHash(config.TiePlanID) ||
+		!validCanonicalHash(config.TieEvidenceTailID) {
 		return false
 	}
 	if config.ObservationWindowSeconds == 0 {
 		return false
 	}
 	minimumRecords := uint64(1) + (config.ObservationWindowSeconds-1)/PublicTestnetMaximumRecordSeconds
-	return config.EvidenceRecords >= minimumRecords
+	if config.EvidenceRecords < minimumRecords || config.TieEvidenceReceipts != config.ControlledTieTrials ||
+		config.TieNoPairSlots > config.ControlledTieTrials ||
+		config.TieCompletedTrials != config.ControlledTieTrials-config.TieNoPairSlots ||
+		config.ControlledTieAdoptions < config.TieNoPairSlots ||
+		config.ControlledTieAdoptions-config.TieNoPairSlots > config.TieCompletedTrials {
+		return false
+	}
+	return true
+}
+
+func validCanonicalHash(input string) bool {
+	decoded, err := hex.DecodeString(input)
+	return err == nil && len(decoded) == sha256.Size && hex.EncodeToString(decoded) == input
 }
 
 func (document PublicTestnetCalibrationDocument) CanonicalJSON() ([]byte, error) {

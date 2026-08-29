@@ -2,6 +2,7 @@ package calibration
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"errors"
 	"testing"
 
@@ -99,8 +100,11 @@ func FuzzDecodeTieTrialReceiptNeverPanics(f *testing.F) {
 }
 
 func testTieReceipts(t testing.TB, plan TiePlan) []TieTrialReceipt {
+	return testTieReceiptsWithKey(t, plan, testTieObserverKey())
+}
+
+func testTieReceiptsWithKey(t testing.TB, plan TiePlan, observer ed25519.PrivateKey) []TieTrialReceipt {
 	t.Helper()
-	observer := testTieObserverKey()
 	first, err := SignTieTrialReceipt(observer, unsignedCompletedTieReceipt(1, types.Hash{}), plan)
 	if err != nil {
 		t.Fatal(err)

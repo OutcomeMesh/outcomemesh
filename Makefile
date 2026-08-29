@@ -69,6 +69,7 @@ economic-review:
 	@$(GO) run ./cmd/omreview
 
 test-calibration:
+	$(GO) test ./cmd/omcalibrate -count=1 -v
 	$(GO) test ./node/calibration -count=1 -v
 	$(GO) test ./sim/workgraphmodel -run '^(TestHoeffding.*Upper99PPM|TestPublicTestnetCalibration)' -count=1 -v
 

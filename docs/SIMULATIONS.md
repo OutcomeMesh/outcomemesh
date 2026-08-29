@@ -163,11 +163,12 @@ preclassified coordination clusters before selecting the largest observation.
 Golden vectors cover pass/fail boundaries, invalid evidence, the 30-day window,
 selection correction, and a canonical evidence digest. This calculator is not
 a substitute for an honest observer or a reviewed identity-clustering policy.
-The version-2 path now consumes a bounded canonical manifest whose Ed25519
-records cover at most one hour and bind their network, genesis, activation,
-cluster policy, comparison budget, exact interval, counters, and previous
-record ID. A 720-record integration vector feeds the verified aggregate into
-the same calculator; raw counters cannot set `EvidencePass`.
+The version-3 path consumes both a bounded hourly manifest and a complete raw
+controlled-tie receipt manifest. It requires independently supplied hourly-tail,
+precommitted-plan, and receipt-tail IDs, rejects manual tie counters in hourly
+records, and charges failed planned pairs conservatively. A 720-record plus
+10,000-receipt integration vector feeds the verified aggregate into the same
+calculator; raw command-line counters cannot set `EvidencePass`.
 
 WorkGraph therefore does not eliminate the classic selfish-mining threshold;
 the result is a measured protocol limit, not a failed invariant. The sweep also

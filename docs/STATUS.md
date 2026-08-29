@@ -440,7 +440,7 @@ Implemented in an isolated, not-yet-activated consensus package:
   enforces the full 30-day window, conservative one-sided 99% Hoeffding bounds
   for controlled tie adoption and mining concentration, and a Bonferroni
   selection correction across preclassified coordination clusters. Its
-  version-2 evidence path verifies a bounded Ed25519-signed chain of gapless
+  version-3 evidence path verifies a bounded Ed25519-signed chain of gapless
   hourly records, exact per-cluster work conservation, trusted network/genesis/
   activation/policy bindings, and a published tail ID before `EvidencePass`.
   A generated 720-record chain freezes the end-to-end digest. Live collection
@@ -452,7 +452,10 @@ Implemented in an isolated, not-yet-activated consensus package:
   signed receipt chain that explicitly closes every slot as completed or
   `NoPair`. Only a complete chain yields ER-5 inputs, and every `NoPair` is
   conservatively charged as an adoption so selective completion cannot improve
-  the result. Live harness/collector binding, independent observer deployment,
+  the result. The final bundle requires externally published hourly-tail,
+  plan-ID, and receipt-tail checkpoints, rejects any legacy/manual tie counters
+  in hourly records, and binds all raw evidence into the report digest. Live
+  harness/receipt-writer integration, independent observer deployment,
   observer honesty, and Sybil-cluster provenance remain open testnet work.
 - the PoW research harness now also has an integer-only, fixed-seed geometric
   solve process for active v0 and lagged v1. Golden observation digests cover

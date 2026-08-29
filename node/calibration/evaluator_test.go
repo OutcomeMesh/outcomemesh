@@ -1,6 +1,8 @@
 package calibration
 
 import (
+	"crypto/ed25519"
+	"encoding/binary"
 	"encoding/hex"
 	"slices"
 	"testing"
@@ -11,20 +13,43 @@ import (
 
 func TestThirtyDayManifestFeedsPublicTestnetGate(t *testing.T) {
 	records, binding := testThirtyDayChain(t)
-	aggregate, err := ValidateManifest(records, binding)
+	plan, receipts := testThirtyDayTieEvidence(t, binding)
+	telemetryTail, err := records[len(records)-1].ID()
 	if err != nil {
 		t.Fatal(err)
 	}
+	planID, err := plan.ID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	receiptTail, err := receipts[len(receipts)-1].ID(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidence, err := ValidateEvidenceBundle(records, plan, receipts, EvidenceBinding{
+		Telemetry: binding, TiePlan: plan.Binding(), TelemetryTailID: telemetryTail,
+		PublishedTiePlanID: planID, PublishedTieReceiptID: receiptTail,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	aggregate := evidence.Telemetry
 	config := workgraphmodel.PublicTestnetCalibrationConfig{
 		ObservationWindowSeconds: aggregate.EndedAt - aggregate.StartedAt,
-		ControlledTieAdoptions:   aggregate.ControlledTieAdoptions,
-		ControlledTieTrials:      aggregate.ControlledTieTrials,
+		ControlledTieAdoptions:   evidence.ControlledTieAdoptions,
+		ControlledTieTrials:      evidence.ControlledTieTrials,
+		TieCompletedTrials:       evidence.Tie.CompletedTrials,
+		TieNoPairSlots:           evidence.Tie.NoPairSlots,
 		LargestCoordinatedWork:   aggregate.LargestCoordinatedWork,
 		ObservedWork:             aggregate.ObservedWork,
 		CoordinatedClusters:      uint64(aggregate.Binding.ClusterComparisonBudget),
 		EvidenceRecords:          aggregate.RecordCount,
 		EvidenceTailID:           aggregate.LastRecordID.String(),
 		EvidenceVerified:         true,
+		TiePlanID:                evidence.Tie.PlanID.String(),
+		TieEvidenceReceipts:      evidence.Tie.ReceiptCount,
+		TieEvidenceTailID:        evidence.Tie.LastReceiptID.String(),
+		TieEvidenceVerified:      true,
 		MaximumUpperPPM:          workgraphmodel.PublicTestnetMaximumUpperPPM,
 	}
 	document, err := workgraphmodel.EvaluatePublicTestnetCalibration(config)
@@ -38,10 +63,14 @@ func TestThirtyDayManifestFeedsPublicTestnetGate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const wantTail = "c539440ac6d71c9178b2ab3d7815ed40c9ba502da5b00f33e2282dba7c7113ed"
-	const wantDigest = "a31031b36ad9d570cdd0882d419badd8893f091e668192831721e96ac21176a4"
-	if aggregate.LastRecordID.String() != wantTail || hex.EncodeToString(digest[:]) != wantDigest {
-		t.Fatalf("tail=%s digest=%s", aggregate.LastRecordID, hex.EncodeToString(digest[:]))
+	const wantTelemetryTail = "8498100edacc5868a99f555f523280e4039aa8bf2be9f1c972e6bf7f687b616c"
+	const wantTiePlan = "11e7ebfa5abad07ded642273af2cc19eb9571049a31a2b0b5eea12a1e9014eb7"
+	const wantTieTail = "6b3eb05e94add29cf870abeea5464ae28c5c20c206392cc7fae99103aea4044a"
+	const wantDigest = "0c74b8a0b46cf4d1f49bfa18e2f57f0cd43a48d7ff08b7c1aae0bd14a7441d80"
+	if aggregate.LastRecordID.String() != wantTelemetryTail || planID.String() != wantTiePlan ||
+		receiptTail.String() != wantTieTail || hex.EncodeToString(digest[:]) != wantDigest {
+		t.Fatalf("telemetry=%s plan=%s tie=%s digest=%s", aggregate.LastRecordID, planID,
+			receiptTail, hex.EncodeToString(digest[:]))
 	}
 }
 
@@ -76,14 +105,6 @@ func testThirtyDayChain(t testing.TB) ([]Record, Binding) {
 			ClusterComparisonBudget: binding.ClusterComparisonBudget,
 			Sequence:                uint64(index + 1), StartedAt: testStartedAt + uint64(index)*MaximumIntervalSeconds,
 			EndedAt: testStartedAt + uint64(index+1)*MaximumIntervalSeconds, PreviousID: previous,
-		}
-		record.ControlledTieTrials = 13
-		if index < 640 {
-			record.ControlledTieTrials++
-		}
-		record.ControlledTieAdoptions = 2
-		if index < 560 {
-			record.ControlledTieAdoptions++
 		}
 		record.ObservedWork = 69
 		if index < 320 {
@@ -122,4 +143,58 @@ func testThirtyDayChain(t testing.TB) ([]Record, Binding) {
 		}
 	}
 	return records, binding
+}
+
+func testThirtyDayTieEvidence(t testing.TB, binding Binding) (TiePlan, []TieTrialReceipt) {
+	t.Helper()
+	observer := testKey()
+	unsigned := TiePlan{
+		Version: TiePlanVersion0, NetworkID: binding.NetworkID, GenesisID: binding.GenesisID,
+		ActivationHeight:        binding.ActivationHeight,
+		TestedMiner:             types.Address(types.DomainHash("test/calibration/thirty-day-tested-miner")),
+		ControlMiner:            types.Address(types.DomainHash("test/calibration/thirty-day-control-miner")),
+		MaximumPairDelaySeconds: 1,
+		Slots:                   make([]TiePlanSlot, 10_000),
+	}
+	copy(unsigned.ObserverPublicKey[:], observer.Public().(ed25519.PublicKey))
+	for index := range unsigned.Slots {
+		startedAt := testStartedAt + uint64(index)*259
+		unsigned.Slots[index] = TiePlanSlot{StartedAt: startedAt, EndedAt: startedAt + 2}
+	}
+	plan, err := SignTiePlan(testTieCoordinatorKey(), unsigned)
+	if err != nil {
+		t.Fatal(err)
+	}
+	planID, err := plan.ID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipts := make([]TieTrialReceipt, len(plan.Slots))
+	var previousID types.Hash
+	for index, slot := range plan.Slots {
+		var sequence [8]byte
+		binary.BigEndian.PutUint64(sequence[:], uint64(index)+1)
+		tested := types.DomainHash("test/calibration/thirty-day-tested-anchor", sequence[:])
+		control := types.DomainHash("test/calibration/thirty-day-control-anchor", sequence[:])
+		selected := control
+		if index < 2_000 {
+			selected = tested
+		}
+		receipt := TieTrialReceipt{
+			Version: TieReceiptVersion0, PlanID: planID, Sequence: uint64(index) + 1,
+			Status: TieTrialCompleted, PreviousID: previousID,
+			ParentID: types.DomainHash("test/calibration/thirty-day-parent", sequence[:]),
+			Height:   binding.ActivationHeight + uint64(index), TestedAnchorID: tested,
+			ControlAnchorID: control, TestedObservedAt: slot.StartedAt,
+			ControlObservedAt: slot.StartedAt, SelectedAnchorID: selected,
+		}
+		copy(receipt.ObserverPublicKey[:], observer.Public().(ed25519.PublicKey))
+		if err := receipt.validateShape(plan, planID); err != nil {
+			t.Fatal(err)
+		}
+		copy(receipt.Signature[:], ed25519.Sign(observer, receipt.signatureMessage()))
+		receipts[index] = receipt
+		previousID = types.DomainHash(tieReceiptIDDomain, receipt.CanonicalBytes())
+	}
+	return plan, receipts
 }

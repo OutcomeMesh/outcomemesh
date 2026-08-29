@@ -171,6 +171,9 @@ func (collector *Collector) ObserveWork(now uint64, eventID, clusterID types.Has
 	return true, nil
 }
 
+// ObserveTie is retained for version-0 journal compatibility and arithmetic
+// exploration. ValidateEvidenceBundle rejects every hourly chain containing
+// these manually classified counters; ER-5 accepts only complete raw receipts.
 func (collector *Collector) ObserveTie(now uint64, eventID types.Hash, adopted bool) (bool, error) {
 	if collector == nil || eventID.IsZero() {
 		return false, ErrObservation

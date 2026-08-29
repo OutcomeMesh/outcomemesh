@@ -130,7 +130,7 @@ and duplicate submissions emit nothing. The callback runs after the router lock
 is released and cannot change admission or fork choice.
 
 The current interval is a separate mode-0600 journal containing sorted unique
-hard-anchor IDs and controlled-tie experiment IDs rather than mutable totals.
+hard-anchor IDs and legacy controlled-tie experiment IDs rather than mutable totals.
 This makes repeated delivery idempotent and makes a conflicting classification
 for the same event detectable. Each successful observation atomically replaces
 and fsyncs this journal before returning. At an hour boundary the collector:
@@ -201,26 +201,37 @@ pending boundary, and tail ID.
 
 ## ER-5 handoff
 
-`omcalibrate --manifest` derives all observation counters from the verified
-aggregate; command-line counter flags cannot override it. The report binds the
-tail ID and record count. `EvidencePass` additionally requires at least one
-record per hour of the claimed window, so a 30-day pass needs at least 720
-records. Raw counter mode is retained for exploring statistical thresholds but
-always leaves `EvidencePass=false`.
+`omcalibrate --manifest --tie-manifest` verifies both evidence chains as one
+bundle. The two bindings must name the same network, genesis, activation, and
+observer. Every tie-plan slot must lie inside the hourly telemetry window. The
+hourly chain must contain zero legacy/manual tie counters; tie statistics come
+only from the complete raw receipt chain. Command-line counter flags cannot
+override either verified aggregate.
 
-The generated end-to-end vector uses 720 signed hourly records, 10,000
-controlled ties with 2,000 tested-branch adoptions, and 50,000 work observations
-whose largest cluster has 11,000. Across a 64-cluster comparison budget its
-tail is
-`c539440ac6d71c9178b2ab3d7815ed40c9ba502da5b00f33e2282dba7c7113ed`
-and its version-2 report digest is
-`a31031b36ad9d570cdd0882d419badd8893f091e668192831721e96ac21176a4`.
+The version-3 report binds the hourly tail and record count, precommitted tie
+plan ID, raw receipt tail and count, completed/no-pair split, and conservative
+adoption count. `EvidencePass` additionally requires at least one signed record
+per claimed hour, so a 30-day pass needs at least 720 records, and exactly one
+receipt per planned tie slot. Raw counter mode remains useful for previewing
+statistical thresholds but always leaves `EvidencePass=false`.
+
+The generated end-to-end vector uses 720 signed hourly records, a complete
+10,000-receipt controlled-tie chain with 2,000 tested-branch adoptions, and
+50,000 work observations whose largest cluster has 11,000. Across a 64-cluster
+comparison budget its hourly tail is
+`8498100edacc5868a99f555f523280e4039aa8bf2be9f1c972e6bf7f687b616c`,
+tie plan ID is
+`11e7ebfa5abad07ded642273af2cc19eb9571049a31a2b0b5eea12a1e9014eb7`,
+receipt tail is
+`6b3eb05e94add29cf870abeea5464ae28c5c20c206392cc7fae99103aea4044a`,
+and its version-3 report digest is
+`0c74b8a0b46cf4d1f49bfa18e2f57f0cd43a48d7ff08b7c1aae0bd14a7441d80`.
 
 ## Remaining operational work
 
 - connect the signed tie plan and receipt chain to a live two-miner harness and
-  the hourly ER-5 collector. The existing record-v0 counters are not yet derived
-  from raw receipts, so this document does not claim a deployable tie result;
+  its crash-safe writer. The evidence bundle now rejects record-v0 manual tie
+  counters, but the running observer does not yet create raw receipts;
 - publish each plan ID before its first slot and publish the final receipt tail
   outside the manifest storage path;
 - deploy and publish the clustering policy and its digest before each real
