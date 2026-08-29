@@ -104,6 +104,17 @@ func EncodeTieReceiptManifest(plan TiePlan, receipts []TieTrialReceipt, expected
 	if err != nil {
 		return nil, TieReceiptAggregate{}, err
 	}
+	encoded, err := encodeTieReceiptManifest(plan, receipts)
+	if err != nil {
+		return nil, TieReceiptAggregate{}, err
+	}
+	return encoded, aggregate, nil
+}
+
+// encodeTieReceiptManifest is used by the live collector only after the plan,
+// existing prefix, and newly signed receipt have already been verified. This
+// avoids rechecking every historical Ed25519 signature on each atomic rewrite.
+func encodeTieReceiptManifest(plan TiePlan, receipts []TieTrialReceipt) ([]byte, error) {
 	encoder := codec.NewEncoder(512 + len(receipts)*352)
 	encoder.Fixed(tieManifestMagic[:])
 	encoder.U16(tieManifestVersion)
@@ -114,9 +125,9 @@ func EncodeTieReceiptManifest(plan TiePlan, receipts []TieTrialReceipt, expected
 	}
 	encoded := encoder.Bytes()
 	if len(encoded) > MaximumTieManifestBytes {
-		return nil, TieReceiptAggregate{}, ErrManifestLimit
+		return nil, ErrManifestLimit
 	}
-	return encoded, aggregate, nil
+	return encoded, nil
 }
 
 func DecodeTieReceiptManifest(input []byte, expected TiePlanBinding) (TiePlan, []TieTrialReceipt, TieReceiptAggregate, error) {

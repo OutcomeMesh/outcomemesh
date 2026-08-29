@@ -454,8 +454,11 @@ Implemented in an isolated, not-yet-activated consensus package:
   conservatively charged as an adoption so selective completion cannot improve
   the result. The final bundle requires externally published hourly-tail,
   plan-ID, and receipt-tail checkpoints, rejects any legacy/manual tie counters
-  in hourly records, and binds all raw evidence into the report digest. Live
-  harness/receipt-writer integration, independent observer deployment,
+  in hourly records, and binds all raw evidence into the report digest. The
+  activation router now publishes selected IDs through commit-ordered callbacks;
+  a crash-safe live writer records partial role-labelled pairs, closes every
+  expired/ambiguous slot as `NoPair`, and reconciles receipt-versus-pending
+  crashes. Two-miner harness automation, independent observer deployment,
   observer honesty, and Sybil-cluster provenance remain open testnet work.
 - the PoW research harness now also has an integer-only, fixed-seed geometric
   solve process for active v0 and lagged v1. Golden observation digests cover

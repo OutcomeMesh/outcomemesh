@@ -199,8 +199,9 @@ successful admission of each version-1 hard anchor, persists unique event IDs
 in a crash-safe current-hour journal, emits signed empty hours, and stops the
 observer service on telemetry failure. The clustering policy and expected ID
 are mandatory startup inputs; unknown miners enter one conservative catch-all.
-A live two-miner receipt writer and multiple independent observer deployments
-are still required before the 30-day clock can start.
+The live receipt writer is connected to commit-ordered router admissions. A
+deterministic two-miner trial coordinator and multiple independent observer
+deployments are still required before the 30-day clock can start.
 
 ## Reviewer scope
 

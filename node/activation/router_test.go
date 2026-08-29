@@ -125,7 +125,8 @@ func TestWorkAdmissionObserverRunsOnceOutsideRouterLock(t *testing.T) {
 	event := observed[0]
 	if event.ID != id || event.ParentID != baseID || event.Height != work.Header.Seal.Height ||
 		event.BlockTimestamp != work.Header.Seal.Timestamp || event.ObservedAt != document.Timestamp+10_000 ||
-		event.Miner != work.Header.Seal.Miner || event.Selected != (selected.ID == id) {
+		event.Miner != work.Header.Seal.Miner || event.Sequence != 1 || event.SelectedID != selected.ID ||
+		event.Selected != (selected.ID == id) {
 		t.Fatalf("admission = %+v", event)
 	}
 	if _, err := router.Submit(routedWork); !errors.Is(err, storage.ErrBlockExists) {
@@ -173,6 +174,63 @@ func TestRouterCloseWaitsForCommittedAdmissionObserver(t *testing.T) {
 	}
 	if err := <-closed; err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestWorkAdmissionCallbacksPreserveCommitOrderAcrossConcurrentSubmits(t *testing.T) {
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	events := make(chan WorkAdmission, 2)
+	observer := func(event WorkAdmission) {
+		if event.Sequence == 1 {
+			close(entered)
+			<-release
+		}
+		events <- event
+	}
+	router, ledger, document, config := activationFixtureWithObserver(t, observer)
+	defer ledger.Close()
+	genesisTip, _ := storage.GenesisTip(document)
+	base := mineLegacyOn(t, ledger, config.Legacy, genesisTip, activationAddress("ordered-observer-base"))
+	routedBase, _ := Legacy(base, config.Work.ActivationHeight)
+	if _, err := router.Submit(routedBase); err != nil {
+		t.Fatal(err)
+	}
+	baseID, _ := base.Header.ID()
+	first := mineWorkOn(t, router, baseID, base.Header.Timestamp+60, "ordered-observer-first")
+	second := mineWorkOn(t, router, baseID, base.Header.Timestamp+60, "ordered-observer-second")
+	routedFirst, _ := Work(first, config.Work.ActivationHeight)
+	routedSecond, _ := Work(second, config.Work.ActivationHeight)
+	firstDone := make(chan error, 1)
+	go func() {
+		_, err := router.Submit(routedFirst)
+		firstDone <- err
+	}()
+	<-entered
+	secondDone := make(chan error, 1)
+	go func() {
+		_, err := router.Submit(routedSecond)
+		secondDone <- err
+	}()
+	select {
+	case err := <-secondDone:
+		t.Fatalf("second callback bypassed blocked first callback: %v", err)
+	case <-time.After(25 * time.Millisecond):
+	}
+	close(release)
+	if err := <-firstDone; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-secondDone; err != nil {
+		t.Fatal(err)
+	}
+	firstEvent := <-events
+	secondEvent := <-events
+	firstID, _ := first.Header.ID()
+	secondID, _ := second.Header.ID()
+	if firstEvent.Sequence != 1 || firstEvent.ID != firstID || firstEvent.SelectedID != firstID ||
+		secondEvent.Sequence != 2 || secondEvent.ID != secondID || secondEvent.SelectedID != firstID {
+		t.Fatalf("ordered events first=%+v second=%+v", firstEvent, secondEvent)
 	}
 }
 

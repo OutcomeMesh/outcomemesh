@@ -1,7 +1,8 @@
 # Public-testnet calibration telemetry
 
-Status: opt-in hard-anchor collector and canonical controlled-tie evidence
-formats implemented; live tie harness and independent observers not yet deployed
+Status: opt-in hard-anchor collector, live controlled-tie receipt writer, and
+canonical evidence bundle implemented; miner harness and independent observers
+not yet deployed
 
 This format supplies reproducible inputs to ER-5 without making telemetry part
 of consensus. A valid manifest proves that one expected Ed25519 observer signed
@@ -130,10 +131,11 @@ and duplicate submissions emit nothing. The callback runs after the router lock
 is released and cannot change admission or fork choice.
 
 The current interval is a separate mode-0600 journal containing sorted unique
-hard-anchor IDs and legacy controlled-tie experiment IDs rather than mutable totals.
-This makes repeated delivery idempotent and makes a conflicting classification
-for the same event detectable. Each successful observation atomically replaces
-and fsyncs this journal before returning. At an hour boundary the collector:
+hard-anchor IDs and legacy controlled-tie experiment IDs rather than mutable
+totals. This makes repeated delivery idempotent and makes a conflicting
+classification for the same event detectable. Each successful observation
+atomically replaces and fsyncs this journal before returning. At an hour
+boundary the collector:
 
 1. derives counters and sorted cluster totals from the journal;
 2. signs the next record and atomically commits the extended manifest;
@@ -154,6 +156,69 @@ The collector currently counts first-admitted hard anchors as equal-difficulty
 work observations. It does not mix weak shares into that denominator. This
 keeps duplicate and difficulty semantics explicit, at the cost of a smaller
 sample.
+
+## Live controlled-tie writer
+
+The same post-commit admission stream can optionally feed a `TieCollector`.
+Router callbacks carry the actual selected anchor ID and are delivered in
+durable commit order even when concurrent `Submit` calls finish their network
+work in another goroutine order. Callbacks still run outside the router lock and
+cannot influence fork choice.
+
+For the active precommitted slot the writer accepts at most one anchor from each
+fixed miner payout address. It fsyncs a partial candidate journal before
+creating a completed receipt. The two anchors must be distinct siblings at the
+same height, arrive inside the slot and within its delay bound, and the selected
+ID after the second ordered admission must name one of them. A second distinct
+anchor for either role, mismatched parent/height, or unrelated selection marks
+the slot invalid; the writer never chooses one candidate after inspecting IDs.
+
+At the slot boundary the writer waits a fixed 60-second callback grace, then
+signs `NoPair` for every uncompleted or invalid slot. This avoids racing a block
+observed just before the boundary against the timer. Partial state, every
+receipt-manifest replacement, and the next empty state use mode 0600, file
+fsync, atomic rename, and directory fsync. On restart, a receipt committed just
+before a crash is authoritative and a stale partial journal is advanced from
+its signed tail. Historical signatures are verified once on open; each live
+append validates and signs only the new receipt before the atomic rewrite,
+keeping signature work linear rather than repeatedly rechecking the full
+prefix.
+
+Create and externally publish a uniformly scheduled signed plan before its
+first slot:
+
+```sh
+.tools/go/bin/go run ./cmd/omd work-telemetry-tie-plan \
+  --data observer-data \
+  --coordinator-key coordinator.key \
+  --observer-public-key <64-lowercase-hex> \
+  --tested-miner <64-lowercase-hex> \
+  --control-miner <64-lowercase-hex> \
+  --start <unix-seconds> --slots 10000 \
+  --slot-seconds 30 --spacing-seconds 259 \
+  --pair-delay-seconds 5 --output tie-plan.omtp
+```
+
+Then add the plan to the observer command shown above:
+
+```sh
+  --telemetry-tie-plan tie-plan.omtp \
+  --telemetry-tie-plan-id <published-plan-id> \
+  --telemetry-tie-coordinator-key <64-lowercase-hex> \
+  --telemetry-tie-manifest observer-data/work-tie-receipts.omtr \
+  --telemetry-tie-pending observer-data/work-tie-receipts.pending
+```
+
+All tie flags are optional as a group; if any is present, plan, plan ID, and
+coordinator key are mandatory. Receipt and pending paths default under the node
+data directory. A telemetry write error stops the observer service. Because
+`NoPair` is conservative evidence, a missed or ambiguous pair damages the
+experiment result instead of silently improving it.
+
+The tested and control payout addresses must be dedicated to the harness during
+their planned slots. Ordinary mining under either address is intentionally not
+distinguishable from the scheduled attempt; an extra distinct anchor for that
+role invalidates the slot and incurs the conservative `NoPair` charge.
 
 ## Published clustering policy
 
@@ -229,9 +294,9 @@ and its version-3 report digest is
 
 ## Remaining operational work
 
-- connect the signed tie plan and receipt chain to a live two-miner harness and
-  its crash-safe writer. The evidence bundle now rejects record-v0 manual tie
-  counters, but the running observer does not yet create raw receipts;
+- build the deterministic two-miner coordinator that delivers exactly one
+  tested/control sibling pair per slot. The observer writer is live, but trial
+  production is not yet automated or deployed;
 - publish each plan ID before its first slot and publish the final receipt tail
   outside the manifest storage path;
 - deploy and publish the clustering policy and its digest before each real

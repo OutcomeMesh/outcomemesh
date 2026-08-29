@@ -44,12 +44,14 @@ type Config struct {
 }
 
 type WorkAdmission struct {
+	Sequence       uint64
 	ID             types.Hash
 	ParentID       types.Hash
 	Height         uint64
 	BlockTimestamp uint64
 	ObservedAt     uint64
 	Miner          types.Address
+	SelectedID     types.Hash
 	Selected       bool
 }
 
@@ -68,16 +70,20 @@ type ForestStatus struct {
 // at activationHeight-1 owns an independent v1 fork tree; Tip compares their
 // best hard-work tips with the best pre-activation v0 tip.
 type Router struct {
-	mu          sync.Mutex
-	observeGate sync.RWMutex
-	ledger      storage.Ledger
-	legacy      *chain.Chain
-	config      Config
-	trees       map[types.Hash]*workchain.Store
-	workBases   map[types.Hash]types.Hash
-	selectedID  types.Hash
-	selectDirty bool
-	closed      bool
+	mu              sync.Mutex
+	observeGate     sync.RWMutex
+	observeOrderMu  sync.Mutex
+	observeOrder    *sync.Cond
+	nextAdmission   uint64
+	nextObservation uint64
+	ledger          storage.Ledger
+	legacy          *chain.Chain
+	config          Config
+	trees           map[types.Hash]*workchain.Store
+	workBases       map[types.Hash]types.Hash
+	selectedID      types.Hash
+	selectDirty     bool
+	closed          bool
 }
 
 func New(ledger storage.Ledger, config Config) (*Router, error) {
@@ -104,8 +110,10 @@ func New(ledger storage.Ledger, config Config) (*Router, error) {
 	result := &Router{
 		ledger: ledger, legacy: legacy, config: config,
 		trees: make(map[types.Hash]*workchain.Store), workBases: make(map[types.Hash]types.Hash),
-		selectedID: tip.ID,
+		selectedID:      tip.ID,
+		nextObservation: 1,
 	}
+	result.observeOrder = sync.NewCond(&result.observeOrderMu)
 	if config.WorkRoot != "" {
 		if err := result.openPersistentTrees(); err != nil {
 			_ = result.closeTreesLocked()
@@ -161,7 +169,7 @@ func (router *Router) Submit(candidate Block) (storage.Tip, error) {
 	router.mu.Unlock()
 	if observing {
 		defer router.observeGate.RUnlock()
-		observer(*admission)
+		router.observeAdmission(observer, *admission)
 	}
 	return tip, err
 }
@@ -198,8 +206,10 @@ func (router *Router) submitLocked(candidate Block) (storage.Tip, *WorkAdmission
 		}
 		id, _ := work.Header.ID()
 		router.workBases[id] = baseID
+		router.nextAdmission++
 		admission = &WorkAdmission{
-			ID: id, ParentID: work.Header.Seal.AnchorParent, Height: work.Header.Seal.Height,
+			Sequence: router.nextAdmission,
+			ID:       id, ParentID: work.Header.Seal.AnchorParent, Height: work.Header.Seal.Height,
 			BlockTimestamp: work.Header.Seal.Timestamp, ObservedAt: observedAt,
 			Miner: work.Header.Seal.Miner,
 		}
@@ -210,13 +220,29 @@ func (router *Router) submitLocked(candidate Block) (storage.Tip, *WorkAdmission
 	if err != nil {
 		return storage.Tip{}, admission, err
 	}
+	if admission != nil {
+		admission.SelectedID = tip.ID
+		admission.Selected = admission.ID == tip.ID
+	}
 	if err := router.persistSelectionLocked(); err != nil {
 		return tip, admission, err
 	}
-	if admission != nil {
-		admission.Selected = admission.ID == tip.ID
-	}
 	return tip, admission, nil
+}
+
+func (router *Router) observeAdmission(observer func(WorkAdmission), admission WorkAdmission) {
+	router.observeOrderMu.Lock()
+	for admission.Sequence != router.nextObservation {
+		router.observeOrder.Wait()
+	}
+	router.observeOrderMu.Unlock()
+	defer func() {
+		router.observeOrderMu.Lock()
+		router.nextObservation++
+		router.observeOrder.Broadcast()
+		router.observeOrderMu.Unlock()
+	}()
+	observer(admission)
 }
 
 func (router *Router) Tip() (storage.Tip, error) {

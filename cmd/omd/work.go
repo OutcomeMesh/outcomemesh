@@ -414,6 +414,11 @@ func runWorkServeQUIC(arguments []string) error {
 	telemetryClusters := flags.Uint("telemetry-clusters", 0, "precommitted cluster comparison budget")
 	telemetryManifestPath := flags.String("telemetry-manifest", "", "signed telemetry manifest path (default under data)")
 	telemetryPendingPath := flags.String("telemetry-pending", "", "crash-safe current-hour journal path (default under data)")
+	tiePlanPath := flags.String("telemetry-tie-plan", "", "published signed controlled-tie plan file")
+	tiePlanIDText := flags.String("telemetry-tie-plan-id", "", "externally published controlled-tie plan ID")
+	tieCoordinatorKeyText := flags.String("telemetry-tie-coordinator-key", "", "trusted controlled-tie coordinator public key")
+	tieManifestPath := flags.String("telemetry-tie-manifest", "", "signed raw tie receipt path (default under data)")
+	tiePendingPath := flags.String("telemetry-tie-pending", "", "crash-safe partial tie candidate path (default under data)")
 	if err := flags.Parse(arguments); err != nil {
 		return err
 	}
@@ -427,7 +432,9 @@ func runWorkServeQUIC(arguments []string) error {
 	if err != nil {
 		return err
 	}
-	telemetryEnabled := *telemetryKeyPath != "" || *telemetryPolicyPath != "" || *telemetryPolicyIDText != "" ||
+	tieEnabled := *tiePlanPath != "" || *tiePlanIDText != "" || *tieCoordinatorKeyText != "" ||
+		*tieManifestPath != "" || *tiePendingPath != ""
+	telemetryEnabled := tieEnabled || *telemetryKeyPath != "" || *telemetryPolicyPath != "" || *telemetryPolicyIDText != "" ||
 		*telemetryClusters != 0 || *telemetryManifestPath != "" || *telemetryPendingPath != ""
 	var liveTelemetry *liveWorkTelemetry
 	var observer func(activation.WorkAdmission)
@@ -455,9 +462,34 @@ func runWorkServeQUIC(arguments []string) error {
 		if *telemetryPendingPath == "" {
 			*telemetryPendingPath = filepath.Join(*data, "work-telemetry.pending")
 		}
+		var tieConfig *liveTieTelemetryConfig
+		if tieEnabled {
+			if *tiePlanPath == "" || *tiePlanIDText == "" || *tieCoordinatorKeyText == "" {
+				return errors.New("controlled-tie telemetry requires plan, published plan ID, and coordinator public key")
+			}
+			expectedPlanID, err := parseHash(*tiePlanIDText)
+			if err != nil {
+				return fmt.Errorf("telemetry-tie-plan-id: %w", err)
+			}
+			coordinatorKey, err := parseHash(*tieCoordinatorKeyText)
+			if err != nil {
+				return fmt.Errorf("telemetry-tie-coordinator-key: %w", err)
+			}
+			if *tieManifestPath == "" {
+				*tieManifestPath = filepath.Join(*data, "work-tie-receipts.omtr")
+			}
+			if *tiePendingPath == "" {
+				*tiePendingPath = filepath.Join(*data, "work-tie-receipts.pending")
+			}
+			tieConfig = &liveTieTelemetryConfig{
+				PlanPath: *tiePlanPath, ExpectedPlanID: expectedPlanID,
+				ReceiptPath: *tieManifestPath, PendingPath: *tiePendingPath,
+			}
+			copy(tieConfig.CoordinatorPublicKey[:], coordinatorKey[:])
+		}
 		liveTelemetry, err = openLiveWorkTelemetry(
 			telemetryDocument, telemetryProfile, *telemetryKeyPath, *telemetryPolicyPath,
-			expectedPolicyID, uint32(*telemetryClusters), *telemetryManifestPath, *telemetryPendingPath, unixNow(),
+			expectedPolicyID, uint32(*telemetryClusters), *telemetryManifestPath, *telemetryPendingPath, unixNow(), tieConfig,
 		)
 		if err != nil {
 			return err
@@ -498,6 +530,15 @@ func runWorkServeQUIC(arguments []string) error {
 		}
 		fmt.Printf("work_telemetry_enabled policy=%s records=%d completed_through=%d pending_start=%d tail=%s\n",
 			*telemetryPolicyIDText, status.Records, status.CompletedThrough, status.PendingStartedAt, status.LastRecordID)
+		if tieEnabled {
+			tieStatus, tieStatusErr := liveTelemetry.TieStatus()
+			if tieStatusErr != nil {
+				return tieStatusErr
+			}
+			fmt.Printf("work_tie_telemetry_enabled plan=%s closed=%d planned=%d completed=%d no_pair=%d tail=%s\n",
+				tieStatus.PlanID, tieStatus.ClosedSlots, tieStatus.PlannedSlots,
+				tieStatus.CompletedTrials, tieStatus.NoPairSlots, tieStatus.LastReceiptID)
+		}
 	}
 	config := libp2ptransport.DefaultConfig()
 	config.Listen = []string{*listenAddress}

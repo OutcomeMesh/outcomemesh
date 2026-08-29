@@ -56,6 +56,11 @@ func TestEvidenceBundleRequiresPublishedIDsMatchingOneDeployment(t *testing.T) {
 	if _, err := ValidateEvidenceBundle(records, plan, receipts, foreignDeployment); !errors.Is(err, ErrBinding) {
 		t.Fatalf("foreign deployment error = %v, want ErrBinding", err)
 	}
+	foreignObserver := binding
+	foreignObserver.TiePlan.ObserverPublicKey[0] ^= 1
+	if _, err := ValidateEvidenceBundle(records, plan, receipts, foreignObserver); !errors.Is(err, ErrBinding) {
+		t.Fatalf("pooled observer view error = %v, want ErrBinding", err)
+	}
 }
 
 func TestEvidenceBundleFileRoundTrip(t *testing.T) {

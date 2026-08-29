@@ -169,6 +169,9 @@ precommitted-plan, and receipt-tail IDs, rejects manual tie counters in hourly
 records, and charges failed planned pairs conservatively. A 720-record plus
 10,000-receipt integration vector feeds the verified aggregate into the same
 calculator; raw command-line counters cannot set `EvidencePass`.
+The live observer now writes those receipts from commit-ordered admissions and
+closes missed or ambiguous slots conservatively; the two-miner trial producer
+and independent deployment remain operational work rather than simulation.
 
 WorkGraph therefore does not eliminate the classic selfish-mining threshold;
 the result is a measured protocol limit, not a failed invariant. The sweep also
