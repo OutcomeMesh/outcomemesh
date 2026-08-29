@@ -327,10 +327,10 @@ and its version-3 report digest is
 
 ## Remaining operational work
 
-- process-test the one-shot two-miner CLI as a separate binary and add network
-  delivery to independently operated observers. The persistent-router harness
-  and its signed receipt path are implemented, but it intentionally does not
-  claim observer independence;
+- add authenticated ordered pair delivery to independently operated observers.
+  The one-shot CLI now has a separate-process wait/kill/restart test over its
+  persistent pending state, but the local harness intentionally does not claim
+  observer independence;
 - publish each plan ID before its first slot and publish the final receipt tail
   outside the manifest storage path;
 - deploy and publish the clustering policy and its digest before each real
@@ -342,4 +342,5 @@ and its version-3 report digest is
   cluster IDs;
 - chaos-test missed intervals, observer restart, disk-full behavior, and
   checkpoint disagreement. Local restart, duplicate, clock rollback,
-  persistence failure, and concurrent-observation cases are already covered.
+  persistence failure, concurrent-observation, and producer wait/crash/restart
+  cases are already covered.

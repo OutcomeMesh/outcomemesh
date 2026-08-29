@@ -18,6 +18,7 @@ import (
 
 	"github.com/outcomemesh/outcomemesh/core/types"
 	"github.com/outcomemesh/outcomemesh/core/workgraph"
+	"github.com/outcomemesh/outcomemesh/node/calibration"
 	libp2ptransport "github.com/outcomemesh/outcomemesh/node/transport/libp2p"
 	"github.com/outcomemesh/outcomemesh/node/workround"
 	"github.com/outcomemesh/outcomemesh/node/worksession"
@@ -253,6 +254,93 @@ func relayProcessWorkShares(
 	}
 	if remote != expected || stats.Accepted != count || stats.Rejected != 0 {
 		t.Fatalf("WorkGraph process relay remote=%s stats=%+v", remote, stats)
+	}
+}
+
+func TestProcessControlledTieProducerRecoversWaitingState(t *testing.T) {
+	root := t.TempDir()
+	data := root + "/tie-node"
+	observerPath := root + "/observer.key"
+	planPath := root + "/tie-plan.omtp"
+	receiptPath := root + "/tie-receipts.omtr"
+	pendingPath := root + "/tie-receipts.pending"
+	runProcessCommand(t, 20*time.Second,
+		"init", "--data", data, "--network", "20260830", "--timestamp", "1700000000",
+		"--difficulty-bits", "9", "--max-history-bytes", strconv.FormatUint(minimumHistoryBytes, 10),
+	)
+	document, err := loadGenesis(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	genesisID, err := document.ID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	runProcessCommand(t, 20*time.Second,
+		"work-enable", "--data", data, "--activation-height", "2",
+		"--confirm-genesis", genesisID.String(), "--max-trees", "4",
+		"--max-history-bytes", strconv.FormatUint(minimumHistoryBytes, 10),
+	)
+	runProcessCommand(t, 20*time.Second, "work-mine", "--data", data, "--count", "1")
+
+	observerSeed := types.DomainHash("test/process/tie-producer/observer")
+	observer := ed25519.NewKeyFromSeed(observerSeed[:])
+	if err := os.WriteFile(observerPath, observerSeed[:], 0o600); err != nil {
+		t.Fatal(err)
+	}
+	coordinatorSeed := types.DomainHash("test/process/tie-producer/coordinator")
+	coordinator := ed25519.NewKeyFromSeed(coordinatorSeed[:])
+	startedAt := unixNow() + 2
+	plan := calibration.TiePlan{
+		Version: calibration.TiePlanVersion1, NetworkID: document.NetworkID, GenesisID: genesisID,
+		ActivationHeight:        2,
+		TestedMiner:             types.Address(types.DomainHash("test/process/tie-producer/tested")),
+		ControlMiner:            types.Address(types.DomainHash("test/process/tie-producer/control")),
+		MaximumPairDelaySeconds: 10,
+		Slots: []calibration.TiePlanSlot{{
+			StartedAt: startedAt, EndedAt: startedAt + 60, FirstRole: calibration.TieRoleControl,
+		}},
+	}
+	copy(plan.ObserverPublicKey[:], observer.Public().(ed25519.PublicKey))
+	plan, err = calibration.SignTiePlan(coordinator, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := calibration.SaveTiePlanFile(planPath, plan, plan.Binding()); err != nil {
+		t.Fatal(err)
+	}
+	planID, err := plan.ID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	arguments := []string{
+		"work-telemetry-tie-produce", "--data", data, "--observer-key", observerPath,
+		"--plan", planPath, "--plan-id", planID.String(),
+		"--coordinator-public-key", bytesToLowerHex(coordinator.Public().(ed25519.PublicKey)),
+		"--sequence", "1", "--receipt-manifest", receiptPath, "--pending", pendingPath,
+	}
+	if output, err := runProcessCommandError(500*time.Millisecond, arguments...); err == nil {
+		t.Fatalf("waiting producer unexpectedly completed: %s", output)
+	}
+	if _, err := os.Stat(pendingPath); err != nil {
+		t.Fatalf("waiting producer did not persist restart state: %v", err)
+	}
+	if _, err := os.Stat(receiptPath); !os.IsNotExist(err) {
+		t.Fatalf("waiting producer created a premature receipt: %v", err)
+	}
+	output := runProcessCommand(t, 30*time.Second, arguments...)
+	fields := outputFields(output, "work_tie_produced")
+	if fields["plan"] != planID.String() || fields["sequence"] != "1" ||
+		fields["first_role"] != "control" || fields["receipt_tail"] == "" {
+		t.Fatalf("incomplete controlled-tie process output: %s", output)
+	}
+	_, receipts, aggregate, err := calibration.LoadTieReceiptFile(receiptPath, plan.Binding())
+	if err != nil || len(receipts) != 1 || receipts[0].Status != calibration.TieTrialCompleted ||
+		receipts[0].FirstObservedAnchorID != receipts[0].ControlAnchorID || !aggregate.Complete {
+		t.Fatalf("process receipts=%+v aggregate=%+v err=%v", receipts, aggregate, err)
+	}
+	if output, err := runProcessCommandError(10*time.Second, arguments...); err == nil {
+		t.Fatalf("duplicate process run succeeded: %s", output)
 	}
 }
 

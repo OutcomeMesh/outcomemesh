@@ -194,9 +194,9 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
   roles, one signed raw receipt per planned slot with conservative failure
   accounting, a fail-closed dual-manifest evidence bundle, a crash-safe post-
   commit receipt writer, an isolated-pool two-miner producer with a one-slot
-  persistent-router CLI harness, and a canonical digest. Separate-process
-  automation and multi-observer network deployment remain Milestone 9
-  deliverables.
+  persistent-router CLI harness plus wait/crash/restart process coverage, and a
+  canonical digest. Multi-slot scheduling and independent multi-observer
+  network deployment remain Milestone 9 deliverables.
 
 ### Exit gates
 
