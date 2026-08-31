@@ -440,7 +440,7 @@ Implemented in an isolated, not-yet-activated consensus package:
   enforces the full 30-day window, conservative one-sided 99% Hoeffding bounds
   for controlled tie adoption and mining concentration, and a Bonferroni
   selection correction across preclassified coordination clusters. Its
-  version-3 evidence path verifies a bounded Ed25519-signed chain of gapless
+  version-4 evidence path verifies a bounded Ed25519-signed chain of gapless
   hourly records, exact per-cluster work conservation, trusted network/genesis/
   activation/policy bindings, and a published tail ID before `EvidencePass`.
   A generated 720-record chain freezes the end-to-end digest. Live collection
@@ -475,8 +475,13 @@ Implemented in an isolated, not-yet-activated consensus package:
   confirmation, and restart-safe lost-ack recovery. A separate-process fixture
   rejects an unlisted coordinator, reaches two version-2 observers, compares
   their role-labelled blocks and selected tips, and proves a retry returns the
-  original receipt without duplicate admission. Cross-observer disagreement
-  policy, multi-slot orchestration, observer honesty, and Sybil-cluster
+  original receipt without duplicate admission. Multi-observer ER-5 evidence
+  now requires the plan's complete canonical observer set and every published
+  tail, counts correlated views as one slot, and fail-closed downgrades mixed
+  status, anchor, or selected-tip views to `NoPair`. The version-4 report commits
+  the plan version, observer/validated-receipt/disagreement counts, and the
+  combined checkpoint digest; a lone version-2 view cannot enter its verified
+  path. Multi-slot orchestration, observer honesty, and Sybil-cluster
   provenance remain open testnet work.
 - the PoW research harness now also has an integer-only, fixed-seed geometric
   solve process for active v0 and lagged v1. Golden observation digests cover

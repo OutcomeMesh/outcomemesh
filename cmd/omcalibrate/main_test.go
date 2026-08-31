@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"crypto/ed25519"
 	"encoding/json"
+	"fmt"
 	"path/filepath"
+	"sort"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/outcomemesh/outcomemesh/core/types"
@@ -106,10 +109,126 @@ func TestRunEvidenceModeUsesRawTieReceiptsAndPublishedCheckpoints(t *testing.T) 
 	}
 	config := result.Document.Config
 	if config.ControlledTieAdoptions != 0 || config.ControlledTieTrials != 1 ||
+		config.TiePlanVersion != telemetry.TiePlanVersion1 ||
 		!config.EvidenceVerified || !config.TieEvidenceVerified || !result.Document.Result.EvidencePass ||
 		result.TieManifest == nil || result.TieManifest.ReceiptCount != 1 ||
 		result.TieManifest.LastReceiptID != receiptTail.String() {
 		t.Fatalf("verified output = %+v", result)
+	}
+}
+
+func TestRunMultiObserverEvidenceCountsOneCorrelatedCampaign(t *testing.T) {
+	const startedAt uint64 = 1_810_000_000
+	type keyedObserver struct {
+		public [ed25519.PublicKeySize]byte
+		key    ed25519.PrivateKey
+	}
+	telemetrySeed := types.DomainHash("test/omcalibrate/multi/telemetry-observer")
+	telemetryObserver := ed25519.NewKeyFromSeed(telemetrySeed[:])
+	secondSeed := types.DomainHash("test/omcalibrate/multi/second-observer")
+	observers := []keyedObserver{{key: telemetryObserver}, {key: ed25519.NewKeyFromSeed(secondSeed[:])}}
+	for index := range observers {
+		copy(observers[index].public[:], observers[index].key.Public().(ed25519.PublicKey))
+	}
+	sort.Slice(observers, func(left, right int) bool {
+		return bytes.Compare(observers[left].public[:], observers[right].public[:]) < 0
+	})
+	coordinatorSeed := types.DomainHash("test/omcalibrate/multi/coordinator")
+	coordinator := ed25519.NewKeyFromSeed(coordinatorSeed[:])
+	binding := telemetry.Binding{
+		NetworkID: 92, GenesisID: types.DomainHash("test/omcalibrate/multi/genesis"),
+		ActivationHeight: 26, ClusterPolicyID: types.DomainHash("test/omcalibrate/multi/policy"),
+		ClusterComparisonBudget: 1,
+	}
+	copy(binding.ObserverPublicKey[:], telemetryObserver.Public().(ed25519.PublicKey))
+	clusterID := types.DomainHash("test/omcalibrate/multi/cluster")
+	record, err := telemetry.Sign(telemetryObserver, telemetry.Record{
+		Version: telemetry.Version0, NetworkID: binding.NetworkID, GenesisID: binding.GenesisID,
+		ActivationHeight: binding.ActivationHeight, ClusterPolicyID: binding.ClusterPolicyID,
+		ClusterComparisonBudget: binding.ClusterComparisonBudget,
+		Sequence:                1, StartedAt: startedAt, EndedAt: startedAt + telemetry.MaximumIntervalSeconds,
+		ObservedWork: 1, Clusters: []telemetry.ClusterWork{{ID: clusterID, Work: 1}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	telemetryTail, _ := record.ID()
+	plan, err := telemetry.SignTiePlan(coordinator, telemetry.TiePlan{
+		Version: telemetry.TiePlanVersion2, NetworkID: binding.NetworkID, GenesisID: binding.GenesisID,
+		ActivationHeight:        binding.ActivationHeight,
+		TestedMiner:             types.Address(types.DomainHash("test/omcalibrate/multi/tested-miner")),
+		ControlMiner:            types.Address(types.DomainHash("test/omcalibrate/multi/control-miner")),
+		MaximumPairDelaySeconds: 5,
+		ObserverPublicKeys:      [][ed25519.PublicKeySize]byte{observers[0].public, observers[1].public},
+		Slots: []telemetry.TiePlanSlot{{
+			StartedAt: startedAt + 10, EndedAt: startedAt + 20, FirstRole: telemetry.TieRoleTested,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	planID, _ := plan.ID()
+	tested := types.DomainHash("test/omcalibrate/multi/tested-anchor")
+	control := types.DomainHash("test/omcalibrate/multi/control-anchor")
+	root := t.TempDir()
+	manifestPath := filepath.Join(root, "telemetry.omtm")
+	if _, err := telemetry.SaveFile(manifestPath, []telemetry.Record{record}, binding); err != nil {
+		t.Fatal(err)
+	}
+	paths := make([]string, len(observers))
+	publicKeys := make([]string, len(observers))
+	tails := make([]string, len(observers))
+	for index, observer := range observers {
+		receipt, err := telemetry.SignTieTrialReceipt(observer.key, telemetry.TieTrialReceipt{
+			Version: telemetry.TieReceiptVersion2, Sequence: 1, Status: telemetry.TieTrialCompleted,
+			ParentID: types.DomainHash("test/omcalibrate/multi/parent"), Height: binding.ActivationHeight,
+			TestedAnchorID: tested, ControlAnchorID: control,
+			TestedObservedAt: startedAt + 12 + uint64(index), ControlObservedAt: startedAt + 14 + uint64(index),
+			SelectedAnchorID: control, FirstObservedAnchorID: tested,
+		}, plan)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tail, _ := receipt.ID(plan)
+		paths[index] = filepath.Join(root, fmt.Sprintf("ties-%d.omtr", index))
+		publicKeys[index] = bytesToHex(observer.public[:])
+		tails[index] = tail.String()
+		tieBinding := plan.Binding()
+		tieBinding.ObserverPublicKey = observer.public
+		if _, err := telemetry.SaveTieReceiptFile(paths[index], plan, []telemetry.TieTrialReceipt{receipt}, tieBinding); err != nil {
+			t.Fatal(err)
+		}
+	}
+	arguments := []string{
+		"--manifest", manifestPath,
+		"--tie-manifests", strings.Join(paths, ","),
+		"--tie-observer-public-keys", strings.Join(publicKeys, ","),
+		"--tie-tail-ids", strings.Join(tails, ","),
+		"--network-id", strconv.FormatUint(uint64(binding.NetworkID), 10),
+		"--genesis-id", binding.GenesisID.String(),
+		"--activation-height", strconv.FormatUint(binding.ActivationHeight, 10),
+		"--cluster-policy-id", binding.ClusterPolicyID.String(), "--coordinated-clusters", "1",
+		"--observer-public-key", bytesToHex(binding.ObserverPublicKey[:]),
+		"--coordinator-public-key", bytesToHex(plan.CoordinatorPublicKey[:]),
+		"--evidence-tail-id", telemetryTail.String(), "--tie-plan-id", planID.String(),
+	}
+	var encoded bytes.Buffer
+	if err := run(arguments, &encoded); err != nil {
+		t.Fatal(err)
+	}
+	var result output
+	if err := json.Unmarshal(encoded.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	config := result.Document.Config
+	if config.ControlledTieTrials != 1 || config.ControlledTieAdoptions != 0 ||
+		config.TieEvidenceReceipts != 1 || config.TiePlanVersion != telemetry.TiePlanVersion2 ||
+		!config.TieEvidenceVerified ||
+		!result.Document.Result.EvidencePass || result.TieManifest == nil ||
+		result.TieManifest.ObserverCount != 2 || result.TieManifest.ValidatedReceipts != 2 ||
+		result.TieManifest.CheckpointID == "" || result.TieManifest.CheckpointID != config.TieEvidenceTailID ||
+		len(result.TieManifest.Observers) != 2 {
+		t.Fatalf("multi-observer verified output=%+v", result)
 	}
 }
 

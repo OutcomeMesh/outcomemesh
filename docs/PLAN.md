@@ -200,8 +200,12 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
   up to 64 observer keys. A separately rate-limited authenticated QUIC pair
   protocol now pins both transport identities and published IDs, returns a
   durable signed-receipt acknowledgement, confirms its delivery, and recovers
-  lost acknowledgements without duplicate admission. Multi-slot orchestration
-  and cross-observer disagreement policy remain Milestone 9 deliverables.
+  lost acknowledgements without duplicate admission. The ER-5 handoff now
+  requires every version-2 observer chain, counts a campaign slot only once,
+  and downgrades any valid block/selection disagreement to conservative
+  `NoPair` without majority voting. The report commits the plan version, so the
+  legacy single-view path cannot certify a version-2 plan. Multi-slot
+  orchestration remains a Milestone 9 deliverable.
 
 ### Exit gates
 

@@ -77,7 +77,10 @@ func TestPublicTestnetCalibrationGateAndDigest(t *testing.T) {
 		EvidenceTailID:           "8498100edacc5868a99f555f523280e4039aa8bf2be9f1c972e6bf7f687b616c",
 		EvidenceVerified:         true,
 		TiePlanID:                "5066c5b78d96483c7aa99b1c35166d52fda67344005103e885ee1881a9d65676",
+		TiePlanVersion:           1,
 		TieEvidenceReceipts:      10_000,
+		TieObserverCount:         1,
+		TieValidatedReceipts:     10_000,
 		TieEvidenceTailID:        "fd13185e9b02fb5d6bf2998eaa0ca8239db644538f01e10ad0a325b21069f3a7",
 		TieEvidenceVerified:      true,
 		MaximumUpperPPM:          PublicTestnetMaximumUpperPPM,
@@ -94,7 +97,7 @@ func TestPublicTestnetCalibrationGateAndDigest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const wantDigest = "a4007470bc67bb957deb825d2abacaafbc2ca907d3173c1abefe7387ec2f2cf6"
+	const wantDigest = "19f52e9a351965eebe5f18d39d1ed04f164225593d40e59f1a0759471b79094e"
 	if got := hex.EncodeToString(digest[:]); got != wantDigest {
 		t.Fatalf("calibration digest = %s, want %s; result=%+v", got, wantDigest, document.Result)
 	}
@@ -151,6 +154,38 @@ func TestPublicTestnetCalibrationGateAndDigest(t *testing.T) {
 	missingReceiptDocument, err := EvaluatePublicTestnetCalibration(missingReceipt)
 	if err != nil {
 		t.Fatal(err)
+	}
+	missingObserverReceipt := config
+	missingObserverReceipt.TiePlanVersion = 2
+	missingObserverReceipt.TieObserverCount = 2
+	if document, err := EvaluatePublicTestnetCalibration(missingObserverReceipt); err != nil || document.Result.EvidencePass {
+		t.Fatalf("missing multi-observer receipt passed: result=%+v err=%v", document.Result, err)
+	}
+	versionTwoWithOneObserver := config
+	versionTwoWithOneObserver.TiePlanVersion = 2
+	if document, err := EvaluatePublicTestnetCalibration(versionTwoWithOneObserver); err != nil || document.Result.EvidencePass {
+		t.Fatalf("single-observer version-2 evidence passed: result=%+v err=%v", document.Result, err)
+	}
+	versionOneWithTwoObservers := config
+	versionOneWithTwoObservers.TieObserverCount = 2
+	versionOneWithTwoObservers.TieValidatedReceipts = 20_000
+	if document, err := EvaluatePublicTestnetCalibration(versionOneWithTwoObservers); err != nil || document.Result.EvidencePass {
+		t.Fatalf("multi-observer version-1 evidence passed: result=%+v err=%v", document.Result, err)
+	}
+	disagreementOutsideNoPair := config
+	disagreementOutsideNoPair.TieDisagreementSlots = 1
+	if document, err := EvaluatePublicTestnetCalibration(disagreementOutsideNoPair); err != nil || document.Result.EvidencePass {
+		t.Fatalf("unaccounted observer disagreement passed: result=%+v err=%v", document.Result, err)
+	}
+	overflowedObserverReceipts := config
+	overflowedObserverReceipts.ControlledTieTrials = 1 << 63
+	overflowedObserverReceipts.TieCompletedTrials = 1 << 63
+	overflowedObserverReceipts.TieEvidenceReceipts = 1 << 63
+	overflowedObserverReceipts.TiePlanVersion = 2
+	overflowedObserverReceipts.TieObserverCount = 2
+	overflowedObserverReceipts.TieValidatedReceipts = 0
+	if document, err := EvaluatePublicTestnetCalibration(overflowedObserverReceipts); err != nil || document.Result.EvidencePass {
+		t.Fatalf("overflowed observer receipt count passed: result=%+v err=%v", document.Result, err)
 	}
 	if missingReceiptDocument.Result.Pass || missingReceiptDocument.Result.EvidencePass {
 		t.Fatalf("missing tie receipt passed: %+v", missingReceiptDocument.Result)

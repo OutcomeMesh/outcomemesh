@@ -11,7 +11,7 @@ import (
 const (
 	// PublicTestnetCalibrationSchema versions the evidence snapshot separately
 	// from the deterministic economic review corpus.
-	PublicTestnetCalibrationSchema = "outcomemesh/public-testnet-calibration/v3"
+	PublicTestnetCalibrationSchema = "outcomemesh/public-testnet-calibration/v4"
 	PublicTestnetCalibrationMethod = "hoeffding-bonferroni-one-sided-99%-integer-ppm/v1"
 
 	PublicTestnetMinimumWindowSeconds uint64 = 30 * 24 * 60 * 60
@@ -56,7 +56,11 @@ type PublicTestnetCalibrationConfig struct {
 	EvidenceTailID           string
 	EvidenceVerified         bool
 	TiePlanID                string
+	TiePlanVersion           uint16
 	TieEvidenceReceipts      uint64
+	TieObserverCount         uint64
+	TieValidatedReceipts     uint64
+	TieDisagreementSlots     uint64
 	TieEvidenceTailID        string
 	TieEvidenceVerified      bool
 	MaximumUpperPPM          uint32
@@ -155,6 +159,12 @@ func validEvidence(config PublicTestnetCalibrationConfig) bool {
 	}
 	minimumRecords := uint64(1) + (config.ObservationWindowSeconds-1)/PublicTestnetMaximumRecordSeconds
 	if config.EvidenceRecords < minimumRecords || config.TieEvidenceReceipts != config.ControlledTieTrials ||
+		(config.TiePlanVersion == 1 && config.TieObserverCount != 1) ||
+		(config.TiePlanVersion == 2 && (config.TieObserverCount < 2 || config.TieObserverCount > 64)) ||
+		(config.TiePlanVersion != 1 && config.TiePlanVersion != 2) ||
+		config.TieValidatedReceipts%config.TieObserverCount != 0 ||
+		config.TieValidatedReceipts/config.TieObserverCount != config.ControlledTieTrials ||
+		config.TieDisagreementSlots > config.TieNoPairSlots ||
 		config.TieNoPairSlots > config.ControlledTieTrials ||
 		config.TieCompletedTrials != config.ControlledTieTrials-config.TieNoPairSlots ||
 		config.ControlledTieAdoptions < config.TieNoPairSlots ||

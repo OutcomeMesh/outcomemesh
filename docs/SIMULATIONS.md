@@ -163,11 +163,14 @@ preclassified coordination clusters before selecting the largest observation.
 Golden vectors cover pass/fail boundaries, invalid evidence, the 30-day window,
 selection correction, and a canonical evidence digest. This calculator is not
 a substitute for an honest observer or a reviewed identity-clustering policy.
-The version-3 path consumes both a bounded hourly manifest and a complete raw
-controlled-tie receipt manifest. It requires independently supplied hourly-tail,
-precommitted-plan, and receipt-tail IDs, rejects manual tie counters in hourly
-records, and charges failed planned pairs conservatively. A 720-record plus
-10,000-receipt integration vector feeds the verified aggregate into the same
+The version-4 path consumes both a bounded hourly manifest and complete raw
+controlled-tie receipt manifests. For a version-2 plan it requires every
+observer in canonical plan order, independently supplied hourly-tail,
+precommitted-plan, and per-observer receipt-tail IDs, rejects manual tie
+counters in hourly records, and charges unavailable or disagreeing planned
+pairs conservatively. Correlated observer signatures never multiply the trial
+count, and a majority cannot override a valid conflicting view. A 720-record
+plus 10,000-slot integration vector feeds the verified aggregate into the same
 calculator; raw command-line counters cannot set `EvidencePass`.
 The live observer now writes those receipts from commit-ordered admissions and
 closes missed or ambiguous slots conservatively; the two-miner trial producer

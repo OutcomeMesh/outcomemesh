@@ -11,6 +11,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"strings"
 
 	telemetry "github.com/outcomemesh/outcomemesh/node/calibration"
 	"github.com/outcomemesh/outcomemesh/sim/workgraphmodel"
@@ -32,15 +33,25 @@ type manifestSummary struct {
 }
 
 type tieManifestSummary struct {
-	PlanID                string `json:"plan_id"`
-	PlannedSlots          uint64 `json:"planned_slots"`
-	ReceiptCount          uint64 `json:"receipt_count"`
-	CompletedTrials       uint64 `json:"completed_trials"`
-	NoPairSlots           uint64 `json:"no_pair_slots"`
-	TestedAdoptions       uint64 `json:"tested_adoptions"`
-	ConservativeAdoptions uint64 `json:"conservative_adoptions"`
-	FirstReceiptID        string `json:"first_receipt_id"`
-	LastReceiptID         string `json:"last_receipt_id"`
+	PlanID                string                         `json:"plan_id"`
+	PlannedSlots          uint64                         `json:"planned_slots"`
+	ReceiptCount          uint64                         `json:"receipt_count"`
+	CompletedTrials       uint64                         `json:"completed_trials"`
+	NoPairSlots           uint64                         `json:"no_pair_slots"`
+	DisagreementSlots     uint64                         `json:"disagreement_slots,omitempty"`
+	TestedAdoptions       uint64                         `json:"tested_adoptions"`
+	ConservativeAdoptions uint64                         `json:"conservative_adoptions"`
+	ObserverCount         uint64                         `json:"observer_count,omitempty"`
+	ValidatedReceipts     uint64                         `json:"validated_receipts,omitempty"`
+	CheckpointID          string                         `json:"checkpoint_id,omitempty"`
+	Observers             []tieObserverCheckpointSummary `json:"observers,omitempty"`
+	FirstReceiptID        string                         `json:"first_receipt_id,omitempty"`
+	LastReceiptID         string                         `json:"last_receipt_id,omitempty"`
+}
+
+type tieObserverCheckpointSummary struct {
+	ObserverPublicKey  string `json:"observer_public_key"`
+	PublishedReceiptID string `json:"published_receipt_id"`
 }
 
 func main() {
@@ -54,6 +65,7 @@ func run(arguments []string, outputWriter io.Writer) error {
 	config := workgraphmodel.PublicTestnetCalibrationConfig{}
 	var maximumUpper uint
 	var manifestPath, tieManifestPath string
+	var tieManifestPathsText, tieObserverPublicKeysText, tieTailIDsText string
 	var networkID uint
 	var activationHeight uint64
 	var genesisIDHex, clusterPolicyIDHex, observerPublicKeyHex, coordinatorPublicKeyHex string
@@ -69,6 +81,9 @@ func run(arguments []string, outputWriter io.Writer) error {
 	flags.UintVar(&maximumUpper, "maximum-upper-ppm", uint(workgraphmodel.PublicTestnetMaximumUpperPPM), "maximum permitted 99% upper bound")
 	flags.StringVar(&manifestPath, "manifest", "", "signed telemetry manifest to verify and aggregate")
 	flags.StringVar(&tieManifestPath, "tie-manifest", "", "signed raw controlled-tie manifest to verify and aggregate")
+	flags.StringVar(&tieManifestPathsText, "tie-manifests", "", "comma-separated canonical v2 observer manifest paths")
+	flags.StringVar(&tieObserverPublicKeysText, "tie-observer-public-keys", "", "comma-separated canonical v2 receipt observer public keys")
+	flags.StringVar(&tieTailIDsText, "tie-tail-ids", "", "comma-separated published v2 observer receipt tail IDs")
 	flags.UintVar(&networkID, "network-id", 0, "trusted manifest network ID")
 	flags.StringVar(&genesisIDHex, "genesis-id", "", "trusted lowercase-hex genesis ID")
 	flags.Uint64Var(&activationHeight, "activation-height", 0, "trusted WorkGraph activation height")
@@ -89,9 +104,11 @@ func run(arguments []string, outputWriter io.Writer) error {
 	config.MaximumUpperPPM = uint32(maximumUpper)
 	var summary *manifestSummary
 	var tieSummary *tieManifestSummary
+	multiTieRequested := tieManifestPathsText != "" || tieObserverPublicKeysText != "" || tieTailIDsText != ""
+	singleTieRequested := tieManifestPath != "" || config.TieEvidenceTailID != ""
 	if manifestPath != "" {
 		if networkID == 0 || networkID > uint(^uint32(0)) || activationHeight == 0 || config.CoordinatedClusters == 0 ||
-			config.CoordinatedClusters > telemetry.MaximumClusters || tieManifestPath == "" {
+			config.CoordinatedClusters > telemetry.MaximumClusters || singleTieRequested == multiTieRequested {
 			return errors.New("manifest binding flags are incomplete or out of range")
 		}
 		binding := telemetry.Binding{
@@ -114,46 +131,88 @@ func run(arguments []string, outputWriter io.Writer) error {
 		if err := decodeCanonicalHex("coordinator-public-key", coordinatorPublicKeyHex, tieBinding.CoordinatorPublicKey[:]); err != nil {
 			return err
 		}
-		expected := telemetry.EvidenceBinding{Telemetry: binding, TiePlan: tieBinding}
-		if err := decodeCanonicalHex("evidence-tail-id", config.EvidenceTailID, expected.TelemetryTailID[:]); err != nil {
+		var telemetryTailID, publishedPlanID [32]byte
+		if err := decodeCanonicalHex("evidence-tail-id", config.EvidenceTailID, telemetryTailID[:]); err != nil {
 			return err
 		}
-		if err := decodeCanonicalHex("tie-plan-id", config.TiePlanID, expected.PublishedTiePlanID[:]); err != nil {
+		if err := decodeCanonicalHex("tie-plan-id", config.TiePlanID, publishedPlanID[:]); err != nil {
 			return err
 		}
-		if err := decodeCanonicalHex("tie-tail-id", config.TieEvidenceTailID, expected.PublishedTieReceiptID[:]); err != nil {
-			return err
+		if multiTieRequested {
+			paths, checkpoints, err := parseMultiTieInputs(
+				tieManifestPathsText, tieObserverPublicKeysText, tieTailIDsText,
+			)
+			if err != nil || tieManifestPath != "" || config.TieEvidenceTailID != "" {
+				return errors.Join(errors.New("invalid multi-observer tie evidence flags"), err)
+			}
+			expected := telemetry.MultiEvidenceBinding{
+				Telemetry: binding, TiePlan: tieBinding,
+				TelemetryTailID: telemetryTailID, PublishedTiePlanID: publishedPlanID,
+				ObserverCheckpoints: checkpoints,
+			}
+			evidence, err := telemetry.LoadMultiObserverEvidenceFiles(manifestPath, paths, expected)
+			if err != nil {
+				return err
+			}
+			checkpointID, err := evidence.Tie.CheckpointID()
+			if err != nil {
+				return err
+			}
+			config.TieEvidenceTailID = checkpointID.String()
+			applyVerifiedEvidenceConfig(
+				&config, evidence.Telemetry, evidence.ControlledTieAdoptions, evidence.ControlledTieTrials,
+				evidence.Tie.CompletedTrials, evidence.Tie.NoPairSlots, evidence.Tie.PlannedSlots,
+				evidence.Tie.ObserverCount, evidence.Tie.ValidatedReceipts, evidence.Tie.DisagreementSlots,
+				telemetry.TiePlanVersion2,
+			)
+			summary = summarizeManifest(evidence.Telemetry)
+			observers := make([]tieObserverCheckpointSummary, len(evidence.Tie.ObserverCheckpoints))
+			for index, checkpoint := range evidence.Tie.ObserverCheckpoints {
+				observers[index] = tieObserverCheckpointSummary{
+					ObserverPublicKey:  hex.EncodeToString(checkpoint.ObserverPublicKey[:]),
+					PublishedReceiptID: checkpoint.PublishedReceiptID.String(),
+				}
+			}
+			tieSummary = &tieManifestSummary{
+				PlanID: evidence.Tie.PlanID.String(), PlannedSlots: evidence.Tie.PlannedSlots,
+				ReceiptCount: evidence.Tie.PlannedSlots, CompletedTrials: evidence.Tie.CompletedTrials,
+				NoPairSlots: evidence.Tie.NoPairSlots, DisagreementSlots: evidence.Tie.DisagreementSlots,
+				TestedAdoptions:       evidence.Tie.TestedAdoptions,
+				ConservativeAdoptions: evidence.Tie.ConservativeAdoptions,
+				ObserverCount:         evidence.Tie.ObserverCount, ValidatedReceipts: evidence.Tie.ValidatedReceipts,
+				CheckpointID: checkpointID.String(), Observers: observers,
+			}
+		} else {
+			expected := telemetry.EvidenceBinding{
+				Telemetry: binding, TiePlan: tieBinding,
+				TelemetryTailID: telemetryTailID, PublishedTiePlanID: publishedPlanID,
+			}
+			if tieManifestPath == "" {
+				return errors.New("tie-manifest is required")
+			}
+			if err := decodeCanonicalHex("tie-tail-id", config.TieEvidenceTailID, expected.PublishedTieReceiptID[:]); err != nil {
+				return err
+			}
+			evidence, err := telemetry.LoadEvidenceFiles(manifestPath, tieManifestPath, expected)
+			if err != nil {
+				return err
+			}
+			applyVerifiedEvidenceConfig(
+				&config, evidence.Telemetry, evidence.ControlledTieAdoptions, evidence.ControlledTieTrials,
+				evidence.Tie.CompletedTrials, evidence.Tie.NoPairSlots, evidence.Tie.ReceiptCount,
+				1, evidence.Tie.ReceiptCount, 0, telemetry.TiePlanVersion1,
+			)
+			summary = summarizeManifest(evidence.Telemetry)
+			tieSummary = &tieManifestSummary{
+				PlanID: evidence.Tie.PlanID.String(), PlannedSlots: evidence.Tie.PlannedSlots,
+				ReceiptCount: evidence.Tie.ReceiptCount, CompletedTrials: evidence.Tie.CompletedTrials,
+				NoPairSlots: evidence.Tie.NoPairSlots, TestedAdoptions: evidence.Tie.TestedAdoptions,
+				ConservativeAdoptions: evidence.Tie.ConservativeAdoptions,
+				FirstReceiptID:        evidence.Tie.FirstReceiptID.String(), LastReceiptID: evidence.Tie.LastReceiptID.String(),
+			}
 		}
-		evidence, err := telemetry.LoadEvidenceFiles(manifestPath, tieManifestPath, expected)
-		if err != nil {
-			return err
-		}
-		aggregate := evidence.Telemetry
-		config.ObservationWindowSeconds = aggregate.EndedAt - aggregate.StartedAt
-		config.ControlledTieAdoptions = evidence.ControlledTieAdoptions
-		config.ControlledTieTrials = evidence.ControlledTieTrials
-		config.TieCompletedTrials = evidence.Tie.CompletedTrials
-		config.TieNoPairSlots = evidence.Tie.NoPairSlots
-		config.LargestCoordinatedWork = aggregate.LargestCoordinatedWork
-		config.ObservedWork = aggregate.ObservedWork
-		config.CoordinatedClusters = uint64(aggregate.Binding.ClusterComparisonBudget)
-		config.EvidenceRecords = aggregate.RecordCount
-		config.EvidenceVerified = true
-		config.TieEvidenceReceipts = evidence.Tie.ReceiptCount
-		config.TieEvidenceVerified = true
-		summary = &manifestSummary{
-			RecordCount: aggregate.RecordCount, StartedAt: aggregate.StartedAt, EndedAt: aggregate.EndedAt,
-			FirstRecordID: aggregate.FirstRecordID.String(), LastRecordID: aggregate.LastRecordID.String(),
-		}
-		tieSummary = &tieManifestSummary{
-			PlanID: evidence.Tie.PlanID.String(), PlannedSlots: evidence.Tie.PlannedSlots,
-			ReceiptCount: evidence.Tie.ReceiptCount, CompletedTrials: evidence.Tie.CompletedTrials,
-			NoPairSlots: evidence.Tie.NoPairSlots, TestedAdoptions: evidence.Tie.TestedAdoptions,
-			ConservativeAdoptions: evidence.Tie.ConservativeAdoptions,
-			FirstReceiptID:        evidence.Tie.FirstReceiptID.String(), LastReceiptID: evidence.Tie.LastReceiptID.String(),
-		}
-	} else if tieManifestPath != "" {
-		return errors.New("tie-manifest requires manifest")
+	} else if singleTieRequested || multiTieRequested {
+		return errors.New("tie evidence requires manifest")
 	}
 
 	document, err := workgraphmodel.EvaluatePublicTestnetCalibration(config)
@@ -175,6 +234,96 @@ func run(arguments []string, outputWriter io.Writer) error {
 		return err
 	}
 	return nil
+}
+
+func applyVerifiedEvidenceConfig(
+	config *workgraphmodel.PublicTestnetCalibrationConfig,
+	aggregate telemetry.Aggregate,
+	adoptions uint64,
+	trials uint64,
+	completed uint64,
+	noPair uint64,
+	receipts uint64,
+	observerCount uint64,
+	validatedReceipts uint64,
+	disagreementSlots uint64,
+	tiePlanVersion uint16,
+) {
+	config.ObservationWindowSeconds = aggregate.EndedAt - aggregate.StartedAt
+	config.ControlledTieAdoptions = adoptions
+	config.ControlledTieTrials = trials
+	config.TieCompletedTrials = completed
+	config.TieNoPairSlots = noPair
+	config.LargestCoordinatedWork = aggregate.LargestCoordinatedWork
+	config.ObservedWork = aggregate.ObservedWork
+	config.CoordinatedClusters = uint64(aggregate.Binding.ClusterComparisonBudget)
+	config.EvidenceRecords = aggregate.RecordCount
+	config.EvidenceVerified = true
+	config.TiePlanVersion = tiePlanVersion
+	config.TieEvidenceReceipts = receipts
+	config.TieObserverCount = observerCount
+	config.TieValidatedReceipts = validatedReceipts
+	config.TieDisagreementSlots = disagreementSlots
+	config.TieEvidenceVerified = true
+}
+
+func summarizeManifest(aggregate telemetry.Aggregate) *manifestSummary {
+	return &manifestSummary{
+		RecordCount: aggregate.RecordCount, StartedAt: aggregate.StartedAt, EndedAt: aggregate.EndedAt,
+		FirstRecordID: aggregate.FirstRecordID.String(), LastRecordID: aggregate.LastRecordID.String(),
+	}
+}
+
+func parseMultiTieInputs(
+	pathsText string,
+	observerKeysText string,
+	tailIDsText string,
+) ([]string, []telemetry.TieObserverCheckpoint, error) {
+	paths, err := parseCanonicalList("tie-manifests", pathsText)
+	if err != nil {
+		return nil, nil, err
+	}
+	observerKeys, err := parseCanonicalList("tie-observer-public-keys", observerKeysText)
+	if err != nil {
+		return nil, nil, err
+	}
+	tailIDs, err := parseCanonicalList("tie-tail-ids", tailIDsText)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(paths) < 2 || len(paths) > telemetry.MaximumTieObservers ||
+		len(observerKeys) != len(paths) || len(tailIDs) != len(paths) {
+		return nil, nil, errors.New("multi-observer tie lists must contain the same 2..64 entries")
+	}
+	checkpoints := make([]telemetry.TieObserverCheckpoint, len(paths))
+	for index := range paths {
+		if err := decodeCanonicalHex(
+			fmt.Sprintf("tie-observer-public-keys[%d]", index), observerKeys[index],
+			checkpoints[index].ObserverPublicKey[:],
+		); err != nil {
+			return nil, nil, err
+		}
+		if err := decodeCanonicalHex(
+			fmt.Sprintf("tie-tail-ids[%d]", index), tailIDs[index],
+			checkpoints[index].PublishedReceiptID[:],
+		); err != nil {
+			return nil, nil, err
+		}
+	}
+	return paths, checkpoints, nil
+}
+
+func parseCanonicalList(label, input string) ([]string, error) {
+	if input == "" || strings.TrimSpace(input) != input {
+		return nil, fmt.Errorf("invalid %s", label)
+	}
+	values := strings.Split(input, ",")
+	for _, value := range values {
+		if value == "" || strings.TrimSpace(value) != value {
+			return nil, fmt.Errorf("invalid %s", label)
+		}
+	}
+	return values, nil
 }
 
 func decodeCanonicalHex(label, input string, destination []byte) error {

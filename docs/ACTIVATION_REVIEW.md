@@ -149,10 +149,10 @@ It produces a tie-adoption upper bound of 215,175 ppm and a family-corrected
 concentration upper bound of 229,362 ppm, while `EvidencePass` and the overall
 `Pass` remain false.
 
-The version-3 evidence path accepts the hourly and raw controlled-tie manifests
+The version-4 evidence path accepts the hourly and raw controlled-tie manifests
 only with explicit trusted network, genesis, activation, clustering-policy,
 observer-key, coordinator-key, and three externally published checkpoint
-bindings:
+families (the receipt family has one tail per version-2 observer):
 
 ```sh
 .tools/go/bin/go run ./cmd/omcalibrate \
@@ -170,6 +170,20 @@ bindings:
   --tie-tail-id <64-lowercase-hex>
 ```
 
+The single-manifest form is restricted to a version-1 plan and one observer.
+For a shared version-2 campaign, replace the single tie manifest/tail with
+aligned canonical lists:
+
+```sh
+  --tie-manifests observer-a.omtr,observer-b.omtr \
+  --tie-observer-public-keys <observer-a>,<observer-b> \
+  --tie-tail-ids <published-tail-a>,<published-tail-b>
+```
+
+Every key in the plan is required. Observer chains are correlated witnesses,
+not extra trials; a valid per-slot disagreement is charged as a conservative
+`NoPair` without majority voting.
+
 Each signed hourly record covers at most one hour; sequences, previous-record
 IDs, and interval boundaries must be gapless. Manual tie counters in those
 records invalidate evidence mode. The second file must close every precommitted
@@ -184,8 +198,8 @@ plan ID
 `5066c5b78d96483c7aa99b1c35166d52fda67344005103e885ee1881a9d65676`,
 receipt tail
 `fd13185e9b02fb5d6bf2998eaa0ca8239db644538f01e10ad0a325b21069f3a7`,
-and version-3 report digest
-`a4007470bc67bb957deb825d2abacaafbc2ca907d3173c1abefe7387ec2f2cf6`.
+and version-4 single-observer report digest
+`19f52e9a351965eebe5f18d39d1ed04f164225593d40e59f1a0759471b79094e`.
 Reducing the window by one second, providing fewer than 720 records, omitting a
 raw receipt or any checkpoint, or raising either bound above 250,000 ppm fails
 the conjunctive result. The full format is specified in

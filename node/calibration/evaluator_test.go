@@ -47,7 +47,10 @@ func TestThirtyDayManifestFeedsPublicTestnetGate(t *testing.T) {
 		EvidenceTailID:           aggregate.LastRecordID.String(),
 		EvidenceVerified:         true,
 		TiePlanID:                evidence.Tie.PlanID.String(),
+		TiePlanVersion:           plan.Version,
 		TieEvidenceReceipts:      evidence.Tie.ReceiptCount,
+		TieObserverCount:         1,
+		TieValidatedReceipts:     evidence.Tie.ReceiptCount,
 		TieEvidenceTailID:        evidence.Tie.LastReceiptID.String(),
 		TieEvidenceVerified:      true,
 		MaximumUpperPPM:          workgraphmodel.PublicTestnetMaximumUpperPPM,
@@ -66,7 +69,7 @@ func TestThirtyDayManifestFeedsPublicTestnetGate(t *testing.T) {
 	const wantTelemetryTail = "8498100edacc5868a99f555f523280e4039aa8bf2be9f1c972e6bf7f687b616c"
 	const wantTiePlan = "5066c5b78d96483c7aa99b1c35166d52fda67344005103e885ee1881a9d65676"
 	const wantTieTail = "fd13185e9b02fb5d6bf2998eaa0ca8239db644538f01e10ad0a325b21069f3a7"
-	const wantDigest = "a4007470bc67bb957deb825d2abacaafbc2ca907d3173c1abefe7387ec2f2cf6"
+	const wantDigest = "19f52e9a351965eebe5f18d39d1ed04f164225593d40e59f1a0759471b79094e"
 	if aggregate.LastRecordID.String() != wantTelemetryTail || planID.String() != wantTiePlan ||
 		receiptTail.String() != wantTieTail || hex.EncodeToString(digest[:]) != wantDigest {
 		t.Fatalf("telemetry=%s plan=%s tie=%s digest=%s", aggregate.LastRecordID, planID,

@@ -129,8 +129,15 @@ These signatures prove provenance, binding, continuity, and explicit slot
 closure—not observer honesty. An auditor still needs the underlying version-1
 blocks to verify their common parent, height, PoW, and payout addresses, plus an
 independently published receipt-tail checkpoint to detect rollback. Different
-observers' correlated views must be reported separately; they are not
-independent samples merely because they carry different signatures.
+observers remain correlated witnesses of one planned race; they never become
+additional samples merely because they carry different signatures. Final
+version-2 evidence must include every observer committed by the plan exactly
+once and in canonical key order. Unanimous completed views count as one trial
+only when parent, height, role-labelled anchor IDs, first anchor, and selected
+anchor agree. Observation seconds may differ within the signed slot. Unanimous
+`NoPair` is one conservative failure; any valid mixed status or block/selection
+disagreement is also downgraded to one conservative `NoPair`. There is no
+majority vote and no favorable observer-subset selection.
 
 ## Live hard-anchor collector
 
@@ -414,12 +421,19 @@ hourly chain must contain zero legacy/manual tie counters; tie statistics come
 only from the complete raw receipt chain. Command-line counter flags cannot
 override either verified aggregate.
 
-The version-3 report binds the hourly tail and record count, precommitted tie
-plan ID, raw receipt tail and count, completed/no-pair split, and conservative
-adoption count. `EvidencePass` additionally requires at least one signed record
-per claimed hour, so a 30-day pass needs at least 720 records, and exactly one
-receipt per planned tie slot. Raw counter mode remains useful for previewing
-statistical thresholds but always leaves `EvidencePass=false`.
+The single `--tie-manifest`/`--tie-tail-id` path is restricted to a version-1
+plan and exactly one observer. For a version-2 plan, use aligned comma-separated
+`--tie-manifests`,
+`--tie-observer-public-keys`, and `--tie-tail-ids` lists instead. All plan
+observers are mandatory. The version-4 report binds the hourly tail and record
+count, precommitted tie plan ID, observer count, number of validated signatures,
+disagreement/no-pair split, conservative adoption count, and a canonical
+checkpoint ID over the complete sorted observer/tail set. Each constituent tail
+must still be published independently. `EvidencePass` additionally requires at
+least one signed record per claimed hour, so a 30-day pass needs at least 720
+records; one receipt per planned slot per observer must validate, while the
+statistical denominator remains the slot count. Raw counter mode remains useful
+for previewing statistical thresholds but always leaves `EvidencePass=false`.
 
 The generated end-to-end vector uses 720 signed hourly records, a complete
 10,000-receipt controlled-tie chain with 2,000 tested-branch adoptions, and
@@ -430,25 +444,22 @@ tie plan ID is
 `5066c5b78d96483c7aa99b1c35166d52fda67344005103e885ee1881a9d65676`,
 receipt tail is
 `fd13185e9b02fb5d6bf2998eaa0ca8239db644538f01e10ad0a325b21069f3a7`,
-and its version-3 report digest is
-`a4007470bc67bb957deb825d2abacaafbc2ca907d3173c1abefe7387ec2f2cf6`.
+and its version-4 single-observer report digest is
+`19f52e9a351965eebe5f18d39d1ed04f164225593d40e59f1a0759471b79094e`.
 
 ## Remaining operational work
 
-- carry the bounded pair artifact over authenticated network transport. Version
-  2 now binds up to 64 distinct observer keys under one plan ID, and file
-  delivery separates coordinator mining from observer signing with independent
-  deterministic replay;
 - publish each plan ID before its first slot and publish the final receipt tail
   outside the manifest storage path;
 - deploy and publish the clustering policy and its digest before each real
   observation window;
-- operate multiple independently controlled observers and document how their
-  correlated views are handled rather than naively pooling them;
+- automate multiple signed slots without weakening external plan/pair
+  checkpoint publication;
 - publish hourly telemetry tail checkpoints outside the manifest storage path;
 - define privacy retention for the raw identifiers used to derive pseudonymous
   cluster IDs;
 - chaos-test missed intervals, observer restart, disk-full behavior, and
-  checkpoint disagreement. Local restart, duplicate, clock rollback,
-  persistence failure, concurrent-observation, and producer wait/crash/restart
-  cases are already covered.
+  disk-full behavior. Local restart, duplicate, clock rollback, persistence
+  failure, concurrent-observation, producer wait/crash/restart, authenticated
+  two-observer delivery, lost-ack recovery, and checkpoint disagreement cases
+  are already covered.
