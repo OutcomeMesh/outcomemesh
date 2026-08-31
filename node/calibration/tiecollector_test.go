@@ -228,6 +228,40 @@ func TestTieCollectorIgnoresPostSlotAdmissionDuringClosureGrace(t *testing.T) {
 	}
 }
 
+func TestTieCollectorCampaignModeRefusesToClosePartialSlot(t *testing.T) {
+	collector, config := testTieCollector(t, testStartedAt)
+	if err := collector.Close(testStartedAt); err != nil {
+		t.Fatal(err)
+	}
+	config.FailOnPartialExpiry = true
+	collector, err := OpenTieCollector(config, testStartedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := config.Plan
+	tested := liveTieAdmission(plan, 0, plan.TestedMiner, "campaign-partial", types.Hash{})
+	tested.SelectedID = tested.ID
+	if added, err := collector.Observe(tested); err != nil || !added {
+		t.Fatalf("partial admission added=%t err=%v", added, err)
+	}
+	status, err := collector.Status()
+	if err != nil || status.CurrentCandidates != 1 || status.InvalidCurrent {
+		t.Fatalf("partial status=%+v err=%v", status, err)
+	}
+	expired := plan.Slots[0].EndedAt + TieReceiptClosureGraceSeconds
+	if err := collector.Advance(expired); !errors.Is(err, ErrPartialTiePair) {
+		t.Fatalf("partial expiry error=%v", err)
+	}
+	status, err = collector.Status()
+	if err != nil || status.ClosedSlots != 0 || status.NextSequence != 1 ||
+		status.CurrentCandidates != 1 {
+		t.Fatalf("partial post-expiry status=%+v err=%v", status, err)
+	}
+	if _, err := OpenTieCollector(config, expired); !errors.Is(err, ErrPartialTiePair) {
+		t.Fatalf("partial restart error=%v", err)
+	}
+}
+
 func TestTiePendingCanonicalRoundTripAndBounds(t *testing.T) {
 	plan, _ := testTiePlan(t)
 	planID, _ := plan.ID()

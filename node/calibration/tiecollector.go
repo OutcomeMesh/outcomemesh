@@ -13,6 +13,7 @@ import (
 var (
 	ErrTieCollectorConfig = errors.New("invalid controlled-tie collector configuration")
 	ErrTieCollectorClosed = errors.New("controlled-tie collector is closed")
+	ErrPartialTiePair     = errors.New("controlled-tie slot expired with a partial or invalid pair")
 )
 
 // A router callback is synchronous with Submit but may wait behind an earlier
@@ -36,6 +37,11 @@ type TieCollectorConfig struct {
 	PrivateKey  ed25519.PrivateKey
 	ReceiptPath string
 	PendingPath string
+	// FailOnPartialExpiry is used by coordinated campaigns: an empty missed
+	// slot can be skipped by every node, but a partially admitted sibling pair
+	// must stop the campaign instead of hiding a possible chain divergence as
+	// ordinary NoPair evidence.
+	FailOnPartialExpiry bool
 }
 
 type TieCollectorStatus struct {
@@ -48,6 +54,10 @@ type TieCollectorStatus struct {
 	LastReceiptID   types.Hash
 	Complete        bool
 	InvalidCurrent  bool
+	// CurrentCandidates distinguishes a cleanly missed slot from a partial
+	// delivery. Advancing after a zero-candidate NoPair is safe; advancing after
+	// only one sibling was admitted would silently split the campaign chains.
+	CurrentCandidates uint8
 }
 
 // TieCollector turns the activation router's ordered post-commit admissions
@@ -55,18 +65,19 @@ type TieCollectorStatus struct {
 // a completed receipt, and a stale pending file is reconciled from the signed
 // receipt tail after a crash.
 type TieCollector struct {
-	mu          sync.Mutex
-	plan        TiePlan
-	binding     TiePlanBinding
-	planID      types.Hash
-	privateKey  ed25519.PrivateKey
-	receiptPath string
-	pendingPath string
-	receipts    []TieTrialReceipt
-	aggregate   TieReceiptAggregate
-	pending     tiePendingState
-	lastNow     uint64
-	closed      bool
+	mu                  sync.Mutex
+	plan                TiePlan
+	binding             TiePlanBinding
+	planID              types.Hash
+	privateKey          ed25519.PrivateKey
+	receiptPath         string
+	pendingPath         string
+	receipts            []TieTrialReceipt
+	aggregate           TieReceiptAggregate
+	pending             tiePendingState
+	lastNow             uint64
+	failOnPartialExpiry bool
+	closed              bool
 }
 
 func OpenTieCollector(config TieCollectorConfig, now uint64) (*TieCollector, error) {
@@ -93,6 +104,7 @@ func OpenTieCollector(config TieCollectorConfig, now uint64) (*TieCollector, err
 		plan: ownedPlan, binding: config.Binding, planID: planID,
 		privateKey:  append(ed25519.PrivateKey(nil), config.PrivateKey...),
 		receiptPath: config.ReceiptPath, pendingPath: config.PendingPath, lastNow: now,
+		failOnPartialExpiry: config.FailOnPartialExpiry,
 	}
 	loadedPlan, receipts, aggregate, receiptErr := LoadTieReceiptFile(config.ReceiptPath, config.Binding)
 	if receiptErr == nil {
@@ -266,12 +278,19 @@ func (collector *TieCollector) Status() (TieCollectorStatus, error) {
 	if collector.closed {
 		return TieCollectorStatus{}, ErrTieCollectorClosed
 	}
+	var currentCandidates uint8
+	if collector.pending.Tested.Present {
+		currentCandidates++
+	}
+	if collector.pending.Control.Present {
+		currentCandidates++
+	}
 	return TieCollectorStatus{
 		PlanID: collector.planID, PlannedSlots: uint64(len(collector.plan.Slots)),
 		ClosedSlots: uint64(len(collector.receipts)), CompletedTrials: collector.aggregate.CompletedTrials,
 		NoPairSlots: collector.aggregate.NoPairSlots, NextSequence: collector.pending.Sequence,
 		LastReceiptID: collector.aggregate.LastReceiptID, Complete: collector.completeLocked(),
-		InvalidCurrent: collector.pending.Invalid,
+		InvalidCurrent: collector.pending.Invalid, CurrentCandidates: currentCandidates,
 	}, nil
 }
 
@@ -298,6 +317,10 @@ func (collector *TieCollector) advanceLocked(now uint64) error {
 		slot := collector.plan.Slots[collector.pending.Sequence-1]
 		if now < slot.EndedAt || now-slot.EndedAt < TieReceiptClosureGraceSeconds {
 			return nil
+		}
+		if collector.failOnPartialExpiry && (collector.pending.Tested.Present ||
+			collector.pending.Control.Present || collector.pending.Invalid) {
+			return ErrPartialTiePair
 		}
 		receipt := TieTrialReceipt{
 			Version: collector.receiptVersion(), Sequence: collector.pending.Sequence,

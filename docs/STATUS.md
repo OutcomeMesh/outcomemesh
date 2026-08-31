@@ -1,6 +1,6 @@
 # Implementation status
 
-Updated: 2026-08-28
+Updated: 2026-08-31
 
 This file records evidence against `PLAN.md`. A milestone remains open until all
 of its exit gates pass; implementing most deliverables does not close it.
@@ -488,8 +488,15 @@ Implemented in an isolated, not-yet-activated consensus package:
   Its timed coordinator driver stores immutable per-slot files, waits for a
   separate filesystem publication gate, retries only missing observers in
   parallel, and advances the persistent coordinator chain between slots.
-  Long-lived observer campaign processes, fail-closed missed-slot continuation,
-  observer honesty, and Sybil-cluster provenance remain open testnet work.
+  A long-lived observer campaign process now consumes numbered signed
+  checkpoints for the whole plan, distinguishes durable receipt commit from
+  coordinator confirmation with immutable checksummed markers, and resumes the
+  exact old pair after a kill in that gap. It advances across completely empty
+  missed slots only after the closure grace, while a partial or invalid sibling
+  state stops without writing `NoPair`. A real process test exercises the
+  ACK/kill/restart/confirmation boundary. Coordinator publication deadlines,
+  durable zero-delivery skips, observer honesty, and Sybil-cluster provenance
+  remain open testnet work.
 - the PoW research harness now also has an integer-only, fixed-seed geometric
   solve process for active v0 and lagged v1. Golden observation digests cover
   baseline variance and an alternating 1x/4x campaign, while separate cases

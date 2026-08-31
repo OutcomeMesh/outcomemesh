@@ -20,6 +20,7 @@ import (
 	"github.com/outcomemesh/outcomemesh/core/types"
 	"github.com/outcomemesh/outcomemesh/core/workgraph"
 	"github.com/outcomemesh/outcomemesh/node/calibration"
+	"github.com/outcomemesh/outcomemesh/node/tieexchange"
 	libp2ptransport "github.com/outcomemesh/outcomemesh/node/transport/libp2p"
 	"github.com/outcomemesh/outcomemesh/node/workround"
 	"github.com/outcomemesh/outcomemesh/node/worksession"
@@ -537,6 +538,200 @@ func TestProcessTiePairQUICReachesIndependentV2ObserversAndRecoversAck(t *testin
 	}
 }
 
+func TestProcessTieCampaignReceiverRecoversAckAfterKillBeforeConfirmation(t *testing.T) {
+	root := t.TempDir()
+	coordinatorData := root + "/coordinator"
+	observerData := root + "/observer"
+	planPath := root + "/tie-plan.omtp"
+	pairPath := root + "/tie-pair.omtpair"
+	publicationDirectory := root + "/published"
+	confirmationDirectory := root + "/confirmed"
+	coordinatorTransportKeyPath := root + "/coordinator-transport.key"
+	observerTransportKeyPath := root + "/observer-transport.key"
+	observerReceiptKeyPath := root + "/observer-receipt.key"
+	writeProcessKey(t, coordinatorTransportKeyPath, "tie-campaign-coordinator-transport")
+	writeProcessKey(t, observerTransportKeyPath, "tie-campaign-observer-transport")
+	writeProcessKey(t, observerReceiptKeyPath, "tie-campaign-observer-receipt")
+	runProcessCommand(t, 20*time.Second,
+		"init", "--data", coordinatorData, "--network", "20260832", "--timestamp", "1700000000",
+		"--difficulty-bits", "9", "--max-history-bytes", strconv.FormatUint(minimumHistoryBytes, 10),
+	)
+	document, err := loadGenesis(coordinatorData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	genesisID, err := document.ID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	runProcessCommand(t, 20*time.Second,
+		"work-enable", "--data", coordinatorData, "--activation-height", "2",
+		"--confirm-genesis", genesisID.String(), "--max-trees", "4",
+		"--max-history-bytes", strconv.FormatUint(minimumHistoryBytes, 10),
+	)
+	runProcessCommand(t, 20*time.Second, "work-mine", "--data", coordinatorData, "--count", "1")
+	if err := os.CopyFS(observerData, os.DirFS(coordinatorData)); err != nil {
+		t.Fatal(err)
+	}
+	observerReceiptKey, err := loadPrivateKey(observerReceiptKeyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	coordinatorPlanSeed := types.DomainHash("test/process/tie-campaign-plan-coordinator")
+	coordinatorPlanKey := ed25519.NewKeyFromSeed(coordinatorPlanSeed[:])
+	startedAt := unixNow() + 1
+	plan := calibration.TiePlan{
+		Version: calibration.TiePlanVersion1, NetworkID: document.NetworkID, GenesisID: genesisID,
+		ActivationHeight:        2,
+		TestedMiner:             types.Address(types.DomainHash("test/process/tie-campaign-tested")),
+		ControlMiner:            types.Address(types.DomainHash("test/process/tie-campaign-control")),
+		MaximumPairDelaySeconds: 10,
+		Slots: []calibration.TiePlanSlot{{
+			StartedAt: startedAt, EndedAt: startedAt + 180, FirstRole: calibration.TieRoleTested,
+		}},
+	}
+	copy(plan.ObserverPublicKey[:], observerReceiptKey.Public().(ed25519.PublicKey))
+	plan, err = calibration.SignTiePlan(coordinatorPlanKey, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := calibration.SaveTiePlanFile(planPath, plan, plan.Binding()); err != nil {
+		t.Fatal(err)
+	}
+	planID, err := plan.ID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	coordinatorPublicKey := bytesToLowerHex(coordinatorPlanKey.Public().(ed25519.PublicKey))
+	observerPublicKey := bytesToLowerHex(observerReceiptKey.Public().(ed25519.PublicKey))
+	created := runProcessCommand(t, 30*time.Second,
+		"work-telemetry-tie-pair-create", "--data", coordinatorData,
+		"--plan", planPath, "--plan-id", planID.String(),
+		"--coordinator-public-key", coordinatorPublicKey,
+		"--observer-public-key", observerPublicKey,
+		"--sequence", "1", "--output", pairPath,
+	)
+	pairID, err := parseHash(outputFields(created, "work_tie_pair_created")["pair"])
+	if err != nil {
+		t.Fatalf("pair creation output=%s err=%v", created, err)
+	}
+	checkpoint, err := calibration.SignTiePairCheckpoint(
+		coordinatorPlanKey, plan, plan.Binding(), planID, 1, pairID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkpointID, err := checkpoint.ID(plan, plan.Binding(), planID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(publicationDirectory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(publicationDirectory+"/0000000001.omtcp", checkpoint.CanonicalBytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(publicationDirectory+"/0000000001.published", []byte(checkpointID.String()+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	coordinatorTransportID := processTransportPeerID(t, coordinatorTransportKeyPath)
+	receiver, observerTransportIDText, observerAddress := startTieCampaignReceiverProcess(
+		t, observerData, observerTransportKeyPath, observerReceiptKeyPath,
+		coordinatorTransportID.String(), planPath, planID.String(), coordinatorPublicKey,
+		publicationDirectory, confirmationDirectory,
+	)
+	observerTransportID, err := parseHash(observerTransportIDText)
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifact, err := readTiePairFile(pairPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	coordinatorTransportKey, err := loadPrivateKey(coordinatorTransportKeyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientContext, cancelClient := context.WithTimeout(context.Background(), 30*time.Second)
+	client, err := libp2ptransport.New(
+		clientContext, coordinatorTransportKey, libp2ptransport.DefaultConfig(), nil,
+	)
+	if err != nil {
+		cancelClient()
+		t.Fatal(err)
+	}
+	stream, _, err := client.OpenTiePairStream(clientContext, observerAddress, &observerTransportID)
+	if err != nil {
+		_ = client.Close()
+		cancelClient()
+		t.Fatal(err)
+	}
+	exchangeBinding := tieexchange.Binding{PlanID: planID, PairID: pairID, Sequence: 1}
+	if err := tieexchange.WriteRequest(stream, tieexchange.Request{
+		Binding: exchangeBinding, Artifact: artifact,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	acknowledgement, err := tieexchange.ReadAcknowledgement(
+		stream, exchangeBinding, hashFromPublicKey(observerReceiptKey.Public().(ed25519.PublicKey)),
+	)
+	if err != nil || acknowledgement.ReceiptTail.IsZero() {
+		t.Fatalf("pre-kill acknowledgement=%+v err=%v", acknowledgement, err)
+	}
+	_ = stream.Reset()
+	_ = client.Close()
+	cancelClient()
+	killTieReceiverProcess(t, receiver)
+	if _, err := os.Stat(confirmationDirectory + "/0000000001.confirmed"); !os.IsNotExist(err) {
+		t.Fatalf("confirmation marker exists before coordinator confirmation: %v", err)
+	}
+
+	restarted, restartedTransportID, restartedAddress := startTieCampaignReceiverProcess(
+		t, observerData, observerTransportKeyPath, observerReceiptKeyPath,
+		coordinatorTransportID.String(), planPath, planID.String(), coordinatorPublicKey,
+		publicationDirectory, confirmationDirectory,
+	)
+	if restartedTransportID != observerTransportIDText {
+		t.Fatalf("observer transport identity changed: %s != %s", restartedTransportID, observerTransportIDText)
+	}
+	recoveryContext, cancelRecovery := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancelRecovery()
+	recoveryClient, err := libp2ptransport.New(
+		recoveryContext, coordinatorTransportKey, libp2ptransport.DefaultConfig(), nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recoveredAck, _, err := exchangeTiePairQUIC(
+		recoveryContext, recoveryClient, restartedAddress, observerTransportID,
+		hashFromPublicKey(observerReceiptKey.Public().(ed25519.PublicKey)),
+		exchangeBinding, artifact, 30*time.Second,
+	)
+	_ = recoveryClient.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recoveredAck.ReceiptTail != acknowledgement.ReceiptTail {
+		t.Fatalf("receipt changed across restart: %s != %s", recoveredAck.ReceiptTail, acknowledgement.ReceiptTail)
+	}
+	output := waitTieReceiverProcess(t, restarted)
+	fields := outputFields(output, "work_tie_campaign_pair_received")
+	if fields["recovered"] != "true" || fields["receipt_tail"] != acknowledgement.ReceiptTail.String() ||
+		!strings.Contains(output, "work_tie_campaign_observer_complete") {
+		t.Fatalf("incomplete recovery output: %s", output)
+	}
+	if _, err := os.Stat(confirmationDirectory + "/0000000001.confirmed"); err != nil {
+		t.Fatalf("confirmation marker missing after recovery: %v", err)
+	}
+	_, receipts, aggregate, err := calibration.LoadTieReceiptFile(
+		defaultTieReceiptPath(observerData), plan.Binding(),
+	)
+	if err != nil || len(receipts) != 1 || receipts[0].Status != calibration.TieTrialCompleted ||
+		!aggregate.Complete || aggregate.LastReceiptID != acknowledgement.ReceiptTail {
+		t.Fatalf("recovered receipts=%+v aggregate=%+v err=%v", receipts, aggregate, err)
+	}
+}
+
 // TestOMDHelperProcess executes exactly one CLI command in a separate process.
 func TestOMDHelperProcess(t *testing.T) {
 	if os.Getenv(helperProcessEnvironment) != "1" {
@@ -637,6 +832,85 @@ func startTieReceiverProcess(
 		}
 	})
 	return result, peerID, address
+}
+
+func startTieCampaignReceiverProcess(
+	t testing.TB,
+	data string,
+	transportKey string,
+	receiptKey string,
+	coordinatorTransportID string,
+	planPath string,
+	planID string,
+	coordinatorPublicKey string,
+	publicationDirectory string,
+	confirmationDirectory string,
+) (*tieReceiverProcess, string, string) {
+	t.Helper()
+	command := helperCommand(nil,
+		"work-telemetry-tie-campaign-receive-quic", "--data", data,
+		"--key", transportKey, "--listen", "/ip4/127.0.0.1/udp/0/quic-v1",
+		"--coordinator-peer-id", coordinatorTransportID, "--observer-key", receiptKey,
+		"--plan", planPath, "--plan-id", planID, "--coordinator-public-key", coordinatorPublicKey,
+		"--published", publicationDirectory, "--confirmed", confirmationDirectory, "--poll", "20ms",
+	)
+	pipe, err := command.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stderr := new(bytes.Buffer)
+	command.Stderr = stderr
+	if err := command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	reader := bufio.NewReader(pipe)
+	lineResult := make(chan string, 1)
+	go func() {
+		line, _ := reader.ReadString('\n')
+		lineResult <- line
+	}()
+	var line string
+	select {
+	case line = <-lineResult:
+	case <-time.After(30 * time.Second):
+		_ = command.Process.Kill()
+		_ = command.Wait()
+		t.Fatalf("tie-campaign receiver startup timeout stderr=%s", stderr.String())
+	}
+	values := outputFields(line, "work_tie_campaign_receiving")
+	peerID := values["transport_peer_id"]
+	address := strings.Split(values["listen"], ",")[0]
+	if peerID == "" || address == "" {
+		_ = command.Process.Kill()
+		_ = command.Wait()
+		t.Fatalf("invalid tie-campaign receiver line %q stderr=%s", line, stderr.String())
+	}
+	stdout := new(bytes.Buffer)
+	stdout.WriteString(line)
+	stdoutDone := make(chan struct{})
+	go func() {
+		_, _ = io.Copy(stdout, reader)
+		close(stdoutDone)
+	}()
+	result := &tieReceiverProcess{command: command, stderr: stderr, stdout: stdout, stdoutDone: stdoutDone}
+	t.Cleanup(func() {
+		if command.ProcessState == nil || !command.ProcessState.Exited() {
+			_ = command.Process.Kill()
+			_ = command.Wait()
+		}
+	})
+	return result, peerID, address
+}
+
+func killTieReceiverProcess(t testing.TB, receiver *tieReceiverProcess) {
+	t.Helper()
+	if err := receiver.command.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	if err := receiver.command.Wait(); err == nil {
+		t.Fatal("killed tie receiver exited successfully")
+	}
+	<-receiver.stdoutDone
 }
 
 func waitTieReceiverProcess(t testing.TB, receiver *tieReceiverProcess) string {

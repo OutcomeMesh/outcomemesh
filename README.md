@@ -61,9 +61,10 @@ make build
 `test-process` runs three real v0 QUIC server restart/sync/replay cycles, a
 separate three-node v0→v1 WorkGraph enable/mine/fanout/restart cycle with one
 incompatible authenticated peer, a two-observer authenticated controlled-tie
-artifact delivery/restart recovery, and kills the WorkGraph Pebble process on
-both sides of commit, replay-checkpoint rotation, and stale-fork pruning
-durability boundaries. Raise the
+artifact delivery/restart recovery, a long-lived campaign observer killed after
+durable ACK but before coordinator confirmation, and kills the WorkGraph Pebble
+process on both sides of commit, replay-checkpoint rotation, and stale-fork
+pruning durability boundaries. Raise the
 v0 QUIC soak length with, for example,
 `OUTCOMEMESH_SOAK_CYCLES=25 make test-process` (hard cap: 100 cycles).
 `test-work-rollover-soak` runs 256 timestamp generations across four in-memory

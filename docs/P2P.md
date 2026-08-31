@@ -241,6 +241,16 @@ artifact to match the already validated completed receipt and returns its
 original ID. The authenticated channel protects the exchange endpoints; the
 receipt signature remains the portable audit evidence.
 
+The campaign receiver reuses the same protocol and authenticated host across
+all signed plan slots. It installs only the pair binding named by the exact
+numbered checkpoint and independently published checkpoint ID. Local receipt
+commit and remote knowledge are deliberately journaled separately: a fixed-size
+checksummed confirmation marker is installed only after the final coordinator
+message. A restart with a completed receipt but no marker keeps serving that
+old binding until confirmation instead of moving to the next slot. Empty
+expired slots become conservative `NoPair`; any partial sibling state stops the
+campaign and is never converted into a safe-to-continue miss.
+
 ## Signed peer advertisements
 
 `node/discovery` defines an OutcomeMesh-native discovery record rather than

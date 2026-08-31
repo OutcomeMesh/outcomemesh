@@ -211,8 +211,12 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
   boundaries. A resumable timed coordinator driver now writes immutable
   artifacts, waits for the separate publication gate, contacts all missing
   observers concurrently, and advances its local chain only after every ack.
-  Long-lived observer-side campaign supervision and fail-closed missed-slot
-  continuation remain Milestone 9 deliverables.
+  A long-lived observer receiver now validates numbered externally published
+  checkpoints for the whole plan, records coordinator confirmation separately
+  from signed receipt persistence, recovers the ACK/confirmation crash window,
+  advances after completely empty `NoPair` slots, and stops on any partial pair.
+  A bounded coordinator-side publication deadline and durable zero-delivery
+  skip remain Milestone 9 deliverables.
 
 ### Exit gates
 

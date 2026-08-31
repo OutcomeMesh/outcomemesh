@@ -1,8 +1,8 @@
 # Public-testnet calibration telemetry
 
-Status: opt-in hard-anchor collector, live controlled-tie receipt writer, and
-canonical evidence bundle implemented; miner harness and independent observers
-not yet deployed
+Status: opt-in hard-anchor collector, live controlled-tie receipt writer,
+long-lived campaign receiver, and canonical evidence bundle implemented;
+independent observers not yet deployed
 
 This format supplies reproducible inputs to ER-5 without making telemetry part
 of consensus. A valid manifest proves that one expected Ed25519 observer signed
@@ -425,14 +425,45 @@ different directories:
 For sequence `N`, the driver prints `work_tie_campaign_pair_ready` and waits
 for `externally-published-pairs/%010d.published` containing exactly the printed
 lowercase checkpoint ID plus a newline. The independently operated publisher
-must distribute the matching `.omtcp` file and checkpoint ID, start each
-one-shot receiver at its stable routed address, and only then create that
-confirmation file. A crash or transient observer failure is recovered by
+must distribute the matching numbered `.omtcp` file before atomically exposing
+that confirmation file. A crash or transient observer failure is recovered by
 rerunning the same command; durable observers return their existing receipt,
-while already recorded observers are not contacted again. Automating the
-per-slot one-shot receiver supervision as long-lived observer processes and
-fail-closed continuation after a completely missed slot remain the next
-integration steps.
+while already recorded observers are not contacted again.
+
+Each independent observer can keep one QUIC process alive for the whole plan:
+
+```sh
+.tools/go/bin/go run ./cmd/omd work-telemetry-tie-campaign-receive-quic \
+  --data observer-a-data \
+  --key observer-a-transport.key \
+  --listen /ip4/0.0.0.0/udp/9846/quic-v1 \
+  --coordinator-peer-id <pinned-coordinator-transport-id> \
+  --observer-key observer-a-receipt.key \
+  --plan tie-plan.omtp --plan-id <published-plan-id> \
+  --coordinator-public-key <plan-coordinator-public-key> \
+  --published externally-published-pairs \
+  --confirmed observer-a-data/work-tie-campaign-confirmed
+```
+
+The publication directory visible to an observer contains, for sequence `N`,
+both `%010d.omtcp` and `%010d.published`. The receiver validates the coordinator
+signature and exact published checkpoint ID before enabling that slot's stream.
+It periodically advances the durable collector, so a completely empty expired
+slot closes as conservative `NoPair` after the fixed closure grace and the same
+process moves to the next slot. A partial or invalid sibling delivery never
+takes that path: campaign mode leaves the pending state intact and stops with
+`ErrPartialTiePair`, because continuing from possibly different chain tips
+would invalidate every later comparison.
+
+Receipt persistence and coordinator knowledge are separate crash boundaries.
+After returning a durable receipt acknowledgement, the receiver writes a
+checksummed immutable `%010d.confirmed` marker only after reading the matching
+coordinator confirmation. If the process is killed or the stream drops between
+those events, restart serves the original signed receipt from disk without
+remining or resubmitting either block. A real process test kills the observer at
+that exact boundary, restarts it, verifies the same receipt tail, and completes
+the plan. Coordinator-side deadline and skip policy for an externally
+unpublished slot remains the next campaign integration step.
 
 The tested and control payout addresses must be dedicated to the harness during
 their planned slots. Ordinary mining under either address is intentionally not
@@ -524,13 +555,14 @@ and its version-4 single-observer report digest is
   outside the manifest storage path;
 - deploy and publish the clustering policy and its digest before each real
   observation window;
-- replace per-slot one-shot receiver supervision with long-lived campaign
-  receivers and define fail-closed continuation after a completely missed slot;
+- bound coordinator publication waits to the signed slot and persist an
+  auditable skip only when no observer delivery has begun;
 - publish hourly telemetry tail checkpoints outside the manifest storage path;
 - define privacy retention for the raw identifiers used to derive pseudonymous
   cluster IDs;
 - chaos-test missed intervals, observer restart, and disk-full behavior. Local
   restart, duplicate, clock rollback, persistence
   failure, concurrent-observation, producer wait/crash/restart, authenticated
-  two-observer delivery, lost-ack recovery, and checkpoint disagreement cases
+  two-observer delivery, one-shot lost-ack recovery, long-lived receiver kill
+  between acknowledgement and confirmation, and checkpoint disagreement cases
   are already covered.
