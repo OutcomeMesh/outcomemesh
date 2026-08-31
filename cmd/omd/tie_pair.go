@@ -84,6 +84,77 @@ func runWorkTelemetryTiePairCreate(arguments []string) (resultErr error) {
 	return nil
 }
 
+func runWorkTelemetryTiePairCheckpoint(arguments []string) error {
+	flags := flag.NewFlagSet("work-telemetry-tie-pair-checkpoint", flag.ContinueOnError)
+	data := flags.String("data", defaultDataDirectory, "coordinator WorkGraph node data directory")
+	coordinatorKeyPath := flags.String("coordinator-key", "", "plan coordinator Ed25519 seed file")
+	planPath := flags.String("plan", "", "published signed controlled-tie plan file")
+	planIDText := flags.String("plan-id", "", "externally published controlled-tie plan ID")
+	coordinatorKeyText := flags.String("coordinator-public-key", "", "trusted coordinator Ed25519 public key")
+	observerKeyText := flags.String("observer-public-key", "", "trusted plan observer Ed25519 public key")
+	sequence := flags.Uint64("sequence", 0, "one-based planned slot sequence")
+	inputPath := flags.String("input", "", "portable pair artifact path")
+	outputPath := flags.String("output", "", "new signed pair checkpoint path")
+	if err := flags.Parse(arguments); err != nil {
+		return err
+	}
+	if *coordinatorKeyPath == "" || *planPath == "" || *planIDText == "" ||
+		*coordinatorKeyText == "" || *observerKeyText == "" || *sequence == 0 ||
+		*inputPath == "" || *outputPath == "" {
+		return errors.New("coordinator key, plan, published plan/coordinator/observer keys, sequence, input, and output are required")
+	}
+	observerKey, err := parseHash(*observerKeyText)
+	if err != nil {
+		return fmt.Errorf("observer-public-key: %w", err)
+	}
+	plan, binding, planID, err := loadPublishedTiePlan(
+		*data, *planPath, *planIDText, *coordinatorKeyText, observerKey,
+	)
+	if err != nil {
+		return err
+	}
+	if *sequence > uint64(len(plan.Slots)) {
+		return errors.New("controlled-tie sequence exceeds the published plan")
+	}
+	encoded, err := readTiePairFile(*inputPath)
+	if err != nil {
+		return err
+	}
+	pair, err := tieproducer.DecodePair(encoded, plan, binding, planID)
+	if err != nil {
+		return err
+	}
+	if pair.Sequence != *sequence {
+		return errors.New("portable pair sequence does not match requested sequence")
+	}
+	pairID, err := pair.ID(plan, binding, planID)
+	if err != nil {
+		return err
+	}
+	coordinatorKey, err := loadPrivateKey(*coordinatorKeyPath)
+	if err != nil {
+		return err
+	}
+	checkpoint, err := calibration.SignTiePairCheckpoint(
+		coordinatorKey, plan, binding, planID, *sequence, pairID,
+	)
+	if err != nil {
+		return err
+	}
+	checkpointID, err := checkpoint.ID(plan, binding, planID)
+	if err != nil {
+		return err
+	}
+	if err := writeNewTieCheckpointFile(*outputPath, checkpoint.CanonicalBytes()); err != nil {
+		return err
+	}
+	fmt.Printf(
+		"work_tie_pair_checkpoint_created plan=%s sequence=%d pair=%s checkpoint=%s output=%s\n",
+		planID, *sequence, pairID, checkpointID, *outputPath,
+	)
+	return nil
+}
+
 func runWorkTelemetryTiePairAdmit(arguments []string) (resultErr error) {
 	flags := flag.NewFlagSet("work-telemetry-tie-pair-admit", flag.ContinueOnError)
 	data := flags.String("data", defaultDataDirectory, "independent observer WorkGraph node data directory")
@@ -94,14 +165,17 @@ func runWorkTelemetryTiePairAdmit(arguments []string) (resultErr error) {
 	sequence := flags.Uint64("sequence", 0, "one-based planned slot sequence")
 	inputPath := flags.String("input", "", "portable pair artifact path")
 	expectedPairIDText := flags.String("pair-id", "", "externally published portable pair ID")
+	checkpointPath := flags.String("pair-checkpoint", "", "coordinator-signed pair checkpoint file")
+	checkpointIDText := flags.String("pair-checkpoint-id", "", "externally published pair checkpoint ID")
 	receiptPath := flags.String("receipt-manifest", "", "signed raw tie receipt path (default under data)")
 	pendingPath := flags.String("pending", "", "crash-safe partial tie state path (default under data)")
 	if err := flags.Parse(arguments); err != nil {
 		return err
 	}
 	if *observerKeyPath == "" || *planPath == "" || *planIDText == "" ||
-		*coordinatorKeyText == "" || *sequence == 0 || *inputPath == "" || *expectedPairIDText == "" {
-		return errors.New("observer key, plan/pair IDs, coordinator public key, sequence, and input are required")
+		*coordinatorKeyText == "" || *sequence == 0 || *inputPath == "" ||
+		!validPairPublicationFlags(*expectedPairIDText, *checkpointPath, *checkpointIDText) {
+		return errors.New("observer key, plan, one published pair binding, coordinator public key, sequence, and input are required")
 	}
 	if *receiptPath == "" {
 		*receiptPath = defaultTieReceiptPath(*data)
@@ -139,9 +213,12 @@ func runWorkTelemetryTiePairAdmit(arguments []string) (resultErr error) {
 	if err != nil {
 		return err
 	}
-	expectedPairID, err := parseHash(*expectedPairIDText)
+	expectedPairID, err := resolvePublishedPairID(
+		*expectedPairIDText, *checkpointPath, *checkpointIDText,
+		plan, binding, planID, *sequence,
+	)
 	if err != nil {
-		return fmt.Errorf("pair-id: %w", err)
+		return err
 	}
 	if pairID != expectedPairID {
 		return errors.New("portable pair does not match the published pair ID")
@@ -263,11 +340,25 @@ func readTiePairFile(path string) ([]byte, error) {
 }
 
 func writeNewTiePairFile(path string, encoded []byte) error {
-	if path == "" || len(encoded) == 0 || len(encoded) > tieproducer.MaximumPairArtifactBytes {
-		return tieproducer.ErrPairArtifact
+	return writeNewTieCommandFile(
+		path, encoded, tieproducer.MaximumPairArtifactBytes,
+		tieproducer.ErrPairArtifact, ".outcomemesh-tie-pair-*",
+	)
+}
+
+func writeNewTieCheckpointFile(path string, encoded []byte) error {
+	return writeNewTieCommandFile(
+		path, encoded, calibration.TiePairCheckpointBytes,
+		calibration.ErrTiePairCheckpoint, ".outcomemesh-tie-pair-checkpoint-*",
+	)
+}
+
+func writeNewTieCommandFile(path string, encoded []byte, maximum int, invalid error, pattern string) error {
+	if path == "" || len(encoded) == 0 || len(encoded) > maximum {
+		return invalid
 	}
 	directory := filepath.Dir(path)
-	temporary, err := os.CreateTemp(directory, ".outcomemesh-tie-pair-*")
+	temporary, err := os.CreateTemp(directory, pattern)
 	if err != nil {
 		return err
 	}
@@ -292,4 +383,45 @@ func writeNewTiePairFile(path string, encoded []byte) error {
 		return err
 	}
 	return syncCommandDirectory(directory)
+}
+
+func validPairPublicationFlags(pairID, checkpointPath, checkpointID string) bool {
+	direct := pairID != "" && checkpointPath == "" && checkpointID == ""
+	checkpoint := pairID == "" && checkpointPath != "" && checkpointID != ""
+	return direct || checkpoint
+}
+
+func resolvePublishedPairID(
+	pairIDText string,
+	checkpointPath string,
+	checkpointIDText string,
+	plan calibration.TiePlan,
+	binding calibration.TiePlanBinding,
+	planID types.Hash,
+	sequence uint64,
+) (types.Hash, error) {
+	if !validPairPublicationFlags(pairIDText, checkpointPath, checkpointIDText) {
+		return types.Hash{}, errors.New("exactly one direct pair ID or signed pair checkpoint binding is required")
+	}
+	if pairIDText != "" {
+		pairID, err := parseHash(pairIDText)
+		if err != nil {
+			return types.Hash{}, fmt.Errorf("pair-id: %w", err)
+		}
+		return pairID, nil
+	}
+	checkpointID, err := parseHash(checkpointIDText)
+	if err != nil {
+		return types.Hash{}, fmt.Errorf("pair-checkpoint-id: %w", err)
+	}
+	checkpoint, err := calibration.LoadTiePairCheckpointFile(
+		checkpointPath, plan, binding, planID, checkpointID,
+	)
+	if err != nil {
+		return types.Hash{}, err
+	}
+	if checkpoint.Sequence != sequence {
+		return types.Hash{}, errors.New("pair checkpoint sequence does not match requested sequence")
+	}
+	return checkpoint.PairID, nil
 }

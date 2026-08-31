@@ -124,6 +124,8 @@ func run(arguments []string) error {
 		return runWorkTelemetryTieProduce(arguments[1:])
 	case "work-telemetry-tie-pair-create":
 		return runWorkTelemetryTiePairCreate(arguments[1:])
+	case "work-telemetry-tie-pair-checkpoint":
+		return runWorkTelemetryTiePairCheckpoint(arguments[1:])
 	case "work-telemetry-tie-pair-admit":
 		return runWorkTelemetryTiePairAdmit(arguments[1:])
 	case "work-telemetry-tie-pair-receive-quic":
@@ -1536,5 +1538,5 @@ func defaultDevelopmentAddress() types.Address {
 
 func printUsage() {
 	fmt.Println("OutcomeMesh standalone development node")
-	fmt.Println("usage: omd <keygen|init|status|balance|transfer|mine|verify|serve|sync|peers|snapshot-check|serve-quic|sync-quic|peers-quic|auto-sync-quic|work-enable|work-status|work-balance|work-verify|work-mine|work-mine-quic|work-serve-quic|work-sync-quic|work-telemetry-policy|work-telemetry-tie-plan|work-telemetry-tie-produce|work-telemetry-tie-pair-create|work-telemetry-tie-pair-admit|work-telemetry-tie-pair-receive-quic|work-telemetry-tie-pair-send-quic> [flags]")
+	fmt.Println("usage: omd <keygen|init|status|balance|transfer|mine|verify|serve|sync|peers|snapshot-check|serve-quic|sync-quic|peers-quic|auto-sync-quic|work-enable|work-status|work-balance|work-verify|work-mine|work-mine-quic|work-serve-quic|work-sync-quic|work-telemetry-policy|work-telemetry-tie-plan|work-telemetry-tie-produce|work-telemetry-tie-pair-create|work-telemetry-tie-pair-checkpoint|work-telemetry-tie-pair-admit|work-telemetry-tie-pair-receive-quic|work-telemetry-tie-pair-send-quic> [flags]")
 }

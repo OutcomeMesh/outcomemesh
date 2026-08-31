@@ -45,6 +45,10 @@ func TestPortableTiePairSeparatesMiningFromObserverAdmission(t *testing.T) {
 	}
 	coordinatorSeed := types.DomainHash("test/omd/portable-pair-coordinator")
 	coordinator := ed25519.NewKeyFromSeed(coordinatorSeed[:])
+	coordinatorPath := filepath.Join(root, "coordinator.key")
+	if err := os.WriteFile(coordinatorPath, coordinatorSeed[:], 0o600); err != nil {
+		t.Fatal(err)
+	}
 	now := unixNow()
 	plan := calibration.TiePlan{
 		Version: calibration.TiePlanVersion1, NetworkID: document.NetworkID, GenesisID: genesisID,
@@ -94,10 +98,28 @@ func TestPortableTiePairSeparatesMiningFromObserverAdmission(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	checkpointPath := filepath.Join(root, "tie-pair.omtcp")
+	checkpointArguments := append(append([]string(nil), common...),
+		"--coordinator-key", coordinatorPath,
+		"--observer-public-key", bytesToLowerHex(observer.Public().(ed25519.PublicKey)),
+		"--input", pairPath, "--output", checkpointPath,
+	)
+	if err := runWorkTelemetryTiePairCheckpoint(checkpointArguments); err != nil {
+		t.Fatal(err)
+	}
+	checkpoint, err := calibration.DecodeTiePairCheckpoint(mustReadFile(t, checkpointPath))
+	if err != nil || checkpoint.PairID != pairID || checkpoint.Sequence != 1 {
+		t.Fatalf("pair checkpoint=%+v err=%v", checkpoint, err)
+	}
+	checkpointID, err := checkpoint.ID(plan, plan.Binding(), planID)
+	if err != nil {
+		t.Fatal(err)
+	}
 	receiptPath := filepath.Join(root, "tie-receipts.omtr")
 	pendingPath := filepath.Join(root, "tie-receipts.pending")
 	admit := append(append([]string(nil), common...),
-		"--observer-key", observerPath, "--input", pairPath, "--pair-id", pairID.String(),
+		"--observer-key", observerPath, "--input", pairPath,
+		"--pair-checkpoint", checkpointPath, "--pair-checkpoint-id", checkpointID.String(),
 		"--receipt-manifest", receiptPath, "--pending", pendingPath,
 	)
 	if err := runWorkTelemetryTiePairAdmit(admit); err != nil {
@@ -111,6 +133,15 @@ func TestPortableTiePairSeparatesMiningFromObserverAdmission(t *testing.T) {
 	if tip := workTip(t, data); tip == baseTip {
 		t.Fatal("observer admission did not advance the persistent WorkGraph tip")
 	}
+}
+
+func mustReadFile(t testing.TB, path string) []byte {
+	t.Helper()
+	encoded, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return encoded
 }
 
 func workTip(t testing.TB, data string) types.Hash {

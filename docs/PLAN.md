@@ -204,8 +204,12 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
   requires every version-2 observer chain, counts a campaign slot only once,
   and downgrades any valid block/selection disagreement to conservative
   `NoPair` without majority voting. The report commits the plan version, so the
-  legacy single-view path cannot certify a version-2 plan. Multi-slot
-  orchestration remains a Milestone 9 deliverable.
+  legacy single-view path cannot certify a version-2 plan. Coordinator-signed
+  per-slot pair checkpoints now give the external publication channel a compact
+  immutable binding, and a checksum-protected crash-safe campaign journal
+  persists pair, publication, every observer acknowledgement, and advance
+  boundaries. The timed multi-slot/network driver remains a Milestone 9
+  deliverable.
 
 ### Exit gates
 

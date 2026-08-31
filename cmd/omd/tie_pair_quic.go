@@ -35,6 +35,8 @@ func runWorkTelemetryTiePairReceiveQUIC(arguments []string) (resultErr error) {
 	coordinatorKeyText := flags.String("coordinator-public-key", "", "trusted plan coordinator Ed25519 public key")
 	sequence := flags.Uint64("sequence", 0, "one-based planned slot sequence")
 	expectedPairIDText := flags.String("pair-id", "", "externally published portable pair ID")
+	checkpointPath := flags.String("pair-checkpoint", "", "coordinator-signed pair checkpoint file")
+	checkpointIDText := flags.String("pair-checkpoint-id", "", "externally published pair checkpoint ID")
 	receiptPath := flags.String("receipt-manifest", "", "signed raw tie receipt path (default under data)")
 	pendingPath := flags.String("pending", "", "crash-safe partial tie state path (default under data)")
 	if err := flags.Parse(arguments); err != nil {
@@ -42,8 +44,8 @@ func runWorkTelemetryTiePairReceiveQUIC(arguments []string) (resultErr error) {
 	}
 	if *transportKeyPath == "" || *coordinatorPeerIDText == "" || *observerKeyPath == "" ||
 		*planPath == "" || *planIDText == "" || *coordinatorKeyText == "" ||
-		*sequence == 0 || *expectedPairIDText == "" {
-		return errors.New("transport/observer keys, coordinator peer/public keys, plan/pair IDs, plan, and sequence are required")
+		*sequence == 0 || !validPairPublicationFlags(*expectedPairIDText, *checkpointPath, *checkpointIDText) {
+		return errors.New("transport/observer keys, coordinator identities, plan, sequence, and one published pair binding are required")
 	}
 	if *receiptPath == "" {
 		*receiptPath = defaultTieReceiptPath(*data)
@@ -58,10 +60,6 @@ func runWorkTelemetryTiePairReceiveQUIC(arguments []string) (resultErr error) {
 	coordinatorPeerID, err := parseHash(*coordinatorPeerIDText)
 	if err != nil {
 		return fmt.Errorf("coordinator-peer-id: %w", err)
-	}
-	expectedPairID, err := parseHash(*expectedPairIDText)
-	if err != nil {
-		return fmt.Errorf("pair-id: %w", err)
 	}
 	observerKey, err := loadPrivateKey(*observerKeyPath)
 	if err != nil {
@@ -82,6 +80,13 @@ func runWorkTelemetryTiePairReceiveQUIC(arguments []string) (resultErr error) {
 	}
 	if *sequence > uint64(len(plan.Slots)) {
 		return errors.New("controlled-tie sequence exceeds the published plan")
+	}
+	expectedPairID, err := resolvePublishedPairID(
+		*expectedPairIDText, *checkpointPath, *checkpointIDText,
+		plan, binding, planID, *sequence,
+	)
+	if err != nil {
+		return err
 	}
 	exchangeBinding := tieexchange.Binding{PlanID: planID, PairID: expectedPairID, Sequence: *sequence}
 	collector, err := calibration.OpenTieCollector(calibration.TieCollectorConfig{

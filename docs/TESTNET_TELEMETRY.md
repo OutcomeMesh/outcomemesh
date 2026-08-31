@@ -285,7 +285,24 @@ artifact. On a coordinator node synchronized to the observer's parent:
   --sequence 1 --output tie-pair-1.omtpair
 ```
 
-The observer receives the immutable file and admits it with its own key:
+Create the signed publication checkpoint after the pair exists:
+
+```sh
+.tools/go/bin/go run ./cmd/omd work-telemetry-tie-pair-checkpoint \
+  --data coordinator-data \
+  --coordinator-key coordinator.key \
+  --plan tie-plan.omtp --plan-id <published-plan-id> \
+  --coordinator-public-key <64-lowercase-hex> \
+  --observer-public-key <64-lowercase-hex> \
+  --sequence 1 --input tie-pair-1.omtpair \
+  --output tie-pair-1.omtcp
+```
+
+Publish the printed checkpoint ID through the independent campaign channel.
+The checkpoint is signed by the plan coordinator and binds exactly the plan
+ID, slot sequence, and pair ID. It is created only after mining, so it cannot
+feed resulting IDs back into nonce search or role order. The observer receives
+the immutable pair and checkpoint files and admits them with its own key:
 
 ```sh
 .tools/go/bin/go run ./cmd/omd work-telemetry-tie-pair-admit \
@@ -295,17 +312,20 @@ The observer receives the immutable file and admits it with its own key:
   --plan-id <published-plan-id> \
   --coordinator-public-key <64-lowercase-hex> \
   --sequence 1 --input tie-pair-1.omtpair \
-  --pair-id <published-pair-id> \
+  --pair-checkpoint tie-pair-1.omtcp \
+  --pair-checkpoint-id <published-checkpoint-id> \
   --receipt-manifest observer-data/work-tie-receipts.omtr \
   --pending observer-data/work-tie-receipts.pending
 ```
 
 The artifact is bounded to 23,071,744 bytes and canonically binds the plan ID,
 slot sequence, and both complete role-labelled WorkGraph blocks. It needs no
-additional signature: the blocks carry proof of work, while the prepublished
-plan authenticates the schedule and roles. The create command does not submit
-either block and never receives the observer private key. Files are installed
-with no-overwrite atomic linking and the containing directory is synchronized.
+signature for block validity: the blocks carry proof of work, while the
+prepublished plan authenticates the schedule and roles. The separate signed
+checkpoint supplies a compact external-publication boundary. The create
+command does not submit either block and never receives the observer private
+key. Files are installed with no-overwrite atomic linking and the containing
+directory is synchronized.
 
 Portable delivery does not reintroduce selection grinding. Each role's initial
 nonce is derived from the published plan ID, sequence, and role; the block
@@ -330,7 +350,9 @@ observer whose node is synchronized to the coordinator's frozen parent:
   --observer-key observer-a-receipt.key \
   --plan tie-plan.omtp --plan-id <published-plan-id> \
   --coordinator-public-key <plan-coordinator-public-key> \
-  --sequence 1 --pair-id <published-pair-id>
+  --sequence 1 \
+  --pair-checkpoint tie-pair-1.omtcp \
+  --pair-checkpoint-id <published-checkpoint-id>
 ```
 
 The coordinator sends the already-created file to the printed direct address:
@@ -362,6 +384,16 @@ after commit, restarting the same one-shot receiver verifies the artifact
 against the existing completed receipt and returns the same receipt ID without
 submitting either block again. Per-peer/global stream concurrency and fixed-
 window rate budgets bound replay-driven CPU and memory exposure.
+
+The coordinator-side campaign journal now persists four explicit boundaries
+per slot: validated pair/checkpoint staged, external checkpoint confirmed,
+each plan observer's authenticated receipt tail recorded in canonical key
+order, and local advance permitted. Its checksum-protected state is atomically
+replaced and fsynced at every transition. Replaying the same pair, publication,
+receipt acknowledgement, or final advance after a crash is idempotent;
+conflicting pair IDs or tails are rejected. The timed driver that feeds this
+journal across every slot and long-lived observer processes is the next
+integration step.
 
 The tested and control payout addresses must be dedicated to the harness during
 their planned slots. Ordinary mining under either address is intentionally not
@@ -453,13 +485,13 @@ and its version-4 single-observer report digest is
   outside the manifest storage path;
 - deploy and publish the clustering policy and its digest before each real
   observation window;
-- automate multiple signed slots without weakening external plan/pair
-  checkpoint publication;
+- connect the crash-safe campaign journal to a timed multi-slot driver and
+  long-lived observer receivers;
 - publish hourly telemetry tail checkpoints outside the manifest storage path;
 - define privacy retention for the raw identifiers used to derive pseudonymous
   cluster IDs;
-- chaos-test missed intervals, observer restart, disk-full behavior, and
-  disk-full behavior. Local restart, duplicate, clock rollback, persistence
+- chaos-test missed intervals, observer restart, and disk-full behavior. Local
+  restart, duplicate, clock rollback, persistence
   failure, concurrent-observation, producer wait/crash/restart, authenticated
   two-observer delivery, lost-ack recovery, and checkpoint disagreement cases
   are already covered.

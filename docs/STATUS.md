@@ -481,7 +481,11 @@ Implemented in an isolated, not-yet-activated consensus package:
   status, anchor, or selected-tip views to `NoPair`. The version-4 report commits
   the plan version, observer/validated-receipt/disagreement counts, and the
   combined checkpoint digest; a lone version-2 view cannot enter its verified
-  path. Multi-slot orchestration, observer honesty, and Sybil-cluster
+  path. Coordinator-signed pair checkpoints now bind each dynamically mined
+  artifact to its plan and sequence for external publication, and a crash-safe
+  campaign journal refuses delivery before publication, persists every
+  canonical observer acknowledgement, and advances only after the full set.
+  Timed multi-slot/network driving, observer honesty, and Sybil-cluster
   provenance remain open testnet work.
 - the PoW research harness now also has an integer-only, fixed-seed geometric
   solve process for active v0 and lagged v1. Golden observation digests cover
