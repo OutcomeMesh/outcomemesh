@@ -316,34 +316,13 @@ func runWorkTelemetryTiePairSendQUIC(arguments []string) error {
 		return err
 	}
 	defer host.Close()
-	stream, remoteID, err := host.OpenTiePairStream(ctx, *peerAddress, &observerPeerID)
-	if err != nil {
-		return err
-	}
-	defer stream.Close()
-	if err := stream.SetDeadline(time.Now().Add(*timeout)); err != nil {
-		return err
-	}
 	exchangeBinding := tieexchange.Binding{PlanID: planID, PairID: pairID, Sequence: *sequence}
-	if err := tieexchange.WriteRequest(stream, tieexchange.Request{Binding: exchangeBinding, Artifact: artifact}); err != nil {
-		return err
-	}
-	acknowledgement, err := tieexchange.ReadAcknowledgement(stream, exchangeBinding, observerPublicKey)
+	acknowledgement, remoteID, err := exchangeTiePairQUIC(
+		ctx, host, *peerAddress, observerPeerID, observerPublicKey,
+		exchangeBinding, artifact, *timeout,
+	)
 	if err != nil {
 		return err
-	}
-	if err := tieexchange.WriteConfirmation(stream, tieexchange.Confirmation{
-		Binding: exchangeBinding, ReceiptTail: acknowledgement.ReceiptTail,
-	}); err != nil {
-		return err
-	}
-	// Keep the coordinator connection alive until the observer has read the
-	// confirmation and closes its side. A payload byte here would be an
-	// unversioned protocol extension; any terminal read error is the expected
-	// end of this one-shot stream.
-	var unexpected [1]byte
-	if _, err := io.ReadFull(stream, unexpected[:]); err == nil {
-		return tieexchange.ErrProtocol
 	}
 	fmt.Printf(
 		"work_tie_pair_sent transport_peer_id=%s observer_peer_id=%s plan=%s sequence=%d pair=%s observer=%s receipt_tail=%s bytes=%d\n",
@@ -351,6 +330,52 @@ func runWorkTelemetryTiePairSendQUIC(arguments []string) error {
 		acknowledgement.ReceiptTail, len(artifact),
 	)
 	return nil
+}
+
+func exchangeTiePairQUIC(
+	ctx context.Context,
+	host *libp2ptransport.Host,
+	peerAddress string,
+	observerPeerID types.Hash,
+	observerPublicKey types.Hash,
+	binding tieexchange.Binding,
+	artifact []byte,
+	timeout time.Duration,
+) (tieexchange.Acknowledgement, types.Hash, error) {
+	if ctx == nil || host == nil || peerAddress == "" || observerPeerID.IsZero() ||
+		observerPublicKey.IsZero() || binding.Validate() != nil || len(artifact) == 0 ||
+		timeout < time.Second || timeout > 10*time.Minute {
+		return tieexchange.Acknowledgement{}, types.Hash{}, tieexchange.ErrProtocol
+	}
+	stream, remoteID, err := host.OpenTiePairStream(ctx, peerAddress, &observerPeerID)
+	if err != nil {
+		return tieexchange.Acknowledgement{}, types.Hash{}, err
+	}
+	defer stream.Close()
+	if err := stream.SetDeadline(time.Now().Add(timeout)); err != nil {
+		return tieexchange.Acknowledgement{}, types.Hash{}, err
+	}
+	if err := tieexchange.WriteRequest(stream, tieexchange.Request{Binding: binding, Artifact: artifact}); err != nil {
+		return tieexchange.Acknowledgement{}, types.Hash{}, err
+	}
+	acknowledgement, err := tieexchange.ReadAcknowledgement(stream, binding, observerPublicKey)
+	if err != nil {
+		return tieexchange.Acknowledgement{}, types.Hash{}, err
+	}
+	if err := tieexchange.WriteConfirmation(stream, tieexchange.Confirmation{
+		Binding: binding, ReceiptTail: acknowledgement.ReceiptTail,
+	}); err != nil {
+		return tieexchange.Acknowledgement{}, types.Hash{}, err
+	}
+	// Keep the coordinator connection alive until the observer has read the
+	// confirmation and closes its side. A payload byte here would be an
+	// unversioned protocol extension; any terminal read error is the expected
+	// end of this one-shot stream.
+	var unexpected [1]byte
+	if _, err := io.ReadFull(stream, unexpected[:]); err == nil {
+		return tieexchange.Acknowledgement{}, types.Hash{}, tieexchange.ErrProtocol
+	}
+	return acknowledgement, remoteID, nil
 }
 
 func persistedReceiptForPair(

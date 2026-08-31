@@ -208,8 +208,11 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
   per-slot pair checkpoints now give the external publication channel a compact
   immutable binding, and a checksum-protected crash-safe campaign journal
   persists pair, publication, every observer acknowledgement, and advance
-  boundaries. The timed multi-slot/network driver remains a Milestone 9
-  deliverable.
+  boundaries. A resumable timed coordinator driver now writes immutable
+  artifacts, waits for the separate publication gate, contacts all missing
+  observers concurrently, and advances its local chain only after every ack.
+  Long-lived observer-side campaign supervision and fail-closed missed-slot
+  continuation remain Milestone 9 deliverables.
 
 ### Exit gates
 

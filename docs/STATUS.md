@@ -485,8 +485,11 @@ Implemented in an isolated, not-yet-activated consensus package:
   artifact to its plan and sequence for external publication, and a crash-safe
   campaign journal refuses delivery before publication, persists every
   canonical observer acknowledgement, and advances only after the full set.
-  Timed multi-slot/network driving, observer honesty, and Sybil-cluster
-  provenance remain open testnet work.
+  Its timed coordinator driver stores immutable per-slot files, waits for a
+  separate filesystem publication gate, retries only missing observers in
+  parallel, and advances the persistent coordinator chain between slots.
+  Long-lived observer campaign processes, fail-closed missed-slot continuation,
+  observer honesty, and Sybil-cluster provenance remain open testnet work.
 - the PoW research harness now also has an integer-only, fixed-seed geometric
   solve process for active v0 and lagged v1. Golden observation digests cover
   baseline variance and an alternating 1x/4x campaign, while separate cases

@@ -385,15 +385,54 @@ against the existing completed receipt and returns the same receipt ID without
 submitting either block again. Per-peer/global stream concurrency and fixed-
 window rate budgets bound replay-driven CPU and memory exposure.
 
-The coordinator-side campaign journal now persists four explicit boundaries
+The coordinator-side campaign journal persists four explicit boundaries
 per slot: validated pair/checkpoint staged, external checkpoint confirmed,
 each plan observer's authenticated receipt tail recorded in canonical key
 order, and local advance permitted. Its checksum-protected state is atomically
 replaced and fsynced at every transition. Replaying the same pair, publication,
 receipt acknowledgement, or final advance after a crash is idempotent;
-conflicting pair IDs or tails are rejected. The timed driver that feeds this
-journal across every slot and long-lived observer processes is the next
-integration step.
+conflicting pair IDs or tails are rejected. The timed coordinator driver feeds
+that journal across every successful slot, writes immutable numbered artifact
+and checkpoint files, waits on a separate publication directory, opens all
+missing observer streams concurrently, records successful acknowledgements as
+they arrive, and advances its own persistent chain only after the full observer
+set has acknowledged.
+
+The observer route file has exactly one line per plan observer in canonical key
+order:
+
+```text
+<receipt-public-key> <transport-peer-id> <direct-quic-multiaddress>
+```
+
+Run the coordinator campaign with artifact output and external publication in
+different directories:
+
+```sh
+.tools/go/bin/go run ./cmd/omd work-telemetry-tie-campaign \
+  --data coordinator-data \
+  --key coordinator-transport.key \
+  --coordinator-key coordinator-plan.key \
+  --plan tie-plan.omtp --plan-id <published-plan-id> \
+  --coordinator-public-key <plan-coordinator-public-key> \
+  --observer-public-key <any-plan-observer-public-key> \
+  --observers observer-routes.txt \
+  --state coordinator-data/work-tie-campaign.state \
+  --artifacts pair-artifacts \
+  --published externally-published-pairs
+```
+
+For sequence `N`, the driver prints `work_tie_campaign_pair_ready` and waits
+for `externally-published-pairs/%010d.published` containing exactly the printed
+lowercase checkpoint ID plus a newline. The independently operated publisher
+must distribute the matching `.omtcp` file and checkpoint ID, start each
+one-shot receiver at its stable routed address, and only then create that
+confirmation file. A crash or transient observer failure is recovered by
+rerunning the same command; durable observers return their existing receipt,
+while already recorded observers are not contacted again. Automating the
+per-slot one-shot receiver supervision as long-lived observer processes and
+fail-closed continuation after a completely missed slot remain the next
+integration steps.
 
 The tested and control payout addresses must be dedicated to the harness during
 their planned slots. Ordinary mining under either address is intentionally not
@@ -485,8 +524,8 @@ and its version-4 single-observer report digest is
   outside the manifest storage path;
 - deploy and publish the clustering policy and its digest before each real
   observation window;
-- connect the crash-safe campaign journal to a timed multi-slot driver and
-  long-lived observer receivers;
+- replace per-slot one-shot receiver supervision with long-lived campaign
+  receivers and define fail-closed continuation after a completely missed slot;
 - publish hourly telemetry tail checkpoints outside the manifest storage path;
 - define privacy retention for the raw identifiers used to derive pseudonymous
   cluster IDs;
