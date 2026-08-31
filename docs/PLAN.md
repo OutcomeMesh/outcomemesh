@@ -220,7 +220,10 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
   skipped sequence, while every state after publication is permanently
   non-skippable. A real coordinator/observer process regression proves an
   expired zero-delivery slot followed by a completed pair retains one parent
-  and convergent tips.
+  and convergent tips. A second injected process crash after only the first
+  sibling commit proves partial state survives and permanently stops the
+  campaign; pre-commit and ambiguous post-commit write failures for skip and
+  confirmation journals are idempotently recoverable.
 
 ### Exit gates
 

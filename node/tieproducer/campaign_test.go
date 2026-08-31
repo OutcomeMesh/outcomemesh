@@ -285,6 +285,75 @@ func TestCampaignMigratesVersionZeroState(t *testing.T) {
 	}
 }
 
+func TestCampaignSkipWriteFailuresRemainRetryable(t *testing.T) {
+	plan, binding, _ := campaignPlan(t)
+	planID, _ := plan.ID()
+	closure := plan.Slots[0].EndedAt + calibration.TieReceiptClosureGraceSeconds
+	injected := errors.New("injected campaign journal failure")
+
+	t.Run("before commit", func(t *testing.T) {
+		statePath := filepath.Join(t.TempDir(), "campaign.state")
+		campaign, err := OpenCampaign(CampaignConfig{
+			Plan: plan, Binding: binding, ExpectedPlanID: planID, StatePath: statePath,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		campaign.saveState = func(string, []byte) error { return injected }
+		if err := campaign.SkipExpired(1, closure); !errors.Is(err, injected) {
+			t.Fatalf("pre-commit failure=%v", err)
+		}
+		status, _ := campaign.Status()
+		if status.NextSequence != 1 || status.SkippedSlots != 0 {
+			t.Fatalf("pre-commit mutation status=%+v", status)
+		}
+		campaign.saveState = saveCampaignState
+		if err := campaign.SkipExpired(1, closure); err != nil {
+			t.Fatal(err)
+		}
+		status, _ = campaign.Status()
+		if status.NextSequence != 2 || !slices.Equal(status.SkippedSequences, []uint64{1}) {
+			t.Fatalf("retried skip status=%+v", status)
+		}
+	})
+
+	t.Run("after commit before acknowledged fsync", func(t *testing.T) {
+		statePath := filepath.Join(t.TempDir(), "campaign.state")
+		campaign, err := OpenCampaign(CampaignConfig{
+			Plan: plan, Binding: binding, ExpectedPlanID: planID, StatePath: statePath,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		campaign.saveState = func(path string, encoded []byte) error {
+			if err := saveCampaignState(path, encoded); err != nil {
+				return err
+			}
+			return injected
+		}
+		if err := campaign.SkipExpired(1, closure); !errors.Is(err, injected) {
+			t.Fatalf("post-commit failure=%v", err)
+		}
+		status, _ := campaign.Status()
+		if status.NextSequence != 1 || status.SkippedSlots != 0 {
+			t.Fatalf("in-memory post-commit status=%+v", status)
+		}
+		if err := campaign.Close(); err != nil {
+			t.Fatal(err)
+		}
+		reopened, err := OpenCampaign(CampaignConfig{
+			Plan: plan, Binding: binding, ExpectedPlanID: planID, StatePath: statePath,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		status, _ = reopened.Status()
+		if status.NextSequence != 2 || !slices.Equal(status.SkippedSequences, []uint64{1}) {
+			t.Fatalf("reopened post-commit status=%+v", status)
+		}
+	})
+}
+
 func FuzzDecodeCampaignStateNeverPanics(f *testing.F) {
 	plan, _, _ := campaignPlan(f)
 	planID, _ := plan.ID()

@@ -479,6 +479,15 @@ already expired zero-delivery slot, runs a fully published next slot, and proves
 the coordinator and observer select the same final tip with receipt statuses
 `NoPair, Completed`.
 
+Another process regression blocks immediately after the first sibling block
+and its pending observation have both committed, kills the observer, and
+restarts it. The restart reports one current candidate, creates neither a
+receipt nor a confirmation marker, and fails with `ErrPartialTiePair` without
+enabling the next sequence. Filesystem fault fixtures also cover errors before
+commit and the ambiguous case where the new bytes are durable but the writer
+returns an error: campaign skip state and observer confirmation markers either
+remain old or reopen as the complete new value, and an identical retry is safe.
+
 The tested and control payout addresses must be dedicated to the harness during
 their planned slots. Ordinary mining under either address is intentionally not
 distinguishable from the scheduled attempt; an extra distinct anchor for that
@@ -569,8 +578,8 @@ and its version-4 single-observer report digest is
   outside the manifest storage path;
 - deploy and publish the clustering policy and its digest before each real
   observation window;
-- exercise disk-full and abrupt-power-loss injection for campaign skip and
-  confirmation-marker writes;
+- exercise real disk-full and torn-write injection beyond the existing
+  pre-/post-commit writer failures;
 - publish hourly telemetry tail checkpoints outside the manifest storage path;
 - define privacy retention for the raw identifiers used to derive pseudonymous
   cluster IDs;

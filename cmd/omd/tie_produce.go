@@ -149,21 +149,35 @@ func runWorkTelemetryTieProduce(arguments []string) (resultErr error) {
 }
 
 type tieHarnessObserver struct {
-	mu        sync.Mutex
-	collector *calibration.TieCollector
-	err       error
+	mu                    sync.Mutex
+	collector             *calibration.TieCollector
+	err                   error
+	accepted              uint64
+	afterFirstObservation func()
 }
 
 func (observer *tieHarnessObserver) Observe(event activation.WorkAdmission) {
 	observer.mu.Lock()
-	defer observer.mu.Unlock()
 	if observer.err != nil {
+		observer.mu.Unlock()
 		return
 	}
-	_, observer.err = observer.collector.Observe(calibration.TieAdmission{
+	var added bool
+	added, observer.err = observer.collector.Observe(calibration.TieAdmission{
 		ID: event.ID, ParentID: event.ParentID, Height: event.Height,
 		ObservedAt: event.ObservedAt, Miner: event.Miner, SelectedID: event.SelectedID,
 	})
+	var hook func()
+	if observer.err == nil && added {
+		observer.accepted++
+		if observer.accepted == 1 {
+			hook = observer.afterFirstObservation
+		}
+	}
+	observer.mu.Unlock()
+	if hook != nil {
+		hook()
+	}
 }
 
 func (observer *tieHarnessObserver) Err() error {

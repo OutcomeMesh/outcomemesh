@@ -500,8 +500,12 @@ Implemented in an isolated, not-yet-activated consensus package:
   its migrated version-1 journal; after publication, every delivery phase is
   permanently non-skippable. A real coordinator/observer process run closes an
   expired first slot as `NoPair`, delivers the next pair, and verifies matching
-  tips. Disk-full campaign fault injection, observer honesty, and Sybil-cluster
-  provenance remain open testnet work.
+  tips. Another process is killed after the first sibling and pending candidate
+  commit; restart retains exactly one candidate and fails closed without a
+  receipt, confirmation, or next-slot transition. Writer injection on both
+  sides of campaign skip and observer-confirmation commit proves old/new-only
+  reopen plus idempotent retry. Physical disk-full/torn-write campaigns,
+  observer honesty, and Sybil-cluster provenance remain open testnet work.
 - the PoW research harness now also has an integer-only, fixed-seed geometric
   solve process for active v0 and lagged v1. Golden observation digests cover
   baseline variance and an alternating 1x/4x campaign, while separate cases

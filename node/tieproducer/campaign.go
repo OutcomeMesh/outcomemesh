@@ -79,13 +79,14 @@ type campaignState struct {
 // observer manifests remain separate evidence files; this journal only makes
 // the operational transition boundaries replayable after a crash.
 type Campaign struct {
-	mu      sync.Mutex
-	plan    calibration.TiePlan
-	binding calibration.TiePlanBinding
-	planID  types.Hash
-	path    string
-	state   campaignState
-	closed  bool
+	mu        sync.Mutex
+	plan      calibration.TiePlan
+	binding   calibration.TiePlanBinding
+	planID    types.Hash
+	path      string
+	state     campaignState
+	saveState func(string, []byte) error
+	closed    bool
 }
 
 func OpenCampaign(config CampaignConfig) (*Campaign, error) {
@@ -113,6 +114,7 @@ func OpenCampaign(config CampaignConfig) (*Campaign, error) {
 	)
 	campaign := &Campaign{
 		plan: ownedPlan, binding: config.Binding, planID: planID, path: config.StatePath,
+		saveState: saveCampaignState,
 	}
 	encoded, readErr := readCampaignState(config.StatePath)
 	switch {
@@ -391,7 +393,10 @@ func (campaign *Campaign) saveLocked(next campaignState) error {
 	if err != nil {
 		return err
 	}
-	if err := saveCampaignState(campaign.path, encoded); err != nil {
+	if campaign.saveState == nil {
+		return ErrCampaignConfig
+	}
+	if err := campaign.saveState(campaign.path, encoded); err != nil {
 		return err
 	}
 	campaign.state = next

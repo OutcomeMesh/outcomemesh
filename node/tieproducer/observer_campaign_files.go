@@ -37,6 +37,7 @@ type FileObserverCampaign struct {
 	plan                  calibration.TiePlan
 	binding               calibration.TiePlanBinding
 	planID                types.Hash
+	writeImmutable        func(string, []byte, int) error
 }
 
 func NewFileObserverCampaign(
@@ -70,6 +71,7 @@ func NewFileObserverCampaign(
 	return &FileObserverCampaign{
 		publicationDirectory: publicationDirectory, confirmationDirectory: confirmationDirectory,
 		plan: ownedPlan, binding: binding, planID: planID,
+		writeImmutable: writeImmutableCampaignFile,
 	}, nil
 }
 
@@ -161,7 +163,10 @@ func (files *FileObserverCampaign) Confirm(
 	if err != nil {
 		return err
 	}
-	return writeImmutableCampaignFile(
+	if files.writeImmutable == nil {
+		return ErrCampaignConfig
+	}
+	return files.writeImmutable(
 		files.ConfirmationPath(sequence), encoded, observerCampaignConfirmationBytes,
 	)
 }

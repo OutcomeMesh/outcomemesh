@@ -26,7 +26,11 @@ import (
 	"github.com/outcomemesh/outcomemesh/node/worksession"
 )
 
-const helperProcessEnvironment = "OUTCOMEMESH_TEST_HELPER_PROCESS"
+const (
+	helperProcessEnvironment          = "OUTCOMEMESH_TEST_HELPER_PROCESS"
+	tieCampaignCrashModeEnvironment   = "OUTCOMEMESH_TEST_TIE_CAMPAIGN_CRASH_MODE"
+	tieCampaignCrashMarkerEnvironment = "OUTCOMEMESH_TEST_TIE_CAMPAIGN_CRASH_MARKER"
+)
 
 // TestProcessQUICRestartSoak is intentionally behind the integration build tag.
 // OUTCOMEMESH_SOAK_CYCLES may raise the default three restart/sync cycles to 100.
@@ -869,6 +873,187 @@ func TestProcessTieCampaignSkipsExpiredZeroDeliveryAndContinuesNextSlot(t *testi
 	}
 }
 
+func TestProcessTieCampaignPartialSiblingCrashRemainsFailClosed(t *testing.T) {
+	root := t.TempDir()
+	coordinatorData := root + "/coordinator"
+	observerData := root + "/observer"
+	planPath := root + "/tie-plan.omtp"
+	pairPath := root + "/tie-pair.omtpair"
+	publicationDirectory := root + "/published"
+	confirmationDirectory := root + "/confirmed"
+	crashMarker := root + "/first-sibling-durable"
+	coordinatorTransportKeyPath := root + "/coordinator-transport.key"
+	observerTransportKeyPath := root + "/observer-transport.key"
+	observerReceiptKeyPath := root + "/observer-receipt.key"
+	writeProcessKey(t, coordinatorTransportKeyPath, "tie-partial-coordinator-transport")
+	writeProcessKey(t, observerTransportKeyPath, "tie-partial-observer-transport")
+	writeProcessKey(t, observerReceiptKeyPath, "tie-partial-observer-receipt")
+	runProcessCommand(t, 20*time.Second,
+		"init", "--data", coordinatorData, "--network", "20260834", "--timestamp", "1700000000",
+		"--difficulty-bits", "9", "--max-history-bytes", strconv.FormatUint(minimumHistoryBytes, 10),
+	)
+	document, err := loadGenesis(coordinatorData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	genesisID, err := document.ID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	runProcessCommand(t, 20*time.Second,
+		"work-enable", "--data", coordinatorData, "--activation-height", "2",
+		"--confirm-genesis", genesisID.String(), "--max-trees", "4",
+		"--max-history-bytes", strconv.FormatUint(minimumHistoryBytes, 10),
+	)
+	runProcessCommand(t, 20*time.Second, "work-mine", "--data", coordinatorData, "--count", "1")
+	parentID := workTip(t, coordinatorData)
+	if err := os.CopyFS(observerData, os.DirFS(coordinatorData)); err != nil {
+		t.Fatal(err)
+	}
+	observerReceiptKey, err := loadPrivateKey(observerReceiptKeyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	coordinatorPlanSeed := types.DomainHash("test/process/tie-campaign-partial-plan-coordinator")
+	coordinatorPlanKey := ed25519.NewKeyFromSeed(coordinatorPlanSeed[:])
+	startedAt := unixNow() + 1
+	plan := calibration.TiePlan{
+		Version: calibration.TiePlanVersion1, NetworkID: document.NetworkID, GenesisID: genesisID,
+		ActivationHeight:        2,
+		TestedMiner:             types.Address(types.DomainHash("test/process/tie-campaign-partial-tested")),
+		ControlMiner:            types.Address(types.DomainHash("test/process/tie-campaign-partial-control")),
+		MaximumPairDelaySeconds: 10,
+		Slots: []calibration.TiePlanSlot{{
+			StartedAt: startedAt, EndedAt: startedAt + 180, FirstRole: calibration.TieRoleTested,
+		}},
+	}
+	copy(plan.ObserverPublicKey[:], observerReceiptKey.Public().(ed25519.PublicKey))
+	plan, err = calibration.SignTiePlan(coordinatorPlanKey, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := calibration.SaveTiePlanFile(planPath, plan, plan.Binding()); err != nil {
+		t.Fatal(err)
+	}
+	planID, err := plan.ID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	coordinatorPublicKey := bytesToLowerHex(coordinatorPlanKey.Public().(ed25519.PublicKey))
+	observerPublicKey := bytesToLowerHex(observerReceiptKey.Public().(ed25519.PublicKey))
+	created := runProcessCommand(t, 30*time.Second,
+		"work-telemetry-tie-pair-create", "--data", coordinatorData,
+		"--plan", planPath, "--plan-id", planID.String(),
+		"--coordinator-public-key", coordinatorPublicKey,
+		"--observer-public-key", observerPublicKey,
+		"--sequence", "1", "--output", pairPath,
+	)
+	pairID, err := parseHash(outputFields(created, "work_tie_pair_created")["pair"])
+	if err != nil {
+		t.Fatalf("pair creation output=%s err=%v", created, err)
+	}
+	checkpoint, err := calibration.SignTiePairCheckpoint(
+		coordinatorPlanKey, plan, plan.Binding(), planID, 1, pairID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkpointID, _ := checkpoint.ID(plan, plan.Binding(), planID)
+	if err := os.MkdirAll(publicationDirectory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(publicationDirectory+"/0000000001.omtcp", checkpoint.CanonicalBytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(publicationDirectory+"/0000000001.published", []byte(checkpointID.String()+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	coordinatorTransportID := processTransportPeerID(t, coordinatorTransportKeyPath)
+	receiver, observerTransportIDText, observerAddress := startTieCampaignReceiverProcessWithEnvironment(
+		t, observerData, observerTransportKeyPath, observerReceiptKeyPath,
+		coordinatorTransportID.String(), planPath, planID.String(), coordinatorPublicKey,
+		publicationDirectory, confirmationDirectory,
+		[]string{
+			tieCampaignCrashModeEnvironment + "=after-first-observation",
+			tieCampaignCrashMarkerEnvironment + "=" + crashMarker,
+		},
+	)
+	observerTransportID, err := parseHash(observerTransportIDText)
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifact, err := readTiePairFile(pairPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	coordinatorTransportKey, err := loadPrivateKey(coordinatorTransportKeyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientContext, cancelClient := context.WithTimeout(context.Background(), 30*time.Second)
+	client, err := libp2ptransport.New(
+		clientContext, coordinatorTransportKey, libp2ptransport.DefaultConfig(), nil,
+	)
+	if err != nil {
+		cancelClient()
+		t.Fatal(err)
+	}
+	stream, _, err := client.OpenTiePairStream(clientContext, observerAddress, &observerTransportID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tieexchange.WriteRequest(stream, tieexchange.Request{
+		Binding:  tieexchange.Binding{PlanID: planID, PairID: pairID, Sequence: 1},
+		Artifact: artifact,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	waitForProcessFile(t, crashMarker, 30*time.Second)
+	killTieReceiverProcess(t, receiver)
+	_ = stream.Reset()
+	_ = client.Close()
+	cancelClient()
+	if workTip(t, observerData) == parentID {
+		t.Fatal("first sibling was not durably committed before the injected crash")
+	}
+	if _, err := os.Stat(defaultTieReceiptPath(observerData)); !os.IsNotExist(err) {
+		t.Fatalf("partial pair created a completed receipt: %v", err)
+	}
+	if _, err := os.Stat(confirmationDirectory + "/0000000001.confirmed"); !os.IsNotExist(err) {
+		t.Fatalf("partial pair created a confirmation marker: %v", err)
+	}
+
+	restarted, restartedTransportID, _ := startTieCampaignReceiverProcess(
+		t, observerData, observerTransportKeyPath, observerReceiptKeyPath,
+		coordinatorTransportID.String(), planPath, planID.String(), coordinatorPublicKey,
+		publicationDirectory, confirmationDirectory,
+	)
+	if restartedTransportID != observerTransportIDText {
+		t.Fatalf("observer identity changed: %s != %s", restartedTransportID, observerTransportIDText)
+	}
+	restartOutput, restartErr := waitTieReceiverProcessError(restarted, 30*time.Second)
+	if restartErr == nil || !strings.Contains(restarted.stderr.String(), calibration.ErrPartialTiePair.Error()) {
+		t.Fatalf("partial restart did not fail closed err=%v stdout=%s stderr=%s",
+			restartErr, restartOutput, restarted.stderr.String())
+	}
+	collector, err := calibration.OpenTieCollector(calibration.TieCollectorConfig{
+		Plan: plan, Binding: plan.Binding(), PrivateKey: observerReceiptKey,
+		ReceiptPath: defaultTieReceiptPath(observerData), PendingPath: defaultTiePendingPath(observerData),
+		FailOnPartialExpiry: true,
+	}, unixNow())
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, err := collector.Status()
+	if err != nil || status.NextSequence != 1 || status.ClosedSlots != 0 ||
+		status.CurrentCandidates != 1 {
+		t.Fatalf("partial collector status=%+v err=%v", status, err)
+	}
+	if err := collector.Close(unixNow()); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // TestOMDHelperProcess executes exactly one CLI command in a separate process.
 func TestOMDHelperProcess(t *testing.T) {
 	if os.Getenv(helperProcessEnvironment) != "1" {
@@ -884,6 +1069,16 @@ func TestOMDHelperProcess(t *testing.T) {
 	if separator < 0 || separator+1 >= len(os.Args) {
 		fmt.Fprintln(os.Stderr, "missing helper command")
 		os.Exit(2)
+	}
+	if os.Getenv(tieCampaignCrashModeEnvironment) == "after-first-observation" {
+		marker := os.Getenv(tieCampaignCrashMarkerEnvironment)
+		tieCampaignAfterFirstObservation = func() {
+			if marker == "" {
+				select {}
+			}
+			_ = os.WriteFile(marker, []byte("durable\n"), 0o600)
+			select {}
+		}
 	}
 	if err := run(os.Args[separator+1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
@@ -983,6 +1178,25 @@ func startTieCampaignReceiverProcess(
 	publicationDirectory string,
 	confirmationDirectory string,
 ) (*tieReceiverProcess, string, string) {
+	return startTieCampaignReceiverProcessWithEnvironment(
+		t, data, transportKey, receiptKey, coordinatorTransportID, planPath, planID,
+		coordinatorPublicKey, publicationDirectory, confirmationDirectory, nil,
+	)
+}
+
+func startTieCampaignReceiverProcessWithEnvironment(
+	t testing.TB,
+	data string,
+	transportKey string,
+	receiptKey string,
+	coordinatorTransportID string,
+	planPath string,
+	planID string,
+	coordinatorPublicKey string,
+	publicationDirectory string,
+	confirmationDirectory string,
+	environment []string,
+) (*tieReceiverProcess, string, string) {
 	t.Helper()
 	command := helperCommand(nil,
 		"work-telemetry-tie-campaign-receive-quic", "--data", data,
@@ -991,6 +1205,7 @@ func startTieCampaignReceiverProcess(
 		"--plan", planPath, "--plan-id", planID, "--coordinator-public-key", coordinatorPublicKey,
 		"--published", publicationDirectory, "--confirmed", confirmationDirectory, "--poll", "20ms",
 	)
+	command.Env = append(command.Env, environment...)
 	pipe, err := command.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -1144,6 +1359,36 @@ func waitTieReceiverProcess(t testing.TB, receiver *tieReceiverProcess) string {
 		t.Fatalf("tie-pair receiver completion timeout stderr=%s", receiver.stderr.String())
 		return ""
 	}
+}
+
+func waitTieReceiverProcessError(
+	receiver *tieReceiverProcess,
+	timeout time.Duration,
+) (string, error) {
+	done := make(chan error, 1)
+	go func() { done <- receiver.command.Wait() }()
+	select {
+	case err := <-done:
+		<-receiver.stdoutDone
+		return receiver.stdout.String(), err
+	case <-time.After(timeout):
+		_ = receiver.command.Process.Kill()
+		return receiver.stdout.String(), context.DeadlineExceeded
+	}
+}
+
+func waitForProcessFile(t testing.TB, path string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(path); err == nil {
+			return
+		} else if !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("process marker %s was not created", path)
 }
 
 func processTransportPeerID(t testing.TB, path string) types.Hash {

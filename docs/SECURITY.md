@@ -326,6 +326,21 @@ chain. The router rejects v0 at or above `H`, v1 below `H`, unknown v1 parents,
 and consensus-parameter disagreement between versions. This logic is not yet
 connected to persistent multi-base recovery or the public chain session.
 
+Controlled-tie campaign state is operational evidence, not consensus state,
+but continuing from different observer tips would invalidate the calibration.
+For that reason only a slot with no begun delivery may be skipped: coordinator
+publication must remain unconfirmed, every observer waits through the same
+receipt-closure grace, and the skipped sequence is fsynced before the next slot.
+Once delivery begins, a missing ACK is treated as possibly admitted forever.
+An observer that has persisted exactly one sibling also stops forever instead
+of converting the slot to `NoPair`; an injected process kill after the first
+block commit proves the pending candidate survives restart. Receipt commit and
+coordinator knowledge use separate durable markers, so an ACK/confirmation
+crash retries the receipt rather than the blocks. Injected writer failures both
+before file commit and after commit but before acknowledged fsync are retried
+idempotently for skip journals and confirmation markers. These checks do not
+yet model physical disk exhaustion or torn writes outside filesystem atomicity.
+
 ## Consensus coding rules
 
 - Never serialize a Go map.

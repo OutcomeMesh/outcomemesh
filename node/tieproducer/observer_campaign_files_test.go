@@ -116,3 +116,48 @@ func TestFileObserverCampaignRejectsPublicationMismatchAndCorruptConfirmation(t 
 		t.Fatalf("corrupt confirmation error=%v", err)
 	}
 }
+
+func TestFileObserverCampaignConfirmationWriteFailuresAreIdempotent(t *testing.T) {
+	plan, binding, _ := campaignPlan(t)
+	planID, _ := plan.ID()
+	files, err := NewFileObserverCampaign(t.TempDir(), t.TempDir(), plan, binding, planID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pairID := types.DomainHash("test/tieproducer/observer-campaign/write-failure-pair")
+	receiptTail := types.DomainHash("test/tieproducer/observer-campaign/write-failure-receipt")
+	injected := errors.New("injected observer confirmation failure")
+	realWriter := files.writeImmutable
+
+	files.writeImmutable = func(string, []byte, int) error { return injected }
+	if err := files.Confirm(1, pairID, receiptTail); !errors.Is(err, injected) {
+		t.Fatalf("pre-commit confirmation error=%v", err)
+	}
+	if _, err := files.LoadConfirmation(1); !IsMissingObserverCampaignFile(err) {
+		t.Fatalf("pre-commit confirmation unexpectedly exists: %v", err)
+	}
+	files.writeImmutable = realWriter
+	if err := files.Confirm(1, pairID, receiptTail); err != nil {
+		t.Fatal(err)
+	}
+
+	pairID2 := types.DomainHash("test/tieproducer/observer-campaign/write-failure-pair-2")
+	receiptTail2 := types.DomainHash("test/tieproducer/observer-campaign/write-failure-receipt-2")
+	files.writeImmutable = func(path string, encoded []byte, maximum int) error {
+		if err := realWriter(path, encoded, maximum); err != nil {
+			return err
+		}
+		return injected
+	}
+	if err := files.Confirm(2, pairID2, receiptTail2); !errors.Is(err, injected) {
+		t.Fatalf("post-commit confirmation error=%v", err)
+	}
+	confirmation, err := files.LoadConfirmation(2)
+	if err != nil || confirmation.PairID != pairID2 || confirmation.ReceiptTail != receiptTail2 {
+		t.Fatalf("post-commit confirmation=%+v err=%v", confirmation, err)
+	}
+	files.writeImmutable = realWriter
+	if err := files.Confirm(2, pairID2, receiptTail2); err != nil {
+		t.Fatalf("idempotent post-commit retry error=%v", err)
+	}
+}
