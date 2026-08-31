@@ -64,4 +64,36 @@ func TestCampaignObserverRoutesRequireCompleteCanonicalPlanSet(t *testing.T) {
 	if _, err := loadCampaignObserverRoutes(path, plan); err == nil {
 		t.Fatal("duplicate observer transport peer ID was accepted")
 	}
+
+	auditPath := filepath.Join(t.TempDir(), "audit-observers.txt")
+	auditLines := []string{
+		bytesToLowerHex(observers[0][:]) + " /evidence/a.omtr /evidence/a-confirmed",
+		bytesToLowerHex(observers[1][:]) + " /evidence/b.omtr /evidence/b-confirmed",
+	}
+	writeAudit := func(lines []string, newline bool) {
+		t.Helper()
+		encoded := strings.Join(lines, "\n")
+		if newline {
+			encoded += "\n"
+		}
+		if err := os.WriteFile(auditPath, []byte(encoded), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeAudit(auditLines, true)
+	auditObservers, err := loadCampaignAuditObservers(auditPath, plan)
+	if err != nil || len(auditObservers) != 2 ||
+		auditObservers[0].ObserverPublicKey != observers[0] ||
+		auditObservers[1].ReceiptPath != "/evidence/b.omtr" ||
+		auditObservers[1].ConfirmationDirectory != "/evidence/b-confirmed" {
+		t.Fatalf("audit observers=%+v err=%v", auditObservers, err)
+	}
+	writeAudit([]string{auditLines[1], auditLines[0]}, true)
+	if _, err := loadCampaignAuditObservers(auditPath, plan); err == nil {
+		t.Fatal("noncanonical audit observer order was accepted")
+	}
+	writeAudit(auditLines, false)
+	if _, err := loadCampaignAuditObservers(auditPath, plan); err == nil {
+		t.Fatal("audit observer list without final newline was accepted")
+	}
 }

@@ -488,6 +488,43 @@ commit and the ambiguous case where the new bytes are durable but the writer
 returns an error: campaign skip state and observer confirmation markers either
 remain old or reopen as the complete new value, and an identical retry is safe.
 
+### Read-only campaign audit
+
+Operators can reconcile the coordinator with every observer without opening a
+mutable campaign or collector. The audit observer file has one line per plan
+observer in canonical public-key order:
+
+```text
+<observer-public-key> <signed-receipt-manifest> <confirmation-directory>
+```
+
+Run the audit against the same immutable artifact and external publication
+directories used by the campaign:
+
+```sh
+.tools/go/bin/go run ./cmd/omd work-telemetry-tie-campaign-audit \
+  --data coordinator-data \
+  --plan tie-plan.omtp --plan-id <published-plan-id> \
+  --coordinator-public-key <plan-coordinator-public-key> \
+  --observer-public-key <any-plan-observer-public-key> \
+  --state coordinator-data/work-tie-campaign.state \
+  --artifacts pair-artifacts \
+  --published externally-published-pairs \
+  --observers observer-audit-paths.txt
+```
+
+`healthy` means every coordinator-advanced success has its exact pair,
+checkpoint, publication, signed receipt, confirmation, and identical
+cross-observer block/selection view; every skipped sequence is `NoPair` for all
+observers. `recoverable` identifies bounded retry states such as a durable
+observer confirmation whose ACK is not yet in the coordinator journal, or an
+observer closing an empty slot just before coordinator skip. `blocked` covers
+missing/corrupt immutable artifacts, ACKs without observer evidence, delivery
+on a skipped slot, and block or selected-tip divergence. Blocked audits print
+all classified issues and exit non-zero. The command reads legacy state without
+migrating it; a process regression compares the journal bytes before and after
+a complete audit.
+
 The tested and control payout addresses must be dedicated to the harness during
 their planned slots. Ordinary mining under either address is intentionally not
 distinguishable from the scheduled attempt; an extra distinct anchor for that

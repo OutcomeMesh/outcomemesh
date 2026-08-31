@@ -506,6 +506,12 @@ Implemented in an isolated, not-yet-activated consensus package:
   sides of campaign skip and observer-confirmation commit proves old/new-only
   reopen plus idempotent retry. Physical disk-full/torn-write campaigns,
   observer honesty, and Sybil-cluster provenance remain open testnet work.
+  A read-only campaign audit now verifies every durable layer and classifies
+  `healthy`, `recoverable`, or `blocked`: it detects unrecorded but confirmed
+  ACKs, observer closure lag, missing/corrupt artifacts, impossible ACKs,
+  skipped-slot delivery, and cross-observer block/selection divergence. It
+  reports all issues, exits non-zero for blocked state, and a real process test
+  proves a healthy audit leaves coordinator journal bytes unchanged.
 - the PoW research harness now also has an integer-only, fixed-seed geometric
   solve process for active v0 and lagged v1. Golden observation digests cover
   baseline variance and an alternating 1x/4x campaign, while separate cases

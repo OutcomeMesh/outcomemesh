@@ -871,6 +871,52 @@ func TestProcessTieCampaignSkipsExpiredZeroDeliveryAndContinuesNextSlot(t *testi
 	if coordinatorTip != observerTip {
 		t.Fatalf("campaign tips diverged coordinator=%s observer=%s", coordinatorTip, observerTip)
 	}
+	auditObserversPath := root + "/audit-observers.txt"
+	if err := os.WriteFile(
+		auditObserversPath,
+		[]byte(observerPublicKey+" "+defaultTieReceiptPath(observerData)+" "+confirmationDirectory+"\n"),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	statePath := coordinatorData + "/work-tie-campaign.state"
+	stateBeforeAudit, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	auditOutput := runProcessCommand(t, 30*time.Second,
+		"work-telemetry-tie-campaign-audit", "--data", coordinatorData,
+		"--plan", planPath, "--plan-id", planID.String(),
+		"--coordinator-public-key", coordinatorPublicKey,
+		"--observer-public-key", observerPublicKey,
+		"--state", statePath, "--artifacts", artifactDirectory,
+		"--published", publicationDirectory, "--observers", auditObserversPath,
+	)
+	auditFields := outputFields(auditOutput, "work_tie_campaign_audit")
+	if auditFields["disposition"] != "healthy" || auditFields["complete"] != "true" ||
+		auditFields["verified_success"] != "1" || auditFields["verified_skipped"] != "1" ||
+		auditFields["issues"] != "0" {
+		t.Fatalf("unexpected campaign audit: %s", auditOutput)
+	}
+	stateAfterAudit, err := os.ReadFile(statePath)
+	if err != nil || !bytes.Equal(stateBeforeAudit, stateAfterAudit) {
+		t.Fatalf("campaign audit mutated coordinator state err=%v", err)
+	}
+	if err := os.Remove(artifactDirectory + "/0000000002.omtpair"); err != nil {
+		t.Fatal(err)
+	}
+	blockedOutput, blockedErr := runProcessCommandError(30*time.Second,
+		"work-telemetry-tie-campaign-audit", "--data", coordinatorData,
+		"--plan", planPath, "--plan-id", planID.String(),
+		"--coordinator-public-key", coordinatorPublicKey,
+		"--observer-public-key", observerPublicKey,
+		"--state", statePath, "--artifacts", artifactDirectory,
+		"--published", publicationDirectory, "--observers", auditObserversPath,
+	)
+	if blockedErr == nil || outputFields(blockedOutput, "work_tie_campaign_audit")["disposition"] != "blocked" ||
+		!strings.Contains(blockedOutput, "code=missing_or_invalid_artifact") {
+		t.Fatalf("missing artifact did not block audit err=%v output=%s", blockedErr, blockedOutput)
+	}
 }
 
 func TestProcessTieCampaignPartialSiblingCrashRemainsFailClosed(t *testing.T) {

@@ -340,6 +340,12 @@ crash retries the receipt rather than the blocks. Injected writer failures both
 before file commit and after commit but before acknowledged fsync are retried
 idempotently for skip journals and confirmation markers. These checks do not
 yet model physical disk exhaustion or torn writes outside filesystem atomicity.
+The operator audit is intentionally read-only: unlike `OpenCampaign` it does
+not create or migrate state, and it never opens a collector that could close an
+expired slot. It authenticates signed receipt chains and checkpoints before
+classifying operational drift. Retryable missing ACK/closure lag is distinct
+from blocking evidence loss or observer divergence; a blocked result exits
+non-zero so automation cannot interpret a printed warning as success.
 
 ## Consensus coding rules
 

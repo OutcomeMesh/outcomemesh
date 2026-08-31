@@ -51,6 +51,7 @@ type CampaignConfig struct {
 }
 
 type CampaignStatus struct {
+	StateVersion         uint16
 	PlanID               types.Hash
 	PlannedSlots         uint64
 	NextSequence         uint64
@@ -62,6 +63,34 @@ type CampaignStatus struct {
 	ObserverReceiptTails []types.Hash
 	SkippedSlots         uint64
 	SkippedSequences     []uint64
+}
+
+// LoadCampaignStatus verifies and reports an existing campaign journal without
+// creating, migrating, or rewriting it. Operator audit paths must remain
+// observational even when the journal is legacy or incomplete.
+func LoadCampaignStatus(config CampaignConfig) (CampaignStatus, error) {
+	if config.StatePath == "" || config.ExpectedPlanID.IsZero() {
+		return CampaignStatus{}, ErrCampaignConfig
+	}
+	if err := config.Plan.Verify(config.Binding); err != nil {
+		return CampaignStatus{}, err
+	}
+	planID, err := config.Plan.ID()
+	if err != nil {
+		return CampaignStatus{}, err
+	}
+	if planID != config.ExpectedPlanID {
+		return CampaignStatus{}, ErrCampaignConfig
+	}
+	encoded, err := readCampaignState(config.StatePath)
+	if err != nil {
+		return CampaignStatus{}, err
+	}
+	state, err := decodeCampaignState(encoded, config.Plan, planID)
+	if err != nil {
+		return CampaignStatus{}, err
+	}
+	return campaignStatus(config.Plan, state), nil
 }
 
 type campaignState struct {
@@ -349,16 +378,24 @@ func (campaign *Campaign) Close() error {
 }
 
 func (campaign *Campaign) statusLocked() CampaignStatus {
-	status := CampaignStatus{
-		PlanID: campaign.planID, PlannedSlots: uint64(len(campaign.plan.Slots)),
-		NextSequence: campaign.state.NextSequence, Phase: campaign.state.Phase,
-		PairID: campaign.state.PairID, CheckpointID: campaign.state.CheckpointID,
-		ObserverCount:        uint64(campaign.observerCount()),
-		ObserverReceiptTails: append([]types.Hash(nil), campaign.state.ReceiptTails...),
-		SkippedSlots:         uint64(len(campaign.state.Skipped)),
-		SkippedSequences:     append([]uint64(nil), campaign.state.Skipped...),
+	return campaignStatus(campaign.plan, campaign.state)
+}
+
+func campaignStatus(plan calibration.TiePlan, state campaignState) CampaignStatus {
+	observerCount := 1
+	if plan.Version == calibration.TiePlanVersion2 {
+		observerCount = len(plan.ObserverPublicKeys)
 	}
-	for _, tail := range campaign.state.ReceiptTails {
+	status := CampaignStatus{
+		StateVersion: state.Version, PlanID: state.PlanID, PlannedSlots: uint64(len(plan.Slots)),
+		NextSequence: state.NextSequence, Phase: state.Phase,
+		PairID: state.PairID, CheckpointID: state.CheckpointID,
+		ObserverCount:        uint64(observerCount),
+		ObserverReceiptTails: append([]types.Hash(nil), state.ReceiptTails...),
+		SkippedSlots:         uint64(len(state.Skipped)),
+		SkippedSequences:     append([]uint64(nil), state.Skipped...),
+	}
+	for _, tail := range state.ReceiptTails {
 		if !tail.IsZero() {
 			status.AcknowledgedCount++
 		}

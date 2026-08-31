@@ -224,6 +224,11 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
   sibling commit proves partial state survives and permanently stops the
   campaign; pre-commit and ambiguous post-commit write failures for skip and
   confirmation journals are idempotently recoverable.
+  A read-only operator audit now reconciles coordinator state, immutable
+  artifacts/publications, canonical observer receipt chains, confirmation
+  markers, and cross-observer selected tips. It distinguishes healthy,
+  retryable ACK/closure lag, and permanently blocked divergence without
+  creating, advancing, or migrating any journal.
 
 ### Exit gates
 

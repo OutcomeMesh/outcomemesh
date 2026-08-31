@@ -69,6 +69,8 @@ both sides of commit, replay-checkpoint rotation, and stale-fork pruning
 durability boundaries. Raise the
 v0 QUIC soak length with, for example,
 `OUTCOMEMESH_SOAK_CYCLES=25 make test-process` (hard cap: 100 cycles).
+The completed campaign case also runs the read-only coordinator/observer audit
+and proves that it does not rewrite the campaign journal.
 `test-work-rollover-soak` runs 256 timestamp generations across four in-memory
 WorkGraph nodes with a 60-second clock spread, node churn, deterministic stream
 loss, full DAG convergence, and final anchor closure. Override the bounded
