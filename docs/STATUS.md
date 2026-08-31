@@ -517,6 +517,11 @@ Implemented in an isolated, not-yet-activated consensus package:
   The coordinator now discards a stale reused QUIC session and retries one
   fresh identity-pinned handshake; both role-ordered receipt chains and final
   tips match, and the multi-observer audit remains healthy and read-only.
+  Coordinator restart now has an exact process boundary too: one observer is
+  held before request decoding while the other's ACK becomes durable. The
+  replacement reports that single recovered ACK, never contacts the completed
+  observer, advances only after the missing ACK, and finishes with convergent
+  tips and a healthy read-only audit.
 - the PoW research harness now also has an integer-only, fixed-seed geometric
   solve process for active v0 and lagged v1. Golden observation digests cover
   baseline variance and an alternating 1x/4x campaign, while separate cases

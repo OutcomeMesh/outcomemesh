@@ -430,7 +430,11 @@ lowercase checkpoint ID plus a newline. The independently operated publisher
 must distribute the matching numbered `.omtcp` file before atomically exposing
 that confirmation file. A crash or transient observer failure is recovered by
 rerunning the same command; durable observers return their existing receipt,
-while already recorded observers are not contacted again.
+while already recorded observers are not contacted again. The
+`work_tie_campaign_started` line includes the recovered phase, next sequence,
+and durable `acknowledged` count. A real process test kills a version-2
+coordinator at `acknowledged=1`, then proves its replacement contacts only the
+remaining zero-tail observer before advancing.
 
 An observer that restarts between slots should retain both its transport key
 and advertised direct endpoint. If the long-lived coordinator discovers that

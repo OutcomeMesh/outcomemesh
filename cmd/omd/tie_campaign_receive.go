@@ -23,10 +23,13 @@ import (
 	libp2ptransport "github.com/outcomemesh/outcomemesh/node/transport/libp2p"
 )
 
-// Set only by the integration helper process. The hook runs after the first
-// sibling commit and its pending-observation fsync, giving process tests an
-// exact crash boundary without exposing a production CLI fault switch.
-var tieCampaignAfterFirstObservation func()
+// Set only by the integration helper process. The hooks give process tests
+// exact request/admission crash boundaries without exposing production CLI
+// fault switches.
+var (
+	tieCampaignBeforeRequest         func()
+	tieCampaignAfterFirstObservation func()
+)
 
 func runWorkTelemetryTieCampaignReceiveQUIC(arguments []string) (resultErr error) {
 	flags := flag.NewFlagSet("work-telemetry-tie-campaign-receive-quic", flag.ContinueOnError)
@@ -340,6 +343,9 @@ func serveObserverCampaignSlot(
 			if remoteID != coordinatorPeerID {
 				reset(stream)
 				return
+			}
+			if tieCampaignBeforeRequest != nil {
+				tieCampaignBeforeRequest()
 			}
 			status, err := collector.Status()
 			if err != nil {

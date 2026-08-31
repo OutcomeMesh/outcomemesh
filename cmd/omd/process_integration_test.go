@@ -21,6 +21,7 @@ import (
 	"github.com/outcomemesh/outcomemesh/core/workgraph"
 	"github.com/outcomemesh/outcomemesh/node/calibration"
 	"github.com/outcomemesh/outcomemesh/node/tieexchange"
+	"github.com/outcomemesh/outcomemesh/node/tieproducer"
 	libp2ptransport "github.com/outcomemesh/outcomemesh/node/transport/libp2p"
 	"github.com/outcomemesh/outcomemesh/node/workround"
 	"github.com/outcomemesh/outcomemesh/node/worksession"
@@ -1163,6 +1164,274 @@ func TestProcessTieCampaignV2ObserversSurviveBetweenSlotRestartAndAudit(t *testi
 	}
 }
 
+func TestProcessTieCampaignCoordinatorResumesOnlyMissingObserver(t *testing.T) {
+	root := t.TempDir()
+	coordinatorData := root + "/coordinator"
+	planPath := root + "/tie-plan-v2.omtp"
+	artifactDirectory := root + "/artifacts"
+	publicationDirectory := root + "/published"
+	routesPath := root + "/observer-routes.txt"
+	auditObserversPath := root + "/audit-observers.txt"
+	blockedRequestMarker := root + "/observer-request-blocked"
+	coordinatorTransportKeyPath := root + "/coordinator-transport.key"
+	coordinatorPlanKeyPath := root + "/coordinator-plan.key"
+	writeProcessKey(t, coordinatorTransportKeyPath, "tie-coordinator-restart-transport")
+
+	type processObserver struct {
+		data                  string
+		transportKey          string
+		receiptKey            string
+		confirmationDirectory string
+		publicKey             [ed25519.PublicKeySize]byte
+		publicKeyText         string
+		receiver              *tieReceiverProcess
+		transportID           string
+		address               string
+	}
+	observers := []processObserver{
+		{
+			data: root + "/observer-a", transportKey: root + "/observer-a-transport.key",
+			receiptKey:            root + "/observer-a-receipt.key",
+			confirmationDirectory: root + "/observer-a-confirmed",
+		},
+		{
+			data: root + "/observer-b", transportKey: root + "/observer-b-transport.key",
+			receiptKey:            root + "/observer-b-receipt.key",
+			confirmationDirectory: root + "/observer-b-confirmed",
+		},
+	}
+	writeProcessKey(t, observers[0].transportKey, "tie-coordinator-restart-observer-a-transport")
+	writeProcessKey(t, observers[0].receiptKey, "tie-coordinator-restart-observer-a-receipt")
+	writeProcessKey(t, observers[1].transportKey, "tie-coordinator-restart-observer-b-transport")
+	writeProcessKey(t, observers[1].receiptKey, "tie-coordinator-restart-observer-b-receipt")
+
+	runProcessCommand(t, 20*time.Second,
+		"init", "--data", coordinatorData, "--network", "20260836", "--timestamp", "1700000000",
+		"--difficulty-bits", "9", "--max-history-bytes", strconv.FormatUint(minimumHistoryBytes, 10),
+	)
+	document, err := loadGenesis(coordinatorData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	genesisID, err := document.ID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	runProcessCommand(t, 20*time.Second,
+		"work-enable", "--data", coordinatorData, "--activation-height", "2",
+		"--confirm-genesis", genesisID.String(), "--max-trees", "4",
+		"--max-history-bytes", strconv.FormatUint(minimumHistoryBytes, 10),
+	)
+	runProcessCommand(t, 20*time.Second, "work-mine", "--data", coordinatorData, "--count", "1")
+	parentID := workTip(t, coordinatorData)
+	for index := range observers {
+		if err := os.CopyFS(observers[index].data, os.DirFS(coordinatorData)); err != nil {
+			t.Fatal(err)
+		}
+		privateKey, err := loadPrivateKey(observers[index].receiptKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		copy(observers[index].publicKey[:], privateKey.Public().(ed25519.PublicKey))
+		observers[index].publicKeyText = bytesToLowerHex(observers[index].publicKey[:])
+	}
+	if bytes.Compare(observers[0].publicKey[:], observers[1].publicKey[:]) > 0 {
+		observers[0], observers[1] = observers[1], observers[0]
+	}
+
+	coordinatorPlanSeed := types.DomainHash("test/process/tie-coordinator-restart-plan")
+	coordinatorPlanKey := ed25519.NewKeyFromSeed(coordinatorPlanSeed[:])
+	if err := os.WriteFile(coordinatorPlanKeyPath, coordinatorPlanKey.Seed(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	startedAt := unixNow() + 4
+	plan := calibration.TiePlan{
+		Version: calibration.TiePlanVersion2, NetworkID: document.NetworkID, GenesisID: genesisID,
+		ActivationHeight:        2,
+		TestedMiner:             types.Address(types.DomainHash("test/process/tie-coordinator-restart-tested")),
+		ControlMiner:            types.Address(types.DomainHash("test/process/tie-coordinator-restart-control")),
+		MaximumPairDelaySeconds: 2,
+		ObserverPublicKeys:      [][ed25519.PublicKeySize]byte{observers[0].publicKey, observers[1].publicKey},
+		Slots: []calibration.TiePlanSlot{{
+			StartedAt: startedAt, EndedAt: startedAt + 60, FirstRole: calibration.TieRoleControl,
+		}},
+	}
+	plan, err = calibration.SignTiePlan(coordinatorPlanKey, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := calibration.SaveTiePlanFile(planPath, plan, plan.Binding()); err != nil {
+		t.Fatal(err)
+	}
+	planID, err := plan.ID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	coordinatorPublicKey := bytesToLowerHex(coordinatorPlanKey.Public().(ed25519.PublicKey))
+	if err := os.MkdirAll(publicationDirectory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	coordinatorTransportID := processTransportPeerID(t, coordinatorTransportKeyPath)
+	observers[0].receiver, observers[0].transportID, observers[0].address =
+		startTieCampaignReceiverProcess(
+			t, observers[0].data, observers[0].transportKey, observers[0].receiptKey,
+			coordinatorTransportID.String(), planPath, planID.String(), coordinatorPublicKey,
+			publicationDirectory, observers[0].confirmationDirectory,
+		)
+	observers[1].receiver, observers[1].transportID, observers[1].address =
+		startTieCampaignReceiverProcessWithEnvironment(
+			t, observers[1].data, observers[1].transportKey, observers[1].receiptKey,
+			coordinatorTransportID.String(), planPath, planID.String(), coordinatorPublicKey,
+			publicationDirectory, observers[1].confirmationDirectory,
+			[]string{
+				tieCampaignCrashModeEnvironment + "=before-request",
+				tieCampaignCrashMarkerEnvironment + "=" + blockedRequestMarker,
+			},
+		)
+	var routes strings.Builder
+	for _, observer := range observers {
+		fmt.Fprintf(&routes, "%s %s %s\n", observer.publicKeyText, observer.transportID, observer.address)
+	}
+	if err := os.WriteFile(routesPath, []byte(routes.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	coordinator := startTieCampaignCoordinatorProcess(
+		t, coordinatorData, coordinatorTransportKeyPath, coordinatorPlanKeyPath,
+		planPath, planID.String(), coordinatorPublicKey, observers[0].publicKeyText,
+		routesPath, artifactDirectory, publicationDirectory, 1,
+	)
+	publishProcessCampaignCheckpoint(
+		t, artifactDirectory, publicationDirectory, plan, plan.Binding(), planID, 1,
+	)
+	waitForProcessFile(t, blockedRequestMarker, 30*time.Second)
+	waitForProcessFile(t, observers[0].confirmationDirectory+"/0000000001.confirmed", 30*time.Second)
+	statePath := coordinatorData + "/work-tie-campaign.state"
+	partialStatus := waitForProcessCampaignStatus(
+		t,
+		tieproducer.CampaignConfig{
+			Plan: plan, Binding: plan.Binding(), ExpectedPlanID: planID, StatePath: statePath,
+		},
+		30*time.Second,
+		func(status tieproducer.CampaignStatus) bool {
+			return status.NextSequence == 1 && status.Phase == tieproducer.CampaignDelivering &&
+				status.AcknowledgedCount == 1
+		},
+	)
+	if len(partialStatus.ObserverReceiptTails) != 2 || partialStatus.ObserverReceiptTails[0].IsZero() ||
+		!partialStatus.ObserverReceiptTails[1].IsZero() {
+		t.Fatalf("unexpected partial coordinator state: %+v", partialStatus)
+	}
+	killTieReceiverProcess(t, coordinator)
+	if tip := workTip(t, coordinatorData); tip != parentID {
+		t.Fatalf("coordinator advanced before every observer ACK parent=%s tip=%s", parentID, tip)
+	}
+	firstObserverOutput := waitTieReceiverProcess(t, observers[0].receiver)
+	if fields := outputFields(firstObserverOutput, "work_tie_campaign_observer_complete"); fields["completed"] != "1" || fields["no_pair"] != "0" {
+		t.Fatalf("first observer did not durably complete before coordinator crash: %s", firstObserverOutput)
+	}
+
+	blockedAddress := observers[1].address
+	blockedTransportID := observers[1].transportID
+	killTieReceiverProcess(t, observers[1].receiver)
+	observers[1].receiver, observers[1].transportID, observers[1].address =
+		startTieCampaignReceiverProcessWithOptions(
+			t, observers[1].data, observers[1].transportKey, observers[1].receiptKey,
+			coordinatorTransportID.String(), planPath, planID.String(), coordinatorPublicKey,
+			publicationDirectory, observers[1].confirmationDirectory,
+			processListenAddress(blockedAddress), nil,
+		)
+	if observers[1].transportID != blockedTransportID || observers[1].address != blockedAddress {
+		t.Fatalf(
+			"blocked observer route changed transport=%s/%s address=%s/%s",
+			observers[1].transportID, blockedTransportID, observers[1].address, blockedAddress,
+		)
+	}
+	coordinator = startTieCampaignCoordinatorResumeProcess(
+		t, coordinatorData, coordinatorTransportKeyPath, coordinatorPlanKeyPath,
+		planPath, planID.String(), coordinatorPublicKey, observers[0].publicKeyText,
+		routesPath, artifactDirectory, publicationDirectory, 1, tieproducer.CampaignDelivering,
+	)
+	coordinatorOutput := waitTieReceiverProcess(t, coordinator)
+	startedFields := outputFields(coordinatorOutput, "work_tie_campaign_started")
+	if startedFields["phase"] != strconv.FormatUint(uint64(tieproducer.CampaignDelivering), 10) ||
+		startedFields["acknowledged"] != "1" {
+		t.Fatalf("resumed coordinator did not report its durable boundary: %s", coordinatorOutput)
+	}
+	ackFields := outputFields(coordinatorOutput, "work_tie_campaign_observer_ack")
+	if strings.Count(coordinatorOutput, "work_tie_campaign_observer_ack ") != 1 ||
+		ackFields["observer"] != observers[1].publicKeyText {
+		t.Fatalf("resumed coordinator did not contact only the missing observer: %s", coordinatorOutput)
+	}
+	if fields := outputFields(coordinatorOutput, "work_tie_campaign_complete"); fields["slots"] != "1" || fields["next_sequence"] != "2" || fields["skipped"] != "0" {
+		t.Fatalf("resumed coordinator did not complete: %s", coordinatorOutput)
+	}
+	secondObserverOutput := waitTieReceiverProcess(t, observers[1].receiver)
+	if fields := outputFields(secondObserverOutput, "work_tie_campaign_observer_complete"); fields["completed"] != "1" || fields["no_pair"] != "0" {
+		t.Fatalf("missing observer did not complete after coordinator restart: %s", secondObserverOutput)
+	}
+
+	receiptSets := make([][]calibration.TieTrialReceipt, len(observers))
+	for index, observer := range observers {
+		binding := plan.Binding()
+		binding.ObserverPublicKey = observer.publicKey
+		_, receipts, aggregate, err := calibration.LoadTieReceiptFile(
+			defaultTieReceiptPath(observer.data), binding,
+		)
+		if err != nil || len(receipts) != 1 || !aggregate.Complete ||
+			aggregate.CompletedTrials != 1 || receipts[0].Status != calibration.TieTrialCompleted ||
+			receipts[0].FirstObservedAnchorID != receipts[0].ControlAnchorID {
+			t.Fatalf("observer %d receipts=%+v aggregate=%+v err=%v", index, receipts, aggregate, err)
+		}
+		receiptSets[index] = receipts
+	}
+	if receiptSets[0][0].ParentID != receiptSets[1][0].ParentID ||
+		receiptSets[0][0].TestedAnchorID != receiptSets[1][0].TestedAnchorID ||
+		receiptSets[0][0].ControlAnchorID != receiptSets[1][0].ControlAnchorID ||
+		receiptSets[0][0].SelectedAnchorID != receiptSets[1][0].SelectedAnchorID {
+		t.Fatalf("observer views diverged after coordinator restart: %+v %+v", receiptSets[0][0], receiptSets[1][0])
+	}
+	coordinatorTip := workTip(t, coordinatorData)
+	for index, observer := range observers {
+		if observerTip := workTip(t, observer.data); observerTip != coordinatorTip {
+			t.Fatalf("observer %d tip diverged coordinator=%s observer=%s", index, coordinatorTip, observerTip)
+		}
+	}
+
+	var auditObservers strings.Builder
+	for _, observer := range observers {
+		fmt.Fprintf(
+			&auditObservers, "%s %s %s\n", observer.publicKeyText,
+			defaultTieReceiptPath(observer.data), observer.confirmationDirectory,
+		)
+	}
+	if err := os.WriteFile(auditObserversPath, []byte(auditObservers.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stateBeforeAudit, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	auditOutput := runProcessCommand(t, 30*time.Second,
+		"work-telemetry-tie-campaign-audit", "--data", coordinatorData,
+		"--plan", planPath, "--plan-id", planID.String(),
+		"--coordinator-public-key", coordinatorPublicKey,
+		"--observer-public-key", observers[0].publicKeyText,
+		"--state", statePath, "--artifacts", artifactDirectory,
+		"--published", publicationDirectory, "--observers", auditObserversPath,
+	)
+	auditFields := outputFields(auditOutput, "work_tie_campaign_audit")
+	if auditFields["disposition"] != "healthy" || auditFields["complete"] != "true" ||
+		auditFields["verified_success"] != "1" || auditFields["pending_observers"] != "0" ||
+		auditFields["issues"] != "0" {
+		t.Fatalf("unexpected coordinator-restart audit: %s", auditOutput)
+	}
+	stateAfterAudit, err := os.ReadFile(statePath)
+	if err != nil || !bytes.Equal(stateBeforeAudit, stateAfterAudit) {
+		t.Fatalf("coordinator-restart audit mutated state err=%v", err)
+	}
+}
+
 func TestProcessTieCampaignPartialSiblingCrashRemainsFailClosed(t *testing.T) {
 	root := t.TempDir()
 	coordinatorData := root + "/coordinator"
@@ -1360,7 +1629,16 @@ func TestOMDHelperProcess(t *testing.T) {
 		fmt.Fprintln(os.Stderr, "missing helper command")
 		os.Exit(2)
 	}
-	if os.Getenv(tieCampaignCrashModeEnvironment) == "after-first-observation" {
+	switch os.Getenv(tieCampaignCrashModeEnvironment) {
+	case "before-request":
+		marker := os.Getenv(tieCampaignCrashMarkerEnvironment)
+		tieCampaignBeforeRequest = func() {
+			if marker != "" {
+				_ = os.WriteFile(marker, []byte("connected\n"), 0o600)
+			}
+			select {}
+		}
+	case "after-first-observation":
 		marker := os.Getenv(tieCampaignCrashMarkerEnvironment)
 		tieCampaignAfterFirstObservation = func() {
 			if marker == "" {
@@ -1579,6 +1857,56 @@ func startTieCampaignCoordinatorProcess(
 	publicationDirectory string,
 	wantSequence uint64,
 ) *tieReceiverProcess {
+	return startTieCampaignCoordinatorProcessWhen(
+		t, data, transportKey, coordinatorKey, planPath, planID, coordinatorPublicKey,
+		observerPublicKey, routesPath, artifactDirectory, publicationDirectory,
+		func(line string) bool {
+			fields := outputFields(line, "work_tie_campaign_pair_ready")
+			return fields["sequence"] == strconv.FormatUint(wantSequence, 10)
+		},
+	)
+}
+
+func startTieCampaignCoordinatorResumeProcess(
+	t testing.TB,
+	data string,
+	transportKey string,
+	coordinatorKey string,
+	planPath string,
+	planID string,
+	coordinatorPublicKey string,
+	observerPublicKey string,
+	routesPath string,
+	artifactDirectory string,
+	publicationDirectory string,
+	wantSequence uint64,
+	wantPhase tieproducer.CampaignPhase,
+) *tieReceiverProcess {
+	return startTieCampaignCoordinatorProcessWhen(
+		t, data, transportKey, coordinatorKey, planPath, planID, coordinatorPublicKey,
+		observerPublicKey, routesPath, artifactDirectory, publicationDirectory,
+		func(line string) bool {
+			fields := outputFields(line, "work_tie_campaign_started")
+			return fields["next_sequence"] == strconv.FormatUint(wantSequence, 10) &&
+				fields["phase"] == strconv.FormatUint(uint64(wantPhase), 10)
+		},
+	)
+}
+
+func startTieCampaignCoordinatorProcessWhen(
+	t testing.TB,
+	data string,
+	transportKey string,
+	coordinatorKey string,
+	planPath string,
+	planID string,
+	coordinatorPublicKey string,
+	observerPublicKey string,
+	routesPath string,
+	artifactDirectory string,
+	publicationDirectory string,
+	readyLine func(string) bool,
+) *tieReceiverProcess {
 	t.Helper()
 	command := helperCommand(nil,
 		"work-telemetry-tie-campaign", "--data", data,
@@ -1609,8 +1937,7 @@ func startTieCampaignCoordinatorProcess(
 			line, readErr := reader.ReadString('\n')
 			if line != "" {
 				stdout.WriteString(line)
-				fields := outputFields(line, "work_tie_campaign_pair_ready")
-				if fields["sequence"] == strconv.FormatUint(wantSequence, 10) {
+				if readyLine(line) {
 					ready <- nil
 					_, _ = io.Copy(stdout, reader)
 					return
@@ -1626,12 +1953,12 @@ func startTieCampaignCoordinatorProcess(
 	case err := <-ready:
 		if err != nil {
 			_ = command.Wait()
-			t.Fatalf("tie-campaign coordinator stopped before pair: %v stdout=%s stderr=%s", err, stdout.String(), stderr.String())
+			t.Fatalf("tie-campaign coordinator stopped before ready state: %v stdout=%s stderr=%s", err, stdout.String(), stderr.String())
 		}
 	case <-time.After(30 * time.Second):
 		_ = command.Process.Kill()
 		_ = command.Wait()
-		t.Fatalf("tie-campaign coordinator pair timeout stdout=%s stderr=%s", stdout.String(), stderr.String())
+		t.Fatalf("tie-campaign coordinator ready timeout stdout=%s stderr=%s", stdout.String(), stderr.String())
 	}
 	result := &tieReceiverProcess{command: command, stderr: stderr, stdout: stdout, stdoutDone: stdoutDone}
 	t.Cleanup(func() {
@@ -1700,6 +2027,27 @@ func waitForProcessFile(t testing.TB, path string, timeout time.Duration) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("process marker %s was not created", path)
+}
+
+func waitForProcessCampaignStatus(
+	t testing.TB,
+	config tieproducer.CampaignConfig,
+	timeout time.Duration,
+	ready func(tieproducer.CampaignStatus) bool,
+) tieproducer.CampaignStatus {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	var last tieproducer.CampaignStatus
+	var lastErr error
+	for time.Now().Before(deadline) {
+		last, lastErr = tieproducer.LoadCampaignStatus(config)
+		if lastErr == nil && ready(last) {
+			return last
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("campaign status did not reach crash boundary last=%+v err=%v", last, lastErr)
+	return tieproducer.CampaignStatus{}
 }
 
 func publishProcessCampaignCheckpoint(

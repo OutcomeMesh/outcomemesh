@@ -346,6 +346,11 @@ failure: it closes only the route's identity-pinned peer, repeats the authentica
 handshake to the same advertised transport ID, and resends the immutable pair.
 The durable observer path makes that resend idempotent. A two-observer process
 campaign proves the restarted route completes without weakening peer pinning.
+The converse crash boundary is also covered: with one observer deliberately
+held before request decoding, the coordinator is killed only after the other
+ACK appears in its fsynced journal. Its replacement reports one recovered ACK,
+does not contact that completed observer again, and advances the local chain
+only after the missing observer has acknowledged the same immutable pair.
 The operator audit is intentionally read-only: unlike `OpenCampaign` it does
 not create or migrate state, and it never opens a collector that could close an
 expired slot. It authenticates signed receipt chains and checkpoints before

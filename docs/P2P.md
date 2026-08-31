@@ -259,6 +259,13 @@ same transport ID committed by the route; artifact replay remains safe because
 the observer's receipt path is idempotent. A real two-observer, two-slot process
 campaign exercises this boundary and then reconciles both receipt chains.
 
+Coordinator restart is independent of observer restart. Each successful ACK is
+fsynced separately; startup reports the recovered `acknowledged` count, and the
+driver opens streams only for zero-tail entries in canonical plan order. A
+process test holds one observer before request decoding, kills the coordinator
+after the other observer's ACK is durable, and then proves the replacement
+coordinator contacts only the missing observer.
+
 ## Signed peer advertisements
 
 `node/discovery` defines an OutcomeMesh-native discovery record rather than

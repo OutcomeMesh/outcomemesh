@@ -234,6 +234,10 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
   explicitly disconnected and retried once with a fresh authenticated
   handshake; both independent receipt chains, role order, selected tips, and a
   read-only healthy audit converge afterward.
+  A separate exact-boundary process run blocks one observer before request
+  decoding, waits for the other ACK to enter the fsynced journal, and kills the
+  coordinator. Restart exposes `acknowledged=1`, delivers only to the missing
+  observer, delays local advance until that ACK, and ends in a healthy audit.
 
 ### Exit gates
 
