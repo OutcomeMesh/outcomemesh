@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"testing"
 
@@ -197,11 +198,98 @@ func TestCampaignRejectsConflictingPairAndCorruptState(t *testing.T) {
 	}
 }
 
+func TestCampaignPersistsOnlyPreDeliveryExpiredSkips(t *testing.T) {
+	plan, binding, keys := campaignPlan(t)
+	planID, _ := plan.ID()
+	statePath := filepath.Join(t.TempDir(), "campaign.state")
+	campaign, err := OpenCampaign(CampaignConfig{
+		Plan: plan, Binding: binding, ExpectedPlanID: planID, StatePath: statePath,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	closure := plan.Slots[0].EndedAt + calibration.TieReceiptClosureGraceSeconds
+	if err := campaign.SkipExpired(1, closure-1); !errors.Is(err, ErrCampaignSkip) {
+		t.Fatalf("early skip error=%v", err)
+	}
+	if err := campaign.SkipExpired(1, closure); err != nil {
+		t.Fatal(err)
+	}
+	if err := campaign.SkipExpired(1, closure); err != nil {
+		t.Fatalf("idempotent skip error=%v", err)
+	}
+	status, err := campaign.Status()
+	if err != nil || status.NextSequence != 2 || status.Phase != CampaignAwaitingPair ||
+		status.SkippedSlots != 1 || !slices.Equal(status.SkippedSequences, []uint64{1}) {
+		t.Fatalf("skipped status=%+v err=%v", status, err)
+	}
+	if err := campaign.Close(); err != nil {
+		t.Fatal(err)
+	}
+	campaign, err = OpenCampaign(CampaignConfig{
+		Plan: plan, Binding: binding, ExpectedPlanID: planID, StatePath: statePath,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, _ = campaign.Status()
+	if status.SkippedSlots != 1 || !slices.Equal(status.SkippedSequences, []uint64{1}) {
+		t.Fatalf("reopened skip status=%+v", status)
+	}
+	pair, checkpoint := campaignPair(t, plan, binding, keys.coordinator, 2)
+	if err := campaign.StagePair(pair, checkpoint); err != nil {
+		t.Fatal(err)
+	}
+	checkpointID, _ := checkpoint.ID(plan, binding, planID)
+	if err := campaign.ConfirmPublication(2, checkpointID); err != nil {
+		t.Fatal(err)
+	}
+	if err := campaign.SkipExpired(
+		2, plan.Slots[1].EndedAt+calibration.TieReceiptClosureGraceSeconds,
+	); !errors.Is(err, ErrCampaignPhase) {
+		t.Fatalf("post-publication skip error=%v", err)
+	}
+}
+
+func TestCampaignMigratesVersionZeroState(t *testing.T) {
+	plan, binding, _ := campaignPlan(t)
+	planID, _ := plan.ID()
+	statePath := filepath.Join(t.TempDir(), "campaign.state")
+	legacy := campaignState{
+		Version: CampaignStateVersion0, PlanID: planID,
+		NextSequence: 1, Phase: CampaignAwaitingPair,
+	}
+	encoded, err := encodeCampaignState(legacy, plan, planID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(statePath, encoded, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	campaign, err := OpenCampaign(CampaignConfig{
+		Plan: plan, Binding: binding, ExpectedPlanID: planID, StatePath: statePath,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if campaign.state.Version != CampaignStateVersion1 {
+		t.Fatalf("campaign state version=%d", campaign.state.Version)
+	}
+	migrated, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := decodeCampaignState(migrated, plan, planID)
+	if err != nil || state.Version != CampaignStateVersion1 {
+		t.Fatalf("migrated state=%+v err=%v", state, err)
+	}
+}
+
 func FuzzDecodeCampaignStateNeverPanics(f *testing.F) {
 	plan, _, _ := campaignPlan(f)
 	planID, _ := plan.ID()
 	state := campaignState{
-		Version: CampaignStateVersion0, PlanID: planID,
+		Version: CampaignStateVersion1, PlanID: planID,
 		NextSequence: 1, Phase: CampaignAwaitingPair,
 	}
 	encoded, err := encodeCampaignState(state, plan, planID)

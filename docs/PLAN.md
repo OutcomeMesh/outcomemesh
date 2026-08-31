@@ -215,8 +215,12 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
   checkpoints for the whole plan, records coordinator confirmation separately
   from signed receipt persistence, recovers the ACK/confirmation crash window,
   advances after completely empty `NoPair` slots, and stops on any partial pair.
-  A bounded coordinator-side publication deadline and durable zero-delivery
-  skip remain Milestone 9 deliverables.
+  Coordinator publication waits are bounded by the signed slot; before any
+  delivery it waits through the common receipt grace and journals the exact
+  skipped sequence, while every state after publication is permanently
+  non-skippable. A real coordinator/observer process regression proves an
+  expired zero-delivery slot followed by a completed pair retains one parent
+  and convergent tips.
 
 ### Exit gates
 

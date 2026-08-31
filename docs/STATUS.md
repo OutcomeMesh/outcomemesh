@@ -494,9 +494,14 @@ Implemented in an isolated, not-yet-activated consensus package:
   exact old pair after a kill in that gap. It advances across completely empty
   missed slots only after the closure grace, while a partial or invalid sibling
   state stops without writing `NoPair`. A real process test exercises the
-  ACK/kill/restart/confirmation boundary. Coordinator publication deadlines,
-  durable zero-delivery skips, observer honesty, and Sybil-cluster provenance
-  remain open testnet work.
+  ACK/kill/restart/confirmation boundary. Coordinator publication deadlines
+  are now bound to the signed slot. Before delivery begins, the driver waits
+  through the shared receipt grace and persists the exact skipped sequence in
+  its migrated version-1 journal; after publication, every delivery phase is
+  permanently non-skippable. A real coordinator/observer process run closes an
+  expired first slot as `NoPair`, delivers the next pair, and verifies matching
+  tips. Disk-full campaign fault injection, observer honesty, and Sybil-cluster
+  provenance remain open testnet work.
 - the PoW research harness now also has an integer-only, fixed-seed geometric
   solve process for active v0 and lagged v1. Golden observation digests cover
   baseline variance and an alternating 1x/4x campaign, while separate cases

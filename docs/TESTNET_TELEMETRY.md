@@ -396,7 +396,9 @@ that journal across every successful slot, writes immutable numbered artifact
 and checkpoint files, waits on a separate publication directory, opens all
 missing observer streams concurrently, records successful acknowledgements as
 they arrive, and advances its own persistent chain only after the full observer
-set has acknowledged.
+set has acknowledged. Version-0 journals are migrated atomically to version 1,
+which also persists the exact ordered sequence list of safe zero-delivery
+skips.
 
 The observer route file has exactly one line per plan observer in canonical key
 order:
@@ -462,8 +464,20 @@ coordinator confirmation. If the process is killed or the stream drops between
 those events, restart serves the original signed receipt from disk without
 remining or resubmitting either block. A real process test kills the observer at
 that exact boundary, restarts it, verifies the same receipt tail, and completes
-the plan. Coordinator-side deadline and skip policy for an externally
-unpublished slot remains the next campaign integration step.
+the plan.
+
+The coordinator bounds publication waiting by the signed slot end. If no
+checkpoint publication arrives, it does not deliver the pair, waits until the
+same slot end plus the receipt-closure grace, then atomically appends that
+sequence to its skipped list. All long-lived observers independently close the
+empty slot as `NoPair`, so the next pair is mined from the same unchanged
+parent. A published slot enters `Delivering`; from that boundary onward it can
+never be auto-skipped, even when zero ACKs are visible, because a lost ACK may
+hide a remotely admitted pair. Delivery itself and coordinator local admission
+are deadline-bounded by the slot end. A two-process regression starts with an
+already expired zero-delivery slot, runs a fully published next slot, and proves
+the coordinator and observer select the same final tip with receipt statuses
+`NoPair, Completed`.
 
 The tested and control payout addresses must be dedicated to the harness during
 their planned slots. Ordinary mining under either address is intentionally not
@@ -555,8 +569,8 @@ and its version-4 single-observer report digest is
   outside the manifest storage path;
 - deploy and publish the clustering policy and its digest before each real
   observation window;
-- bound coordinator publication waits to the signed slot and persist an
-  auditable skip only when no observer delivery has begun;
+- exercise disk-full and abrupt-power-loss injection for campaign skip and
+  confirmation-marker writes;
 - publish hourly telemetry tail checkpoints outside the manifest storage path;
 - define privacy retention for the raw identifiers used to derive pseudonymous
   cluster IDs;

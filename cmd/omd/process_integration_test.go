@@ -732,6 +732,143 @@ func TestProcessTieCampaignReceiverRecoversAckAfterKillBeforeConfirmation(t *tes
 	}
 }
 
+func TestProcessTieCampaignSkipsExpiredZeroDeliveryAndContinuesNextSlot(t *testing.T) {
+	root := t.TempDir()
+	coordinatorData := root + "/coordinator"
+	observerData := root + "/observer"
+	planPath := root + "/tie-plan.omtp"
+	artifactDirectory := root + "/artifacts"
+	publicationDirectory := root + "/published"
+	confirmationDirectory := root + "/confirmed"
+	routesPath := root + "/observer-routes.txt"
+	coordinatorTransportKeyPath := root + "/coordinator-transport.key"
+	coordinatorPlanKeyPath := root + "/coordinator-plan.key"
+	observerTransportKeyPath := root + "/observer-transport.key"
+	observerReceiptKeyPath := root + "/observer-receipt.key"
+	writeProcessKey(t, coordinatorTransportKeyPath, "tie-skip-coordinator-transport")
+	writeProcessKey(t, observerTransportKeyPath, "tie-skip-observer-transport")
+	writeProcessKey(t, observerReceiptKeyPath, "tie-skip-observer-receipt")
+	runProcessCommand(t, 20*time.Second,
+		"init", "--data", coordinatorData, "--network", "20260833", "--timestamp", "1700000000",
+		"--difficulty-bits", "9", "--max-history-bytes", strconv.FormatUint(minimumHistoryBytes, 10),
+	)
+	document, err := loadGenesis(coordinatorData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	genesisID, err := document.ID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	runProcessCommand(t, 20*time.Second,
+		"work-enable", "--data", coordinatorData, "--activation-height", "2",
+		"--confirm-genesis", genesisID.String(), "--max-trees", "4",
+		"--max-history-bytes", strconv.FormatUint(minimumHistoryBytes, 10),
+	)
+	runProcessCommand(t, 20*time.Second, "work-mine", "--data", coordinatorData, "--count", "1")
+	if err := os.CopyFS(observerData, os.DirFS(coordinatorData)); err != nil {
+		t.Fatal(err)
+	}
+	observerReceiptKey, err := loadPrivateKey(observerReceiptKeyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	coordinatorPlanSeed := types.DomainHash("test/process/tie-campaign-skip-plan-coordinator")
+	coordinatorPlanKey := ed25519.NewKeyFromSeed(coordinatorPlanSeed[:])
+	if err := os.WriteFile(coordinatorPlanKeyPath, coordinatorPlanKey.Seed(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	now := unixNow()
+	plan := calibration.TiePlan{
+		Version: calibration.TiePlanVersion1, NetworkID: document.NetworkID, GenesisID: genesisID,
+		ActivationHeight:        2,
+		TestedMiner:             types.Address(types.DomainHash("test/process/tie-campaign-skip-tested")),
+		ControlMiner:            types.Address(types.DomainHash("test/process/tie-campaign-skip-control")),
+		MaximumPairDelaySeconds: 10,
+		Slots: []calibration.TiePlanSlot{
+			{StartedAt: now - 121, EndedAt: now - 61, FirstRole: calibration.TieRoleTested},
+			{StartedAt: now + 2, EndedAt: now + 122, FirstRole: calibration.TieRoleControl},
+		},
+	}
+	copy(plan.ObserverPublicKey[:], observerReceiptKey.Public().(ed25519.PublicKey))
+	plan, err = calibration.SignTiePlan(coordinatorPlanKey, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := calibration.SaveTiePlanFile(planPath, plan, plan.Binding()); err != nil {
+		t.Fatal(err)
+	}
+	planID, err := plan.ID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	coordinatorPublicKey := bytesToLowerHex(coordinatorPlanKey.Public().(ed25519.PublicKey))
+	observerPublicKey := bytesToLowerHex(observerReceiptKey.Public().(ed25519.PublicKey))
+	if err := os.MkdirAll(publicationDirectory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	coordinatorTransportID := processTransportPeerID(t, coordinatorTransportKeyPath)
+	receiver, observerTransportID, observerAddress := startTieCampaignReceiverProcess(
+		t, observerData, observerTransportKeyPath, observerReceiptKeyPath,
+		coordinatorTransportID.String(), planPath, planID.String(), coordinatorPublicKey,
+		publicationDirectory, confirmationDirectory,
+	)
+	if err := os.WriteFile(
+		routesPath,
+		[]byte(observerPublicKey+" "+observerTransportID+" "+observerAddress+"\n"),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	coordinator := startTieCampaignCoordinatorProcess(
+		t, coordinatorData, coordinatorTransportKeyPath, coordinatorPlanKeyPath,
+		planPath, planID.String(), coordinatorPublicKey, observerPublicKey,
+		routesPath, artifactDirectory, publicationDirectory, 2,
+	)
+	checkpointBytes, err := os.ReadFile(artifactDirectory + "/0000000002.omtcp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkpoint, err := calibration.DecodeTiePairCheckpoint(checkpointBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkpointID, err := checkpoint.ID(plan, plan.Binding(), planID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(publicationDirectory+"/0000000002.omtcp", checkpointBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		publicationDirectory+"/0000000002.published", []byte(checkpointID.String()+"\n"), 0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	coordinatorOutput := waitTieReceiverProcess(t, coordinator)
+	receiverOutput := waitTieReceiverProcess(t, receiver)
+	completeFields := outputFields(coordinatorOutput, "work_tie_campaign_complete")
+	observerFields := outputFields(receiverOutput, "work_tie_campaign_observer_complete")
+	if completeFields["skipped"] != "1" || completeFields["skipped_sequences"] != "1" ||
+		observerFields["slots"] != "2" || observerFields["completed"] != "1" ||
+		observerFields["no_pair"] != "1" {
+		t.Fatalf("unexpected campaign completion\ncoordinator: %s\nobserver: %s", coordinatorOutput, receiverOutput)
+	}
+	_, receipts, aggregate, err := calibration.LoadTieReceiptFile(
+		defaultTieReceiptPath(observerData), plan.Binding(),
+	)
+	if err != nil || len(receipts) != 2 || receipts[0].Status != calibration.TieTrialNoPair ||
+		receipts[1].Status != calibration.TieTrialCompleted || !aggregate.Complete ||
+		aggregate.NoPairSlots != 1 || aggregate.CompletedTrials != 1 {
+		t.Fatalf("observer receipts=%+v aggregate=%+v err=%v", receipts, aggregate, err)
+	}
+	coordinatorTip := workTip(t, coordinatorData)
+	observerTip := workTip(t, observerData)
+	if coordinatorTip != observerTip {
+		t.Fatalf("campaign tips diverged coordinator=%s observer=%s", coordinatorTip, observerTip)
+	}
+}
+
 // TestOMDHelperProcess executes exactly one CLI command in a separate process.
 func TestOMDHelperProcess(t *testing.T) {
 	if os.Getenv(helperProcessEnvironment) != "1" {
@@ -900,6 +1037,84 @@ func startTieCampaignReceiverProcess(
 		}
 	})
 	return result, peerID, address
+}
+
+func startTieCampaignCoordinatorProcess(
+	t testing.TB,
+	data string,
+	transportKey string,
+	coordinatorKey string,
+	planPath string,
+	planID string,
+	coordinatorPublicKey string,
+	observerPublicKey string,
+	routesPath string,
+	artifactDirectory string,
+	publicationDirectory string,
+	wantSequence uint64,
+) *tieReceiverProcess {
+	t.Helper()
+	command := helperCommand(nil,
+		"work-telemetry-tie-campaign", "--data", data,
+		"--key", transportKey, "--coordinator-key", coordinatorKey,
+		"--plan", planPath, "--plan-id", planID,
+		"--coordinator-public-key", coordinatorPublicKey,
+		"--observer-public-key", observerPublicKey,
+		"--observers", routesPath, "--artifacts", artifactDirectory,
+		"--published", publicationDirectory, "--publication-poll", "20ms",
+		"--delivery-timeout", "30s",
+	)
+	pipe, err := command.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stderr := new(bytes.Buffer)
+	command.Stderr = stderr
+	if err := command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	reader := bufio.NewReader(pipe)
+	stdout := new(bytes.Buffer)
+	ready := make(chan error, 1)
+	stdoutDone := make(chan struct{})
+	go func() {
+		defer close(stdoutDone)
+		for {
+			line, readErr := reader.ReadString('\n')
+			if line != "" {
+				stdout.WriteString(line)
+				fields := outputFields(line, "work_tie_campaign_pair_ready")
+				if fields["sequence"] == strconv.FormatUint(wantSequence, 10) {
+					ready <- nil
+					_, _ = io.Copy(stdout, reader)
+					return
+				}
+			}
+			if readErr != nil {
+				ready <- readErr
+				return
+			}
+		}
+	}()
+	select {
+	case err := <-ready:
+		if err != nil {
+			_ = command.Wait()
+			t.Fatalf("tie-campaign coordinator stopped before pair: %v stdout=%s stderr=%s", err, stdout.String(), stderr.String())
+		}
+	case <-time.After(30 * time.Second):
+		_ = command.Process.Kill()
+		_ = command.Wait()
+		t.Fatalf("tie-campaign coordinator pair timeout stdout=%s stderr=%s", stdout.String(), stderr.String())
+	}
+	result := &tieReceiverProcess{command: command, stderr: stderr, stdout: stdout, stdoutDone: stdoutDone}
+	t.Cleanup(func() {
+		if command.ProcessState == nil || !command.ProcessState.Exited() {
+			_ = command.Process.Kill()
+			_ = command.Wait()
+		}
+	})
+	return result
 }
 
 func killTieReceiverProcess(t testing.TB, receiver *tieReceiverProcess) {

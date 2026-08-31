@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"errors"
+	"slices"
 	"sync"
 	"testing"
 
@@ -113,6 +114,88 @@ func TestDriveCampaignRejectsWrongCoordinatorBeforeWork(t *testing.T) {
 	}
 }
 
+func TestDriveCampaignSkipsExpiredUnpublishedSlotBeforeAnyDelivery(t *testing.T) {
+	plan, binding, keys := campaignPlan(t)
+	planID, _ := plan.ID()
+	campaign, err := OpenCampaign(CampaignConfig{
+		Plan: plan, Binding: binding, ExpectedPlanID: planID,
+		StatePath: t.TempDir() + "/campaign.state",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := newCampaignDriverSource(t, plan)
+	artifacts := &memoryCampaignArtifacts{}
+	publication := &campaignSlotExpiryPublication{
+		source: source, expireSequence: 1, expiredAt: plan.Slots[0].EndedAt,
+	}
+	deliverer := &campaignDeliveryFixture{}
+	config := CampaignDriverConfig{
+		Plan: plan, Binding: binding, ExpectedPlanID: planID,
+		CoordinatorPrivateKey: keys.coordinator, Campaign: campaign, Source: source,
+		Artifacts: artifacts, Publication: publication, Deliverer: deliverer,
+		Clock: campaignDriverClock{source: source},
+	}
+	if err := DriveCampaign(context.Background(), config); err != nil {
+		t.Fatal(err)
+	}
+	status, err := campaign.Status()
+	if err != nil || status.Phase != CampaignComplete || status.NextSequence != 3 ||
+		status.SkippedSlots != 1 || !slices.Equal(status.SkippedSequences, []uint64{1}) {
+		t.Fatalf("complete skipped status=%+v err=%v", status, err)
+	}
+	if source.tip.Height != 1 || len(source.submissions) != 2 {
+		t.Fatalf("source tip=%+v submissions=%+v", source.tip, source.submissions)
+	}
+	for key := range deliverer.calls {
+		if key.sequence != 2 {
+			t.Fatalf("expired sequence delivered: calls=%v", deliverer.calls)
+		}
+	}
+	if len(artifacts.pairs) != 2 || publication.calls[1] != 1 || publication.calls[2] != 1 {
+		t.Fatalf("artifacts=%d publication_calls=%v", len(artifacts.pairs), publication.calls)
+	}
+}
+
+func TestDriveCampaignNeverSkipsAfterObserverDeliveryBegins(t *testing.T) {
+	plan, binding, keys := campaignPlan(t)
+	planID, _ := plan.ID()
+	campaign, err := OpenCampaign(CampaignConfig{
+		Plan: plan, Binding: binding, ExpectedPlanID: planID,
+		StatePath: t.TempDir() + "/campaign.state",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := newCampaignDriverSource(t, plan)
+	deliveryFailure := errors.New("observer unavailable")
+	deliverer := &campaignDeliveryFixture{
+		failSequence: 1, failObserver: keys.observers[1], failErr: deliveryFailure,
+	}
+	config := CampaignDriverConfig{
+		Plan: plan, Binding: binding, ExpectedPlanID: planID,
+		CoordinatorPrivateKey: keys.coordinator, Campaign: campaign, Source: source,
+		Artifacts: &memoryCampaignArtifacts{}, Publication: &campaignPublicationFixture{},
+		Deliverer: deliverer, Clock: campaignDriverClock{source: source},
+	}
+	if err := DriveCampaign(context.Background(), config); !errors.Is(err, deliveryFailure) {
+		t.Fatalf("delivery error=%v", err)
+	}
+	status, _ := campaign.Status()
+	if status.Phase != CampaignDelivering || status.AcknowledgedCount != 1 {
+		t.Fatalf("partial delivery status=%+v", status)
+	}
+	source.now = plan.Slots[0].EndedAt + calibration.TieReceiptClosureGraceSeconds
+	if err := DriveCampaign(context.Background(), config); !errors.Is(err, ErrOutsideSlot) {
+		t.Fatalf("expired partial-delivery error=%v", err)
+	}
+	status, _ = campaign.Status()
+	if status.Phase != CampaignDelivering || status.NextSequence != 1 ||
+		status.AcknowledgedCount != 1 || status.SkippedSlots != 0 {
+		t.Fatalf("unsafe skip status=%+v", status)
+	}
+}
+
 type memoryCampaignArtifacts struct {
 	mu          sync.Mutex
 	pairs       map[uint64]Pair
@@ -155,6 +238,32 @@ type campaignPublicationFixture struct {
 	failSequence uint64
 	failErr      error
 	calls        map[uint64]int
+}
+
+type campaignSlotExpiryPublication struct {
+	source         *campaignDriverSource
+	expireSequence uint64
+	expiredAt      uint64
+	calls          map[uint64]int
+}
+
+func (fixture *campaignSlotExpiryPublication) WaitPublished(
+	_ context.Context,
+	sequence uint64,
+	checkpointID types.Hash,
+) error {
+	if checkpointID.IsZero() || fixture.source == nil {
+		return ErrCampaignDriver
+	}
+	if fixture.calls == nil {
+		fixture.calls = make(map[uint64]int)
+	}
+	fixture.calls[sequence]++
+	if sequence == fixture.expireSequence {
+		fixture.source.now = fixture.expiredAt
+		return context.DeadlineExceeded
+	}
+	return nil
 }
 
 func (fixture *campaignPublicationFixture) WaitPublished(
@@ -223,6 +332,13 @@ func (clock campaignDriverClock) WaitUntil(ctx context.Context, unixSeconds uint
 	}
 	clock.source.now = unixSeconds
 	return nil
+}
+
+func (clock campaignDriverClock) Now() (uint64, error) {
+	if clock.source == nil || clock.source.now == 0 {
+		return 0, ErrCampaignDriver
+	}
+	return clock.source.now, nil
 }
 
 type campaignDriverSource struct {

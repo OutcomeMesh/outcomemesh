@@ -32,6 +32,7 @@ type CampaignDeliverer interface {
 
 type CampaignClock interface {
 	WaitUntil(context.Context, uint64) error
+	Now() (uint64, error)
 }
 
 type CampaignDriverConfig struct {
@@ -88,17 +89,41 @@ func DriveCampaign(ctx context.Context, config CampaignDriverConfig) error {
 			return nil
 		}
 		sequence := status.NextSequence
+		slot := config.Plan.Slots[sequence-1]
 		switch status.Phase {
 		case CampaignAwaitingPair:
-			slot := config.Plan.Slots[sequence-1]
 			if err := config.Clock.WaitUntil(ctx, slot.StartedAt); err != nil {
 				return err
+			}
+			now, err := config.Clock.Now()
+			if err != nil {
+				return err
+			}
+			if now >= slot.EndedAt {
+				if err := skipExpiredCampaignSlot(ctx, config, sequence); err != nil {
+					return err
+				}
+				continue
 			}
 			pair, _, err := MinePair(ctx, config.Source, Config{
 				Plan: config.Plan, Binding: config.Binding,
 				ExpectedPlanID: planID, Sequence: sequence,
 			})
 			if err != nil {
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
+				now, clockErr := config.Clock.Now()
+				if clockErr != nil {
+					return errors.Join(err, clockErr)
+				}
+				if now >= slot.EndedAt &&
+					(errors.Is(err, ErrOutsideSlot) || errors.Is(err, context.DeadlineExceeded)) {
+					if skipErr := skipExpiredCampaignSlot(ctx, config, sequence); skipErr != nil {
+						return errors.Join(err, skipErr)
+					}
+					continue
+				}
 				return err
 			}
 			pairID, err := pair.ID(config.Plan, config.Binding, planID)
@@ -122,21 +147,84 @@ func DriveCampaign(ctx context.Context, config CampaignDriverConfig) error {
 			if _, _, err := loadCampaignArtifact(config, status); err != nil {
 				return err
 			}
-			if err := config.Publication.WaitPublished(ctx, sequence, status.CheckpointID); err != nil {
+			now, err := config.Clock.Now()
+			if err != nil {
 				return err
+			}
+			if now >= slot.EndedAt {
+				if err := skipExpiredCampaignSlot(ctx, config, sequence); err != nil {
+					return err
+				}
+				continue
+			}
+			publicationContext, publicationCancel := context.WithTimeout(
+				ctx, secondsDuration(slot.EndedAt-now),
+			)
+			publicationErr := config.Publication.WaitPublished(
+				publicationContext, sequence, status.CheckpointID,
+			)
+			publicationCancel()
+			if publicationErr != nil {
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
+				if errors.Is(publicationErr, context.DeadlineExceeded) {
+					if err := skipExpiredCampaignSlot(ctx, config, sequence); err != nil {
+						return errors.Join(publicationErr, err)
+					}
+					continue
+				}
+				return publicationErr
+			}
+			now, err = config.Clock.Now()
+			if err != nil {
+				return err
+			}
+			if now >= slot.EndedAt {
+				if err := skipExpiredCampaignSlot(ctx, config, sequence); err != nil {
+					return err
+				}
+				continue
 			}
 			if err := config.Campaign.ConfirmPublication(sequence, status.CheckpointID); err != nil {
 				return err
 			}
 		case CampaignDelivering:
+			now, err := config.Clock.Now()
+			if err != nil {
+				return err
+			}
+			if now >= slot.EndedAt {
+				return ErrOutsideSlot
+			}
 			pair, checkpoint, err := loadCampaignArtifact(config, status)
 			if err != nil {
 				return err
 			}
-			if err := deliverCampaignObservers(ctx, config, status, pair, checkpoint); err != nil {
-				return err
+			deliveryContext, deliveryCancel := context.WithTimeout(
+				ctx, secondsDuration(slot.EndedAt-now),
+			)
+			deliveryErr := deliverCampaignObservers(
+				deliveryContext, config, status, pair, checkpoint,
+			)
+			deliveryCancel()
+			if deliveryErr != nil {
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
+				if errors.Is(deliveryErr, context.DeadlineExceeded) {
+					return errors.Join(ErrOutsideSlot, deliveryErr)
+				}
+				return deliveryErr
 			}
 		case CampaignAwaitingAdvance:
+			now, err := config.Clock.Now()
+			if err != nil {
+				return err
+			}
+			if now >= slot.EndedAt {
+				return ErrOutsideSlot
+			}
 			pair, _, err := loadCampaignArtifact(config, status)
 			if err != nil {
 				return err
@@ -151,6 +239,32 @@ func DriveCampaign(ctx context.Context, config CampaignDriverConfig) error {
 			return ErrCampaignDriver
 		}
 	}
+}
+
+func skipExpiredCampaignSlot(
+	ctx context.Context,
+	config CampaignDriverConfig,
+	sequence uint64,
+) error {
+	if sequence == 0 || sequence > uint64(len(config.Plan.Slots)) {
+		return ErrCampaignDriver
+	}
+	slot := config.Plan.Slots[sequence-1]
+	if slot.EndedAt > ^uint64(0)-calibration.TieReceiptClosureGraceSeconds {
+		return ErrCampaignDriver
+	}
+	closure := slot.EndedAt + calibration.TieReceiptClosureGraceSeconds
+	if err := config.Clock.WaitUntil(ctx, closure); err != nil {
+		return err
+	}
+	now, err := config.Clock.Now()
+	if err != nil {
+		return err
+	}
+	if now < closure {
+		return ErrCampaignDriver
+	}
+	return config.Campaign.SkipExpired(sequence, now)
 }
 
 type campaignDeliveryResult struct {
@@ -208,6 +322,14 @@ func deliverCampaignObservers(
 }
 
 type RealCampaignClock struct{}
+
+func (RealCampaignClock) Now() (uint64, error) {
+	now := time.Now().Unix()
+	if now <= 0 {
+		return 0, ErrCampaignDriver
+	}
+	return uint64(now), nil
+}
 
 func (RealCampaignClock) WaitUntil(ctx context.Context, unixSeconds uint64) error {
 	if ctx == nil || unixSeconds == 0 {

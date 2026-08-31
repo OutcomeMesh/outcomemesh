@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -141,8 +142,9 @@ func runWorkTelemetryTieCampaign(arguments []string) (resultErr error) {
 		return err
 	}
 	fmt.Printf(
-		"work_tie_campaign_started transport_peer_id=%s plan=%s next_sequence=%d phase=%d observers=%d state=%s artifacts=%s published=%s\n",
+		"work_tie_campaign_started transport_peer_id=%s plan=%s next_sequence=%d phase=%d observers=%d skipped=%d skipped_sequences=%s state=%s artifacts=%s published=%s\n",
 		host.ID(), planID, status.NextSequence, status.Phase, status.ObserverCount,
+		status.SkippedSlots, campaignSequenceList(status.SkippedSequences),
 		*statePath, *artifactDirectory, *publishedDirectory,
 	)
 	err = tieproducer.DriveCampaign(ctx, tieproducer.CampaignDriverConfig{
@@ -162,10 +164,22 @@ func runWorkTelemetryTieCampaign(arguments []string) (resultErr error) {
 		return err
 	}
 	fmt.Printf(
-		"work_tie_campaign_complete plan=%s slots=%d next_sequence=%d state=%s\n",
-		planID, status.PlannedSlots, status.NextSequence, *statePath,
+		"work_tie_campaign_complete plan=%s slots=%d next_sequence=%d skipped=%d skipped_sequences=%s state=%s\n",
+		planID, status.PlannedSlots, status.NextSequence, status.SkippedSlots,
+		campaignSequenceList(status.SkippedSequences), *statePath,
 	)
 	return nil
+}
+
+func campaignSequenceList(sequences []uint64) string {
+	if len(sequences) == 0 {
+		return "-"
+	}
+	values := make([]string, len(sequences))
+	for index, sequence := range sequences {
+		values[index] = strconv.FormatUint(sequence, 10)
+	}
+	return strings.Join(values, ",")
 }
 
 type reportingCampaignArtifacts struct {

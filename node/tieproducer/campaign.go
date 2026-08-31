@@ -16,16 +16,21 @@ import (
 
 const (
 	CampaignStateVersion0     uint16 = 0
-	MaximumCampaignStateBytes        = 4 * 1024
+	CampaignStateVersion1     uint16 = 1
+	MaximumCampaignStateBytes        = 256 * 1024
 )
 
-const campaignStateChecksumDomain = "OMESH/testnet/calibration/tie-campaign/state-checksum/v0"
+const (
+	campaignStateChecksumDomainV0 = "OMESH/testnet/calibration/tie-campaign/state-checksum/v0"
+	campaignStateChecksumDomainV1 = "OMESH/testnet/calibration/tie-campaign/state-checksum/v1"
+)
 
 var (
 	ErrCampaignConfig = errors.New("invalid controlled-tie campaign configuration")
 	ErrCampaignState  = errors.New("invalid controlled-tie campaign state")
 	ErrCampaignPhase  = errors.New("invalid controlled-tie campaign phase")
 	ErrCampaignClosed = errors.New("controlled-tie campaign is closed")
+	ErrCampaignSkip   = errors.New("controlled-tie campaign slot is not safely skippable")
 )
 
 type CampaignPhase uint8
@@ -55,6 +60,8 @@ type CampaignStatus struct {
 	ObserverCount        uint64
 	AcknowledgedCount    uint64
 	ObserverReceiptTails []types.Hash
+	SkippedSlots         uint64
+	SkippedSequences     []uint64
 }
 
 type campaignState struct {
@@ -65,6 +72,7 @@ type campaignState struct {
 	PairID       types.Hash
 	CheckpointID types.Hash
 	ReceiptTails []types.Hash
+	Skipped      []uint64
 }
 
 // Campaign is a small durable coordinator journal. Pair artifacts and signed
@@ -113,9 +121,15 @@ func OpenCampaign(config CampaignConfig) (*Campaign, error) {
 		if err != nil {
 			return nil, err
 		}
+		if campaign.state.Version == CampaignStateVersion0 {
+			campaign.state.Version = CampaignStateVersion1
+			if err := campaign.saveLocked(campaign.state); err != nil {
+				return nil, err
+			}
+		}
 	case errors.Is(readErr, os.ErrNotExist):
 		campaign.state = campaignState{
-			Version: CampaignStateVersion0, PlanID: planID,
+			Version: CampaignStateVersion1, PlanID: planID,
 			NextSequence: 1, Phase: CampaignAwaitingPair,
 		}
 		if err := campaign.saveLocked(campaign.state); err != nil {
@@ -256,8 +270,50 @@ func (campaign *Campaign) Advance(sequence uint64) error {
 		return ErrCampaignPhase
 	}
 	next := campaignState{
-		Version: CampaignStateVersion0, PlanID: campaign.planID,
+		Version: CampaignStateVersion1, PlanID: campaign.planID,
 		NextSequence: sequence + 1, Phase: CampaignAwaitingPair,
+		Skipped: append([]uint64(nil), campaign.state.Skipped...),
+	}
+	if sequence == uint64(len(campaign.plan.Slots)) {
+		next.Phase = CampaignComplete
+	}
+	return campaign.saveLocked(next)
+}
+
+// SkipExpired advances a slot only before observer delivery is enabled and
+// only after every observer has had the same fixed receipt-closure grace. It is
+// safe for AwaitingPublication because no Deliver call can yet have occurred;
+// once the phase is Delivering, a lost acknowledgement is indistinguishable
+// from a remotely admitted pair and automatic continuation is forbidden.
+func (campaign *Campaign) SkipExpired(sequence uint64, now uint64) error {
+	if campaign == nil || sequence == 0 || now == 0 {
+		return ErrCampaignConfig
+	}
+	campaign.mu.Lock()
+	defer campaign.mu.Unlock()
+	if campaign.closed {
+		return ErrCampaignClosed
+	}
+	if sequence+1 == campaign.state.NextSequence &&
+		campaignSequenceSkipped(campaign.state.Skipped, sequence) {
+		return nil
+	}
+	if sequence != campaign.state.NextSequence {
+		return ErrCampaignState
+	}
+	if campaign.state.Phase != CampaignAwaitingPair &&
+		campaign.state.Phase != CampaignAwaitingPublication {
+		return ErrCampaignPhase
+	}
+	slot := campaign.plan.Slots[sequence-1]
+	if slot.EndedAt > ^uint64(0)-calibration.TieReceiptClosureGraceSeconds ||
+		now < slot.EndedAt+calibration.TieReceiptClosureGraceSeconds {
+		return ErrCampaignSkip
+	}
+	next := campaignState{
+		Version: CampaignStateVersion1, PlanID: campaign.planID,
+		NextSequence: sequence + 1, Phase: CampaignAwaitingPair,
+		Skipped: append(append([]uint64(nil), campaign.state.Skipped...), sequence),
 	}
 	if sequence == uint64(len(campaign.plan.Slots)) {
 		next.Phase = CampaignComplete
@@ -297,6 +353,8 @@ func (campaign *Campaign) statusLocked() CampaignStatus {
 		PairID: campaign.state.PairID, CheckpointID: campaign.state.CheckpointID,
 		ObserverCount:        uint64(campaign.observerCount()),
 		ObserverReceiptTails: append([]types.Hash(nil), campaign.state.ReceiptTails...),
+		SkippedSlots:         uint64(len(campaign.state.Skipped)),
+		SkippedSequences:     append([]uint64(nil), campaign.state.Skipped...),
 	}
 	for _, tail := range campaign.state.ReceiptTails {
 		if !tail.IsZero() {
@@ -344,9 +402,11 @@ func encodeCampaignState(state campaignState, plan calibration.TiePlan, planID t
 	if err := validateCampaignState(state, plan, planID); err != nil {
 		return nil, err
 	}
-	encoder := codec.NewEncoder(128 + len(state.ReceiptTails)*types.HashSize)
+	encoder := codec.NewEncoder(
+		128 + len(state.ReceiptTails)*types.HashSize + len(state.Skipped)*8,
+	)
 	encodeCampaignStatePayload(encoder, state)
-	checksum := types.DomainHash(campaignStateChecksumDomain, encoder.Bytes())
+	checksum := types.DomainHash(campaignStateChecksumDomain(state.Version), encoder.Bytes())
 	encoder.Fixed(checksum[:])
 	encoded := encoder.Bytes()
 	if len(encoded) > MaximumCampaignStateBytes {
@@ -400,6 +460,20 @@ func decodeCampaignState(input []byte, plan calibration.TiePlan, planID types.Ha
 		}
 		copy(state.ReceiptTails[index][:], value)
 	}
+	if state.Version == CampaignStateVersion1 {
+		skippedCount, decodeErr := decoder.ListLength(calibration.MaximumTiePlanSlots)
+		if decodeErr != nil {
+			return campaignState{}, decodeErr
+		}
+		state.Skipped = make([]uint64, skippedCount)
+		for index := range state.Skipped {
+			sequence, sequenceErr := decoder.U64()
+			if sequenceErr != nil {
+				return campaignState{}, sequenceErr
+			}
+			state.Skipped[index] = sequence
+		}
+	}
 	payloadBytes := len(input) - decoder.Remaining()
 	checksumBytes, err := decoder.Fixed(types.HashSize)
 	if err != nil {
@@ -408,7 +482,7 @@ func decodeCampaignState(input []byte, plan calibration.TiePlan, planID types.Ha
 	if err := decoder.Finish(); err != nil {
 		return campaignState{}, err
 	}
-	wantChecksum := types.DomainHash(campaignStateChecksumDomain, input[:payloadBytes])
+	wantChecksum := types.DomainHash(campaignStateChecksumDomain(state.Version), input[:payloadBytes])
 	if !bytes.Equal(checksumBytes, wantChecksum[:]) {
 		return campaignState{}, ErrCampaignState
 	}
@@ -429,13 +503,30 @@ func encodeCampaignStatePayload(encoder *codec.Encoder, state campaignState) {
 	for _, tail := range state.ReceiptTails {
 		encoder.Fixed(tail[:])
 	}
+	if state.Version == CampaignStateVersion1 {
+		encoder.Uvarint(uint64(len(state.Skipped)))
+		for _, sequence := range state.Skipped {
+			encoder.U64(sequence)
+		}
+	}
 }
 
 func validateCampaignState(state campaignState, plan calibration.TiePlan, planID types.Hash) error {
-	if state.Version != CampaignStateVersion0 || planID.IsZero() || state.PlanID != planID ||
+	if (state.Version != CampaignStateVersion0 && state.Version != CampaignStateVersion1) ||
+		planID.IsZero() || state.PlanID != planID ||
 		state.NextSequence == 0 || state.NextSequence > uint64(len(plan.Slots))+1 ||
 		state.Phase > CampaignComplete {
 		return ErrCampaignState
+	}
+	if state.Version == CampaignStateVersion0 && len(state.Skipped) != 0 {
+		return ErrCampaignState
+	}
+	var previousSkipped uint64
+	for _, sequence := range state.Skipped {
+		if sequence == 0 || sequence >= state.NextSequence || sequence <= previousSkipped {
+			return ErrCampaignState
+		}
+		previousSkipped = sequence
 	}
 	observerCount := 1
 	if plan.Version == calibration.TiePlanVersion2 {
@@ -474,6 +565,17 @@ func validateCampaignState(state campaignState, plan calibration.TiePlan, planID
 		return ErrCampaignState
 	}
 	return nil
+}
+
+func campaignStateChecksumDomain(version uint16) string {
+	if version == CampaignStateVersion1 {
+		return campaignStateChecksumDomainV1
+	}
+	return campaignStateChecksumDomainV0
+}
+
+func campaignSequenceSkipped(sequences []uint64, sequence uint64) bool {
+	return len(sequences) != 0 && sequences[len(sequences)-1] == sequence
 }
 
 func anyCampaignReceiptPresent(tails []types.Hash) bool {

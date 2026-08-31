@@ -352,7 +352,14 @@ func exchangeTiePairQUIC(
 		return tieexchange.Acknowledgement{}, types.Hash{}, err
 	}
 	defer stream.Close()
-	if err := stream.SetDeadline(time.Now().Add(timeout)); err != nil {
+	deadline := time.Now().Add(timeout)
+	if contextDeadline, ok := ctx.Deadline(); ok && contextDeadline.Before(deadline) {
+		deadline = contextDeadline
+	}
+	if !deadline.After(time.Now()) {
+		return tieexchange.Acknowledgement{}, types.Hash{}, context.DeadlineExceeded
+	}
+	if err := stream.SetDeadline(deadline); err != nil {
 		return tieexchange.Acknowledgement{}, types.Hash{}, err
 	}
 	if err := tieexchange.WriteRequest(stream, tieexchange.Request{Binding: binding, Artifact: artifact}); err != nil {
