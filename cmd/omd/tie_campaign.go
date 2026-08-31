@@ -248,20 +248,34 @@ func (deliverer *quicCampaignDeliverer) Deliver(
 	copy(observerHash[:], observer[:])
 	deliveryContext, cancel := context.WithTimeout(ctx, deliverer.timeout)
 	defer cancel()
-	acknowledgement, remoteID, err := exchangeTiePairQUIC(
-		deliveryContext, deliverer.host, route.Address, route.TransportPeerID, observerHash,
-		tieexchange.Binding{PlanID: deliverer.planID, PairID: pairID, Sequence: pair.Sequence},
-		artifact, deliverer.timeout,
-	)
-	if err != nil {
-		return types.Hash{}, err
+	exchangeBinding := tieexchange.Binding{
+		PlanID: deliverer.planID, PairID: pairID, Sequence: pair.Sequence,
 	}
-	fmt.Printf(
-		"work_tie_campaign_observer_ack transport_peer_id=%s observer_peer_id=%s plan=%s sequence=%d pair=%s observer=%s receipt_tail=%s\n",
-		deliverer.host.ID(), remoteID, deliverer.planID, pair.Sequence,
-		pairID, observerHash, acknowledgement.ReceiptTail,
-	)
-	return acknowledgement.ReceiptTail, nil
+	var firstErr error
+	for attempt := 0; attempt < 2; attempt++ {
+		acknowledgement, remoteID, exchangeErr := exchangeTiePairQUIC(
+			deliveryContext, deliverer.host, route.Address, route.TransportPeerID, observerHash,
+			exchangeBinding, artifact, deliverer.timeout,
+		)
+		if exchangeErr == nil {
+			fmt.Printf(
+				"work_tie_campaign_observer_ack transport_peer_id=%s observer_peer_id=%s plan=%s sequence=%d pair=%s observer=%s receipt_tail=%s reconnected=%t\n",
+				deliverer.host.ID(), remoteID, deliverer.planID, pair.Sequence,
+				pairID, observerHash, acknowledgement.ReceiptTail, attempt != 0,
+			)
+			return acknowledgement.ReceiptTail, nil
+		}
+		if attempt != 0 || deliveryContext.Err() != nil {
+			return types.Hash{}, errors.Join(firstErr, exchangeErr)
+		}
+		firstErr = exchangeErr
+		if disconnectErr := deliverer.host.DisconnectPeer(
+			route.Address, route.TransportPeerID,
+		); disconnectErr != nil {
+			return types.Hash{}, errors.Join(exchangeErr, disconnectErr)
+		}
+	}
+	return types.Hash{}, errors.Join(tieproducer.ErrCampaignDriver, firstErr)
 }
 
 func loadCampaignObserverRoutes(

@@ -106,6 +106,64 @@ func TestQUICTiePairProtocolDisabledUntilExplicitlyInstalled(t *testing.T) {
 	}
 }
 
+func TestQUICTiePairPinnedDisconnectForcesFreshConnection(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	clientKey := testKey("tie-pair-disconnect-client")
+	clientID := types.DomainHash("OMESH/p2p/ed25519/v0", clientKey.Public().(ed25519.PublicKey))
+	handled := make(chan struct{}, 2)
+	server, err := libp2ptransport.New(
+		ctx, testKey("tie-pair-disconnect-server"), libp2ptransport.DefaultConfig(), nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close()
+	if err := server.SetTiePairHandler(clientID, func(_ context.Context, _ types.Hash, stream network.Stream) {
+		_ = stream.Close()
+		handled <- struct{}{}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	client, err := libp2ptransport.New(ctx, clientKey, libp2ptransport.DefaultConfig(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	address := server.Addresses()[0]
+	expected := server.ID()
+	first, _, err := client.OpenTiePairStream(ctx, address, &expected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = first.Close()
+	select {
+	case <-handled:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	wrong := types.DomainHash("test/libp2p/tie-pair-disconnect-wrong")
+	if err := client.DisconnectPeer(address, wrong); !errors.Is(err, libp2ptransport.ErrUnexpectedPeer) {
+		t.Fatalf("wrong disconnect pin error=%v", err)
+	}
+	if err := client.DisconnectPeer(address, expected); err != nil {
+		t.Fatal(err)
+	}
+	second, remote, err := client.OpenTiePairStream(ctx, address, &expected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if remote != expected {
+		t.Fatalf("reconnected remote=%s expected=%s", remote, expected)
+	}
+	_ = second.Close()
+	select {
+	case <-handled:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+}
+
 func TestQUICTiePairFixedWindowRateBudget(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

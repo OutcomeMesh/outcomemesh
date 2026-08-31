@@ -512,6 +512,11 @@ Implemented in an isolated, not-yet-activated consensus package:
   skipped-slot delivery, and cross-observer block/selection divergence. It
   reports all issues, exits non-zero for blocked state, and a real process test
   proves a healthy audit leaves coordinator journal bytes unchanged.
+  A further two-observer process campaign completes two version-2 slots while
+  killing and restarting one observer between them on the same pinned endpoint.
+  The coordinator now discards a stale reused QUIC session and retries one
+  fresh identity-pinned handshake; both role-ordered receipt chains and final
+  tips match, and the multi-observer audit remains healthy and read-only.
 - the PoW research harness now also has an integer-only, fixed-seed geometric
   solve process for active v0 and lagged v1. Golden observation digests cover
   baseline variance and an alternating 1x/4x campaign, while separate cases

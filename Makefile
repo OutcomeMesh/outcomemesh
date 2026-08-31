@@ -60,7 +60,7 @@ test-fuzz-smoke:
 	$(GO) test ./sim/workgraphmodel -run '^$$' -fuzz '^FuzzRunSelfishStrategiesNeverBreakAccounting$$' -fuzztime=$(FUZZTIME)
 
 test-process:
-	$(GO) test -tags=integration ./cmd/omd -run '^TestProcess(QUICRestartSoak|WorkGraphActivationQUICRestart|ControlledTieProducerRecoversWaitingState|TiePairQUICReachesIndependentV2ObserversAndRecoversAck)$$' -count=1 -timeout=10m
+	$(GO) test -tags=integration ./cmd/omd -run '^TestProcess(QUICRestartSoak|WorkGraphActivationQUICRestart|ControlledTieProducerRecoversWaitingState|TiePairQUICReachesIndependentV2ObserversAndRecoversAck|TieCampaign.*)$$' -count=1 -timeout=10m
 	$(GO) test -tags=integration ./node/workchain -run '^TestPebbleProcessCrashAtomicity$$' -count=1 -timeout=2m
 
 test-work-rollover-soak:

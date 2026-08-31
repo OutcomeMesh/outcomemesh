@@ -229,6 +229,11 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
   markers, and cross-observer selected tips. It distinguishes healthy,
   retryable ACK/closure lag, and permanently blocked divergence without
   creating, advancing, or migrating any journal.
+  A two-observer, two-slot version-2 process campaign now restarts one observer
+  between slots at its stable pinned endpoint. A stale reused QUIC session is
+  explicitly disconnected and retried once with a fresh authenticated
+  handshake; both independent receipt chains, role order, selected tips, and a
+  read-only healthy audit converge afterward.
 
 ### Exit gates
 

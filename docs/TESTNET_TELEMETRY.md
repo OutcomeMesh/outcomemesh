@@ -432,6 +432,13 @@ that confirmation file. A crash or transient observer failure is recovered by
 rerunning the same command; durable observers return their existing receipt,
 while already recorded observers are not contacted again.
 
+An observer that restarts between slots should retain both its transport key
+and advertised direct endpoint. If the long-lived coordinator discovers that
+the cached QUIC session died with the old process, it explicitly disconnects
+that pinned peer and attempts one fresh authenticated connection within the
+existing delivery deadline. A different transport identity is still rejected,
+and a second failure stops the non-skippable slot.
+
 Each independent observer can keep one QUIC process alive for the whole plan:
 
 ```sh
@@ -523,7 +530,10 @@ missing/corrupt immutable artifacts, ACKs without observer evidence, delivery
 on a skipped slot, and block or selected-tip divergence. Blocked audits print
 all classified issues and exit non-zero. The command reads legacy state without
 migrating it; a process regression compares the journal bytes before and after
-a complete audit.
+a complete audit. A second process regression runs two completed version-2
+slots through two independent observers, restarts one observer between slots on
+the same route, checks role order and matching selected tips, and finishes with
+a healthy two-observer audit without rewriting coordinator state.
 
 The tested and control payout addresses must be dedicated to the harness during
 their planned slots. Ordinary mining under either address is intentionally not

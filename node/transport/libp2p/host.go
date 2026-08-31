@@ -386,6 +386,28 @@ func (value *Host) OpenTiePairStream(ctx context.Context, address string, expect
 	return value.openStream(ctx, address, expected, TiePairProtocol)
 }
 
+// DisconnectPeer closes the authenticated connection behind a pinned direct
+// address. The next Open*Stream call must perform a fresh QUIC handshake. This
+// is intentionally explicit: ordinary streams keep their connection reuse,
+// while restart-aware protocols can discard a session proven stale by I/O.
+func (value *Host) DisconnectPeer(address string, expected types.Hash) error {
+	if value == nil || value.inner == nil || expected.IsZero() {
+		return ErrAddress
+	}
+	advertisedID, err := PeerIDFromAddress(address)
+	if err != nil {
+		return err
+	}
+	info, err := peer.AddrInfoFromString(address)
+	if err != nil {
+		return ErrAddress
+	}
+	if advertisedID != expected {
+		return ErrUnexpectedPeer
+	}
+	return value.inner.Network().ClosePeer(info.ID)
+}
+
 func (value *Host) openStream(
 	ctx context.Context,
 	address string,

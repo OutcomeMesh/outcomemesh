@@ -251,6 +251,14 @@ old binding until confirmation instead of moving to the next slot. Empty
 expired slots become conservative `NoPair`; any partial sibling state stops the
 campaign and is never converted into a safe-to-continue miss.
 
+An observer may also restart cleanly between slots while retaining its transport
+key and direct endpoint. If the coordinator's reused QUIC connection proves
+stale, it closes that pinned peer session and performs one bounded fresh
+handshake before failing delivery. The new connection must authenticate as the
+same transport ID committed by the route; artifact replay remains safe because
+the observer's receipt path is idempotent. A real two-observer, two-slot process
+campaign exercises this boundary and then reconciles both receipt chains.
+
 ## Signed peer advertisements
 
 `node/discovery` defines an OutcomeMesh-native discovery record rather than

@@ -340,6 +340,12 @@ crash retries the receipt rather than the blocks. Injected writer failures both
 before file commit and after commit but before acknowledged fsync are retried
 idempotently for skip journals and confirmation markers. These checks do not
 yet model physical disk exhaustion or torn writes outside filesystem atomicity.
+Between slots, an abruptly restarted observer can leave a reusable QUIC session
+stale at the coordinator. Delivery permits exactly one reconnect after an I/O
+failure: it closes only the route's identity-pinned peer, repeats the authenticated
+handshake to the same advertised transport ID, and resends the immutable pair.
+The durable observer path makes that resend idempotent. A two-observer process
+campaign proves the restarted route completes without weakening peer pinning.
 The operator audit is intentionally read-only: unlike `OpenCampaign` it does
 not create or migrate state, and it never opens a collector that could close an
 expired slot. It authenticates signed receipt chains and checkpoints before

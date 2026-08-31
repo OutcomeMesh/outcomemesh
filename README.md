@@ -64,7 +64,9 @@ incompatible authenticated peer, a two-observer authenticated controlled-tie
 artifact delivery/restart recovery, a long-lived campaign observer killed after
 durable ACK but before coordinator confirmation, an expired zero-delivery slot
 followed by a convergent published slot, a kill after exactly one durable
-sibling that must remain fail-closed, and kills the WorkGraph Pebble process on
+sibling that must remain fail-closed, a two-slot version-2 campaign that restarts
+one of two observers on its pinned endpoint and finishes with a healthy
+multi-observer audit, and kills the WorkGraph Pebble process on
 both sides of commit, replay-checkpoint rotation, and stale-fork pruning
 durability boundaries. Raise the
 v0 QUIC soak length with, for example,
