@@ -1250,10 +1250,10 @@ func TestProcessTieCampaignCoordinatorResumesOnlyMissingObserver(t *testing.T) {
 		ActivationHeight:        2,
 		TestedMiner:             types.Address(types.DomainHash("test/process/tie-coordinator-restart-tested")),
 		ControlMiner:            types.Address(types.DomainHash("test/process/tie-coordinator-restart-control")),
-		MaximumPairDelaySeconds: 2,
+		MaximumPairDelaySeconds: 10,
 		ObserverPublicKeys:      [][ed25519.PublicKeySize]byte{observers[0].publicKey, observers[1].publicKey},
 		Slots: []calibration.TiePlanSlot{{
-			StartedAt: startedAt, EndedAt: startedAt + 60, FirstRole: calibration.TieRoleControl,
+			StartedAt: startedAt, EndedAt: startedAt + 120, FirstRole: calibration.TieRoleControl,
 		}},
 	}
 	plan, err = calibration.SignTiePlan(coordinatorPlanKey, plan)
@@ -1429,6 +1429,412 @@ func TestProcessTieCampaignCoordinatorResumesOnlyMissingObserver(t *testing.T) {
 	stateAfterAudit, err := os.ReadFile(statePath)
 	if err != nil || !bytes.Equal(stateBeforeAudit, stateAfterAudit) {
 		t.Fatalf("coordinator-restart audit mutated state err=%v", err)
+	}
+}
+
+type campaignStorageProcessFixture struct {
+	root                    string
+	coordinatorData         string
+	observerData            string
+	planPath                string
+	artifactDirectory       string
+	publicationDirectory    string
+	confirmationDirectory   string
+	stateDirectory          string
+	statePath               string
+	routesPath              string
+	auditObserversPath      string
+	coordinatorTransportKey string
+	coordinatorPlanKey      string
+	observerTransportKey    string
+	observerReceiptKey      string
+	coordinatorTransportID  string
+	coordinatorPublicKey    string
+	observerPublicKey       string
+	plan                    calibration.TiePlan
+	binding                 calibration.TiePlanBinding
+	planID                  types.Hash
+	parentID                types.Hash
+}
+
+func newCampaignStorageProcessFixture(
+	t testing.TB,
+	label string,
+	networkID string,
+) campaignStorageProcessFixture {
+	t.Helper()
+	root := t.TempDir()
+	fixture := campaignStorageProcessFixture{
+		root: root, coordinatorData: root + "/coordinator", observerData: root + "/observer",
+		planPath: root + "/tie-plan.omtp", artifactDirectory: root + "/artifacts",
+		publicationDirectory:  root + "/published",
+		confirmationDirectory: root + "/confirmed", stateDirectory: root + "/state",
+		statePath:  root + "/state/work-tie-campaign.state",
+		routesPath: root + "/observer-routes.txt", auditObserversPath: root + "/audit-observers.txt",
+		coordinatorTransportKey: root + "/coordinator-transport.key",
+		coordinatorPlanKey:      root + "/coordinator-plan.key",
+		observerTransportKey:    root + "/observer-transport.key",
+		observerReceiptKey:      root + "/observer-receipt.key",
+	}
+	writeProcessKey(t, fixture.coordinatorTransportKey, "tie-storage-coordinator-transport-"+label)
+	writeProcessKey(t, fixture.observerTransportKey, "tie-storage-observer-transport-"+label)
+	writeProcessKey(t, fixture.observerReceiptKey, "tie-storage-observer-receipt-"+label)
+	runProcessCommand(t, 20*time.Second,
+		"init", "--data", fixture.coordinatorData, "--network", networkID,
+		"--timestamp", "1700000000", "--difficulty-bits", "9",
+		"--max-history-bytes", strconv.FormatUint(minimumHistoryBytes, 10),
+	)
+	document, err := loadGenesis(fixture.coordinatorData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	genesisID, err := document.ID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	runProcessCommand(t, 20*time.Second,
+		"work-enable", "--data", fixture.coordinatorData, "--activation-height", "2",
+		"--confirm-genesis", genesisID.String(), "--max-trees", "4",
+		"--max-history-bytes", strconv.FormatUint(minimumHistoryBytes, 10),
+	)
+	runProcessCommand(t, 20*time.Second, "work-mine", "--data", fixture.coordinatorData, "--count", "1")
+	fixture.parentID = workTip(t, fixture.coordinatorData)
+	if err := os.CopyFS(fixture.observerData, os.DirFS(fixture.coordinatorData)); err != nil {
+		t.Fatal(err)
+	}
+	observerKey, err := loadPrivateKey(fixture.observerReceiptKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	coordinatorSeed := types.DomainHash("test/process/tie-storage-plan/" + label)
+	coordinatorKey := ed25519.NewKeyFromSeed(coordinatorSeed[:])
+	if err := os.WriteFile(fixture.coordinatorPlanKey, coordinatorKey.Seed(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	startedAt := unixNow() + 2
+	fixture.plan = calibration.TiePlan{
+		Version: calibration.TiePlanVersion1, NetworkID: document.NetworkID, GenesisID: genesisID,
+		ActivationHeight:        2,
+		TestedMiner:             types.Address(types.DomainHash("test/process/tie-storage-tested/" + label)),
+		ControlMiner:            types.Address(types.DomainHash("test/process/tie-storage-control/" + label)),
+		MaximumPairDelaySeconds: 10,
+		Slots: []calibration.TiePlanSlot{{
+			StartedAt: startedAt, EndedAt: startedAt + 180, FirstRole: calibration.TieRoleTested,
+		}},
+	}
+	copy(fixture.plan.ObserverPublicKey[:], observerKey.Public().(ed25519.PublicKey))
+	fixture.plan, err = calibration.SignTiePlan(coordinatorKey, fixture.plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture.binding = fixture.plan.Binding()
+	fixture.planID, err = fixture.plan.ID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := calibration.SaveTiePlanFile(fixture.planPath, fixture.plan, fixture.binding); err != nil {
+		t.Fatal(err)
+	}
+	fixture.coordinatorPublicKey = bytesToLowerHex(coordinatorKey.Public().(ed25519.PublicKey))
+	fixture.observerPublicKey = bytesToLowerHex(observerKey.Public().(ed25519.PublicKey))
+	fixture.coordinatorTransportID = processTransportPeerID(t, fixture.coordinatorTransportKey).String()
+	for _, directory := range []string{
+		fixture.artifactDirectory, fixture.publicationDirectory, fixture.stateDirectory,
+	} {
+		if err := os.MkdirAll(directory, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return fixture
+}
+
+func startCampaignStorageObserver(
+	t testing.TB,
+	fixture campaignStorageProcessFixture,
+	listenAddress string,
+) (*tieReceiverProcess, string, string) {
+	t.Helper()
+	if listenAddress == "" {
+		listenAddress = "/ip4/127.0.0.1/udp/0/quic-v1"
+	}
+	return startTieCampaignReceiverProcessWithOptions(
+		t, fixture.observerData, fixture.observerTransportKey, fixture.observerReceiptKey,
+		fixture.coordinatorTransportID, fixture.planPath, fixture.planID.String(),
+		fixture.coordinatorPublicKey, fixture.publicationDirectory,
+		fixture.confirmationDirectory, listenAddress, nil,
+	)
+}
+
+func writeCampaignStorageEvidenceLists(
+	t testing.TB,
+	fixture campaignStorageProcessFixture,
+	observerTransportID string,
+	observerAddress string,
+) {
+	t.Helper()
+	if err := os.WriteFile(
+		fixture.routesPath,
+		[]byte(fixture.observerPublicKey+" "+observerTransportID+" "+observerAddress+"\n"),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		fixture.auditObserversPath,
+		[]byte(fixture.observerPublicKey+" "+defaultTieReceiptPath(fixture.observerData)+" "+fixture.confirmationDirectory+"\n"),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func startCampaignStorageCoordinator(
+	t testing.TB,
+	fixture campaignStorageProcessFixture,
+	readyLine func(string) bool,
+) *tieReceiverProcess {
+	t.Helper()
+	return startTieCampaignCoordinatorProcessWhenWithState(
+		t, fixture.coordinatorData, fixture.coordinatorTransportKey,
+		fixture.coordinatorPlanKey, fixture.planPath, fixture.planID.String(),
+		fixture.coordinatorPublicKey, fixture.observerPublicKey, fixture.routesPath,
+		fixture.artifactDirectory, fixture.publicationDirectory, fixture.statePath, readyLine,
+	)
+}
+
+func campaignStorageConfig(fixture campaignStorageProcessFixture) tieproducer.CampaignConfig {
+	return tieproducer.CampaignConfig{
+		Plan: fixture.plan, Binding: fixture.binding, ExpectedPlanID: fixture.planID,
+		StatePath: fixture.statePath,
+	}
+}
+
+func restrictCampaignDirectory(
+	t *testing.T,
+	directory string,
+	mode os.FileMode,
+) {
+	t.Helper()
+	if err := os.Chmod(directory, mode); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(directory, 0o700) })
+	switch mode {
+	case 0o500:
+		probe, err := os.CreateTemp(directory, ".permission-probe-*")
+		if err == nil {
+			name := probe.Name()
+			_ = probe.Close()
+			_ = os.Remove(name)
+			_ = os.Chmod(directory, 0o700)
+			t.Skip("filesystem does not enforce owner write removal")
+		}
+	case 0o300:
+		handle, err := os.Open(directory)
+		if err == nil {
+			_ = handle.Close()
+			_ = os.Chmod(directory, 0o700)
+			t.Skip("filesystem does not enforce owner read removal on directories")
+		}
+	}
+}
+
+func restoreCampaignDirectory(t testing.TB, directory string) {
+	t.Helper()
+	if err := os.Chmod(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func runCampaignStorageAudit(
+	t testing.TB,
+	fixture campaignStorageProcessFixture,
+) string {
+	t.Helper()
+	return runProcessCommand(t, 30*time.Second,
+		"work-telemetry-tie-campaign-audit", "--data", fixture.coordinatorData,
+		"--plan", fixture.planPath, "--plan-id", fixture.planID.String(),
+		"--coordinator-public-key", fixture.coordinatorPublicKey,
+		"--observer-public-key", fixture.observerPublicKey,
+		"--state", fixture.statePath, "--artifacts", fixture.artifactDirectory,
+		"--published", fixture.publicationDirectory, "--observers", fixture.auditObserversPath,
+	)
+}
+
+func assertCampaignStorageComplete(
+	t testing.TB,
+	fixture campaignStorageProcessFixture,
+	coordinatorOutput string,
+	observerOutput string,
+) {
+	t.Helper()
+	if fields := outputFields(coordinatorOutput, "work_tie_campaign_complete"); fields["slots"] != "1" || fields["next_sequence"] != "2" {
+		t.Fatalf("campaign did not complete: %s", coordinatorOutput)
+	}
+	if observerOutput != "" && !strings.Contains(observerOutput, "work_tie_campaign_observer_complete") {
+		t.Fatalf("observer did not complete: %s", observerOutput)
+	}
+	if coordinatorTip, observerTip := workTip(t, fixture.coordinatorData), workTip(t, fixture.observerData); coordinatorTip == fixture.parentID || coordinatorTip != observerTip {
+		t.Fatalf("recovered tips coordinator=%s observer=%s parent=%s", coordinatorTip, observerTip, fixture.parentID)
+	}
+	audit := runCampaignStorageAudit(t, fixture)
+	if fields := outputFields(audit, "work_tie_campaign_audit"); fields["disposition"] != "healthy" || fields["complete"] != "true" ||
+		fields["verified_success"] != "1" || fields["issues"] != "0" {
+		t.Fatalf("recovered campaign audit: %s", audit)
+	}
+}
+
+func TestProcessTieCampaignStorageFailuresRecoverWithoutFalseAdvance(t *testing.T) {
+	for _, test := range []struct {
+		name          string
+		mode          os.FileMode
+		expectedPhase tieproducer.CampaignPhase
+	}{
+		{name: "coordinator journal before rename", mode: 0o500, expectedPhase: tieproducer.CampaignAwaitingPublication},
+		{name: "coordinator journal after rename", mode: 0o300, expectedPhase: tieproducer.CampaignDelivering},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := newCampaignStorageProcessFixture(t, strings.ReplaceAll(test.name, " ", "-"), "20260837")
+			observer, observerTransportID, observerAddress := startCampaignStorageObserver(t, fixture, "")
+			writeCampaignStorageEvidenceLists(t, fixture, observerTransportID, observerAddress)
+			coordinator := startCampaignStorageCoordinator(t, fixture, func(line string) bool {
+				return outputFields(line, "work_tie_campaign_pair_ready")["sequence"] == "1"
+			})
+			waitForProcessCampaignStatus(
+				t, campaignStorageConfig(fixture), 30*time.Second,
+				func(status tieproducer.CampaignStatus) bool {
+					return status.Phase == tieproducer.CampaignAwaitingPublication
+				},
+			)
+			restrictCampaignDirectory(t, fixture.stateDirectory, test.mode)
+			publishProcessCampaignCheckpoint(
+				t, fixture.artifactDirectory, fixture.publicationDirectory,
+				fixture.plan, fixture.binding, fixture.planID, 1,
+			)
+			coordinatorOutput, coordinatorErr := waitTieReceiverProcessError(coordinator, 30*time.Second)
+			if coordinatorErr == nil {
+				t.Fatalf("coordinator ignored journal failure: %s", coordinatorOutput)
+			}
+			restoreCampaignDirectory(t, fixture.stateDirectory)
+			status, err := tieproducer.LoadCampaignStatus(campaignStorageConfig(fixture))
+			if err != nil || status.Phase != test.expectedPhase || status.AcknowledgedCount != 0 {
+				t.Fatalf("journal boundary status=%+v err=%v stderr=%s", status, err, coordinator.stderr.String())
+			}
+			if tip := workTip(t, fixture.coordinatorData); tip != fixture.parentID {
+				t.Fatalf("journal error advanced local tip: %s != %s", tip, fixture.parentID)
+			}
+			if _, err := os.Stat(defaultTieReceiptPath(fixture.observerData)); !os.IsNotExist(err) {
+				t.Fatalf("observer received pair before durable delivery phase: %v", err)
+			}
+			restarted := startCampaignStorageCoordinator(t, fixture, func(line string) bool {
+				fields := outputFields(line, "work_tie_campaign_started")
+				return fields["next_sequence"] == "1" &&
+					fields["phase"] == strconv.FormatUint(uint64(test.expectedPhase), 10)
+			})
+			coordinatorOutput = waitTieReceiverProcess(t, restarted)
+			observerOutput := waitTieReceiverProcess(t, observer)
+			assertCampaignStorageComplete(t, fixture, coordinatorOutput, observerOutput)
+		})
+	}
+
+	for _, test := range []struct {
+		name             string
+		mode             os.FileMode
+		markerCommitted  bool
+		requiresObserver bool
+	}{
+		{name: "observer confirmation before link", mode: 0o500, requiresObserver: true},
+		{name: "observer confirmation after link", mode: 0o300, markerCommitted: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := newCampaignStorageProcessFixture(t, strings.ReplaceAll(test.name, " ", "-"), "20260838")
+			observer, observerTransportID, observerAddress := startCampaignStorageObserver(t, fixture, "")
+			writeCampaignStorageEvidenceLists(t, fixture, observerTransportID, observerAddress)
+			restrictCampaignDirectory(t, fixture.confirmationDirectory, test.mode)
+			coordinator := startCampaignStorageCoordinator(t, fixture, func(line string) bool {
+				return outputFields(line, "work_tie_campaign_pair_ready")["sequence"] == "1"
+			})
+			publishProcessCampaignCheckpoint(
+				t, fixture.artifactDirectory, fixture.publicationDirectory,
+				fixture.plan, fixture.binding, fixture.planID, 1,
+			)
+			coordinatorOutput, coordinatorErr := waitTieReceiverProcessError(coordinator, 30*time.Second)
+			observerOutput, observerErr := waitTieReceiverProcessError(observer, 30*time.Second)
+			if coordinatorErr == nil || observerErr == nil {
+				t.Fatalf("confirmation failure was ignored coordinator_err=%v observer_err=%v\ncoordinator=%s\nobserver=%s",
+					coordinatorErr, observerErr, coordinatorOutput, observerOutput)
+			}
+			status, err := tieproducer.LoadCampaignStatus(campaignStorageConfig(fixture))
+			if err != nil || status.Phase != tieproducer.CampaignDelivering || status.AcknowledgedCount != 0 {
+				t.Fatalf("confirmation boundary status=%+v err=%v", status, err)
+			}
+			if tip := workTip(t, fixture.coordinatorData); tip != fixture.parentID {
+				t.Fatalf("missing final ACK advanced local tip: %s != %s", tip, fixture.parentID)
+			}
+			markerPath := fixture.confirmationDirectory + "/0000000001.confirmed"
+			_, markerErr := os.Stat(markerPath)
+			if test.markerCommitted && markerErr != nil {
+				t.Fatalf("post-link failure lost confirmation marker: %v", markerErr)
+			}
+			if !test.markerCommitted && !os.IsNotExist(markerErr) {
+				t.Fatalf("pre-link failure created confirmation marker: %v", markerErr)
+			}
+			restoreCampaignDirectory(t, fixture.confirmationDirectory)
+
+			var restartedObserver *tieReceiverProcess
+			if test.requiresObserver {
+				var restartedTransportID string
+				restartedObserver, restartedTransportID, _ = startCampaignStorageObserver(
+					t, fixture, processListenAddress(observerAddress),
+				)
+				if restartedTransportID != observerTransportID {
+					t.Fatalf("observer identity changed: %s != %s", restartedTransportID, observerTransportID)
+				}
+			} else {
+				stateBeforeAudit, readErr := os.ReadFile(fixture.statePath)
+				if readErr != nil {
+					t.Fatal(readErr)
+				}
+				audit := runCampaignStorageAudit(t, fixture)
+				if fields := outputFields(audit, "work_tie_campaign_audit"); fields["disposition"] != "recoverable" || fields["recoverable_acks"] != "1" ||
+					!strings.Contains(audit, "code=unrecorded_observer_ack") {
+					t.Fatalf("ambiguous marker was not recoverable: %s", audit)
+				}
+				stateAfterAudit, readErr := os.ReadFile(fixture.statePath)
+				if readErr != nil || !bytes.Equal(stateBeforeAudit, stateAfterAudit) {
+					t.Fatalf("read-only audit mutated state err=%v", readErr)
+				}
+				recovery := runProcessCommand(t, 30*time.Second,
+					"work-telemetry-tie-campaign-recover", "--data", fixture.coordinatorData,
+					"--plan", fixture.planPath, "--plan-id", fixture.planID.String(),
+					"--coordinator-public-key", fixture.coordinatorPublicKey,
+					"--observer-public-key", fixture.observerPublicKey,
+					"--state", fixture.statePath, "--artifacts", fixture.artifactDirectory,
+					"--published", fixture.publicationDirectory,
+					"--observers", fixture.auditObserversPath,
+				)
+				if fields := outputFields(recovery, "work_tie_campaign_recovered"); fields["recovered_acks"] != "1" || fields["after"] != "healthy" ||
+					fields["phase"] != strconv.FormatUint(uint64(tieproducer.CampaignAwaitingAdvance), 10) {
+					t.Fatalf("ambiguous ACK recovery failed: %s", recovery)
+				}
+			}
+
+			expectedPhase := tieproducer.CampaignDelivering
+			if !test.requiresObserver {
+				expectedPhase = tieproducer.CampaignAwaitingAdvance
+			}
+			restarted := startCampaignStorageCoordinator(t, fixture, func(line string) bool {
+				fields := outputFields(line, "work_tie_campaign_started")
+				return fields["next_sequence"] == "1" &&
+					fields["phase"] == strconv.FormatUint(uint64(expectedPhase), 10)
+			})
+			coordinatorOutput = waitTieReceiverProcess(t, restarted)
+			observerOutput = ""
+			if restartedObserver != nil {
+				observerOutput = waitTieReceiverProcess(t, restartedObserver)
+			}
+			assertCampaignStorageComplete(t, fixture, coordinatorOutput, observerOutput)
+		})
 	}
 }
 
@@ -1907,8 +2313,29 @@ func startTieCampaignCoordinatorProcessWhen(
 	publicationDirectory string,
 	readyLine func(string) bool,
 ) *tieReceiverProcess {
+	return startTieCampaignCoordinatorProcessWhenWithState(
+		t, data, transportKey, coordinatorKey, planPath, planID, coordinatorPublicKey,
+		observerPublicKey, routesPath, artifactDirectory, publicationDirectory, "", readyLine,
+	)
+}
+
+func startTieCampaignCoordinatorProcessWhenWithState(
+	t testing.TB,
+	data string,
+	transportKey string,
+	coordinatorKey string,
+	planPath string,
+	planID string,
+	coordinatorPublicKey string,
+	observerPublicKey string,
+	routesPath string,
+	artifactDirectory string,
+	publicationDirectory string,
+	statePath string,
+	readyLine func(string) bool,
+) *tieReceiverProcess {
 	t.Helper()
-	command := helperCommand(nil,
+	arguments := []string{
 		"work-telemetry-tie-campaign", "--data", data,
 		"--key", transportKey, "--coordinator-key", coordinatorKey,
 		"--plan", planPath, "--plan-id", planID,
@@ -1917,7 +2344,11 @@ func startTieCampaignCoordinatorProcessWhen(
 		"--observers", routesPath, "--artifacts", artifactDirectory,
 		"--published", publicationDirectory, "--publication-poll", "20ms",
 		"--delivery-timeout", "30s",
-	)
+	}
+	if statePath != "" {
+		arguments = append(arguments, "--state", statePath)
+	}
+	command := helperCommand(nil, arguments...)
 	pipe, err := command.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)

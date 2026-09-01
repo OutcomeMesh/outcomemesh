@@ -29,7 +29,7 @@ const (
 	WorkGraphProtocol      protocol.ID = "/outcomemesh/workgraph/1"
 	VersionedChainProtocol protocol.ID = "/outcomemesh/chain/1"
 	ChainNotifyProtocol    protocol.ID = "/outcomemesh/chain-notify/1"
-	TiePairProtocol        protocol.ID = "/outcomemesh/tie-pair/1"
+	TiePairProtocol        protocol.ID = "/outcomemesh/tie-pair/2"
 	maxListenAddresses                 = 8
 	maxAddressBytes                    = 256
 	// MaxConnectionLimit and MaxStreamsPerPeerLimit are hard implementation

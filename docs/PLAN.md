@@ -238,6 +238,13 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
   decoding, waits for the other ACK to enter the fsynced journal, and kills the
   coordinator. Restart exposes `acknowledged=1`, delivers only to the missing
   observer, delays local advance until that ACK, and ends in a healthy audit.
+  The pair stream is now version 2 and ends with an observer acknowledgement
+  emitted only after its confirmation marker and directory fsync. Real
+  coordinator/observer processes exercise pre-commit and ambiguous post-commit
+  filesystem failures on both journals; no case advances the coordinator tip.
+  An offline recovery command accepts only the audit's exact
+  `unrecorded_observer_ack` proof, journals that tail without admitting blocks,
+  and lets the ordinary coordinator resume from `AwaitingAdvance`.
 
 ### Exit gates
 

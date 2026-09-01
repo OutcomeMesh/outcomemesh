@@ -504,8 +504,15 @@ Implemented in an isolated, not-yet-activated consensus package:
   commit; restart retains exactly one candidate and fails closed without a
   receipt, confirmation, or next-slot transition. Writer injection on both
   sides of campaign skip and observer-confirmation commit proves old/new-only
-  reopen plus idempotent retry. Physical disk-full/torn-write campaigns,
-  observer honesty, and Sybil-cluster provenance remain open testnet work.
+  reopen plus idempotent retry. The authenticated pair protocol is now version
+  2: observer confirmation is followed by a final ACK only after marker and
+  directory durability. Separate-process permission faults bracket rename/link
+  in both the coordinator journal and observer marker and prove no false local
+  advance. An exact post-link marker with a missing final ACK is classified by
+  the read-only audit and repaired by a narrow offline command that journals
+  only the proven receipt tail; normal coordinator restart performs admission
+  and advance. Physical media corruption, real device exhaustion, observer
+  honesty, and Sybil-cluster provenance remain open testnet work.
   A read-only campaign audit now verifies every durable layer and classifies
   `healthy`, `recoverable`, or `blocked`: it detects unrecorded but confirmed
   ACKs, observer closure lag, missing/corrupt artifacts, impossible ACKs,

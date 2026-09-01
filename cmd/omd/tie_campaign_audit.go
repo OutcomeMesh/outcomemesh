@@ -17,47 +17,75 @@ import (
 
 const maximumCampaignAuditObserversBytes = 128 * 1024
 
+type campaignEvidenceFlags struct {
+	data                     *string
+	planPath                 *string
+	planIDText               *string
+	coordinatorPublicKeyText *string
+	observerPublicKeyText    *string
+	statePath                *string
+	artifactDirectory        *string
+	publishedDirectory       *string
+	observersPath            *string
+}
+
+func newCampaignEvidenceFlags(command string) (*flag.FlagSet, campaignEvidenceFlags) {
+	flags := flag.NewFlagSet(command, flag.ContinueOnError)
+	values := campaignEvidenceFlags{
+		data:                     flags.String("data", defaultDataDirectory, "coordinator WorkGraph node data directory"),
+		planPath:                 flags.String("plan", "", "published signed controlled-tie plan file"),
+		planIDText:               flags.String("plan-id", "", "externally published controlled-tie plan ID"),
+		coordinatorPublicKeyText: flags.String("coordinator-public-key", "", "trusted plan coordinator Ed25519 public key"),
+		observerPublicKeyText:    flags.String("observer-public-key", "", "one trusted observer key used to bind the shared plan"),
+		statePath:                flags.String("state", "", "existing coordinator campaign state path (default under data)"),
+		artifactDirectory:        flags.String("artifacts", "", "immutable pair/checkpoint directory"),
+		publishedDirectory:       flags.String("published", "", "external checkpoint publication directory"),
+		observersPath:            flags.String("observers", "", "canonical observer receipt and confirmation path list"),
+	}
+	return flags, values
+}
+
+func (values campaignEvidenceFlags) load() (tieproducer.CampaignAuditConfig, error) {
+	if *values.planPath == "" || *values.planIDText == "" || *values.coordinatorPublicKeyText == "" ||
+		*values.observerPublicKeyText == "" || *values.artifactDirectory == "" ||
+		*values.publishedDirectory == "" || *values.observersPath == "" {
+		return tieproducer.CampaignAuditConfig{}, errors.New("published plan binding, campaign state/artifacts/publications, and observer evidence paths are required")
+	}
+	if *values.statePath == "" {
+		*values.statePath = filepath.Join(*values.data, "work-tie-campaign.state")
+	}
+	observerPublicKey, err := parseHash(*values.observerPublicKeyText)
+	if err != nil {
+		return tieproducer.CampaignAuditConfig{}, fmt.Errorf("observer-public-key: %w", err)
+	}
+	plan, binding, planID, err := loadPublishedTiePlan(
+		*values.data, *values.planPath, *values.planIDText,
+		*values.coordinatorPublicKeyText, observerPublicKey,
+	)
+	if err != nil {
+		return tieproducer.CampaignAuditConfig{}, err
+	}
+	observers, err := loadCampaignAuditObservers(*values.observersPath, plan)
+	if err != nil {
+		return tieproducer.CampaignAuditConfig{}, err
+	}
+	return tieproducer.CampaignAuditConfig{
+		Plan: plan, Binding: binding, ExpectedPlanID: planID, StatePath: *values.statePath,
+		ArtifactDirectory:    *values.artifactDirectory,
+		PublicationDirectory: *values.publishedDirectory, Observers: observers,
+	}, nil
+}
+
 func runWorkTelemetryTieCampaignAudit(arguments []string) error {
-	flags := flag.NewFlagSet("work-telemetry-tie-campaign-audit", flag.ContinueOnError)
-	data := flags.String("data", defaultDataDirectory, "coordinator WorkGraph node data directory")
-	planPath := flags.String("plan", "", "published signed controlled-tie plan file")
-	planIDText := flags.String("plan-id", "", "externally published controlled-tie plan ID")
-	coordinatorPublicKeyText := flags.String("coordinator-public-key", "", "trusted plan coordinator Ed25519 public key")
-	observerPublicKeyText := flags.String("observer-public-key", "", "one trusted observer key used to bind the shared plan")
-	statePath := flags.String("state", "", "existing coordinator campaign state path (default under data)")
-	artifactDirectory := flags.String("artifacts", "", "immutable pair/checkpoint directory")
-	publishedDirectory := flags.String("published", "", "external checkpoint publication directory")
-	observersPath := flags.String("observers", "", "canonical observer receipt and confirmation path list")
+	flags, values := newCampaignEvidenceFlags("work-telemetry-tie-campaign-audit")
 	if err := flags.Parse(arguments); err != nil {
 		return err
 	}
-	if *planPath == "" || *planIDText == "" || *coordinatorPublicKeyText == "" ||
-		*observerPublicKeyText == "" || *artifactDirectory == "" ||
-		*publishedDirectory == "" || *observersPath == "" {
-		return errors.New("published plan binding, campaign state/artifacts/publications, and observer evidence paths are required")
-	}
-	if *statePath == "" {
-		*statePath = filepath.Join(*data, "work-tie-campaign.state")
-	}
-	observerPublicKey, err := parseHash(*observerPublicKeyText)
-	if err != nil {
-		return fmt.Errorf("observer-public-key: %w", err)
-	}
-	plan, binding, planID, err := loadPublishedTiePlan(
-		*data, *planPath, *planIDText, *coordinatorPublicKeyText, observerPublicKey,
-	)
+	config, err := values.load()
 	if err != nil {
 		return err
 	}
-	observers, err := loadCampaignAuditObservers(*observersPath, plan)
-	if err != nil {
-		return err
-	}
-	report, err := tieproducer.AuditCampaignFiles(tieproducer.CampaignAuditConfig{
-		Plan: plan, Binding: binding, ExpectedPlanID: planID, StatePath: *statePath,
-		ArtifactDirectory: *artifactDirectory, PublicationDirectory: *publishedDirectory,
-		Observers: observers,
-	})
+	report, err := tieproducer.AuditCampaignFiles(config)
 	if err != nil {
 		return err
 	}
@@ -93,6 +121,28 @@ func runWorkTelemetryTieCampaignAudit(arguments []string) error {
 	if report.Disposition == tieproducer.CampaignAuditBlocked {
 		return tieproducer.ErrCampaignAudit
 	}
+	return nil
+}
+
+func runWorkTelemetryTieCampaignRecover(arguments []string) error {
+	flags, values := newCampaignEvidenceFlags("work-telemetry-tie-campaign-recover")
+	if err := flags.Parse(arguments); err != nil {
+		return err
+	}
+	config, err := values.load()
+	if err != nil {
+		return err
+	}
+	result, err := tieproducer.RecoverCampaignAcknowledgements(config)
+	if err != nil {
+		return err
+	}
+	fmt.Printf(
+		"work_tie_campaign_recovered plan=%s recovered_acks=%d before=%s after=%s phase=%d next_sequence=%d remaining_recoverable_acks=%d issues=%d\n",
+		result.Before.PlanID, result.RecoveredACKs, result.Before.Disposition,
+		result.After.Disposition, result.After.Phase, result.After.NextSequence,
+		result.After.RecoverableAcks, len(result.After.Issues),
+	)
 	return nil
 }
 

@@ -374,21 +374,27 @@ receipt keys. Both QUIC endpoints pin the expected OutcomeMesh transport ID;
 the receiver rejects an authenticated but unlisted coordinator before reading
 or replaying the artifact.
 
-`/outcomemesh/tie-pair/1` checks the published plan ID, pair ID, and sequence in
+`/outcomemesh/tie-pair/2` checks the published plan ID, pair ID, and sequence in
 a fixed header before allocating the bounded body. The observer then checks the
 exact artifact digest, fully decodes both blocks, reruns deterministic mining,
 admits them in the signed role order, and durably writes its signed receipt.
-The application exchange is three-phase: request, durable receipt
-acknowledgement, and coordinator confirmation. If the acknowledgement is lost
-after commit, restarting the same one-shot receiver verifies the artifact
-against the existing completed receipt and returns the same receipt ID without
-submitting either block again. Per-peer/global stream concurrency and fixed-
-window rate budgets bound replay-driven CPU and memory exposure.
+The application exchange has four messages: request, durable receipt
+acknowledgement, coordinator confirmation, and a final observer acknowledgement
+over the same binding and receipt tail. Campaign receivers send that last
+message only after their immutable confirmation marker crosses the
+file-and-directory durability boundary, and coordinators journal the observer
+only after reading it. If an earlier acknowledgement is lost after commit,
+restarting the same one-shot receiver verifies the artifact against the existing
+completed receipt and returns the same receipt ID without submitting either
+block again.
+Per-peer/global stream concurrency and fixed-window rate budgets bound
+replay-driven CPU and memory exposure.
 
 The coordinator-side campaign journal persists four explicit boundaries
 per slot: validated pair/checkpoint staged, external checkpoint confirmed,
 each plan observer's authenticated receipt tail recorded in canonical key
-order, and local advance permitted. Its checksum-protected state is atomically
+order only after the observer's durable-confirmation acknowledgement, and local
+advance permitted. Its checksum-protected state is atomically
 replaced and fsynced at every transition. Replaying the same pair, publication,
 receipt acknowledgement, or final advance after a crash is idempotent;
 conflicting pair IDs or tails are rejected. The timed coordinator driver feeds
@@ -471,11 +477,12 @@ would invalidate every later comparison.
 Receipt persistence and coordinator knowledge are separate crash boundaries.
 After returning a durable receipt acknowledgement, the receiver writes a
 checksummed immutable `%010d.confirmed` marker only after reading the matching
-coordinator confirmation. If the process is killed or the stream drops between
-those events, restart serves the original signed receipt from disk without
-remining or resubmitting either block. A real process test kills the observer at
-that exact boundary, restarts it, verifies the same receipt tail, and completes
-the plan.
+coordinator confirmation, fsyncs its containing directory, and only then returns
+the final acknowledgement that permits coordinator journaling. If the process
+is killed or the stream drops before the marker, restart serves the original
+signed receipt from disk without remining or resubmitting either block. A real
+process test kills the observer at that exact boundary, restarts it, verifies
+the same receipt tail, and completes the plan.
 
 The coordinator bounds publication waiting by the signed slot end. If no
 checkpoint publication arrives, it does not deliver the pair, waits until the
@@ -495,9 +502,11 @@ and its pending observation have both committed, kills the observer, and
 restarts it. The restart reports one current candidate, creates neither a
 receipt nor a confirmation marker, and fails with `ErrPartialTiePair` without
 enabling the next sequence. Filesystem fault fixtures also cover errors before
-commit and the ambiguous case where the new bytes are durable but the writer
-returns an error: campaign skip state and observer confirmation markers either
-remain old or reopen as the complete new value, and an identical retry is safe.
+commit and the ambiguous case where rename or link succeeded but opening the
+directory for fsync fails. Separate processes remove write or read permission
+at the coordinator journal and observer confirmation boundaries. The
+coordinator never advances on any of the four faults; old state retries
+normally, while complete-new state reopens at its exact next phase.
 
 ### Read-only campaign audit
 
@@ -538,6 +547,33 @@ a complete audit. A second process regression runs two completed version-2
 slots through two independent observers, restarts one observer between slots on
 the same route, checks role order and matching selected tips, and finishes with
 a healthy two-observer audit without rewriting coordinator state.
+
+### Explicit acknowledgement recovery
+
+Stop the campaign coordinator before repairing its single-writer journal, then
+run the recovery command with the same arguments as the audit:
+
+```sh
+.tools/go/bin/go run ./cmd/omd work-telemetry-tie-campaign-recover \
+  --data coordinator-data \
+  --plan tie-plan.omtp --plan-id <published-plan-id> \
+  --coordinator-public-key <plan-coordinator-public-key> \
+  --observer-public-key <any-plan-observer-public-key> \
+  --state coordinator-data/work-tie-campaign.state \
+  --artifacts pair-artifacts \
+  --published externally-published-pairs \
+  --observers observer-audit-paths.txt
+```
+
+This is deliberately narrower than a generic repair. It refuses every
+`blocked` audit, and writes only `unrecorded_observer_ack` entries whose signed
+receipt, pair, checkpoint, publication, and immutable confirmation marker all
+match exactly. It does not alter observer files, admit the pair locally, or
+advance the campaign. The ordinary coordinator must reopen the resulting
+`AwaitingAdvance` phase and perform those normal transitions. A real process
+test forces the marker link to succeed while directory fsync reports an error,
+proves the read-only audit leaves the journal byte-identical, runs this recovery,
+and finishes with convergent tips and a healthy audit.
 
 The tested and control payout addresses must be dedicated to the harness during
 their planned slots. Ordinary mining under either address is intentionally not

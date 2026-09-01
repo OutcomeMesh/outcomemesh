@@ -3,6 +3,7 @@ package tieproducer
 import (
 	"bytes"
 	"crypto/ed25519"
+	"errors"
 	"os"
 	"path/filepath"
 	"sort"
@@ -43,6 +44,49 @@ func TestAuditCampaignFilesClassifiesRecoverableUnrecordedAck(t *testing.T) {
 		report.RecoverableAcks != 1 || report.PendingObservers != 1 ||
 		!auditHasIssue(report, "unrecorded_observer_ack", true) {
 		t.Fatalf("recoverable audit report=%+v", report)
+	}
+}
+
+func TestRecoverCampaignAcknowledgementsJournalsOnlyProvenConfirmation(t *testing.T) {
+	fixture := newCampaignAuditFixture(t, false, false)
+	result, err := RecoverCampaignAcknowledgements(fixture.config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.RecoveredACKs != 1 || result.Before.RecoverableAcks != 1 ||
+		result.After.RecoverableAcks != 0 || result.After.Disposition != CampaignAuditHealthy {
+		t.Fatalf("recovery result=%+v", result)
+	}
+	status, err := LoadCampaignStatus(CampaignConfig{
+		Plan: fixture.config.Plan, Binding: fixture.config.Binding,
+		ExpectedPlanID: fixture.config.ExpectedPlanID, StatePath: fixture.config.StatePath,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.Phase != CampaignDelivering || status.AcknowledgedCount != 1 ||
+		status.ObserverReceiptTails[0].IsZero() || !status.ObserverReceiptTails[1].IsZero() {
+		t.Fatalf("recovered campaign status=%+v", status)
+	}
+}
+
+func TestRecoverCampaignAcknowledgementsRefusesBlockedEvidence(t *testing.T) {
+	fixture := newCampaignAuditFixture(t, true, false)
+	if err := os.Remove(filepath.Join(fixture.config.ArtifactDirectory, "0000000001.omtpair")); err != nil {
+		t.Fatal(err)
+	}
+	stateBefore, err := os.ReadFile(fixture.config.StatePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := RecoverCampaignAcknowledgements(fixture.config)
+	if !errors.Is(err, ErrCampaignAudit) || result.Before.Disposition != CampaignAuditBlocked ||
+		result.RecoveredACKs != 0 {
+		t.Fatalf("blocked recovery result=%+v err=%v", result, err)
+	}
+	stateAfter, readErr := os.ReadFile(fixture.config.StatePath)
+	if readErr != nil || !bytes.Equal(stateBefore, stateAfter) {
+		t.Fatalf("blocked recovery mutated state err=%v", readErr)
 	}
 }
 

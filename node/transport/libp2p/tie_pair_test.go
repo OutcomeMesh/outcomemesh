@@ -49,6 +49,14 @@ func TestQUICTiePairProtocolAuthenticatesBothEndpoints(t *testing.T) {
 		if receiveErr == nil {
 			_, receiveErr = tieexchange.ReadConfirmation(stream, binding, receipt)
 		}
+		if receiveErr == nil {
+			receiveErr = tieexchange.WriteConfirmationAcknowledgement(
+				stream,
+				tieexchange.ConfirmationAcknowledgement{
+					Binding: binding, ReceiptTail: receipt,
+				},
+			)
+		}
 		serverDone <- receiveErr
 	}); err != nil {
 		t.Fatal(err)
@@ -81,6 +89,11 @@ func TestQUICTiePairProtocolAuthenticatesBothEndpoints(t *testing.T) {
 	if err := tieexchange.WriteConfirmation(stream, tieexchange.Confirmation{
 		Binding: binding, ReceiptTail: acknowledgement.ReceiptTail,
 	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tieexchange.ReadConfirmationAcknowledgement(
+		stream, binding, acknowledgement.ReceiptTail,
+	); err != nil {
 		t.Fatal(err)
 	}
 	if err := <-serverDone; err != nil {

@@ -67,7 +67,10 @@ followed by a convergent published slot, a kill after exactly one durable
 sibling that must remain fail-closed, a two-slot version-2 campaign that restarts
 one of two observers on its pinned endpoint and finishes with a healthy
 multi-observer audit, a coordinator killed with one of two ACKs durably
-journaled and resumed with delivery only to the missing observer, and kills the
+journaled and resumed with delivery only to the missing observer, four real
+filesystem permission failures bracketing coordinator rename and observer link
+durability, explicit recovery of an exact post-link ACK without false chain
+advance, and kills the
 WorkGraph Pebble process on
 both sides of commit, replay-checkpoint rotation, and stale-fork pruning
 durability boundaries. Raise the

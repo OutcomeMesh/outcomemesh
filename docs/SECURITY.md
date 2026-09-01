@@ -336,10 +336,17 @@ An observer that has persisted exactly one sibling also stops forever instead
 of converting the slot to `NoPair`; an injected process kill after the first
 block commit proves the pending candidate survives restart. Receipt commit and
 coordinator knowledge use separate durable markers, so an ACK/confirmation
-crash retries the receipt rather than the blocks. Injected writer failures both
-before file commit and after commit but before acknowledged fsync are retried
-idempotently for skip journals and confirmation markers. These checks do not
-yet model physical disk exhaustion or torn writes outside filesystem atomicity.
+crash retries the receipt rather than the blocks. The observer now returns a
+fourth protocol message only after its confirmation marker and containing
+directory are durable; the coordinator does not journal that observer before
+reading it. Unit writer faults and real separate-process permission faults cover
+both pre-commit and rename/link-complete-but-directory-fsync-error boundaries in
+the coordinator journal and observer marker. These checks still do not emulate
+physical media corruption, kernel writeback loss, or a truly exhausted device.
+When the marker is exact but its final ACK is absent, a read-only audit
+identifies the one recoverable tail and an explicit offline command may journal
+only that cryptographically and structurally proven ACK. It never advances the
+chain and refuses all blocking evidence conflicts.
 Between slots, an abruptly restarted observer can leave a reusable QUIC session
 stale at the coordinator. Delivery permits exactly one reconnect after an I/O
 failure: it closes only the route's identity-pinned peer, repeats the authenticated

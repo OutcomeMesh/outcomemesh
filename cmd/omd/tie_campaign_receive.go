@@ -432,6 +432,15 @@ func serveObserverCampaignSlot(
 				reportFatal(err)
 				return
 			}
+			if err := tieexchange.WriteConfirmationAcknowledgement(
+				stream,
+				tieexchange.ConfirmationAcknowledgement{
+					Binding: exchangeBinding, ReceiptTail: receiptTail,
+				},
+			); err != nil {
+				reset(stream)
+				return
+			}
 			deactivate()
 			_ = stream.Close()
 			completed <- observerCampaignSlotResult{receiptTail: receiptTail, recovered: isRecovery}

@@ -15,15 +15,17 @@ import (
 const Version0 uint16 = 0
 
 const (
-	requestHeaderBytes   = 8 + 2 + types.HashSize + types.HashSize + 8 + 8
-	acknowledgementBytes = 8 + 2 + types.HashSize + types.HashSize + 8 + types.HashSize + types.HashSize
-	confirmationBytes    = 8 + 2 + types.HashSize + types.HashSize + 8 + types.HashSize
+	requestHeaderBytes               = 8 + 2 + types.HashSize + types.HashSize + 8 + 8
+	acknowledgementBytes             = 8 + 2 + types.HashSize + types.HashSize + 8 + types.HashSize + types.HashSize
+	confirmationBytes                = 8 + 2 + types.HashSize + types.HashSize + 8 + types.HashSize
+	confirmationAcknowledgementBytes = 8 + 2 + types.HashSize + types.HashSize + 8 + types.HashSize
 )
 
 var (
-	requestMagic         = [8]byte{'O', 'M', 'T', 'P', 'A', 'I', 'R', 'Q'}
-	acknowledgementMagic = [8]byte{'O', 'M', 'T', 'P', 'A', 'I', 'R', 'A'}
-	confirmationMagic    = [8]byte{'O', 'M', 'T', 'P', 'A', 'I', 'R', 'C'}
+	requestMagic                     = [8]byte{'O', 'M', 'T', 'P', 'A', 'I', 'R', 'Q'}
+	acknowledgementMagic             = [8]byte{'O', 'M', 'T', 'P', 'A', 'I', 'R', 'A'}
+	confirmationMagic                = [8]byte{'O', 'M', 'T', 'P', 'A', 'I', 'R', 'C'}
+	confirmationAcknowledgementMagic = [8]byte{'O', 'M', 'T', 'P', 'A', 'I', 'R', 'D'}
 
 	ErrProtocol = errors.New("invalid controlled-tie exchange protocol")
 	ErrBinding  = errors.New("controlled-tie exchange binding mismatch")
@@ -54,6 +56,14 @@ type Acknowledgement struct {
 // Confirmation proves to the one-shot receiver that the coordinator read the
 // durable acknowledgement before the observer tears down its QUIC host.
 type Confirmation struct {
+	Binding     Binding
+	ReceiptTail types.Hash
+}
+
+// ConfirmationAcknowledgement is emitted only after the observer has durably
+// stored the coordinator confirmation. The coordinator must not journal the
+// receipt tail or advance the campaign before reading this final message.
+type ConfirmationAcknowledgement struct {
 	Binding     Binding
 	ReceiptTail types.Hash
 }
@@ -199,6 +209,53 @@ func ReadConfirmation(reader io.Reader, expected Binding, expectedReceipt types.
 	}
 	if result.Binding != expected || result.ReceiptTail != expectedReceipt {
 		return Confirmation{}, ErrBinding
+	}
+	return result, nil
+}
+
+func WriteConfirmationAcknowledgement(
+	writer io.Writer,
+	acknowledgement ConfirmationAcknowledgement,
+) error {
+	if writer == nil || acknowledgement.Binding.Validate() != nil || acknowledgement.ReceiptTail.IsZero() {
+		return ErrProtocol
+	}
+	var encoded [confirmationAcknowledgementBytes]byte
+	copy(encoded[:8], confirmationAcknowledgementMagic[:])
+	binary.BigEndian.PutUint16(encoded[8:10], Version0)
+	copy(encoded[10:42], acknowledgement.Binding.PlanID[:])
+	copy(encoded[42:74], acknowledgement.Binding.PairID[:])
+	binary.BigEndian.PutUint64(encoded[74:82], acknowledgement.Binding.Sequence)
+	copy(encoded[82:114], acknowledgement.ReceiptTail[:])
+	return writeAll(writer, encoded[:])
+}
+
+func ReadConfirmationAcknowledgement(
+	reader io.Reader,
+	expected Binding,
+	expectedReceipt types.Hash,
+) (ConfirmationAcknowledgement, error) {
+	if reader == nil || expected.Validate() != nil || expectedReceipt.IsZero() {
+		return ConfirmationAcknowledgement{}, ErrProtocol
+	}
+	var encoded [confirmationAcknowledgementBytes]byte
+	if _, err := io.ReadFull(reader, encoded[:]); err != nil {
+		return ConfirmationAcknowledgement{}, err
+	}
+	if string(encoded[:8]) != string(confirmationAcknowledgementMagic[:]) ||
+		binary.BigEndian.Uint16(encoded[8:10]) != Version0 {
+		return ConfirmationAcknowledgement{}, ErrProtocol
+	}
+	var result ConfirmationAcknowledgement
+	copy(result.Binding.PlanID[:], encoded[10:42])
+	copy(result.Binding.PairID[:], encoded[42:74])
+	result.Binding.Sequence = binary.BigEndian.Uint64(encoded[74:82])
+	copy(result.ReceiptTail[:], encoded[82:114])
+	if result.Binding.Validate() != nil || result.ReceiptTail.IsZero() {
+		return ConfirmationAcknowledgement{}, ErrProtocol
+	}
+	if result.Binding != expected || result.ReceiptTail != expectedReceipt {
+		return ConfirmationAcknowledgement{}, ErrBinding
 	}
 	return result, nil
 }

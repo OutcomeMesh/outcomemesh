@@ -218,7 +218,7 @@ concurrent next-round win from changing an in-flight header/body response.
 
 ## Controlled-tie artifact exchange
 
-The opt-in `/outcomemesh/tie-pair/1` stream carries one prepublished portable
+The opt-in `/outcomemesh/tie-pair/2` stream carries one prepublished portable
 controlled-tie artifact from a coordinator to an independent observer. It is
 not registered by ordinary hosts. The observer installs it only for a specific
 plan ID, pair ID, slot sequence, and allowlisted coordinator transport ID; the
@@ -235,19 +235,24 @@ global budgets.
 After ordered local admission has durably created the observer-signed receipt,
 the receiver returns an acknowledgement bound to the request, receipt observer
 public key, and receipt-tail ID. The sender must return a matching confirmation
-before the receiver tears down its host. A retry after an acknowledgement loss
-does not readmit blocks: the restarted receiver requires the same published
-artifact to match the already validated completed receipt and returns its
-original ID. The authenticated channel protects the exchange endpoints; the
-receipt signature remains the portable audit evidence.
+before the receiver returns a final acknowledgement over the same binding and
+receipt tail. In campaign mode that last message is sent only after the receiver
+durably installs its confirmation marker, and the coordinator may journal that
+observer only after reading it. A retry after an acknowledgement loss does not
+readmit blocks: the restarted receiver requires the same published artifact to
+match the already validated completed receipt and returns its original ID. The
+authenticated channel protects the
+exchange endpoints; the receipt signature remains the portable audit evidence.
 
 The campaign receiver reuses the same protocol and authenticated host across
 all signed plan slots. It installs only the pair binding named by the exact
 numbered checkpoint and independently published checkpoint ID. Local receipt
 commit and remote knowledge are deliberately journaled separately: a fixed-size
 checksummed confirmation marker is installed only after the final coordinator
-message. A restart with a completed receipt but no marker keeps serving that
-old binding until confirmation instead of moving to the next slot. Empty
+message, and its final acknowledgement is emitted only after that marker's
+file-and-directory durability boundary succeeds. A restart with a completed
+receipt but no marker keeps serving that old binding until confirmation instead
+of moving to the next slot. Empty
 expired slots become conservative `NoPair`; any partial sibling state stops the
 campaign and is never converted into a safe-to-continue miss.
 
@@ -259,12 +264,20 @@ same transport ID committed by the route; artifact replay remains safe because
 the observer's receipt path is idempotent. A real two-observer, two-slot process
 campaign exercises this boundary and then reconciles both receipt chains.
 
-Coordinator restart is independent of observer restart. Each successful ACK is
-fsynced separately; startup reports the recovered `acknowledged` count, and the
-driver opens streams only for zero-tail entries in canonical plan order. A
+Coordinator restart is independent of observer restart. Each final durable
+confirmation ACK is fsynced separately; startup reports the recovered
+`acknowledged` count, and the driver opens streams only for zero-tail entries in
+canonical plan order. A
 process test holds one observer before request decoding, kills the coordinator
 after the other observer's ACK is durable, and then proves the replacement
 coordinator contacts only the missing observer.
+
+If the marker link committed but its directory fsync returned an error, or the
+final acknowledgement was lost, automatic replay cannot distinguish that
+observer from one that intentionally stopped after confirmation. The explicit
+campaign recovery command first verifies the signed receipt, immutable pair,
+published checkpoint, exact marker, and coordinator journal, then records only
+that proven tail. It never admits blocks or advances a slot.
 
 ## Signed peer advertisements
 

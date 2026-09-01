@@ -42,6 +42,7 @@ type CampaignAuditIssue struct {
 	Code              string
 	Sequence          uint64
 	ObserverPublicKey [ed25519.PublicKeySize]byte
+	ReceiptTail       types.Hash
 	Recoverable       bool
 	Detail            string
 }
@@ -404,7 +405,8 @@ func AuditCampaignFiles(config CampaignAuditConfig) (CampaignAuditReport, error)
 					report.RecoverableAcks++
 					addIssue(CampaignAuditIssue{
 						Code: "unrecorded_observer_ack", Sequence: sequence,
-						ObserverPublicKey: observerConfig.ObserverPublicKey, Recoverable: true,
+						ObserverPublicKey: observerConfig.ObserverPublicKey,
+						ReceiptTail:       receiptID, Recoverable: true,
 						Detail: "observer completed confirmation but coordinator has not journaled its ACK",
 					})
 				} else {

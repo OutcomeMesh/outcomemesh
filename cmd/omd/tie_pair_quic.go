@@ -6,7 +6,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"os"
 	"os/signal"
 	"strings"
@@ -227,9 +226,15 @@ func runWorkTelemetryTiePairReceiveQUIC(arguments []string) (resultErr error) {
 			fail(stream, err)
 			return
 		}
-		// The coordinator confirmation is the protocol completion boundary. A
-		// simultaneous remote close can race the local close after that boundary
-		// and must not turn a delivered durable receipt into a failed exchange.
+		if err := tieexchange.WriteConfirmationAcknowledgement(
+			stream,
+			tieexchange.ConfirmationAcknowledgement{
+				Binding: exchangeBinding, ReceiptTail: result.receipt,
+			},
+		); err != nil {
+			fail(stream, err)
+			return
+		}
 		_ = stream.Close()
 		report(result)
 	})
@@ -374,13 +379,10 @@ func exchangeTiePairQUIC(
 	}); err != nil {
 		return tieexchange.Acknowledgement{}, types.Hash{}, err
 	}
-	// Keep the coordinator connection alive until the observer has read the
-	// confirmation and closes its side. A payload byte here would be an
-	// unversioned protocol extension; any terminal read error is the expected
-	// end of this one-shot stream.
-	var unexpected [1]byte
-	if _, err := io.ReadFull(stream, unexpected[:]); err == nil {
-		return tieexchange.Acknowledgement{}, types.Hash{}, tieexchange.ErrProtocol
+	if _, err := tieexchange.ReadConfirmationAcknowledgement(
+		stream, binding, acknowledgement.ReceiptTail,
+	); err != nil {
+		return tieexchange.Acknowledgement{}, types.Hash{}, err
 	}
 	return acknowledgement, remoteID, nil
 }

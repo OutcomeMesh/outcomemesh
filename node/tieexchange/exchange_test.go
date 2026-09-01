@@ -105,6 +105,27 @@ func TestConfirmationRoundTripPinsDurableReceipt(t *testing.T) {
 	if _, err := ReadConfirmation(&wrong, binding, types.DomainHash("test/tieexchange/other-receipt")); !errors.Is(err, ErrBinding) {
 		t.Fatalf("receipt pin error=%v", err)
 	}
+
+	var durable bytes.Buffer
+	if err := WriteConfirmationAcknowledgement(&durable, ConfirmationAcknowledgement{
+		Binding: binding, ReceiptTail: receipt,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	acknowledgement, err := ReadConfirmationAcknowledgement(&durable, binding, receipt)
+	if err != nil || acknowledgement.Binding != binding ||
+		acknowledgement.ReceiptTail != receipt || durable.Len() != 0 {
+		t.Fatalf("confirmation acknowledgement=%+v remaining=%d err=%v", acknowledgement, durable.Len(), err)
+	}
+	var wrongDurable bytes.Buffer
+	if err := WriteConfirmationAcknowledgement(&wrongDurable, acknowledgement); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadConfirmationAcknowledgement(
+		&wrongDurable, binding, types.DomainHash("test/tieexchange/other-durable-receipt"),
+	); !errors.Is(err, ErrBinding) {
+		t.Fatalf("durable receipt pin error=%v", err)
+	}
 }
 
 func FuzzReadRequestNeverPanics(f *testing.F) {
