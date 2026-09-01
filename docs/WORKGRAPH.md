@@ -291,7 +291,7 @@ The experimental `work-serve-quic` and `work-sync-quic` commands are the only
 CLI registration/dial path.
 
 The persistent router uses a schema-1 forest root and one canonical base-hash
-directory per schema-3 WorkChain database, not a mutable global-tip catalog.
+directory per schema-4 WorkChain database, not a mutable global-tip catalog.
 After restart it resolves every base against the v0 ledger, fully verifies each
 tree, rebuilds block ownership, and recomputes global fork choice. The default
 64-tree cap (hard maximum 1,024) and static division of the forest-wide history
@@ -412,24 +412,25 @@ a late publisher from grinding one ID that deterministically displaces every
 honest node. Its isolated Pebble schema
 persists canonical block bytes, immutable resource deltas, history, fee queues,
 cumulative work, a checked logical-history counter, and selected tip in one
-synchronous batch. Schema 3 requires every non-base node to carry exactly one
-recovery representation: an immutable parent delta or a full-state replay
-checkpoint, never both. Explicit maintenance creates a checkpoint only after
+synchronous batch. Schema 4 requires every retained non-floor node to carry
+exactly one recovery representation: an immutable parent delta or a full-state
+replay checkpoint, never both. Explicit maintenance creates a checkpoint only after
 2,048 selected-ancestry heights by default and retains at most four non-base
 checkpoints. Creation atomically replaces that node's delta; rotation turns an
 evicted checkpoint back into its exact parent delta in the same batch. Reopen
 reconstructs every branch parent-first, verifies each delta/checkpoint root and
 the exclusive representation rule, and rejects corrupted checkpoints. Pre-alpha
-schema 2 fails closed and is rebuilt by replay rather than silently migrated.
+schemas 2 and 3 fail closed and are rebuilt by replay rather than silently
+migrated.
 The 64-GiB logical budget covers both representations, and an injected pre-sync
 failure leaves memory and disk unchanged. Explicit maintenance can atomically
 remove only side-fork subtrees whose highest node is behind a local retention
 window (4,096 heights by default). It retains the entire canonical path plus
 every ancestor of a side branch at the boundary, updates the logical byte
 counter in the same synchronous batch, and is disabled by a zero local setting.
-Canonical history is deliberately not pruned without a separately designed
-history-anchor rule. The isolated `node/workarchive` version-0 format now
-provides the first half of that rule: a statement binds network, genesis,
+Canonical history pruning is a disabled-by-default local operation with a
+separate history-anchor and replica-custody rule. The isolated
+`node/workarchive` version-0 statement binds network, genesis,
 activation height, immutable tree base, an exact selected `storage.Tip`, the
 ordered ancestry commitment and node count back to that base, a monotonically
 linked predecessor statement, and a future archive-manifest ID. A canonical
@@ -455,14 +456,39 @@ publication, tight limits, symlinks, extra files, and pre-publication failure
 all fail closed. A real subprocess is killed immediately before archive
 directory rename and immediately after rename but before parent fsync; recovery
 finds respectively no destination or a fully reopenable and extendable tree.
-Canonical deletion, retention/availability policy, and the
-atomic pruning transition remain absent, so archives neither alter fork choice
-nor create consensus finality. Broader physical disk/filesystem campaigns also
-precede production activation. The integration suite kills a real subprocess
-on both sides of ordinary node commit,
-checkpoint-rotation, and stale-prune synchronous batches. Each recovery is
-compared with independently built exact old/new fixtures across tip, state,
-work, history, nodes, and checkpoints, then extended with another valid block.
+Replica custody is a second key set and policy. Between 2 and 64 canonical
+Ed25519 receipts bind the exact statement, manifest, anchor, opaque location
+commitment, verification time, and retention deadline. A receipt can be made
+only after its replica passes full archive replay. Prune authorization rejects
+duplicate keys, location IDs, paths, directory identities, stale receipts, or
+insufficient remaining retention, then replays every distinct directory again
+and fsyncs the exact availability-bundle ID before touching WorkChain. The
+symlink-resolved evidence destination must lie outside every replica tree.
+
+The schema-4 pruning batch is permitted only with an explicitly non-zero local
+`CanonicalRetention`; zero is the default. The archive anchor must remain on
+the selected branch at least that many heights, and every remaining side branch
+must descend from it. One synchronous batch replaces all earlier node/block/
+recovery records with canonical header records, converts the anchor to a full-
+state retained floor, persists the statement/manifest/availability IDs, and
+updates the logical byte counter. The immutable activation `BaseID` is unchanged.
+Reopen reconstructs every archived header from the external base and verifies
+ID/parent order, ASERT target, timestamps, cumulative work, floor metadata,
+ancestry root/count, and floor state before replaying descendant deltas. The
+retained floor can advance again, and the recovered chain remains extendable.
+A real subprocess killed on either side of this batch recovers exactly the old
+or new database.
+
+This does not create network finality or prove independent failure domains.
+After pruning, the local node deliberately rejects forks whose parent is below
+its floor; enabling it is therefore an operator-selected local finalization
+horizon. A pruned store also cannot emit another complete version-0 archive
+without restoring or recomposing the earlier replica payloads. Network replica
+transport, renewed custody challenges, incremental archive composition, disk-
+exhaustion campaigns, and longer physical-filesystem soaks remain before public
+activation. The integration suite now covers all four synchronous WorkChain
+batch classes: commit, checkpoint rotation, stale-fork prune, and canonical-
+floor transition.
 
 ## Milestone-5 evidence required
 

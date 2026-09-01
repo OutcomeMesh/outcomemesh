@@ -1,7 +1,8 @@
 // Package workarchive defines independently attested, non-consensus history
-// anchors and content-addressed block archives for the experimental WorkGraph
-// chain. Restore replays ordinary consensus transitions into a new database;
-// this package never deletes chain data or changes fork choice.
+// anchors, content-addressed block archives, replica-custody evidence, and the
+// explicit local pruning gate for the experimental WorkGraph chain. Restore
+// replays ordinary consensus transitions; pruning is disabled by default and
+// never changes the cumulative-work comparison among retained branches.
 package workarchive
 
 import (

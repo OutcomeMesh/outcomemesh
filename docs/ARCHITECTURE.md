@@ -222,15 +222,16 @@ it derives branch-local MTP, targets, fee queues, states, and prior earnings and
 uses only hard WorkSeal difficulty in cumulative-work fork choice. It is test
 scaffolding, not an alternate consensus authority. Its schema-versioned Pebble
 backend keeps one activation-base checkpoint and an immutable create/delete
-resource delta per v1 block. Schema 3 permits a bounded replay checkpoint to
-replace that node's delta, but requires exactly one representation. Maintenance
+resource delta per v1 block. Schema 4 permits a bounded replay checkpoint to
+replace that node's delta, but requires exactly one representation for every
+retained non-floor node. Maintenance
 defaults to a 2,048-height selected-ancestry interval and four non-base full
 states. Checkpoint creation and eviction are one synchronous batch; eviction
 reconstructs the displaced node's exact delta from its still-validated parent
 and state. Reopen verifies the XOR representation invariant, roots, ancestry,
-fee queues, cumulative work, selected tip, and logical byte count. Schema 2
-fails closed and replay is the migration policy. Production activation still
-requires a complete archival pruning rule. Its new non-consensus anchor layer
+fee queues, cumulative work, selected tip, and logical byte count. Schemas 2
+and 3 fail closed and replay is the migration policy. Its non-consensus anchor
+layer
 canonically binds an exact selected tip and its full backward ancestry
 commitment to network/genesis/activation/tree-base identity, a predecessor
 statement, and an archive-manifest ID. It requires a locally configured quorum
@@ -242,13 +243,20 @@ manifest commits ordered bounded block chunks; verification replays those
 blocks from the external activation base through ordinary WorkChain execution.
 Persistent restore builds, closes, reopens, and verifies a temporary Pebble
 tree before directory rename and parent fsync, and never replaces an existing
-destination. Canonical deletion is not implemented. Local maintenance already
+destination. A separate replica key set issues time-bounded custody receipts
+only after full replay. Prune authorization replays every distinct replica
+again and durably publishes the receipt bundle. With an explicit non-zero local
+retention horizon, one Pebble batch replaces the prefix with canonical headers,
+a full-state floor, and exact evidence IDs; reopen recomputes archived work and
+ancestry before accepting descendants. The default remains disabled because
+the floor intentionally rejects deeper reorganizations. Local maintenance also
 marks canonical ancestry and every side branch reaching a configurable cutoff,
 then atomically removes only complete
 stale subtrees while decrementing the exact logical history counter. Its default
-window is 4,096 heights, zero disables it, and it never creates local PoW
-finality by pruning canonical history. Broader filesystem-fault soaks and
-outbound share publication remain. The libp2p adapter carries both the
+window is 4,096 heights, zero disables it, and it does not prune canonical
+history. Network replica challenges, incremental archive composition, broader
+filesystem-fault soaks, and outbound share publication remain. The libp2p
+adapter carries both the
 versioned chain and separate WorkGraph share sessions under distinct opt-in
 protocol IDs and resource scopes. Ordinary CLI hosts leave both disabled. The
 experimental `work-serve-quic` command enables both handlers, while

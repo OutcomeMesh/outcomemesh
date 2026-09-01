@@ -167,8 +167,10 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
 - Count-or-time share flushing with a deterministic small-miner reward corpus.
 - A versioned multi-attestor archive anchor bound to the exact selected
   WorkChain ancestry, followed separately by a content-addressed restorable
-  export and an atomic canonical-pruning transition. An anchor alone must never
-  authorize deletion or override hard-work fork choice.
+  export, expiring independently keyed replica-custody receipts, and an atomic
+  canonical retained-floor transition. An anchor alone must never authorize
+  deletion or override hard-work fork choice; canonical pruning is explicit
+  local finalization and remains disabled by default.
 - Admission-deduplicated multi-hop forwarding across the explicit peer graph.
 - Reputation/latency/ASN-ranked peerbook selection with an inventory-free,
   exact-context WorkGraph capability probe.

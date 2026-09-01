@@ -106,3 +106,96 @@ func LoadCheckpointFile(
 	}
 	return checkpoint, nil
 }
+
+// SaveAvailabilityBundleFile durably publishes the exact replica evidence ID
+// later embedded in a canonical retained floor.
+func SaveAvailabilityBundleFile(
+	path string,
+	bundle AvailabilityBundle,
+	checkpoint Checkpoint,
+	checkpointPolicy Policy,
+	replicaPolicy ReplicaPolicy,
+	now uint64,
+	expectedBundleID types.Hash,
+) error {
+	if path == "" || expectedBundleID.IsZero() ||
+		bundle.Verify(checkpoint, checkpointPolicy, replicaPolicy, now) != nil {
+		return ErrAvailability
+	}
+	bundleID, err := bundle.ID()
+	if err != nil || bundleID != expectedBundleID {
+		return ErrAvailability
+	}
+	encoded, err := bundle.CanonicalBytes()
+	if err != nil {
+		return err
+	}
+	directory := filepath.Dir(path)
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		return err
+	}
+	temporary, err := os.CreateTemp(directory, ".outcomemesh-work-archive-availability-*")
+	if err != nil {
+		return err
+	}
+	temporaryPath := temporary.Name()
+	committed := false
+	defer func() {
+		_ = temporary.Close()
+		if !committed {
+			_ = os.Remove(temporaryPath)
+		}
+	}()
+	if err := temporary.Chmod(0o600); err != nil {
+		return err
+	}
+	written, err := temporary.Write(encoded)
+	if err != nil {
+		return err
+	}
+	if written != len(encoded) {
+		return io.ErrShortWrite
+	}
+	if err := temporary.Sync(); err != nil {
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(temporaryPath, path); err != nil {
+		return err
+	}
+	committed = true
+	directoryHandle, err := os.Open(directory)
+	if err != nil {
+		return err
+	}
+	defer directoryHandle.Close()
+	return directoryHandle.Sync()
+}
+
+func LoadAvailabilityBundleFile(
+	path string,
+	checkpoint Checkpoint,
+	checkpointPolicy Policy,
+	replicaPolicy ReplicaPolicy,
+	now uint64,
+	expectedBundleID types.Hash,
+) (AvailabilityBundle, error) {
+	if path == "" || expectedBundleID.IsZero() {
+		return AvailabilityBundle{}, ErrAvailability
+	}
+	encoded, err := readRegularArchiveFile(path, MaximumAvailabilityBundleBytes)
+	if err != nil {
+		return AvailabilityBundle{}, errors.Join(ErrAvailability, err)
+	}
+	bundle, err := DecodeAvailabilityBundle(encoded)
+	if err != nil || bundle.Verify(checkpoint, checkpointPolicy, replicaPolicy, now) != nil {
+		return AvailabilityBundle{}, errors.Join(ErrAvailability, err)
+	}
+	bundleID, err := bundle.ID()
+	if err != nil || bundleID != expectedBundleID {
+		return AvailabilityBundle{}, errors.Join(ErrAvailability, err)
+	}
+	return bundle, nil
+}

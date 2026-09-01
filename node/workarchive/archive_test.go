@@ -340,7 +340,12 @@ func newArchiveFixture(t testing.TB) archiveFixture {
 	t.Helper()
 	parameters := archiveTestParameters()
 	base := archiveTestBase()
-	source, err := workchain.Open(filepath.Join(t.TempDir(), "source"), base, parameters)
+	workPolicy := workchain.DefaultPolicy()
+	workPolicy.ForkRetention = 1
+	workPolicy.CanonicalRetention = 1
+	source, err := workchain.OpenWithPolicy(
+		filepath.Join(t.TempDir(), "source"), base, parameters, workPolicy,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

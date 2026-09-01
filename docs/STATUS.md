@@ -110,9 +110,10 @@ Implemented:
   requested;
 - consensus validation now independently rejects a header whose network ID
   differs from genesis, even if transport authentication and PoW are valid;
-- Pebble schema 3 stores one materialized canonical state plus immutable
+- Pebble schema 4 stores one materialized canonical state plus immutable
   create/delete deltas per accepted block; side branches reconstruct from
-  genesis with a state-root check at every node, and a 256-resource regression
+  the activation base or verified retained floor with a state-root check at
+  every executable node, and a 256-resource regression
   test proves an empty competing block adds one reward delta rather than a full
   257-resource copy. Reorg/crash tests, the full race suite, and `CGO_ENABLED=0`
   tests pass with this schema;
@@ -285,14 +286,14 @@ Implemented in an isolated, not-yet-activated consensus package:
   side branch after restart, removes a two-block stale subtree, and proves an
   injected pre-sync failure changes neither memory nor disk. It does not prune
   canonical PoW history or introduce local finality.
-- WorkChain schema 3 adds bounded replay-checkpoint rotation without duplicating
-  state storage. Every non-base node has exactly one delta or full-state
+- WorkChain schema 4 adds bounded replay-checkpoint rotation without duplicating
+  state storage. Every retained non-floor node has exactly one delta or full-state
   checkpoint; after 2,048 selected-branch heights maintenance swaps the tip's
   delta for a checkpoint and keeps at most four. Eviction reconstructs the old
   node's exact parent delta in the same synchronous batch. Tests cover
   delta→checkpoint→delta rotation, exact byte accounting, pre-sync failure,
   corrupt checkpoint rejection, restart/extension, and pruning a checkpoint
-  carried by a stale fork. Schema 2 fails closed and requires replay.
+  carried by a stale fork. Schemas 2 and 3 fail closed and require replay.
 - a versioned, non-consensus WorkGraph archive checkpoint now binds the exact
   network/genesis/activation/tree base, selected `storage.Tip`, ordered ancestry
   commitment and node count, monotonic predecessor statement, and future
@@ -318,8 +319,25 @@ Implemented in an isolated, not-yet-activated consensus package:
   tests, and both new decoders are fuzzed. A subprocess killed immediately
   before rename recovers with no destination and can retry; one killed after
   rename but before parent fsync recovers a fully reopenable and extendable
-  database. Canonical deletion remains absent, so this creates neither pruning
-  authority nor local finality.
+  database.
+- replica custody and the destructive local transition are now separate from
+  archive attestation. A strict receipt binds one trusted replica key and
+  location commitment to the exact statement/manifest/anchor plus replay and
+  expiry times. A canonical bundle requires 2–64 sorted receipts under a local
+  quorum, rejects duplicate identities/locations/directories, enforces bounded
+  age and remaining retention, and is atomically fsynced. Authorization fully
+  replays every replica again immediately before pruning. With an explicitly
+  non-zero `CanonicalRetention` (zero by default), schema 4 then uses one
+  synchronous batch to replace the strict pre-anchor node/block/recovery prefix
+  with canonical headers, convert the anchor to a full-state retained floor,
+  store the exact statement/manifest/bundle IDs, and update logical bytes.
+  Reopen derives parent links, ASERT targets, timestamp history, cumulative
+  work, ancestry commitment, and floor state before replaying descendants.
+  Tests cover stale/missing/duplicate replicas, corrupt headers, unresolved
+  side branches, repeat floor advancement, injected batch failure, restart and
+  extension, race, decoder fuzzing, and real process kills on both sides of the
+  batch. This is trusted point-in-time custody and an operator-selected local
+  finalization horizon, not network availability or consensus finality.
 - an isolated activation router now owns strict v0/v1 block admission. It
   dispatches unchanged canonical encodings from their leading version, permits
   v0 only below `H` and v1 only from `H`, and lazily creates one WorkChain tree
@@ -366,7 +384,7 @@ Implemented in an isolated, not-yet-activated consensus package:
   versioned stream does not consume the v0 session allowance.
 - the activation router now optionally persists all v1 trees as a catalog-free
   forest: one schema-1 root manifest and one base-hash directory per independently
-  verified schema-3 WorkChain database. Reopen resolves each base against the
+  verified schema-4 WorkChain database. Reopen resolves each base against the
   v0 ledger, rebuilds block ownership only after full tree verification, and
   recomputes the global hard-work tip. A 64-tree default cap (hard maximum
   1,024) and static partitions of one forest-wide history budget bound aggregate
@@ -566,8 +584,8 @@ No WorkGraph field has entered a version-0 block yet. The v1 store and opt-in
 QUIC session remain isolated from every ordinary v0 chain/CLI path and are
 reachable only through the explicitly marked experimental commands;
 adversarial discovery/eclipse and longer real-QUIC rapid-parent churn soaks,
-topology-derived peer selection, replicated archive availability and atomic
-canonical pruning, extended filesystem-fault/soak campaigns,
+topology-derived peer selection, network replica challenges and incremental
+archive composition, canonical-prune disk-exhaustion/long-soak campaigns,
 production gossip-budget calibration, and broader adaptive economic-strategy
 analysis remain before activation.
 

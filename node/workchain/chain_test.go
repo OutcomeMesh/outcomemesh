@@ -705,7 +705,6 @@ func TestPebblePrunesAStaleCheckpointCarrier(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer reopened.Close()
 	if _, err := reopened.BlockByID(staleTipID); !errors.Is(err, ErrParent) {
 		t.Fatalf("restart restored stale checkpoint carrier: %v", err)
 	}
@@ -974,16 +973,262 @@ func TestPebblePrunesOnlyStaleForkSubtreesAtomically(t *testing.T) {
 	}
 }
 
-func TestPebbleRejectsSchemaTwoWorkStore(t *testing.T) {
-	t.Parallel()
+func TestPebbleRejectsPreFloorWorkSchemas(t *testing.T) {
+	for _, version := range []byte{2, 3} {
+		version := version
+		t.Run("schema-"+string(rune('0'+version)), func(t *testing.T) {
+			t.Parallel()
+			parameters := testParameters()
+			base := testBase(t, parameters)
+			path := t.TempDir()
+			store, err := Open(path, base, parameters)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := store.Close(); err != nil {
+				t.Fatal(err)
+			}
+			database, err := pebble.Open(path, &pebble.Options{FormatMajorVersion: pebble.FormatNewest})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := database.Set(workKeySchema, []byte{0, version}, pebble.Sync); err != nil {
+				t.Fatal(err)
+			}
+			if err := database.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := Open(path, base, parameters); !errors.Is(err, storage.ErrCorrupt) {
+				t.Fatalf("old schema %d error=%v", version, err)
+			}
+		})
+	}
+}
 
+func TestPebbleCanonicalPrefixPruneRetainsVerifiableFloorAcrossRestart(t *testing.T) {
 	parameters := testParameters()
 	base := testBase(t, parameters)
 	path := t.TempDir()
-	store, err := Open(path, base, parameters)
+	policy := DefaultPolicy()
+	policy.ForkRetention = 1
+	policy.CanonicalRetention = 1
+	store, err := OpenWithPolicy(path, base, parameters, policy)
 	if err != nil {
 		t.Fatal(err)
 	}
+	blocks := make([]workblock.Block, 0, 5)
+	parentID := base.Tip.ID
+	timestamp := base.Tip.Timestamp
+	for height := 0; height < 5; height++ {
+		timestamp += parameters.TargetSpacing
+		block, _ := mineChild(t, store, parentID, timestamp, "canonical-floor-"+string(rune('a'+height)))
+		if _, _, err := store.Commit(block, block.Header.Seal.Timestamp); err != nil {
+			t.Fatal(err)
+		}
+		blocks = append(blocks, block)
+		parentID, _ = block.Header.ID()
+	}
+	anchorID, _ := blocks[2].Header.ID()
+	anchorTip, err := store.TipByID(anchorID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, count, err := store.SelectedAncestryCommitment(anchorID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	boundary := canonicalTestFloor(base.Tip.ID, anchorTip, root, count, "first")
+	usageBefore, _, err := store.HistoryUsage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	injected := errors.New("injected canonical prune failure")
+	store.persistence.commitHook = func() error { return injected }
+	if _, err := store.PruneCanonicalPrefix(boundary); !errors.Is(err, injected) {
+		t.Fatalf("injected canonical prune error=%v", err)
+	}
+	if floor, err := store.CanonicalFloor(); err != nil || floor.Pruned {
+		t.Fatalf("failed canonical prune floor=%+v err=%v", floor, err)
+	}
+	if _, err := store.BlockByID(anchorID); err != nil {
+		t.Fatalf("failed canonical prune changed memory: %v", err)
+	}
+	store.persistence.commitHook = nil
+	report, err := store.PruneCanonicalPrefix(boundary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.PreviousFloorID != base.Tip.ID || report.FloorID != anchorID ||
+		report.RemovedNodes != 3 || report.RetainedNodes != 3 || report.ArchivedHeaders != 2 ||
+		report.ReleasedHistoryBytes == 0 || report.AddedHistoryBytes == 0 {
+		t.Fatalf("canonical prune report=%+v", report)
+	}
+	usageAfter, _, err := store.HistoryUsage()
+	if err != nil || usageAfter != usageBefore-report.ReleasedHistoryBytes+report.AddedHistoryBytes ||
+		usageAfter >= usageBefore {
+		t.Fatalf("canonical prune history before=%d after=%d report=%+v err=%v",
+			usageBefore, usageAfter, report, err)
+	}
+	activationID, _ := blocks[0].Header.ID()
+	if _, err := store.BlockByID(activationID); !errors.Is(err, ErrHistoryPruned) {
+		t.Fatalf("archived activation payload error=%v", err)
+	}
+	if archivedTip, err := store.TipByID(activationID); err != nil || archivedTip.ID != activationID {
+		t.Fatalf("archived activation tip=%+v err=%v", archivedTip, err)
+	}
+	if selected, err := store.IsAncestor(activationID, parentID); err != nil || !selected {
+		t.Fatalf("archived activation ancestry=%t err=%v", selected, err)
+	}
+	if gotRoot, gotCount, err := store.SelectedAncestryCommitment(anchorID); err != nil ||
+		gotRoot != root || gotCount != count {
+		t.Fatalf("retained floor commitment=%s/%d want=%s/%d err=%v",
+			gotRoot, gotCount, root, count, err)
+	}
+	if floor, err := store.CanonicalFloor(); err != nil || !equalCanonicalTestFloor(floor, boundary) {
+		t.Fatalf("canonical floor=%+v want=%+v err=%v", floor, boundary, err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := OpenWithPolicy(path, base, parameters, policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	if floor, err := reopened.CanonicalFloor(); err != nil || !equalCanonicalTestFloor(floor, boundary) {
+		t.Fatalf("reopened floor=%+v want=%+v err=%v", floor, boundary, err)
+	}
+	if gotRoot, gotCount, err := reopened.SelectedAncestryCommitment(anchorID); err != nil ||
+		gotRoot != root || gotCount != count {
+		t.Fatalf("reopened floor commitment=%s/%d want=%s/%d err=%v",
+			gotRoot, gotCount, root, count, err)
+	}
+	tip, err := reopened.Tip()
+	if err != nil {
+		t.Fatal(err)
+	}
+	extension, _ := mineChild(t, reopened, tip.ID, tip.Timestamp+parameters.TargetSpacing, "floor-extension")
+	if _, _, err := reopened.Commit(extension, extension.Header.Seal.Timestamp); err != nil {
+		t.Fatalf("extend pruned chain: %v", err)
+	}
+	secondFloorID, _ := blocks[3].Header.ID()
+	secondFloorTip, err := reopened.TipByID(secondFloorID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondRoot, secondCount, err := reopened.SelectedAncestryCommitment(secondFloorID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondBoundary := canonicalTestFloor(
+		base.Tip.ID, secondFloorTip, secondRoot, secondCount, "second",
+	)
+	secondReport, err := reopened.PruneCanonicalPrefix(secondBoundary)
+	if err != nil || secondReport.PreviousFloorID != anchorID || secondReport.FloorID != secondFloorID ||
+		secondReport.RemovedNodes != 1 || secondReport.ArchivedHeaders != 3 {
+		t.Fatalf("second canonical prune report=%+v err=%v", secondReport, err)
+	}
+	if _, err := reopened.BlockByID(anchorID); !errors.Is(err, ErrHistoryPruned) {
+		t.Fatalf("previous floor payload error=%v", err)
+	}
+	if gotRoot, gotCount, err := reopened.SelectedAncestryCommitment(anchorID); err != nil ||
+		gotRoot != root || gotCount != count {
+		t.Fatalf("archived previous floor commitment=%s/%d want=%s/%d err=%v",
+			gotRoot, gotCount, root, count, err)
+	}
+	if gotRoot, gotCount, err := reopened.SelectedAncestryCommitment(secondFloorID); err != nil ||
+		gotRoot != secondRoot || gotCount != secondCount {
+		t.Fatalf("second floor commitment=%s/%d want=%s/%d err=%v",
+			gotRoot, gotCount, secondRoot, secondCount, err)
+	}
+	if err := reopened.Close(); err != nil {
+		t.Fatal(err)
+	}
+	secondReopen, err := OpenWithPolicy(path, base, parameters, policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer secondReopen.Close()
+	if floor, err := secondReopen.CanonicalFloor(); err != nil ||
+		!equalCanonicalTestFloor(floor, secondBoundary) {
+		t.Fatalf("second reopened floor=%+v want=%+v err=%v", floor, secondBoundary, err)
+	}
+}
+
+func TestPebbleCanonicalPrefixPruneIsDisabledByDefault(t *testing.T) {
+	parameters := testParameters()
+	base := testBase(t, parameters)
+	store, err := Open(t.TempDir(), base, parameters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	parentID := base.Tip.ID
+	var anchor storage.Tip
+	for height := uint64(1); height <= 2; height++ {
+		block, _ := mineChild(
+			t, store, parentID, base.Tip.Timestamp+height*parameters.TargetSpacing,
+			"canonical-default-disabled-"+string(rune('a')+rune(height)),
+		)
+		if _, _, err := store.Commit(block, block.Header.Seal.Timestamp); err != nil {
+			t.Fatal(err)
+		}
+		parentID, _ = block.Header.ID()
+		if height == 1 {
+			anchor, err = store.TipByID(parentID)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	root, count, err := store.SelectedAncestryCommitment(anchor.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.PruneCanonicalPrefix(
+		canonicalTestFloor(base.Tip.ID, anchor, root, count, "default-disabled"),
+	); !errors.Is(err, ErrCanonicalPrune) {
+		t.Fatalf("default policy canonical prune error=%v", err)
+	}
+	if floor, err := store.CanonicalFloor(); err != nil || floor.Pruned {
+		t.Fatalf("default-disabled canonical prune changed floor=%+v err=%v", floor, err)
+	}
+}
+
+func TestPebbleCanonicalPrefixReopenRejectsCorruptArchivedHeader(t *testing.T) {
+	parameters := testParameters()
+	base := testBase(t, parameters)
+	path := t.TempDir()
+	policy := DefaultPolicy()
+	policy.CanonicalRetention = 1
+	store, err := OpenWithPolicy(path, base, parameters, policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentID := base.Tip.ID
+	var blocks []workblock.Block
+	for height := 1; height <= 4; height++ {
+		block, _ := mineChild(
+			t, store, parentID, base.Tip.Timestamp+uint64(height)*parameters.TargetSpacing,
+			"corrupt-archived-header-"+string(rune('a'+height)),
+		)
+		if _, _, err := store.Commit(block, block.Header.Seal.Timestamp); err != nil {
+			t.Fatal(err)
+		}
+		blocks = append(blocks, block)
+		parentID, _ = block.Header.ID()
+	}
+	anchorID, _ := blocks[2].Header.ID()
+	anchor, _ := store.TipByID(anchorID)
+	root, count, _ := store.SelectedAncestryCommitment(anchorID)
+	if _, err := store.PruneCanonicalPrefix(
+		canonicalTestFloor(base.Tip.ID, anchor, root, count, "corrupt-header"),
+	); err != nil {
+		t.Fatal(err)
+	}
+	archivedID, _ := blocks[0].Header.ID()
 	if err := store.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -991,15 +1236,143 @@ func TestPebbleRejectsSchemaTwoWorkStore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := database.Set(workKeySchema, []byte{0, 2}, pebble.Sync); err != nil {
+	headerBytes := blocks[0].Header.CanonicalBytes()
+	headerBytes[len(headerBytes)-1] ^= 1
+	if err := database.Set(workArchivedHeaderKey(archivedID), headerBytes, pebble.Sync); err != nil {
 		t.Fatal(err)
 	}
 	if err := database.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Open(path, base, parameters); !errors.Is(err, storage.ErrCorrupt) {
-		t.Fatalf("old schema error=%v", err)
+	if _, err := OpenWithPolicy(path, base, parameters, policy); !errors.Is(err, storage.ErrCorrupt) {
+		t.Fatalf("corrupt archived header reopen error=%v", err)
 	}
+}
+
+func TestPebbleCanonicalPrefixPruneRejectsUnresolvedSideBranch(t *testing.T) {
+	parameters := testParameters()
+	base := testBase(t, parameters)
+	policy := DefaultPolicy()
+	policy.CanonicalRetention = 1
+	store, err := OpenWithPolicy(t.TempDir(), base, parameters, policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	selected, _ := mineChild(t, store, base.Tip.ID, base.Tip.Timestamp+60, "canonical-prune-selected")
+	side, _ := mineChild(t, store, base.Tip.ID, base.Tip.Timestamp+60, "canonical-prune-side")
+	for _, block := range []workblock.Block{selected, side} {
+		if _, _, err := store.Commit(block, block.Header.Seal.Timestamp); err != nil {
+			t.Fatal(err)
+		}
+	}
+	selectedID, _ := selected.Header.ID()
+	child, _ := mineChild(t, store, selectedID, selected.Header.Seal.Timestamp+60, "canonical-prune-child")
+	if _, _, err := store.Commit(child, child.Header.Seal.Timestamp); err != nil {
+		t.Fatal(err)
+	}
+	root, count, err := store.SelectedAncestryCommitment(selectedID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	anchor, _ := store.TipByID(selectedID)
+	boundary := canonicalTestFloor(base.Tip.ID, anchor, root, count, "unsafe-side")
+	if _, err := store.PruneCanonicalPrefix(boundary); !errors.Is(err, ErrCanonicalPrune) {
+		t.Fatalf("canonical prune with unresolved side branch error=%v", err)
+	}
+	if floor, err := store.CanonicalFloor(); err != nil || floor.Pruned {
+		t.Fatalf("unsafe canonical prune changed floor=%+v err=%v", floor, err)
+	}
+}
+
+func TestPebbleCanonicalPrefixPruneRejectsHistoryGrowthAtomically(t *testing.T) {
+	parameters := testParameters()
+	base := testBase(t, parameters)
+	path := t.TempDir()
+	policy := DefaultPolicy()
+	policy.CanonicalRetention = 1
+	store, err := OpenWithPolicy(path, base, parameters, policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	activation, _ := mineChild(
+		t, store, base.Tip.ID, base.Tip.Timestamp+parameters.TargetSpacing,
+		"canonical-limit-activation",
+	)
+	if _, _, err := store.Commit(activation, activation.Header.Seal.Timestamp); err != nil {
+		t.Fatal(err)
+	}
+	activationID, _ := activation.Header.ID()
+	child, _ := mineChild(
+		t, store, activationID, activation.Header.Seal.Timestamp+parameters.TargetSpacing,
+		"canonical-limit-child",
+	)
+	if _, _, err := store.Commit(child, child.Header.Seal.Timestamp); err != nil {
+		t.Fatal(err)
+	}
+	usage, _, err := store.HistoryUsage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	anchor, _ := store.TipByID(activationID)
+	root, count, _ := store.SelectedAncestryCommitment(activationID)
+	boundary := canonicalTestFloor(base.Tip.ID, anchor, root, count, "history-limit")
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	policy.MaxHistoryBytes = usage
+	store, err = OpenWithPolicy(path, base, parameters, policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.PruneCanonicalPrefix(boundary); !errors.Is(err, storage.ErrHistoryLimit) {
+		_ = store.Close()
+		t.Fatalf("canonical prune history limit error=%v", err)
+	}
+	if floor, err := store.CanonicalFloor(); err != nil || floor.Pruned {
+		_ = store.Close()
+		t.Fatalf("history-limited canonical prune floor=%+v err=%v", floor, err)
+	}
+	if _, err := store.BlockByID(activationID); err != nil {
+		_ = store.Close()
+		t.Fatalf("history-limited canonical prune removed activation: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if reopened, err := OpenWithPolicy(path, base, parameters, policy); err != nil {
+		t.Fatal(err)
+	} else if floor, floorErr := reopened.CanonicalFloor(); floorErr != nil || floor.Pruned {
+		_ = reopened.Close()
+		t.Fatalf("reopened history-limited floor=%+v err=%v", floor, floorErr)
+	} else if err := reopened.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func canonicalTestFloor(
+	baseID types.Hash,
+	anchor storage.Tip,
+	root types.Hash,
+	count uint64,
+	label string,
+) CanonicalFloor {
+	return CanonicalFloor{
+		Pruned: true, BaseID: baseID, Anchor: anchor,
+		AncestryNodes: count, AncestryRoot: root,
+		StatementID:    types.DomainHash("test/workchain/canonical-floor/statement/" + label),
+		ManifestID:     types.DomainHash("test/workchain/canonical-floor/manifest/" + label),
+		AvailabilityID: types.DomainHash("test/workchain/canonical-floor/availability/" + label),
+		VerifiedAt:     100, RetainUntil: 1_000,
+	}
+}
+
+func equalCanonicalTestFloor(left, right CanonicalFloor) bool {
+	return left.Pruned == right.Pruned && left.BaseID == right.BaseID &&
+		storage.EqualTips(left.Anchor, right.Anchor) && left.AncestryNodes == right.AncestryNodes &&
+		left.AncestryRoot == right.AncestryRoot && left.StatementID == right.StatementID &&
+		left.ManifestID == right.ManifestID && left.AvailabilityID == right.AvailabilityID &&
+		left.VerifiedAt == right.VerifiedAt && left.RetainUntil == right.RetainUntil
 }
 
 func mineChild(

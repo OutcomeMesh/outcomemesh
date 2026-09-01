@@ -487,5 +487,5 @@ bounds, and trustless full-history bootstrap are reproducibly tested. A public
 network still requires an independently maintained production ASN-data source,
 a validity-backed fast snapshot activation path, physical disk-reserve/pruning
 policy, and longer randomized process soak/resource-fault runs. Per-block
-fork-state amplification is limited by schema-3 resource deltas rather than
+fork-state amplification is limited by schema-4 resource deltas rather than
 full state copies, and immutable logical history has a fail-closed local budget.

@@ -17,14 +17,16 @@ import (
 )
 
 const (
-	workSchemaVersion      uint16 = 3
-	maxNodeMetadataBytes          = 64 << 10
-	maxPersistedStateBytes        = 256 << 20
-	maxStateDeltaBytes            = 256 << 20
-	DefaultMaxHistoryBytes uint64 = 64 << 30
-	DefaultForkRetention   uint64 = 4_096
-	DefaultCheckpointEvery uint64 = 2_048
-	DefaultCheckpointKeep  uint32 = 4
+	workSchemaVersion         uint16 = 4
+	maxNodeMetadataBytes             = 64 << 10
+	maxPersistedStateBytes           = 256 << 20
+	maxStateDeltaBytes               = 256 << 20
+	maxCanonicalFloorBytes           = 512
+	DefaultMaxHistoryBytes    uint64 = 64 << 30
+	DefaultForkRetention      uint64 = 4_096
+	DefaultCheckpointEvery    uint64 = 2_048
+	DefaultCheckpointKeep     uint32 = 4
+	DefaultCanonicalRetention uint64 = 0
 )
 
 var (
@@ -32,13 +34,15 @@ var (
 	workKeyConfig  = []byte{0x01, 0x02}
 	workKeyTip     = []byte{0x01, 0x03}
 	workKeyHistory = []byte{0x01, 0x04}
+	workKeyFloor   = []byte{0x01, 0x05}
 )
 
 const (
-	workNodePrefix  byte = 0x10
-	workBlockPrefix byte = 0x11
-	workStatePrefix byte = 0x12
-	workDeltaPrefix byte = 0x13
+	workNodePrefix           byte = 0x10
+	workBlockPrefix          byte = 0x11
+	workStatePrefix          byte = 0x12
+	workDeltaPrefix          byte = 0x13
+	workArchivedHeaderPrefix byte = 0x14
 )
 
 type Policy struct {
@@ -54,15 +58,20 @@ type Policy struct {
 	// CheckpointKeep bounds non-base full-state replay checkpoints. Zero disables
 	// checkpoint creation. The activation-base checkpoint is not counted.
 	CheckpointKeep uint32
+	// CanonicalRetention is the minimum selected-tip distance above an
+	// independently authorized archive anchor before it may become the retained
+	// floor. Zero disables canonical-prefix pruning.
+	CanonicalRetention uint64
 }
 
 // DefaultPolicy returns bounded history, side-fork retention, and replay
-// checkpoint defaults. Maintenance remains explicit and never removes
-// canonical history.
+// checkpoint defaults. Destructive canonical-prefix pruning remains disabled
+// until an operator explicitly selects a non-zero CanonicalRetention.
 func DefaultPolicy() Policy {
 	return Policy{
 		MaxHistoryBytes: DefaultMaxHistoryBytes, ForkRetention: DefaultForkRetention,
 		CheckpointEvery: DefaultCheckpointEvery, CheckpointKeep: DefaultCheckpointKeep,
+		CanonicalRetention: DefaultCanonicalRetention,
 	}
 }
 
@@ -294,6 +303,133 @@ func (persistence *workPersistence) pruneNodes(nodes map[types.Hash]*chainNode, 
 	return released, nil
 }
 
+func (persistence *workPersistence) pruneCanonicalPrefix(
+	nodes map[types.Hash]*chainNode,
+	remove []types.Hash,
+	anchor *chainNode,
+	boundary CanonicalFloor,
+) (uint64, uint64, error) {
+	if len(remove) == 0 || anchor == nil || anchor.block == nil || anchor.state == nil {
+		return 0, 0, ErrCanonicalPrune
+	}
+	floorBytes, err := encodeCanonicalFloor(boundary)
+	if err != nil {
+		return 0, 0, err
+	}
+	stateBytes, err := encodePersistedState(anchor.state)
+	if err != nil {
+		return 0, 0, err
+	}
+	batch := persistence.db.NewBatch()
+	defer batch.Close()
+	var released uint64
+	var added uint64
+	for _, id := range remove {
+		node := nodes[id]
+		if node == nil {
+			return 0, 0, storage.ErrCorrupt
+		}
+		keys := [][]byte{workNodeKey(id)}
+		if node.block == nil {
+			if id != boundary.BaseID {
+				return 0, 0, storage.ErrCorrupt
+			}
+			keys = append(keys, workStateKey(id))
+		} else {
+			recoveryKey := workDeltaKey(id)
+			if _, checkpoint := persistence.checkpoints[id]; checkpoint {
+				recoveryKey = workStateKey(id)
+			}
+			keys = append(keys, workBlockKey(id), recoveryKey)
+			headerKey := workArchivedHeaderKey(id)
+			headerBytes := node.block.Header.CanonicalBytes()
+			if err := batch.Set(headerKey, headerBytes, nil); err != nil {
+				return 0, 0, err
+			}
+			added, err = checkedHistoryBytes(added, uint64(len(headerKey)+len(headerBytes)))
+			if err != nil {
+				return 0, 0, err
+			}
+		}
+		for _, key := range keys {
+			value, readErr := persistence.get(key)
+			if readErr != nil {
+				return 0, 0, storage.ErrCorrupt
+			}
+			released, err = checkedHistoryBytes(released, uint64(len(key)+len(value)))
+			if err != nil {
+				return 0, 0, err
+			}
+			if err := batch.Delete(key, nil); err != nil {
+				return 0, 0, err
+			}
+		}
+	}
+	if _, checkpoint := persistence.checkpoints[anchor.tip.ID]; !checkpoint {
+		deltaKey := workDeltaKey(anchor.tip.ID)
+		oldDelta, readErr := persistence.get(deltaKey)
+		if readErr != nil {
+			return 0, 0, storage.ErrCorrupt
+		}
+		if err := batch.Delete(deltaKey, nil); err != nil {
+			return 0, 0, err
+		}
+		released, err = checkedHistoryBytes(released, uint64(len(deltaKey)+len(oldDelta)))
+		if err != nil {
+			return 0, 0, err
+		}
+		stateKey := workStateKey(anchor.tip.ID)
+		if err := batch.Set(stateKey, stateBytes, nil); err != nil {
+			return 0, 0, err
+		}
+		added, err = checkedHistoryBytes(added, uint64(len(stateKey)+len(stateBytes)))
+		if err != nil {
+			return 0, 0, err
+		}
+	}
+	if current, readErr := persistence.get(workKeyFloor); readErr == nil {
+		released, err = checkedHistoryBytes(released, uint64(len(workKeyFloor)+len(current)))
+		if err != nil {
+			return 0, 0, err
+		}
+	} else if !errors.Is(readErr, pebble.ErrNotFound) {
+		return 0, 0, readErr
+	}
+	if err := batch.Set(workKeyFloor, floorBytes, nil); err != nil {
+		return 0, 0, err
+	}
+	added, err = checkedHistoryBytes(added, uint64(len(workKeyFloor)+len(floorBytes)))
+	if err != nil || released > persistence.historyBytes {
+		return 0, 0, storage.ErrCorrupt
+	}
+	nextHistory, err := checkedHistoryBytes(persistence.historyBytes-released, added)
+	if err != nil || nextHistory > persistence.policy.MaxHistoryBytes {
+		return 0, 0, storage.ErrHistoryLimit
+	}
+	var history [8]byte
+	binary.BigEndian.PutUint64(history[:], nextHistory)
+	if err := batch.Set(workKeyHistory, history[:], nil); err != nil {
+		return 0, 0, err
+	}
+	if persistence.commitHook != nil {
+		if err := persistence.commitHook(); err != nil {
+			return 0, 0, err
+		}
+	}
+	if err := batch.Commit(pebble.Sync); err != nil {
+		return 0, 0, err
+	}
+	persistence.historyBytes = nextHistory
+	for _, id := range remove {
+		delete(persistence.checkpoints, id)
+	}
+	persistence.checkpoints[anchor.tip.ID] = struct{}{}
+	if persistence.afterCommitHook != nil {
+		persistence.afterCommitHook()
+	}
+	return added, released, nil
+}
+
 func (persistence *workPersistence) rotateCheckpoint(
 	nodes map[types.Hash]*chainNode,
 	tipID types.Hash,
@@ -438,6 +574,16 @@ func (persistence *workPersistence) rotateCheckpoint(
 }
 
 func (persistence *workPersistence) load(store *Store, base Base) error {
+	floorBytes, floorErr := persistence.get(workKeyFloor)
+	if floorErr == nil {
+		floor, err := decodeCanonicalFloor(floorBytes)
+		if err != nil || floor.BaseID != store.baseID {
+			return storage.ErrCorrupt
+		}
+		store.floor = floor
+	} else if !errors.Is(floorErr, pebble.ErrNotFound) {
+		return floorErr
+	}
 	nodes := make(map[types.Hash]*chainNode)
 	iterator, err := persistence.db.NewIter(&pebble.IterOptions{
 		LowerBound: []byte{workNodePrefix}, UpperBound: []byte{workNodePrefix + 1},
@@ -458,7 +604,7 @@ func (persistence *workPersistence) load(store *Store, base Base) error {
 		if err != nil || node.tip.ID != id {
 			return storage.ErrCorrupt
 		}
-		if id != store.baseID {
+		if id != store.baseID || store.floor.Pruned {
 			blockBytes, err := persistence.get(workBlockKey(id))
 			if err != nil {
 				return err
@@ -487,32 +633,72 @@ func (persistence *workPersistence) load(store *Store, base Base) error {
 	if err := iterator.Error(); err != nil {
 		return err
 	}
-	baseNode, exists := nodes[store.baseID]
-	if !exists || baseNode.block != nil || baseNode.result.FeeQueue != nil ||
-		!storage.EqualTips(baseNode.tip, base.Tip) || !equalTimestamps(baseNode.history, store.nodes[store.baseID].history) {
-		return storage.ErrCorrupt
-	}
-	historyBytes, checkpoints, err := persistence.historyUsage(nodes, store.baseID)
+	historyBytes, checkpoints, archivedHeaders, err := persistence.historyUsage(
+		nodes, store.baseID, store.floor,
+	)
 	if err != nil {
 		return err
 	}
 	if historyBytes > persistence.policy.MaxHistoryBytes {
 		return storage.ErrHistoryLimit
 	}
-	if _, exists := checkpoints[store.baseID]; !exists {
+	store.nodes = nodes
+	store.archivedHeaders = archivedHeaders
+	if err := store.rebuildArchivedIndexLocked(); err != nil {
+		return err
+	}
+	floorID := store.floor.Anchor.ID
+	floorNode, floorExists := nodes[floorID]
+	if !store.floor.Pruned {
+		baseNode := floorNode
+		if !floorExists || floorID != store.baseID || baseNode.block != nil ||
+			baseNode.result.FeeQueue != nil || !storage.EqualTips(baseNode.tip, base.Tip) ||
+			!equalTimestamps(baseNode.history, store.baseHistory) || len(archivedHeaders) != 0 {
+			return storage.ErrCorrupt
+		}
+	} else {
+		if !floorExists || floorID == store.baseID || floorNode.block == nil ||
+			floorNode.result.FeeQueue == nil || !storage.EqualTips(floorNode.tip, store.floor.Anchor) ||
+			store.floor.Anchor.Height < store.parameters.ActivationHeight ||
+			uint64(len(archivedHeaders)) != store.floor.Anchor.Height-store.parameters.ActivationHeight {
+			return storage.ErrCorrupt
+		}
+		if _, baseExists := nodes[store.baseID]; baseExists {
+			return storage.ErrCorrupt
+		}
+		parent := cloneTip(store.baseTip)
+		if len(archivedHeaders) > 0 {
+			lastID, idErr := archivedHeaders[len(archivedHeaders)-1].ID()
+			if idErr != nil {
+				return storage.ErrCorrupt
+			}
+			parent = cloneTip(store.archivedTips[lastID])
+		}
+		expectedFloor, expectedHistory, tipErr := store.archivedHeaderTip(
+			parent, store.archivedHistory, floorNode.block.Header,
+		)
+		if tipErr != nil || !storage.EqualTips(expectedFloor, floorNode.tip) ||
+			floorNode.position.ParentTimestamp != parent.Timestamp ||
+			floorNode.position.MedianTimePast != median(store.archivedHistory) ||
+			!equalTimestamps(expectedHistory, floorNode.history) {
+			return storage.ErrCorrupt
+		}
+	}
+	if _, exists := checkpoints[floorID]; !exists {
 		return storage.ErrCorrupt
 	}
-	baseStateBytes, err := persistence.get(workStateKey(store.baseID))
+	floorStateBytes, err := persistence.get(workStateKey(floorID))
 	if err != nil {
 		return storage.ErrCorrupt
 	}
-	baseNode.state, err = decodePersistedState(baseStateBytes)
-	if err != nil || baseNode.state.Root() != baseNode.tip.StateRoot {
+	floorNode.state, err = decodePersistedState(floorStateBytes)
+	if err != nil || floorNode.state.Root() != floorNode.tip.StateRoot {
 		return storage.ErrCorrupt
 	}
+	floorNode.result.State = floorNode.state
 	order := make([]*chainNode, 0, len(nodes))
 	for id, node := range nodes {
-		if id != store.baseID {
+		if id != floorID {
 			order = append(order, node)
 		}
 	}
@@ -588,8 +774,13 @@ func (persistence *workPersistence) load(store *Store, base Base) error {
 	}
 	persistence.historyBytes = historyBytes
 	persistence.checkpoints = checkpoints
-	store.nodes = nodes
 	store.tipID = tipID
+	if store.floor.Pruned {
+		root, count, commitmentErr := store.selectedAncestryCommitmentLocked(floorID)
+		if commitmentErr != nil || root != store.floor.AncestryRoot || count != store.floor.AncestryNodes {
+			return storage.ErrCorrupt
+		}
+	}
 	return nil
 }
 
@@ -883,12 +1074,87 @@ func workNodeKey(id types.Hash) []byte  { return workIDKey(workNodePrefix, id) }
 func workBlockKey(id types.Hash) []byte { return workIDKey(workBlockPrefix, id) }
 func workStateKey(id types.Hash) []byte { return workIDKey(workStatePrefix, id) }
 func workDeltaKey(id types.Hash) []byte { return workIDKey(workDeltaPrefix, id) }
+func workArchivedHeaderKey(id types.Hash) []byte {
+	return workIDKey(workArchivedHeaderPrefix, id)
+}
 
 func workIDKey(prefix byte, id types.Hash) []byte {
 	result := make([]byte, 1+types.HashSize)
 	result[0] = prefix
 	copy(result[1:], id[:])
 	return result
+}
+
+func encodeCanonicalFloor(floor CanonicalFloor) ([]byte, error) {
+	if floor.validate() != nil {
+		return nil, ErrCanonicalPrune
+	}
+	encoder := codec.NewEncoder(maxCanonicalFloorBytes)
+	encoder.U16(0)
+	encoder.Fixed(floor.BaseID[:])
+	encoder.BytesField(floor.Anchor.CanonicalBytes())
+	encoder.U64(floor.AncestryNodes)
+	encoder.Fixed(floor.AncestryRoot[:])
+	encoder.Fixed(floor.StatementID[:])
+	encoder.Fixed(floor.ManifestID[:])
+	encoder.Fixed(floor.AvailabilityID[:])
+	encoder.U64(floor.VerifiedAt)
+	encoder.U64(floor.RetainUntil)
+	if encoder.Len() > maxCanonicalFloorBytes {
+		return nil, storage.ErrCorrupt
+	}
+	return encoder.Bytes(), nil
+}
+
+func decodeCanonicalFloor(input []byte) (CanonicalFloor, error) {
+	if len(input) == 0 || len(input) > maxCanonicalFloorBytes {
+		return CanonicalFloor{}, storage.ErrCorrupt
+	}
+	decoder := codec.NewDecoder(input)
+	version, err := decoder.U16()
+	if err != nil || version != 0 {
+		return CanonicalFloor{}, storage.ErrCorrupt
+	}
+	result := CanonicalFloor{Pruned: true}
+	for _, destination := range []*types.Hash{
+		&result.BaseID,
+	} {
+		value, decodeErr := decoder.Fixed(types.HashSize)
+		if decodeErr != nil {
+			return CanonicalFloor{}, decodeErr
+		}
+		copy(destination[:], value)
+	}
+	tipBytes, err := decoder.BytesField(256)
+	if err != nil {
+		return CanonicalFloor{}, err
+	}
+	result.Anchor, err = storage.DecodeTip(tipBytes)
+	if err != nil {
+		return CanonicalFloor{}, err
+	}
+	if result.AncestryNodes, err = decoder.U64(); err != nil {
+		return CanonicalFloor{}, err
+	}
+	for _, destination := range []*types.Hash{
+		&result.AncestryRoot, &result.StatementID, &result.ManifestID, &result.AvailabilityID,
+	} {
+		value, decodeErr := decoder.Fixed(types.HashSize)
+		if decodeErr != nil {
+			return CanonicalFloor{}, decodeErr
+		}
+		copy(destination[:], value)
+	}
+	if result.VerifiedAt, err = decoder.U64(); err != nil {
+		return CanonicalFloor{}, err
+	}
+	if result.RetainUntil, err = decoder.U64(); err != nil {
+		return CanonicalFloor{}, err
+	}
+	if err := decoder.Finish(); err != nil || result.validate() != nil {
+		return CanonicalFloor{}, storage.ErrCorrupt
+	}
+	return result, nil
 }
 
 func (persistence *workPersistence) get(key []byte) ([]byte, error) {
@@ -903,12 +1169,13 @@ func (persistence *workPersistence) get(key []byte) ([]byte, error) {
 func (persistence *workPersistence) historyUsage(
 	nodes map[types.Hash]*chainNode,
 	baseID types.Hash,
-) (uint64, map[types.Hash]struct{}, error) {
+	floor CanonicalFloor,
+) (uint64, map[types.Hash]struct{}, []workblock.Header, error) {
 	iterator, err := persistence.db.NewIter(&pebble.IterOptions{
-		LowerBound: []byte{workNodePrefix}, UpperBound: []byte{workDeltaPrefix + 1},
+		LowerBound: []byte{workNodePrefix}, UpperBound: []byte{workArchivedHeaderPrefix + 1},
 	})
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, nil, err
 	}
 	defer iterator.Close()
 	var total uint64
@@ -916,54 +1183,100 @@ func (persistence *workPersistence) historyUsage(
 	seenBlocks := make(map[types.Hash]struct{}, len(nodes))
 	checkpoints := make(map[types.Hash]struct{})
 	deltas := make(map[types.Hash]struct{}, len(nodes))
+	archived := make(map[types.Hash]workblock.Header)
 	for valid := iterator.First(); valid; valid = iterator.Next() {
 		key := iterator.Key()
 		if len(key) != 1+types.HashSize {
-			return 0, nil, storage.ErrCorrupt
+			return 0, nil, nil, storage.ErrCorrupt
 		}
 		var id types.Hash
 		copy(id[:], key[1:])
 		node, exists := nodes[id]
-		if !exists {
-			return 0, nil, storage.ErrCorrupt
-		}
 		switch key[0] {
 		case workNodePrefix:
+			if !exists {
+				return 0, nil, nil, storage.ErrCorrupt
+			}
 			seenNodes[id] = struct{}{}
 		case workStatePrefix:
+			if !exists {
+				return 0, nil, nil, storage.ErrCorrupt
+			}
 			checkpoints[id] = struct{}{}
 		case workBlockPrefix:
-			if id == baseID || node.block == nil {
-				return 0, nil, storage.ErrCorrupt
+			if !exists || (id == baseID && !floor.Pruned) || node.block == nil {
+				return 0, nil, nil, storage.ErrCorrupt
 			}
 			seenBlocks[id] = struct{}{}
 		case workDeltaPrefix:
-			if id == baseID || node.block == nil {
-				return 0, nil, storage.ErrCorrupt
+			if !exists || id == floor.Anchor.ID || node.block == nil {
+				return 0, nil, nil, storage.ErrCorrupt
 			}
 			deltas[id] = struct{}{}
+		case workArchivedHeaderPrefix:
+			if exists || !floor.Pruned {
+				return 0, nil, nil, storage.ErrCorrupt
+			}
+			header, decodeErr := workblock.DecodeHeader(iterator.Value())
+			if decodeErr != nil {
+				return 0, nil, nil, storage.ErrCorrupt
+			}
+			headerID, idErr := header.ID()
+			if idErr != nil || headerID != id {
+				return 0, nil, nil, storage.ErrCorrupt
+			}
+			archived[id] = header
 		default:
-			return 0, nil, storage.ErrCorrupt
+			return 0, nil, nil, storage.ErrCorrupt
 		}
 		total, err = checkedHistoryBytes(total, uint64(len(key)+len(iterator.Value())))
 		if err != nil {
-			return 0, nil, err
+			return 0, nil, nil, err
 		}
 	}
 	if err := iterator.Error(); err != nil {
-		return 0, nil, err
+		return 0, nil, nil, err
+	}
+	if floor.Pruned {
+		encodedFloor, readErr := persistence.get(workKeyFloor)
+		if readErr != nil {
+			return 0, nil, nil, storage.ErrCorrupt
+		}
+		total, err = checkedHistoryBytes(total, uint64(len(workKeyFloor)+len(encodedFloor)))
+		if err != nil {
+			return 0, nil, nil, err
+		}
 	}
 	for id, node := range nodes {
 		_, hasNode := seenNodes[id]
 		_, hasBlock := seenBlocks[id]
 		_, hasCheckpoint := checkpoints[id]
 		_, hasDelta := deltas[id]
-		if !hasNode || (id == baseID && (!hasCheckpoint || hasBlock || hasDelta)) ||
-			(id != baseID && (node.block == nil || !hasBlock || hasCheckpoint == hasDelta)) {
-			return 0, nil, storage.ErrCorrupt
+		if !hasNode {
+			return 0, nil, nil, storage.ErrCorrupt
+		}
+		if id == floor.Anchor.ID {
+			if !hasCheckpoint || hasDelta || (floor.Pruned && (!hasBlock || node.block == nil)) ||
+				(!floor.Pruned && (hasBlock || node.block != nil)) {
+				return 0, nil, nil, storage.ErrCorrupt
+			}
+		} else if node.block == nil || !hasBlock || hasCheckpoint == hasDelta {
+			return 0, nil, nil, storage.ErrCorrupt
 		}
 	}
-	return total, checkpoints, nil
+	headers := make([]workblock.Header, 0, len(archived))
+	for _, header := range archived {
+		headers = append(headers, header)
+	}
+	sort.Slice(headers, func(left, right int) bool {
+		if headers[left].Seal.Height != headers[right].Seal.Height {
+			return headers[left].Seal.Height < headers[right].Seal.Height
+		}
+		leftID, _ := headers[left].ID()
+		rightID, _ := headers[right].ID()
+		return types.CompareHash(leftID, rightID) < 0
+	})
+	return total, checkpoints, headers, nil
 }
 
 func checkedHistoryBytes(values ...uint64) (uint64, error) {

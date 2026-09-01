@@ -298,14 +298,16 @@ the same synchronous batch. Immutable node/block/recovery key/value bytes are
 counted against a persisted atomic logical history counter with a 64-GiB default
 local limit.
 
-Process-level crash injection covers both sides of all three synchronous batch
-classes: node commit, replay-checkpoint rotation, and stale-fork pruning. Each
-case is compared against independently built exact old/new fixtures using tip,
+Process-level crash injection covers both sides of all four synchronous batch
+classes: node commit, replay-checkpoint rotation, stale-fork pruning, and the
+canonical retained-floor transition. Each case is compared against independently
+built exact old/new fixtures using tip,
 state root, cumulative work, logical history, node IDs, and checkpoint IDs.
 Every recovered database must also accept a new valid child. This proves batch
 atomicity at those hooks; it does not model torn hardware writes outside
 Pebble/filesystem durability guarantees or physical disk exhaustion.
-Exhaustion rejects before batch commit while reads and reopen remain available.
+Logical-history exhaustion rejects before batch commit while reads and reopen
+remain available.
 Every restart reapplies deltas parent-first and verifies state roots, ancestry,
 fee-queue roots, cumulative hard work, selected tip, and the recomputed byte
 counter. WAL/LSM amplification and filesystem free space remain separate
@@ -314,8 +316,7 @@ batch boundary and recovers only the old or new chain. Explicit maintenance can
 atomically delete a complete stale side-fork subtree only after every canonical
 node and every branch reaching the local retention window have been marked.
 The default fork window is 4,096 heights and zero disables this local operation.
-Canonical history remains intact: an independently history-anchored archival
-checkpoint format now exists, but pruning is still disabled. A version-0
+Canonical history pruning is implemented but disabled by default. A version-0
 statement binds network/genesis/activation/tree-base identity, one exact
 selected tip, its ordered ancestry commitment and length back to the immutable
 base, a predecessor statement ID, and an archive-manifest ID. Between two and
@@ -342,11 +343,35 @@ an operator cleanup concern.
 An export recheck is only a point-in-time observation and does not freeze fork
 choice; operators must run `VerifyChain` immediately before attesting.
 
-Content validity and restorable replay still do not authorize deletion. There
-is no archive replication/retention proof, availability market, canonical-
-prefix transition, or rollback procedure after local deletion. Canonical
-pruning remains blocked until that atomic transition has post-prune recovery,
-real process-crash, disk-exhaustion, and longer filesystem-soak evidence.
+Deletion requires a separate replica policy with 2–64 sorted trusted Ed25519
+keys, a quorum of at least two, bounded receipt age, and minimum remaining
+retention. Each signed receipt binds the statement, manifest, anchor, replica
+location commitment, replay time, and expiry. Receipt creation performs a full
+archive replay; authorization repeats full replay for every distinct
+non-symlink directory, rejects duplicate paths/inodes/keys/location IDs, and fsyncs the
+canonical availability bundle before pruning. Its symlink-resolved destination
+must be outside every replica tree, so publication cannot mutate a copy that
+just passed replay. This is point-in-time trusted
+custody, not proof that operators, devices, or failure domains are independent
+or that bytes will remain online.
+
+With an explicitly non-zero local canonical-retention policy, one synchronous
+schema-4 batch may replace the strict prefix before the selected archive anchor
+with validated headers, turn the anchor into a full-state retained floor,
+persist the exact statement/manifest/availability IDs, and update the checked
+history counter. It refuses a shallow anchor or any live side branch that does
+not descend from the new floor. Reopen derives IDs, parent order, ASERT target,
+timestamp history, cumulative work, ancestry commitment, and floor state before
+accepting later deltas. Pre/post-batch process kills recover exactly the old or
+new extendable database; injected pre-sync failure is atomic.
+
+This operation creates a local finalization horizon: a future heavier fork
+diverging below the floor is unavailable and rejected, even though the archive
+signatures create no network consensus finality. A pruned node cannot build a
+new complete version-0 archive without restoring or recomposing prior replica
+payloads. Network custody challenges, incremental archive composition,
+physical disk-exhaustion tests, long filesystem soaks, renewal/expiry operations,
+and an operator CLI remain activation blockers.
 
 The activation boundary is not a locally finalized block. The isolated router
 can create a separate v1 tree for every known v0 node at height `H-1` and uses

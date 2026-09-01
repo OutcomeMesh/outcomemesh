@@ -34,6 +34,8 @@ func TestPebbleProcessCrashAtomicity(t *testing.T) {
 		{operation: "checkpoint", boundary: "after"},
 		{operation: "prune", boundary: "before"},
 		{operation: "prune", boundary: "after"},
+		{operation: "canonical", boundary: "before"},
+		{operation: "canonical", boundary: "after"},
 	} {
 		name := fixture.operation + "-" + fixture.boundary
 		t.Run(name, func(t *testing.T) {
@@ -144,6 +146,9 @@ type processCrashSummary struct {
 	History     uint64
 	Nodes       []types.Hash
 	Checkpoints []types.Hash
+	FloorID     types.Hash
+	FloorPruned bool
+	Archived    []types.Hash
 }
 
 func crashPolicy(operation string) Policy {
@@ -155,6 +160,9 @@ func crashPolicy(operation string) Policy {
 		policy.CheckpointKeep = 2
 	case "prune":
 		policy.ForkRetention = 1
+	case "canonical":
+		policy.ForkRetention = 1
+		policy.CanonicalRetention = 1
 	default:
 		return Policy{}
 	}
@@ -176,10 +184,14 @@ func prepareCrashStore(
 	}
 	switch operation {
 	case "commit":
-	case "checkpoint":
+	case "checkpoint", "canonical":
 		parentID := base.Tip.ID
 		timestamp := base.Tip.Timestamp
-		for height := 1; height <= 2; height++ {
+		blocks := 2
+		if operation == "canonical" {
+			blocks = 5
+		}
+		for height := 1; height <= blocks; height++ {
 			timestamp += parameters.TargetSpacing
 			block, _ := mineChild(t, store, parentID, timestamp, "process-checkpoint-"+string(rune('0'+height)))
 			if _, _, err := store.Commit(block, block.Header.Seal.Timestamp); err != nil {
@@ -235,6 +247,31 @@ func runCrashOperation(t testing.TB, store *Store, operation string, parameters 
 		if report, err := store.PruneStaleForks(); err != nil || report.RemovedNodes == 0 {
 			t.Fatalf("prune operation report=%+v err=%v", report, err)
 		}
+	case "canonical":
+		tip, err := store.Tip()
+		if err != nil {
+			t.Fatal(err)
+		}
+		anchorID := tip.ID
+		for steps := 0; steps < 2; steps++ {
+			node := store.nodes[anchorID]
+			if node == nil || node.block == nil {
+				t.Fatal("canonical crash fixture lost anchor ancestry")
+			}
+			anchorID = node.block.Header.Seal.AnchorParent
+		}
+		anchor, err := store.TipByID(anchorID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		root, count, err := store.SelectedAncestryCommitment(anchorID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		boundary := canonicalTestFloor(store.baseID, anchor, root, count, "process-crash")
+		if report, err := store.PruneCanonicalPrefix(boundary); err != nil || report.RemovedNodes == 0 {
+			t.Fatalf("canonical prune operation report=%+v err=%v", report, err)
+		}
 	default:
 		t.Fatalf("unknown crash operation %q", operation)
 	}
@@ -284,10 +321,22 @@ func crashStoreSummary(t testing.TB, store *Store) processCrashSummary {
 	sort.Slice(checkpoints, func(left, right int) bool {
 		return types.CompareHash(checkpoints[left], checkpoints[right]) < 0
 	})
+	floor, err := store.CanonicalFloor()
+	if err != nil {
+		t.Fatal(err)
+	}
+	archived := make([]types.Hash, len(store.archivedHeaders))
+	for index, header := range store.archivedHeaders {
+		archived[index], err = header.ID()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
 	return processCrashSummary{
 		TipID: tip.ID, StateRoot: state.Root(), Height: tip.Height, Timestamp: tip.Timestamp,
 		Work: append([]byte(nil), tip.CumulativeWork...), History: history,
 		Nodes: append([]types.Hash(nil), nodes...), Checkpoints: checkpoints,
+		FloorID: floor.Anchor.ID, FloorPruned: floor.Pruned, Archived: archived,
 	}
 }
 
@@ -295,7 +344,8 @@ func equalCrashSummary(left, right processCrashSummary) bool {
 	return left.TipID == right.TipID && left.StateRoot == right.StateRoot &&
 		left.Height == right.Height && left.Timestamp == right.Timestamp && left.History == right.History &&
 		bytes.Equal(left.Work, right.Work) && hashSlicesEqual(left.Nodes, right.Nodes) &&
-		hashSlicesEqual(left.Checkpoints, right.Checkpoints)
+		hashSlicesEqual(left.Checkpoints, right.Checkpoints) && left.FloorID == right.FloorID &&
+		left.FloorPruned == right.FloorPruned && hashSlicesEqual(left.Archived, right.Archived)
 }
 
 func hashSlicesEqual(left, right []types.Hash) bool {

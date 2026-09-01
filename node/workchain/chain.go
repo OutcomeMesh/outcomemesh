@@ -18,10 +18,12 @@ import (
 )
 
 var (
-	ErrConfiguration = errors.New("invalid WorkGraph chain configuration")
-	ErrParent        = errors.New("unknown WorkGraph chain parent")
-	ErrPosition      = errors.New("invalid WorkGraph chain position")
-	ErrDuplicate     = errors.New("duplicate WorkGraph chain block")
+	ErrConfiguration  = errors.New("invalid WorkGraph chain configuration")
+	ErrParent         = errors.New("unknown WorkGraph chain parent")
+	ErrPosition       = errors.New("invalid WorkGraph chain position")
+	ErrDuplicate      = errors.New("duplicate WorkGraph chain block")
+	ErrHistoryPruned  = errors.New("WorkGraph block payload was archived and pruned")
+	ErrCanonicalPrune = errors.New("unsafe WorkGraph canonical-prefix prune")
 )
 
 const (
@@ -66,6 +68,34 @@ type CheckpointReport struct {
 	ReleasedHistoryBytes uint64
 }
 
+// CanonicalFloor is the durable recovery boundary left after an independently
+// authorized canonical-prefix prune. The immutable activation BaseID remains
+// the tree identity; Anchor is the oldest locally executable block.
+type CanonicalFloor struct {
+	Pruned         bool
+	BaseID         types.Hash
+	Anchor         storage.Tip
+	AncestryNodes  uint64
+	AncestryRoot   types.Hash
+	StatementID    types.Hash
+	ManifestID     types.Hash
+	AvailabilityID types.Hash
+	VerifiedAt     uint64
+	RetainUntil    uint64
+}
+
+// CanonicalPruneReport describes one atomic replacement of full canonical
+// history with verified headers plus a full-state retained floor.
+type CanonicalPruneReport struct {
+	PreviousFloorID      types.Hash
+	FloorID              types.Hash
+	RemovedNodes         uint64
+	RetainedNodes        uint64
+	ArchivedHeaders      uint64
+	AddedHistoryBytes    uint64
+	ReleasedHistoryBytes uint64
+}
+
 type chainNode struct {
 	tip      storage.Tip
 	state    *state.Memory
@@ -76,13 +106,20 @@ type chainNode struct {
 }
 
 type Store struct {
-	mu          sync.RWMutex
-	parameters  workblock.Parameters
-	baseID      types.Hash
-	tipID       types.Hash
-	nodes       map[types.Hash]*chainNode
-	persistence *workPersistence
-	closed      bool
+	mu              sync.RWMutex
+	parameters      workblock.Parameters
+	baseID          types.Hash
+	baseTip         storage.Tip
+	baseHistory     []uint64
+	floor           CanonicalFloor
+	tipID           types.Hash
+	nodes           map[types.Hash]*chainNode
+	archivedHeaders []workblock.Header
+	archivedTips    map[types.Hash]storage.Tip
+	archivedIndex   map[types.Hash]int
+	archivedHistory []uint64
+	persistence     *workPersistence
+	closed          bool
 }
 
 func New(base Base, parameters workblock.Parameters) (*Store, error) {
@@ -115,8 +152,11 @@ func New(base Base, parameters workblock.Parameters) (*Store, error) {
 	baseTip := cloneTip(base.Tip)
 	node := &chainNode{tip: baseTip, state: stateCopy, history: history}
 	return &Store{
-		parameters: parameters, baseID: baseTip.ID, tipID: baseTip.ID,
-		nodes: map[types.Hash]*chainNode{baseTip.ID: node},
+		parameters: parameters, baseID: baseTip.ID, baseTip: cloneTip(baseTip),
+		baseHistory: append([]uint64(nil), history...), tipID: baseTip.ID,
+		floor:        CanonicalFloor{BaseID: baseTip.ID, Anchor: cloneTip(baseTip), AncestryNodes: 1},
+		nodes:        map[types.Hash]*chainNode{baseTip.ID: node},
+		archivedTips: make(map[types.Hash]storage.Tip), archivedIndex: make(map[types.Hash]int),
 	}, nil
 }
 
@@ -147,9 +187,9 @@ func (store *Store) BaseID() (types.Hash, error) {
 	return store.baseID, nil
 }
 
-// NodeIDs returns a sorted detached inventory including the activation base.
-// Reopening coordinators use it to rebuild their block-to-tree index only
-// after the store has verified every persisted node and state transition.
+// NodeIDs returns the sorted locally executable inventory. Before canonical
+// pruning it includes the activation base; afterwards it starts at the retained
+// floor. Archived headers cannot be used as new block parents.
 func (store *Store) NodeIDs() ([]types.Hash, error) {
 	if store == nil {
 		return nil, ErrConfiguration
@@ -180,11 +220,30 @@ func (store *Store) TipByID(id types.Hash) (storage.Tip, error) {
 	if store.closed {
 		return storage.Tip{}, storage.ErrClosed
 	}
-	node, exists := store.nodes[id]
-	if !exists {
-		return storage.Tip{}, storage.ErrNodeNotFound
+	if node, exists := store.nodes[id]; exists {
+		return cloneTip(node.tip), nil
 	}
-	return cloneTip(node.tip), nil
+	if id == store.baseID {
+		return cloneTip(store.baseTip), nil
+	}
+	if tip, exists := store.archivedTips[id]; exists {
+		return cloneTip(tip), nil
+	}
+	return storage.Tip{}, storage.ErrNodeNotFound
+}
+
+// CanonicalFloor returns the detached local archival recovery boundary. A
+// false Pruned value means the immutable activation base is still present.
+func (store *Store) CanonicalFloor() (CanonicalFloor, error) {
+	if store == nil {
+		return CanonicalFloor{}, ErrConfiguration
+	}
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+	if store.closed {
+		return CanonicalFloor{}, storage.ErrClosed
+	}
+	return cloneCanonicalFloor(store.floor), nil
 }
 
 // IsAncestor reports whether ancestor lies on descendant's verified local
@@ -245,27 +304,17 @@ func (store *Store) SelectedHistorySnapshot(
 	if !selected {
 		return SelectedHistory{}, ErrPosition
 	}
-	base := store.nodes[store.baseID]
 	anchorNode := store.nodes[anchor]
-	if base == nil || anchorNode == nil || anchorNode.tip.Height < base.tip.Height {
+	if anchorNode == nil || anchorNode.tip.Height < store.baseTip.Height {
 		return SelectedHistory{}, storage.ErrCorrupt
 	}
-	blockCount := anchorNode.tip.Height - base.tip.Height
+	blockCount := anchorNode.tip.Height - store.baseTip.Height
 	if blockCount > maximumBlocks || blockCount > uint64(^uint(0)>>1) {
 		return SelectedHistory{}, storage.ErrHistoryLimit
 	}
-	ids := make([]types.Hash, int(blockCount))
-	cursor := anchor
-	for index := len(ids) - 1; index >= 0; index-- {
-		node := store.nodes[cursor]
-		if node == nil || node.block == nil {
-			return SelectedHistory{}, storage.ErrCorrupt
-		}
-		ids[index] = cursor
-		cursor = node.block.Header.Seal.AnchorParent
-	}
-	if cursor != store.baseID {
-		return SelectedHistory{}, storage.ErrCorrupt
+	ids, err := store.selectedAncestryIDsLocked(anchor, int(blockCount))
+	if err != nil {
+		return SelectedHistory{}, err
 	}
 	root, count, err := store.selectedAncestryCommitmentLocked(anchor)
 	if err != nil || count != blockCount+1 {
@@ -289,8 +338,27 @@ func (store *Store) selectedAncestryCommitmentLocked(
 	}
 	root := types.DomainHash(selectedAncestrySeedDomain, anchor[:])
 	count := uint64(1)
+	if anchor == store.baseID {
+		return finalizeSelectedAncestryRoot(root, count), count, nil
+	}
+	if archivedAt, archived := store.archivedIndex[anchor]; archived {
+		for index := archivedAt - 1; index >= 0; index-- {
+			parent, idErr := store.archivedHeaders[index].ID()
+			if idErr != nil || count == ^uint64(0) {
+				return types.Hash{}, 0, storage.ErrCorrupt
+			}
+			root = types.DomainHash(selectedAncestryStepDomain, root[:], parent[:])
+			count++
+		}
+		if count == ^uint64(0) {
+			return types.Hash{}, 0, storage.ErrCorrupt
+		}
+		root = types.DomainHash(selectedAncestryStepDomain, root[:], store.baseID[:])
+		count++
+		return finalizeSelectedAncestryRoot(root, count), count, nil
+	}
 	cursor := anchor
-	for cursor != store.baseID {
+	for cursor != store.floor.Anchor.ID {
 		node := store.nodes[cursor]
 		if node == nil || node.block == nil || count == ^uint64(0) {
 			return types.Hash{}, 0, storage.ErrCorrupt
@@ -303,9 +371,28 @@ func (store *Store) selectedAncestryCommitmentLocked(
 		count++
 		cursor = parent
 	}
+	for index := len(store.archivedHeaders) - 1; index >= 0; index-- {
+		parent, idErr := store.archivedHeaders[index].ID()
+		if idErr != nil || count == ^uint64(0) {
+			return types.Hash{}, 0, storage.ErrCorrupt
+		}
+		root = types.DomainHash(selectedAncestryStepDomain, root[:], parent[:])
+		count++
+	}
+	if store.floor.Anchor.ID != store.baseID {
+		if count == ^uint64(0) {
+			return types.Hash{}, 0, storage.ErrCorrupt
+		}
+		root = types.DomainHash(selectedAncestryStepDomain, root[:], store.baseID[:])
+		count++
+	}
+	return finalizeSelectedAncestryRoot(root, count), count, nil
+}
+
+func finalizeSelectedAncestryRoot(root types.Hash, count uint64) types.Hash {
 	var countBytes [8]byte
 	binary.BigEndian.PutUint64(countBytes[:], count)
-	return types.DomainHash(selectedAncestryRootDomain, root[:], countBytes[:]), count, nil
+	return types.DomainHash(selectedAncestryRootDomain, root[:], countBytes[:])
 }
 
 func (store *Store) Snapshot() (*state.Memory, error) {
@@ -331,6 +418,9 @@ func (store *Store) BlockByID(id types.Hash) (workblock.Block, error) {
 	}
 	node, exists := store.nodes[id]
 	if !exists || node.block == nil {
+		if store.floor.Pruned && (id == store.baseID || store.archivedIndexContains(id)) {
+			return workblock.Block{}, ErrHistoryPruned
+		}
 		return workblock.Block{}, ErrParent
 	}
 	return cloneBlock(*node.block)
@@ -520,6 +610,113 @@ func (store *Store) PruneStaleForks() (PruneReport, error) {
 	}, nil
 }
 
+// PruneCanonicalPrefix atomically replaces full blocks, node metadata, and
+// recovery data strictly before boundary.Anchor with canonical headers. The
+// anchor itself becomes a full-state retained floor. Callers must construct the
+// boundary only after independently verifying the checkpoint, archive, and
+// replica-availability bundle; this low-level method rechecks all chain-local
+// facts but cannot establish remote custody by itself.
+func (store *Store) PruneCanonicalPrefix(
+	boundary CanonicalFloor,
+) (CanonicalPruneReport, error) {
+	if store == nil || boundary.validate() != nil {
+		return CanonicalPruneReport{}, ErrCanonicalPrune
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if store.closed {
+		return CanonicalPruneReport{}, storage.ErrClosed
+	}
+	if store.persistence == nil || store.persistence.policy.CanonicalRetention == 0 ||
+		boundary.BaseID != store.baseID || boundary.Anchor.ID == store.floor.Anchor.ID {
+		return CanonicalPruneReport{}, ErrCanonicalPrune
+	}
+	anchor := store.nodes[boundary.Anchor.ID]
+	tip := store.nodes[store.tipID]
+	if anchor == nil || anchor.block == nil || anchor.state == nil || tip == nil ||
+		!storage.EqualTips(anchor.tip, boundary.Anchor) || tip.tip.Height < anchor.tip.Height ||
+		tip.tip.Height-anchor.tip.Height < store.persistence.policy.CanonicalRetention {
+		return CanonicalPruneReport{}, ErrCanonicalPrune
+	}
+	selected, err := store.isAncestorLocked(boundary.Anchor.ID, store.tipID)
+	if err != nil || !selected {
+		return CanonicalPruneReport{}, errors.Join(ErrCanonicalPrune, err)
+	}
+	root, count, err := store.selectedAncestryCommitmentLocked(boundary.Anchor.ID)
+	if err != nil || root != boundary.AncestryRoot || count != boundary.AncestryNodes {
+		return CanonicalPruneReport{}, errors.Join(ErrCanonicalPrune, err)
+	}
+
+	prefix := make([]types.Hash, 0)
+	cursor := boundary.Anchor.ID
+	for cursor != store.floor.Anchor.ID {
+		node := store.nodes[cursor]
+		if node == nil || node.block == nil {
+			return CanonicalPruneReport{}, storage.ErrCorrupt
+		}
+		prefix = append(prefix, cursor)
+		cursor = node.block.Header.Seal.AnchorParent
+	}
+	prefix = append(prefix, store.floor.Anchor.ID)
+	for left, right := 0, len(prefix)-1; left < right; left, right = left+1, right-1 {
+		prefix[left], prefix[right] = prefix[right], prefix[left]
+	}
+	if len(prefix) < 2 {
+		return CanonicalPruneReport{}, ErrCanonicalPrune
+	}
+	prefixSet := make(map[types.Hash]struct{}, len(prefix))
+	for _, id := range prefix {
+		prefixSet[id] = struct{}{}
+	}
+	for id := range store.nodes {
+		if _, onPrefix := prefixSet[id]; onPrefix {
+			continue
+		}
+		descendant, descendantErr := store.isAncestorLocked(boundary.Anchor.ID, id)
+		if descendantErr != nil || !descendant {
+			return CanonicalPruneReport{}, errors.Join(ErrCanonicalPrune, descendantErr)
+		}
+	}
+	remove := append([]types.Hash(nil), prefix[:len(prefix)-1]...)
+	newHeaders := append([]workblock.Header(nil), store.archivedHeaders...)
+	for _, id := range remove {
+		node := store.nodes[id]
+		if node == nil {
+			return CanonicalPruneReport{}, storage.ErrCorrupt
+		}
+		if node.block != nil {
+			newHeaders = append(newHeaders, node.block.Header)
+		} else if id != store.baseID {
+			return CanonicalPruneReport{}, storage.ErrCorrupt
+		}
+	}
+	archivedIndex, archivedTips, archivedHistory, err := store.buildArchivedIndex(newHeaders)
+	if err != nil {
+		return CanonicalPruneReport{}, err
+	}
+	added, released, err := store.persistence.pruneCanonicalPrefix(
+		store.nodes, remove, anchor, boundary,
+	)
+	if err != nil {
+		return CanonicalPruneReport{}, err
+	}
+	previousFloorID := store.floor.Anchor.ID
+	for _, id := range remove {
+		delete(store.nodes, id)
+	}
+	store.floor = cloneCanonicalFloor(boundary)
+	store.archivedHeaders = newHeaders
+	store.archivedIndex = archivedIndex
+	store.archivedTips = archivedTips
+	store.archivedHistory = archivedHistory
+	return CanonicalPruneReport{
+		PreviousFloorID: previousFloorID, FloorID: boundary.Anchor.ID,
+		RemovedNodes: uint64(len(remove)), RetainedNodes: uint64(len(store.nodes)),
+		ArchivedHeaders: uint64(len(newHeaders)), AddedHistoryBytes: added,
+		ReleasedHistoryBytes: released,
+	}, nil
+}
+
 // CreateReplayCheckpoint atomically replaces the selected tip's resource delta
 // with a full-state checkpoint after the configured interval. The bounded
 // checkpoint set is rotated in the same batch: retired full states are turned
@@ -596,8 +793,11 @@ func (store *Store) markAncestorsLocked(id types.Hash, keep map[types.Hash]struc
 			return storage.ErrCorrupt
 		}
 		keep[id] = struct{}{}
+		if id == store.floor.Anchor.ID {
+			return nil
+		}
 		if node.block == nil {
-			if id != store.baseID {
+			if id != store.baseID || store.floor.Pruned {
 				return storage.ErrCorrupt
 			}
 			return nil
@@ -607,28 +807,167 @@ func (store *Store) markAncestorsLocked(id types.Hash, keep map[types.Hash]struc
 }
 
 func (store *Store) isAncestorLocked(ancestor, descendant types.Hash) (bool, error) {
-	if _, exists := store.nodes[ancestor]; !exists {
+	ancestorPosition, ancestorArchived := store.archivedPositionLocked(ancestor)
+	if _, exists := store.nodes[ancestor]; !exists && !ancestorArchived {
 		return false, storage.ErrNodeNotFound
+	}
+	if descendantPosition, descendantArchived := store.archivedPositionLocked(descendant); descendantArchived {
+		return ancestorArchived && ancestorPosition <= descendantPosition, nil
 	}
 	cursor, exists := store.nodes[descendant]
 	if !exists || cursor == nil {
 		return false, storage.ErrNodeNotFound
 	}
+	if ancestorArchived {
+		return true, nil
+	}
 	for {
 		if cursor.tip.ID == ancestor {
 			return true, nil
 		}
-		if cursor.block == nil {
-			if cursor.tip.ID != store.baseID {
-				return false, storage.ErrCorrupt
-			}
+		if cursor.tip.ID == store.floor.Anchor.ID {
 			return false, nil
+		}
+		if cursor.block == nil {
+			return false, storage.ErrCorrupt
 		}
 		cursor, exists = store.nodes[cursor.block.Header.Seal.AnchorParent]
 		if !exists || cursor == nil {
 			return false, storage.ErrCorrupt
 		}
 	}
+}
+
+func (store *Store) selectedAncestryIDsLocked(anchor types.Hash, blockCount int) ([]types.Hash, error) {
+	if blockCount < 0 || len(store.archivedHeaders) > blockCount {
+		return nil, storage.ErrCorrupt
+	}
+	result := make([]types.Hash, blockCount)
+	for index, header := range store.archivedHeaders {
+		id, err := header.ID()
+		if err != nil {
+			return nil, storage.ErrCorrupt
+		}
+		result[index] = id
+	}
+	cursor := anchor
+	for index := len(result) - 1; index >= len(store.archivedHeaders); index-- {
+		node := store.nodes[cursor]
+		if node == nil || node.block == nil {
+			return nil, storage.ErrCorrupt
+		}
+		result[index] = cursor
+		if cursor == store.floor.Anchor.ID {
+			if index != len(store.archivedHeaders) {
+				return nil, storage.ErrCorrupt
+			}
+			break
+		}
+		cursor = node.block.Header.Seal.AnchorParent
+	}
+	if cursor != store.floor.Anchor.ID {
+		return nil, storage.ErrCorrupt
+	}
+	return result, nil
+}
+
+func (store *Store) archivedIndexContains(id types.Hash) bool {
+	_, exists := store.archivedIndex[id]
+	return exists
+}
+
+// archivedPositionLocked maps the immutable base to -1 and pruned block
+// headers to their activation-first index.
+func (store *Store) archivedPositionLocked(id types.Hash) (int, bool) {
+	if id == store.baseID {
+		return -1, true
+	}
+	index, exists := store.archivedIndex[id]
+	return index, exists
+}
+
+func (store *Store) rebuildArchivedIndexLocked() error {
+	index, tips, history, err := store.buildArchivedIndex(store.archivedHeaders)
+	if err != nil {
+		return err
+	}
+	store.archivedIndex = index
+	store.archivedTips = tips
+	store.archivedHistory = history
+	return nil
+}
+
+func (store *Store) buildArchivedIndex(
+	headers []workblock.Header,
+) (map[types.Hash]int, map[types.Hash]storage.Tip, []uint64, error) {
+	index := make(map[types.Hash]int, len(headers))
+	tips := make(map[types.Hash]storage.Tip, len(headers))
+	parent := cloneTip(store.baseTip)
+	history := append([]uint64(nil), store.baseHistory...)
+	for position, header := range headers {
+		id, err := header.ID()
+		if err != nil || header.Seal.AnchorParent != parent.ID || header.Seal.Height != parent.Height+1 {
+			return nil, nil, nil, storage.ErrCorrupt
+		}
+		next, nextHistory, err := store.archivedHeaderTip(parent, history, header)
+		if err != nil {
+			return nil, nil, nil, storage.ErrCorrupt
+		}
+		if _, exists := index[id]; exists {
+			return nil, nil, nil, storage.ErrCorrupt
+		}
+		index[id] = position
+		tips[id] = cloneTip(next)
+		parent = next
+		history = nextHistory
+	}
+	return index, tips, append([]uint64(nil), history...), nil
+}
+
+func (store *Store) archivedHeaderTip(
+	parent storage.Tip,
+	history []uint64,
+	header workblock.Header,
+) (storage.Tip, []uint64, error) {
+	if len(history) == 0 || len(history) > 11 || header.Seal.Height != parent.Height+1 ||
+		header.Seal.AnchorParent != parent.ID || header.Seal.Timestamp <= median(history) {
+		return storage.Tip{}, nil, storage.ErrCorrupt
+	}
+	evaluation, err := types.AddAmount(parent.Timestamp, store.parameters.TargetSpacing)
+	if err != nil {
+		return storage.Tip{}, nil, storage.ErrCorrupt
+	}
+	target, err := difficulty.ASERT(
+		store.parameters.DifficultyAnchorTarget, store.parameters.DifficultyAnchorTimestamp,
+		header.Seal.Height, evaluation, store.parameters.TargetSpacing, store.parameters.ASERTHalfLife,
+	)
+	if err != nil || target != header.Seal.Target {
+		return storage.Tip{}, nil, storage.ErrCorrupt
+	}
+	next, err := nextTip(parent, workblock.Block{Header: header})
+	if err != nil {
+		return storage.Tip{}, nil, storage.ErrCorrupt
+	}
+	nextHistory := append(append([]uint64(nil), history...), header.Seal.Timestamp)
+	if len(nextHistory) > 11 {
+		nextHistory = append([]uint64(nil), nextHistory[len(nextHistory)-11:]...)
+	}
+	return next, nextHistory, nil
+}
+
+func (floor CanonicalFloor) validate() error {
+	if !floor.Pruned || floor.BaseID.IsZero() || floor.Anchor.Validate() != nil ||
+		floor.Anchor.ID == floor.BaseID || floor.AncestryNodes < 2 || floor.AncestryRoot.IsZero() ||
+		floor.StatementID.IsZero() || floor.ManifestID.IsZero() || floor.AvailabilityID.IsZero() ||
+		floor.VerifiedAt == 0 || floor.RetainUntil <= floor.VerifiedAt {
+		return ErrCanonicalPrune
+	}
+	return nil
+}
+
+func cloneCanonicalFloor(value CanonicalFloor) CanonicalFloor {
+	value.Anchor = cloneTip(value.Anchor)
+	return value
 }
 
 func (store *Store) childInputsLocked(

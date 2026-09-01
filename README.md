@@ -42,15 +42,19 @@ The repository also contains the first standalone-ledger slice:
 - key generation, balance lookup, constrained transfer, mining, and verification
   commands in `omd`.
 
-The canonical block/delta history remains unpruned. A multi-attestor archive
-anchor can now bind a content-addressed block archive to the exact locally
-selected WorkGraph ancestry. The archive is strictly replayed through ordinary
-consensus validation into a new, reopened Pebble database; it never imports a
-trusted state snapshot. Canonical deletion and an operator-facing archival
-workflow do not exist yet, and the signatures create no finality. Together with
-unaudited PoW parameters, the raw-seed CLI wallet, and provisional peer routing
-policy, this keeps the system a local development chain rather than a public
-testnet.
+Canonical block/delta pruning now exists only as a disabled-by-default
+experimental API. A multi-attestor anchor binds a content-addressed archive to
+the exact selected WorkGraph ancestry, and each configured replica must fully
+replay its own copy before issuing a short-lived signed custody receipt. At
+prune time every distinct replica directory is replayed again and the resulting
+availability bundle is fsynced before one Pebble batch replaces the strict
+prefix with canonical headers and a full-state retained floor. Reopen verifies
+the header chain, target, cumulative work, timestamps, ancestry commitment, and
+floor state before applying later deltas. This is trusted operational custody,
+not a data-availability proof or consensus finality, and no CLI enables it.
+Together with unaudited PoW parameters, the raw-seed CLI wallet, and provisional
+peer routing policy, this keeps the system a local development chain rather
+than a public testnet.
 
 ## Build and run
 
@@ -78,7 +82,8 @@ filesystem permission failures bracketing coordinator rename and observer link
 durability, explicit recovery of an exact post-link ACK without false chain
 advance, and kills the
 WorkGraph Pebble process on
-both sides of commit, replay-checkpoint rotation, and stale-fork pruning
+both sides of commit, replay-checkpoint rotation, stale-fork pruning, and the
+canonical retained-floor transition
 durability boundaries. It also kills WorkGraph archive restore immediately
 before directory publication and immediately after rename, requiring either no
 destination or a fully reopenable and extendable database. Raise the
@@ -234,8 +239,11 @@ The CLI wallet is for development only.
   parent-scoped round lifecycle, and explicitly negotiated inventory-first
   relay;
 - `node/workchain/`: inactive fork-aware v1 coordinator with atomic Pebble
-  delta/checkpoint rotation, stale-fork pruning, logical history budget,
-  restart, and reorg verification;
+  delta/checkpoint rotation, stale-fork pruning, opt-in canonical retained
+  floors, logical history budget, restart, and reorg verification;
+- `node/workarchive/`: strict content-addressed history export/replay/restore,
+  multi-attestor anchors, expiring replica-custody bundles, and the policy gate
+  for disabled-by-default canonical-prefix pruning;
 - `node/mempool/`, `node/wire/`, `node/syncer/`, `node/session/`: bounded peer
   admission and transport-independent fork synchronization;
 - `node/discovery/`, `node/peers/`: signed peer advertisements, bounded
