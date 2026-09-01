@@ -42,9 +42,12 @@ The repository also contains the first standalone-ledger slice:
 - key generation, balance lookup, constrained transfer, mining, and verification
   commands in `omd`.
 
-The unpruned block/delta history, unaudited PoW parameters, raw-seed CLI wallet,
-and provisional peer routing policy make this a local development chain, not a
-public testnet.
+The canonical block/delta history remains unpruned. A multi-attestor archive
+anchor can now bind a future manifest to the exact locally selected WorkGraph
+ancestry, but archive export/restore and canonical deletion do not exist yet and
+the signatures create no finality. Together with unaudited PoW parameters, the
+raw-seed CLI wallet, and provisional peer routing policy, this keeps the system
+a local development chain rather than a public testnet.
 
 ## Build and run
 

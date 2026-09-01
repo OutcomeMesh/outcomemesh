@@ -315,8 +315,22 @@ atomically delete a complete stale side-fork subtree only after every canonical
 node and every branch reaching the local retention window have been marked.
 The default fork window is 4,096 heights and zero disables this local operation.
 Canonical history remains intact: an independently history-anchored archival
-pruning rule and broader filesystem fault/long-soak campaigns are still
-required.
+checkpoint format now exists, but pruning is still disabled. A version-0
+statement binds network/genesis/activation/tree-base identity, one exact
+selected tip, its ordered ancestry commitment and length back to the immutable
+base, a predecessor statement ID, and an archive-manifest ID. Between two and
+64 sorted Ed25519 signatures are carried, while the operator supplies a sorted
+trusted set and quorum of at least two. Local WorkChain verification rejects a
+statement after its anchor leaves the selected hard-work ancestry.
+
+These attestations are operational evidence, not consensus votes, Sybil
+resistance, data-availability proofs, or finality. Colluding or compromised
+trusted keys can attest a false manifest; version 0 has no manifest decoder and
+does not prove that archive bytes exist or are restorable. Atomic bounded
+checkpoint-file publication prevents a partial local artifact, but does not
+authorize deletion. Canonical pruning remains blocked until a content-addressed
+manifest, independently tested export/restore, an atomic pruning transition,
+and broader filesystem fault/long-soak campaigns exist.
 
 The activation boundary is not a locally finalized block. The isolated router
 can create a separate v1 tree for every known v0 node at height `H-1` and uses

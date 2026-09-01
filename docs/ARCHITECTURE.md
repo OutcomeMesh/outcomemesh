@@ -230,9 +230,16 @@ reconstructs the displaced node's exact delta from its still-validated parent
 and state. Reopen verifies the XOR representation invariant, roots, ancestry,
 fee queues, cumulative work, selected tip, and logical byte count. Schema 2
 fails closed and replay is the migration policy. Production activation still
-requires an independently history-anchored archival pruning rule. Local
-maintenance already marks canonical ancestry and every side
-branch reaching a configurable cutoff, then atomically removes only complete
+requires a complete archival pruning rule. Its new non-consensus anchor layer
+canonically binds an exact selected tip and its full backward ancestry
+commitment to network/genesis/activation/tree-base identity, a predecessor
+statement, and an archive-manifest ID. It requires a locally configured quorum
+of at least two among 2–64 sorted Ed25519 attestors and recomputes selection
+against the live WorkChain, so signatures neither override hard-work fork
+choice nor survive a reorganization of the named branch. The format and atomic
+file publication are implemented; manifest validation, restorable export, and
+canonical deletion are not. Local maintenance already marks canonical ancestry
+and every side branch reaching a configurable cutoff, then atomically removes only complete
 stale subtrees while decrementing the exact logical history counter. Its default
 window is 4,096 heights, zero disables it, and it never creates local PoW
 finality by pruning canonical history. Broader filesystem-fault soaks and

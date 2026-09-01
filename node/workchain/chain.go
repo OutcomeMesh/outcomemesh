@@ -1,6 +1,7 @@
 package workchain
 
 import (
+	"encoding/binary"
 	"errors"
 	"math/big"
 	"sort"
@@ -21,6 +22,12 @@ var (
 	ErrParent        = errors.New("unknown WorkGraph chain parent")
 	ErrPosition      = errors.New("invalid WorkGraph chain position")
 	ErrDuplicate     = errors.New("duplicate WorkGraph chain block")
+)
+
+const (
+	selectedAncestrySeedDomain = "OMESH/workgraph/archive/selected-ancestry-seed/v0"
+	selectedAncestryStepDomain = "OMESH/workgraph/archive/selected-ancestry-step/v0"
+	selectedAncestryRootDomain = "OMESH/workgraph/archive/selected-ancestry-root/v0"
 )
 
 type Base struct {
@@ -167,6 +174,66 @@ func (store *Store) TipByID(id types.Hash) (storage.Tip, error) {
 		return storage.Tip{}, storage.ErrNodeNotFound
 	}
 	return cloneTip(node.tip), nil
+}
+
+// IsAncestor reports whether ancestor lies on descendant's verified local
+// WorkGraph ancestry. It does not imply that either node is on the selected
+// branch; archive policy uses SelectedAncestryCommitment for that stronger
+// check.
+func (store *Store) IsAncestor(ancestor, descendant types.Hash) (bool, error) {
+	if store == nil || ancestor.IsZero() || descendant.IsZero() {
+		return false, ErrConfiguration
+	}
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+	if store.closed {
+		return false, storage.ErrClosed
+	}
+	return store.isAncestorLocked(ancestor, descendant)
+}
+
+// SelectedAncestryCommitment returns an order-sensitive commitment to the
+// exact selected ancestry from anchor back through the immutable activation
+// base. The backward hash chain needs constant auxiliary memory; the final
+// node count prevents alternate-length interpretations. It is local evidence
+// for independently attested archive anchors and never changes fork choice.
+func (store *Store) SelectedAncestryCommitment(
+	anchor types.Hash,
+) (types.Hash, uint64, error) {
+	if store == nil || anchor.IsZero() {
+		return types.Hash{}, 0, ErrConfiguration
+	}
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+	if store.closed {
+		return types.Hash{}, 0, storage.ErrClosed
+	}
+	selected, err := store.isAncestorLocked(anchor, store.tipID)
+	if err != nil {
+		return types.Hash{}, 0, err
+	}
+	if !selected {
+		return types.Hash{}, 0, ErrPosition
+	}
+	root := types.DomainHash(selectedAncestrySeedDomain, anchor[:])
+	count := uint64(1)
+	cursor := anchor
+	for cursor != store.baseID {
+		node := store.nodes[cursor]
+		if node == nil || node.block == nil || count == ^uint64(0) {
+			return types.Hash{}, 0, storage.ErrCorrupt
+		}
+		parent := node.block.Header.Seal.AnchorParent
+		if _, exists := store.nodes[parent]; !exists {
+			return types.Hash{}, 0, storage.ErrCorrupt
+		}
+		root = types.DomainHash(selectedAncestryStepDomain, root[:], parent[:])
+		count++
+		cursor = parent
+	}
+	var countBytes [8]byte
+	binary.BigEndian.PutUint64(countBytes[:], count)
+	return types.DomainHash(selectedAncestryRootDomain, root[:], countBytes[:]), count, nil
 }
 
 func (store *Store) Snapshot() (*state.Memory, error) {
@@ -464,6 +531,31 @@ func (store *Store) markAncestorsLocked(id types.Hash, keep map[types.Hash]struc
 			return nil
 		}
 		id = node.block.Header.Seal.AnchorParent
+	}
+}
+
+func (store *Store) isAncestorLocked(ancestor, descendant types.Hash) (bool, error) {
+	if _, exists := store.nodes[ancestor]; !exists {
+		return false, storage.ErrNodeNotFound
+	}
+	cursor, exists := store.nodes[descendant]
+	if !exists || cursor == nil {
+		return false, storage.ErrNodeNotFound
+	}
+	for {
+		if cursor.tip.ID == ancestor {
+			return true, nil
+		}
+		if cursor.block == nil {
+			if cursor.tip.ID != store.baseID {
+				return false, storage.ErrCorrupt
+			}
+			return false, nil
+		}
+		cursor, exists = store.nodes[cursor.block.Header.Seal.AnchorParent]
+		if !exists || cursor == nil {
+			return false, storage.ErrCorrupt
+		}
 	}
 }
 

@@ -428,8 +428,21 @@ window (4,096 heights by default). It retains the entire canonical path plus
 every ancestor of a side branch at the boundary, updates the logical byte
 counter in the same synchronous batch, and is disabled by a zero local setting.
 Canonical history is deliberately not pruned without a separately designed
-history-anchor rule. History-anchored archival pruning and broader physical
-disk/filesystem campaigns still precede production activation. The integration
+history-anchor rule. The isolated `node/workarchive` version-0 format now
+provides the first half of that rule: a statement binds network, genesis,
+activation height, immutable tree base, an exact selected `storage.Tip`, the
+ordered ancestry commitment and node count back to that base, a monotonically
+linked predecessor statement, and a future archive-manifest ID. A canonical
+checkpoint carries 2–64 sorted Ed25519 attestations and is accepted only under
+an explicit sorted trusted-key policy with a quorum of at least two. Verification
+recomputes the selected ancestry from local WorkChain data; a valid signature
+cannot keep an anchor valid after its branch is reorganized away. Checkpoint
+files use bounded strict decoding and atomic file/directory fsync publication.
+Version 0 does not define or validate the archive manifest, export a restorable
+prefix, delete canonical nodes, alter fork choice, or create consensus finality.
+Those operations remain disabled until archive export/restore and an atomic
+pruning transition have their own failure-boundary evidence. Broader physical
+disk/filesystem campaigns also precede production activation. The integration
 suite kills a real subprocess on both sides of ordinary node commit,
 checkpoint-rotation, and stale-prune synchronous batches. Each recovery is
 compared with independently built exact old/new fixtures across tip, state,

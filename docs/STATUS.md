@@ -1,6 +1,6 @@
 # Implementation status
 
-Updated: 2026-08-31
+Updated: 2026-09-01
 
 This file records evidence against `PLAN.md`. A milestone remains open until all
 of its exit gates pass; implementing most deliverables does not close it.
@@ -293,6 +293,18 @@ Implemented in an isolated, not-yet-activated consensus package:
   delta→checkpoint→delta rotation, exact byte accounting, pre-sync failure,
   corrupt checkpoint rejection, restart/extension, and pruning a checkpoint
   carried by a stale fork. Schema 2 fails closed and requires replay.
+- a versioned, non-consensus WorkGraph archive checkpoint now binds the exact
+  network/genesis/activation/tree base, selected `storage.Tip`, ordered ancestry
+  commitment and node count, monotonic predecessor statement, and future
+  archive-manifest ID. Checkpoints canonicalize 2–64 Ed25519 attestations and
+  verify them against an explicit sorted trusted set with a quorum of at least
+  two before atomic file/directory-fsync publication. Real WorkChain tests prove
+  the same anchor survives database restart and extension of its branch but is
+  rejected after a higher-work sibling reorganization. Golden codec, mutation,
+  untrusted/duplicate/insufficient-quorum, strict-file, predecessor, fork, and
+  decoder-fuzz tests pass. The manifest, archive export/restore, and canonical
+  deletion are intentionally absent, so this creates neither pruning authority
+  nor local finality.
 - an isolated activation router now owns strict v0/v1 block admission. It
   dispatches unchanged canonical encodings from their leading version, permits
   v0 only below `H` and v1 only from `H`, and lazily creates one WorkChain tree
@@ -539,8 +551,8 @@ No WorkGraph field has entered a version-0 block yet. The v1 store and opt-in
 QUIC session remain isolated from every ordinary v0 chain/CLI path and are
 reachable only through the explicitly marked experimental commands;
 adversarial discovery/eclipse and longer real-QUIC rapid-parent churn soaks,
-topology-derived peer selection,
-history-anchored archival pruning, extended filesystem-fault/soak campaigns,
+topology-derived peer selection, restorable history export and canonical
+pruning, extended filesystem-fault/soak campaigns,
 production gossip-budget calibration, and broader adaptive economic-strategy
 analysis remain before activation.
 

@@ -3,7 +3,9 @@ package workchain
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"errors"
+	"sort"
 	"testing"
 
 	"github.com/cockroachdb/pebble/v2"
@@ -12,6 +14,7 @@ import (
 	"github.com/outcomemesh/outcomemesh/core/types"
 	"github.com/outcomemesh/outcomemesh/core/workblock"
 	"github.com/outcomemesh/outcomemesh/core/workgraph"
+	"github.com/outcomemesh/outcomemesh/node/workarchive"
 	"github.com/outcomemesh/outcomemesh/storage"
 )
 
@@ -208,6 +211,163 @@ func TestPebbleRestartPreservesForkTipStateAndFeeQueue(t *testing.T) {
 	)
 	if _, _, err := reopened.Commit(grandchild, grandchild.Header.Seal.Timestamp); err != nil {
 		t.Fatalf("post-restart commit: %v", err)
+	}
+}
+
+func TestSelectedAncestryArchiveAnchorSurvivesRestartButNotReorg(t *testing.T) {
+	parameters := testParameters()
+	base := testBase(t, parameters)
+	path := t.TempDir()
+	store, err := Open(path, base, parameters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	activation, _ := mineChild(
+		t, store, base.Tip.ID, base.Tip.Timestamp+60, "archive-selected-activation",
+	)
+	if _, _, err := store.Commit(activation, activation.Header.Seal.Timestamp); err != nil {
+		t.Fatal(err)
+	}
+	activationID, _ := activation.Header.ID()
+	sideActivation, _ := mineChild(
+		t, store, base.Tip.ID, base.Tip.Timestamp+60, "archive-side-activation",
+	)
+	if _, _, err := store.Commit(sideActivation, sideActivation.Header.Seal.Timestamp); err != nil {
+		t.Fatal(err)
+	}
+	sideActivationID, _ := sideActivation.Header.ID()
+	child, _ := mineChild(
+		t, store, activationID, activation.Header.Seal.Timestamp+60, "archive-selected-child",
+	)
+	if _, _, err := store.Commit(child, child.Header.Seal.Timestamp); err != nil {
+		t.Fatal(err)
+	}
+	anchor, err := store.Tip()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, count, err := store.SelectedAncestryCommitment(anchor.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 3 {
+		t.Fatalf("selected ancestry nodes=%d want=3", count)
+	}
+	const expectedAncestryRoot = "7d838893c1b8bf48c936f6a3bd4b021b8f46adcc53220fdc10efb9df0a9f9127"
+	if root.String() != expectedAncestryRoot {
+		t.Fatalf("selected ancestry root=%s want=%s", root, expectedAncestryRoot)
+	}
+	if selected, err := store.IsAncestor(base.Tip.ID, anchor.ID); err != nil || !selected {
+		t.Fatalf("base ancestry selected=%t err=%v", selected, err)
+	}
+	if selected, err := store.IsAncestor(sideActivationID, anchor.ID); err != nil || selected {
+		t.Fatalf("side ancestry selected=%t err=%v", selected, err)
+	}
+	if _, _, err := store.SelectedAncestryCommitment(sideActivationID); !errors.Is(err, ErrPosition) {
+		t.Fatalf("side anchor commitment error=%v", err)
+	}
+
+	binding := workarchive.Binding{
+		NetworkID:        parameters.NetworkID,
+		GenesisID:        types.DomainHash("test/workchain/archive-genesis"),
+		ActivationHeight: parameters.ActivationHeight,
+		BaseID:           base.Tip.ID,
+	}
+	statement := workarchive.Statement{
+		Version:           workarchive.StatementVersion0,
+		NetworkID:         binding.NetworkID,
+		GenesisID:         binding.GenesisID,
+		ActivationHeight:  binding.ActivationHeight,
+		BaseID:            binding.BaseID,
+		Sequence:          1,
+		Anchor:            anchor,
+		AncestryNodes:     count,
+		AncestryRoot:      root,
+		ArchiveManifestID: types.DomainHash("test/workchain/archive-manifest"),
+	}
+	keys := []ed25519.PrivateKey{
+		ed25519.NewKeyFromSeed(bytes.Repeat([]byte{41}, ed25519.SeedSize)),
+		ed25519.NewKeyFromSeed(bytes.Repeat([]byte{42}, ed25519.SeedSize)),
+	}
+	attestations := make([]workarchive.Attestation, len(keys))
+	trusted := make([][ed25519.PublicKeySize]byte, len(keys))
+	for index, key := range keys {
+		attestations[index], err = workarchive.Attest(key, statement)
+		if err != nil {
+			t.Fatal(err)
+		}
+		copy(trusted[index][:], key.Public().(ed25519.PublicKey))
+	}
+	sort.Slice(trusted, func(left, right int) bool {
+		return bytes.Compare(trusted[left][:], trusted[right][:]) < 0
+	})
+	checkpoint, err := workarchive.NewCheckpoint(statement, attestations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy := workarchive.Policy{
+		Binding: binding, TrustedAttestors: trusted, RequiredAttestations: 2,
+	}
+	if err := workarchive.VerifyChain(checkpoint, policy, store); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := Open(path, base, parameters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	afterRoot, afterCount, err := reopened.SelectedAncestryCommitment(anchor.ID)
+	if err != nil || afterRoot != root || afterCount != count {
+		t.Fatalf("restart ancestry root/count=%s/%d want=%s/%d err=%v",
+			afterRoot, afterCount, root, count, err)
+	}
+	if err := workarchive.VerifyChain(checkpoint, policy, reopened); err != nil {
+		t.Fatalf("restart rejected selected checkpoint: %v", err)
+	}
+	nextSelected, _ := mineChild(
+		t, reopened, anchor.ID, anchor.Timestamp+60, "archive-selected-after-restart",
+	)
+	if _, _, err := reopened.Commit(nextSelected, nextSelected.Header.Seal.Timestamp); err != nil {
+		t.Fatal(err)
+	}
+	if err := workarchive.VerifyChain(checkpoint, policy, reopened); err != nil {
+		t.Fatalf("selected descendant invalidated earlier checkpoint: %v", err)
+	}
+
+	sideChild, _ := mineChild(
+		t, reopened, sideActivationID, sideActivation.Header.Seal.Timestamp+60, "archive-side-child",
+	)
+	if _, _, err := reopened.Commit(sideChild, sideChild.Header.Seal.Timestamp); err != nil {
+		t.Fatal(err)
+	}
+	sideChildID, _ := sideChild.Header.ID()
+	sideGrandchild, _ := mineChild(
+		t, reopened, sideChildID, sideChild.Header.Seal.Timestamp+60, "archive-side-grandchild",
+	)
+	if _, _, err := reopened.Commit(sideGrandchild, sideGrandchild.Header.Seal.Timestamp); err != nil {
+		t.Fatal(err)
+	}
+	sideGrandchildID, _ := sideGrandchild.Header.ID()
+	sideWinner, _ := mineChild(
+		t, reopened, sideGrandchildID, sideGrandchild.Header.Seal.Timestamp+60, "archive-side-winner",
+	)
+	if _, _, err := reopened.Commit(sideWinner, sideWinner.Header.Seal.Timestamp); err != nil {
+		t.Fatal(err)
+	}
+	selectedTip, err := reopened.Tip()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sideWinnerID, _ := sideWinner.Header.ID()
+	if selectedTip.ID != sideWinnerID {
+		t.Fatalf("heavier side branch tip=%s want=%s", selectedTip.ID, sideWinnerID)
+	}
+	if err := workarchive.VerifyChain(checkpoint, policy, reopened); !errors.Is(err, workarchive.ErrChain) {
+		t.Fatalf("reorged checkpoint error=%v", err)
 	}
 }
 

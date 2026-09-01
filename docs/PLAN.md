@@ -165,6 +165,10 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
 - Bounded explicit multi-peer relay with independent backpressure and verified
   anchor synchronization.
 - Count-or-time share flushing with a deterministic small-miner reward corpus.
+- A versioned multi-attestor archive anchor bound to the exact selected
+  WorkChain ancestry, followed separately by a content-addressed restorable
+  export and an atomic canonical-pruning transition. An anchor alone must never
+  authorize deletion or override hard-work fork choice.
 - Admission-deduplicated multi-hop forwarding across the explicit peer graph.
 - Reputation/latency/ASN-ranked peerbook selection with an inventory-free,
   exact-context WorkGraph capability probe.
