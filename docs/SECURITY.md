@@ -325,12 +325,28 @@ statement after its anchor leaves the selected hard-work ancestry.
 
 These attestations are operational evidence, not consensus votes, Sybil
 resistance, data-availability proofs, or finality. Colluding or compromised
-trusted keys can attest a false manifest; version 0 has no manifest decoder and
-does not prove that archive bytes exist or are restorable. Atomic bounded
-checkpoint-file publication prevents a partial local artifact, but does not
-authorize deletion. Canonical pruning remains blocked until a content-addressed
-manifest, independently tested export/restore, an atomic pruning transition,
-and broader filesystem fault/long-soak campaigns exist.
+trusted keys can attest a manifest and then withhold its bytes; signatures do
+not prove continuing availability or independent operator control. The
+version-0 manifest and chunks are content addressed and strictly bounded.
+Verification rejects non-regular/extra files and replays the complete ordered
+activation-to-anchor block stream against the caller's independently verified
+activation base and consensus parameters. Restore never imports an archived
+state image: it creates a temporary Pebble WorkChain through ordinary commits,
+closes and fully reopens it, verifies the final tip and ancestry, then uses a
+directory rename and parent fsync without replacing an existing destination.
+Real process kills immediately before rename and immediately after rename but
+before parent fsync recover to no published destination or a fully reopenable,
+extendable database respectively. Pre-rename crashes may leave an unreferenced
+temporary sibling directory; it is not accepted as the destination and remains
+an operator cleanup concern.
+An export recheck is only a point-in-time observation and does not freeze fork
+choice; operators must run `VerifyChain` immediately before attesting.
+
+Content validity and restorable replay still do not authorize deletion. There
+is no archive replication/retention proof, availability market, canonical-
+prefix transition, or rollback procedure after local deletion. Canonical
+pruning remains blocked until that atomic transition has post-prune recovery,
+real process-crash, disk-exhaustion, and longer filesystem-soak evidence.
 
 The activation boundary is not a locally finalized block. The isolated router
 can create a separate v1 tree for every known v0 node at height `H-1` and uses

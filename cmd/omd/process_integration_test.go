@@ -1054,6 +1054,17 @@ func TestProcessTieCampaignV2ObserversSurviveBetweenSlotRestartAndAudit(t *testi
 	for _, observer := range observers {
 		waitForProcessFile(t, observer.confirmationDirectory+"/0000000001.confirmed", 30*time.Second)
 	}
+	waitForProcessCampaignStatus(
+		t,
+		tieproducer.CampaignConfig{
+			Plan: plan, Binding: plan.Binding(), ExpectedPlanID: planID,
+			StatePath: coordinatorData + "/work-tie-campaign.state",
+		},
+		30*time.Second,
+		func(status tieproducer.CampaignStatus) bool {
+			return status.NextSequence == 2 && status.Phase == tieproducer.CampaignAwaitingPair
+		},
+	)
 
 	restarted := &observers[1]
 	originalTransportID := restarted.transportID

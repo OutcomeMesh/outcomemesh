@@ -43,11 +43,14 @@ The repository also contains the first standalone-ledger slice:
   commands in `omd`.
 
 The canonical block/delta history remains unpruned. A multi-attestor archive
-anchor can now bind a future manifest to the exact locally selected WorkGraph
-ancestry, but archive export/restore and canonical deletion do not exist yet and
-the signatures create no finality. Together with unaudited PoW parameters, the
-raw-seed CLI wallet, and provisional peer routing policy, this keeps the system
-a local development chain rather than a public testnet.
+anchor can now bind a content-addressed block archive to the exact locally
+selected WorkGraph ancestry. The archive is strictly replayed through ordinary
+consensus validation into a new, reopened Pebble database; it never imports a
+trusted state snapshot. Canonical deletion and an operator-facing archival
+workflow do not exist yet, and the signatures create no finality. Together with
+unaudited PoW parameters, the raw-seed CLI wallet, and provisional peer routing
+policy, this keeps the system a local development chain rather than a public
+testnet.
 
 ## Build and run
 
@@ -76,7 +79,9 @@ durability, explicit recovery of an exact post-link ACK without false chain
 advance, and kills the
 WorkGraph Pebble process on
 both sides of commit, replay-checkpoint rotation, and stale-fork pruning
-durability boundaries. Raise the
+durability boundaries. It also kills WorkGraph archive restore immediately
+before directory publication and immediately after rename, requiring either no
+destination or a fully reopenable and extendable database. Raise the
 v0 QUIC soak length with, for example,
 `OUTCOMEMESH_SOAK_CYCLES=25 make test-process` (hard cap: 100 cycles).
 The completed campaign case also runs the read-only coordinator/observer audit

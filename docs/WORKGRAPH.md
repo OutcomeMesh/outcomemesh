@@ -438,12 +438,28 @@ an explicit sorted trusted-key policy with a quorum of at least two. Verificatio
 recomputes the selected ancestry from local WorkChain data; a valid signature
 cannot keep an anchor valid after its branch is reorganized away. Checkpoint
 files use bounded strict decoding and atomic file/directory fsync publication.
-Version 0 does not define or validate the archive manifest, export a restorable
-prefix, delete canonical nodes, alter fork choice, or create consensus finality.
-Those operations remain disabled until archive export/restore and an atomic
-pruning transition have their own failure-boundary evidence. Broader physical
-disk/filesystem campaigns also precede production activation. The integration
-suite kills a real subprocess on both sides of ordinary node commit,
+The content-addressed version-0 archive now commits the exact binding, anchor,
+ancestry root/count, total block/byte counts, and ordered chunk descriptors.
+Each chunk additionally binds network, tree base, anchor, index, first height,
+and up to 256 canonical blocks under a 64-MiB ceiling. Export snapshots only the
+selected activation-to-anchor IDs, writes immutable 0600 files, and rechecks
+the selected ancestry before directory fsync/rename. Verification rejects
+unexpected or non-regular files, checks every chunk ID and boundary, and
+replays every block through ordinary WorkChain execution from the separately
+verified activation base. Persistent restore builds a new temporary Pebble
+tree, closes and fully reopens it, checks the final tip/ancestry, then publishes
+the directory with rename and parent fsync without replacing an existing path.
+It never trusts an archived state image. A restore fixture excludes a retained
+sibling branch, reopens, and mines another block; corruption, reorg-before-
+publication, tight limits, symlinks, extra files, and pre-publication failure
+all fail closed. A real subprocess is killed immediately before archive
+directory rename and immediately after rename but before parent fsync; recovery
+finds respectively no destination or a fully reopenable and extendable tree.
+Canonical deletion, retention/availability policy, and the
+atomic pruning transition remain absent, so archives neither alter fork choice
+nor create consensus finality. Broader physical disk/filesystem campaigns also
+precede production activation. The integration suite kills a real subprocess
+on both sides of ordinary node commit,
 checkpoint-rotation, and stale-prune synchronous batches. Each recovery is
 compared with independently built exact old/new fixtures across tip, state,
 work, history, nodes, and checkpoints, then extended with another valid block.

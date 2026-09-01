@@ -36,6 +36,17 @@ type Base struct {
 	RecentTimestamps []uint64
 }
 
+// SelectedHistory is a detached, point-in-time inventory of one selected
+// ancestry. BlockIDs run from the activation block through Anchor; the
+// immutable activation parent is represented separately by BaseID.
+type SelectedHistory struct {
+	BaseID        types.Hash
+	Anchor        storage.Tip
+	BlockIDs      []types.Hash
+	AncestryNodes uint64
+	AncestryRoot  types.Hash
+}
+
 // PruneReport describes one completed local side-fork maintenance pass.
 type PruneReport struct {
 	CutoffHeight         uint64
@@ -208,6 +219,67 @@ func (store *Store) SelectedAncestryCommitment(
 	if store.closed {
 		return types.Hash{}, 0, storage.ErrClosed
 	}
+	return store.selectedAncestryCommitmentLocked(anchor)
+}
+
+// SelectedHistorySnapshot returns a bounded inventory and commitment captured
+// under one read lock. Blocks remain immutable after admission, so an archive
+// exporter can fetch the detached IDs after releasing the lock and then
+// recheck selection before publication.
+func (store *Store) SelectedHistorySnapshot(
+	anchor types.Hash,
+	maximumBlocks uint64,
+) (SelectedHistory, error) {
+	if store == nil || anchor.IsZero() || maximumBlocks == 0 {
+		return SelectedHistory{}, ErrConfiguration
+	}
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+	if store.closed {
+		return SelectedHistory{}, storage.ErrClosed
+	}
+	selected, err := store.isAncestorLocked(anchor, store.tipID)
+	if err != nil {
+		return SelectedHistory{}, err
+	}
+	if !selected {
+		return SelectedHistory{}, ErrPosition
+	}
+	base := store.nodes[store.baseID]
+	anchorNode := store.nodes[anchor]
+	if base == nil || anchorNode == nil || anchorNode.tip.Height < base.tip.Height {
+		return SelectedHistory{}, storage.ErrCorrupt
+	}
+	blockCount := anchorNode.tip.Height - base.tip.Height
+	if blockCount > maximumBlocks || blockCount > uint64(^uint(0)>>1) {
+		return SelectedHistory{}, storage.ErrHistoryLimit
+	}
+	ids := make([]types.Hash, int(blockCount))
+	cursor := anchor
+	for index := len(ids) - 1; index >= 0; index-- {
+		node := store.nodes[cursor]
+		if node == nil || node.block == nil {
+			return SelectedHistory{}, storage.ErrCorrupt
+		}
+		ids[index] = cursor
+		cursor = node.block.Header.Seal.AnchorParent
+	}
+	if cursor != store.baseID {
+		return SelectedHistory{}, storage.ErrCorrupt
+	}
+	root, count, err := store.selectedAncestryCommitmentLocked(anchor)
+	if err != nil || count != blockCount+1 {
+		return SelectedHistory{}, storage.ErrCorrupt
+	}
+	return SelectedHistory{
+		BaseID: store.baseID, Anchor: cloneTip(anchorNode.tip), BlockIDs: ids,
+		AncestryNodes: count, AncestryRoot: root,
+	}, nil
+}
+
+func (store *Store) selectedAncestryCommitmentLocked(
+	anchor types.Hash,
+) (types.Hash, uint64, error) {
 	selected, err := store.isAncestorLocked(anchor, store.tipID)
 	if err != nil {
 		return types.Hash{}, 0, err

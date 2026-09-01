@@ -3,9 +3,7 @@ package workchain
 import (
 	"bytes"
 	"context"
-	"crypto/ed25519"
 	"errors"
-	"sort"
 	"testing"
 
 	"github.com/cockroachdb/pebble/v2"
@@ -14,7 +12,6 @@ import (
 	"github.com/outcomemesh/outcomemesh/core/types"
 	"github.com/outcomemesh/outcomemesh/core/workblock"
 	"github.com/outcomemesh/outcomemesh/core/workgraph"
-	"github.com/outcomemesh/outcomemesh/node/workarchive"
 	"github.com/outcomemesh/outcomemesh/storage"
 )
 
@@ -257,6 +254,19 @@ func TestSelectedAncestryArchiveAnchorSurvivesRestartButNotReorg(t *testing.T) {
 	if root.String() != expectedAncestryRoot {
 		t.Fatalf("selected ancestry root=%s want=%s", root, expectedAncestryRoot)
 	}
+	history, err := store.SelectedHistorySnapshot(anchor.ID, 2)
+	if err != nil || history.BaseID != base.Tip.ID ||
+		!storage.EqualTips(history.Anchor, anchor) || len(history.BlockIDs) != 2 ||
+		history.BlockIDs[0] != activationID || history.BlockIDs[1] != anchor.ID ||
+		history.AncestryRoot != root || history.AncestryNodes != count {
+		t.Fatalf("selected history=%+v err=%v", history, err)
+	}
+	if _, err := store.SelectedHistorySnapshot(anchor.ID, 1); !errors.Is(err, storage.ErrHistoryLimit) {
+		t.Fatalf("selected history limit error=%v", err)
+	}
+	if _, err := store.SelectedHistorySnapshot(sideActivationID, 2); !errors.Is(err, ErrPosition) {
+		t.Fatalf("side history snapshot error=%v", err)
+	}
 	if selected, err := store.IsAncestor(base.Tip.ID, anchor.ID); err != nil || !selected {
 		t.Fatalf("base ancestry selected=%t err=%v", selected, err)
 	}
@@ -267,50 +277,6 @@ func TestSelectedAncestryArchiveAnchorSurvivesRestartButNotReorg(t *testing.T) {
 		t.Fatalf("side anchor commitment error=%v", err)
 	}
 
-	binding := workarchive.Binding{
-		NetworkID:        parameters.NetworkID,
-		GenesisID:        types.DomainHash("test/workchain/archive-genesis"),
-		ActivationHeight: parameters.ActivationHeight,
-		BaseID:           base.Tip.ID,
-	}
-	statement := workarchive.Statement{
-		Version:           workarchive.StatementVersion0,
-		NetworkID:         binding.NetworkID,
-		GenesisID:         binding.GenesisID,
-		ActivationHeight:  binding.ActivationHeight,
-		BaseID:            binding.BaseID,
-		Sequence:          1,
-		Anchor:            anchor,
-		AncestryNodes:     count,
-		AncestryRoot:      root,
-		ArchiveManifestID: types.DomainHash("test/workchain/archive-manifest"),
-	}
-	keys := []ed25519.PrivateKey{
-		ed25519.NewKeyFromSeed(bytes.Repeat([]byte{41}, ed25519.SeedSize)),
-		ed25519.NewKeyFromSeed(bytes.Repeat([]byte{42}, ed25519.SeedSize)),
-	}
-	attestations := make([]workarchive.Attestation, len(keys))
-	trusted := make([][ed25519.PublicKeySize]byte, len(keys))
-	for index, key := range keys {
-		attestations[index], err = workarchive.Attest(key, statement)
-		if err != nil {
-			t.Fatal(err)
-		}
-		copy(trusted[index][:], key.Public().(ed25519.PublicKey))
-	}
-	sort.Slice(trusted, func(left, right int) bool {
-		return bytes.Compare(trusted[left][:], trusted[right][:]) < 0
-	})
-	checkpoint, err := workarchive.NewCheckpoint(statement, attestations)
-	if err != nil {
-		t.Fatal(err)
-	}
-	policy := workarchive.Policy{
-		Binding: binding, TrustedAttestors: trusted, RequiredAttestations: 2,
-	}
-	if err := workarchive.VerifyChain(checkpoint, policy, store); err != nil {
-		t.Fatal(err)
-	}
 	if err := store.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -325,17 +291,15 @@ func TestSelectedAncestryArchiveAnchorSurvivesRestartButNotReorg(t *testing.T) {
 		t.Fatalf("restart ancestry root/count=%s/%d want=%s/%d err=%v",
 			afterRoot, afterCount, root, count, err)
 	}
-	if err := workarchive.VerifyChain(checkpoint, policy, reopened); err != nil {
-		t.Fatalf("restart rejected selected checkpoint: %v", err)
-	}
 	nextSelected, _ := mineChild(
 		t, reopened, anchor.ID, anchor.Timestamp+60, "archive-selected-after-restart",
 	)
 	if _, _, err := reopened.Commit(nextSelected, nextSelected.Header.Seal.Timestamp); err != nil {
 		t.Fatal(err)
 	}
-	if err := workarchive.VerifyChain(checkpoint, policy, reopened); err != nil {
-		t.Fatalf("selected descendant invalidated earlier checkpoint: %v", err)
+	if afterExtensionRoot, afterExtensionCount, err := reopened.SelectedAncestryCommitment(anchor.ID); err != nil || afterExtensionRoot != root || afterExtensionCount != count {
+		t.Fatalf("selected descendant changed earlier ancestry=%s/%d want=%s/%d err=%v",
+			afterExtensionRoot, afterExtensionCount, root, count, err)
 	}
 
 	sideChild, _ := mineChild(
@@ -366,8 +330,8 @@ func TestSelectedAncestryArchiveAnchorSurvivesRestartButNotReorg(t *testing.T) {
 	if selectedTip.ID != sideWinnerID {
 		t.Fatalf("heavier side branch tip=%s want=%s", selectedTip.ID, sideWinnerID)
 	}
-	if err := workarchive.VerifyChain(checkpoint, policy, reopened); !errors.Is(err, workarchive.ErrChain) {
-		t.Fatalf("reorged checkpoint error=%v", err)
+	if _, _, err := reopened.SelectedAncestryCommitment(anchor.ID); !errors.Is(err, ErrPosition) {
+		t.Fatalf("reorged anchor commitment error=%v", err)
 	}
 }
 

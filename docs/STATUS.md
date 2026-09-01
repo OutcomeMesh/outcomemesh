@@ -302,9 +302,24 @@ Implemented in an isolated, not-yet-activated consensus package:
   the same anchor survives database restart and extension of its branch but is
   rejected after a higher-work sibling reorganization. Golden codec, mutation,
   untrusted/duplicate/insufficient-quorum, strict-file, predecessor, fork, and
-  decoder-fuzz tests pass. The manifest, archive export/restore, and canonical
-  deletion are intentionally absent, so this creates neither pruning authority
-  nor local finality.
+  decoder-fuzz tests pass.
+- the checkpoint's manifest ID now resolves to a strict content-addressed
+  archive: ordered descriptors commit up to 4,194,304 activation-to-anchor
+  blocks across at most 65,536 chunks, while local block/chunk/byte limits may
+  be lower. Chunks bind network/base/anchor/index/height and carry at most 256
+  canonical blocks under 64 MiB. Export writes immutable regular files and
+  rechecks selection before atomic directory publication. Verification checks
+  exact directory membership, IDs, ordering, counts, and bytes, then executes
+  every block from the external activation base. Persistent restore builds a
+  fresh Pebble tree, closes/reopens it for full schema/state verification, and
+  only then renames/fsyncs the non-replacing destination. A real fork fixture
+  excludes the sibling, restores, reopens, and extends; corruption, symlink,
+  extra-file, reorg, policy, and injected pre-publication failures are negative
+  tests, and both new decoders are fuzzed. A subprocess killed immediately
+  before rename recovers with no destination and can retry; one killed after
+  rename but before parent fsync recovers a fully reopenable and extendable
+  database. Canonical deletion remains absent, so this creates neither pruning
+  authority nor local finality.
 - an isolated activation router now owns strict v0/v1 block admission. It
   dispatches unchanged canonical encodings from their leading version, permits
   v0 only below `H` and v1 only from `H`, and lazily creates one WorkChain tree
@@ -551,8 +566,8 @@ No WorkGraph field has entered a version-0 block yet. The v1 store and opt-in
 QUIC session remain isolated from every ordinary v0 chain/CLI path and are
 reachable only through the explicitly marked experimental commands;
 adversarial discovery/eclipse and longer real-QUIC rapid-parent churn soaks,
-topology-derived peer selection, restorable history export and canonical
-pruning, extended filesystem-fault/soak campaigns,
+topology-derived peer selection, replicated archive availability and atomic
+canonical pruning, extended filesystem-fault/soak campaigns,
 production gossip-budget calibration, and broader adaptive economic-strategy
 analysis remain before activation.
 

@@ -1,7 +1,7 @@
 // Package workarchive defines independently attested, non-consensus history
-// anchors for the experimental WorkGraph chain. Anchors are a prerequisite for
-// future archival export/pruning; this package never deletes chain data or
-// changes fork choice.
+// anchors and content-addressed block archives for the experimental WorkGraph
+// chain. Restore replays ordinary consensus transitions into a new database;
+// this package never deletes chain data or changes fork choice.
 package workarchive
 
 import (

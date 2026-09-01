@@ -237,9 +237,14 @@ statement, and an archive-manifest ID. It requires a locally configured quorum
 of at least two among 2–64 sorted Ed25519 attestors and recomputes selection
 against the live WorkChain, so signatures neither override hard-work fork
 choice nor survive a reorganization of the named branch. The format and atomic
-file publication are implemented; manifest validation, restorable export, and
-canonical deletion are not. Local maintenance already marks canonical ancestry
-and every side branch reaching a configurable cutoff, then atomically removes only complete
+checkpoint-file publication are implemented. A separate content-addressed
+manifest commits ordered bounded block chunks; verification replays those
+blocks from the external activation base through ordinary WorkChain execution.
+Persistent restore builds, closes, reopens, and verifies a temporary Pebble
+tree before directory rename and parent fsync, and never replaces an existing
+destination. Canonical deletion is not implemented. Local maintenance already
+marks canonical ancestry and every side branch reaching a configurable cutoff,
+then atomically removes only complete
 stale subtrees while decrementing the exact logical history counter. Its default
 window is 4,096 heights, zero disables it, and it never creates local PoW
 finality by pruning canonical history. Broader filesystem-fault soaks and
