@@ -442,9 +442,16 @@ per peer and 16 globally per minute. A stream is finite: at most four batches,
 that differ from the exact request fail closed. Valid objects preceding a bad
 tail remain safe, reported, and resumable, while the session fails. These
 ceilings limit protocol amplification but do not prove that an allowed peer is
-an independent or durable replica. Physical disk-exhaustion tests, long
-filesystem soaks, durable challenge scheduling/evidence retention, and an
-operator CLI remain activation blockers.
+an independent or durable replica. The server CLI reconstructs the activation
+base from its local node, verifies the configured checkpoint under a 2–64 key
+trust set/quorum, fully replays the exact source, and only then imports objects.
+The pinned client persists every accepted object through the same no-replace
+validator; incomplete runs are resumable, while complete runs materialize and
+fully replay before atomic publication. Existing outputs are reverified rather
+than overwritten. The fourth response is followed only by bounded client EOF,
+preventing one-shot process exit from truncating final QUIC frames. Physical
+disk-exhaustion tests, long filesystem soaks, and automated challenge
+scheduling/evidence retention remain activation blockers.
 
 The activation boundary is not a locally finalized block. The isolated router
 can create a separate v1 tree for every known v0 node at height `H-1` and uses

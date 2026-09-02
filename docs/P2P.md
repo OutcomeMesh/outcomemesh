@@ -457,7 +457,42 @@ oversize responses and applies valid objects only through the append-only
 manifest validator. If data remains after four batches it closes cleanly,
 opens a new pinned stream, and recomputes the missing set. This makes transfer
 resumable without treating the sender or cache as a trust root. The handler is
-not yet wired into an operator CLI.
+exposed only by `omd work-archive-object-serve-quic`; startup verifies the exact
+checkpoint/manifest against an operator-configured attestor quorum, reconstructs
+the activation base from the local node, fully replays the source directory,
+and imports it into the persistent object store before listening.
+
+`omd work-archive-object-fetch-quic` pins the source identity and runs one
+finite stream per invocation. An incomplete four-batch result is successful and
+remains resumable in the append-only store. Once complete, the command verifies
+the same checkpoint/quorum and local activation base, materializes outside the
+store, performs a full consensus replay, and atomically publishes the directory.
+A complete store/output is reverified and recovered without network access. At
+the four-batch ceiling the server waits for client EOF before a one-shot host
+exits, so the last QUIC response cannot be cut off. A real process test restarts
+the source on the same identity/store and materializes two independently
+verified outputs.
+
+The essential operator shape is:
+
+```sh
+omd work-archive-object-serve-quic \
+  --data node-data --key source-transport.key \
+  --client-peer-id <client-outcomemesh-id> \
+  --archive archive-v1 --manifest manifest.omwm --checkpoint checkpoint.omwc \
+  --attestor-public-key <key-a> --attestor-public-key <key-b> \
+  --object-store source-objects
+
+omd work-archive-object-fetch-quic \
+  --data node-data --key receiver-transport.key \
+  --peer <direct-quic-multiaddress> --peer-id <source-outcomemesh-id> \
+  --manifest manifest.omwm --checkpoint checkpoint.omwc \
+  --attestor-public-key <key-a> --attestor-public-key <key-b> \
+  --object-store receiver-objects --out verified-archive-v1
+```
+
+`--required-attestations` defaults to two. Local block, chunk, and byte replay
+limits default to the hard codec ceilings and may be tightened explicitly.
 
 Replica freshness uses another opt-in scope,
 `/outcomemesh/workarchive-custody/1`, and never negotiates the bulk-object

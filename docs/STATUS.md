@@ -387,7 +387,18 @@ Implemented in an isolated, not-yet-activated consensus package:
   wrong server pin, transfers exactly the one composed suffix object, then
   materializes and fully replays the complete archive. Concurrent, global-rate,
   corrupt-tail, canonical-allowlist, race, and frame-fuzz cases are separate
-  gates. The protocol remains outside ordinary CLI and consensus paths.
+  gates. One-shot `work-archive-object-serve-quic` and
+  `work-archive-object-fetch-quic` commands now expose only this isolated
+  protocol. Both reconstruct the activation base from WorkGraph-enabled node
+  data and verify the target checkpoint under an explicit trusted-attestor
+  quorum. The source fully replays before importing into its persistent store;
+  the pinned receiver preserves incomplete work in an append-only store and
+  atomically publishes only after complete materialization and a second replay.
+  A real process test restarts the source on the same key/store, materializes a
+  second independent output, and proves a completed client recovers without
+  network access. Fourth-batch completion waits for bounded client EOF so a
+  one-shot source cannot truncate its final QUIC response. The commands remain
+  outside ordinary v0 CLI and consensus paths.
 - live replica freshness and receipt renewal now have strict canonical evidence.
   A trusted auditor creates a short-lived signed challenge from a 32-byte
   `crypto/rand` nonce and a requested future retention deadline. Up to eight
@@ -671,7 +682,7 @@ QUIC session remain isolated from every ordinary v0 chain/CLI path and are
 reachable only through the explicitly marked experimental commands;
 adversarial discovery/eclipse and longer real-QUIC rapid-parent churn soaks,
 topology-derived peer selection, automated custody scheduling/evidence rotation,
-bulk archive-session CLI integration, canonical-prune
+canonical-prune
 disk-exhaustion/long-soak campaigns, production gossip-budget calibration, and
 broader adaptive economic-strategy analysis remain before activation.
 

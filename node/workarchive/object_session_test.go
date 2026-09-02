@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"path/filepath"
+	"sort"
 	"testing"
 	"time"
 
@@ -463,6 +464,39 @@ func TestArchiveObjectSessionStopsAtFiniteBatchBudgetAndResumes(t *testing.T) {
 	if stored, _, err := destinationStore.Usage(); err != nil || stored != objects {
 		t.Fatalf("finite destination objects=%d want=%d err=%v", stored, objects, err)
 	}
+
+	var framed bytes.Buffer
+	manifestID, err := manifest.ID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	allIDs := make([]types.Hash, len(manifest.Chunks))
+	for index, descriptor := range manifest.Chunks {
+		allIDs[index] = descriptor.ID
+	}
+	sort.Slice(allIDs, func(left, right int) bool {
+		return types.CompareHash(allIDs[left], allIDs[right]) < 0
+	})
+	for batch := 0; batch < MaximumObjectSessionBatches; batch++ {
+		first := batch * MaximumObjectRequestIDs
+		ids := append([]types.Hash(nil), allIDs[first:first+MaximumObjectRequestIDs]...)
+		request := ChunkRequest{
+			Version: ObjectExchangeVersion0, ManifestID: manifestID, IDs: ids,
+		}
+		encoded, err := request.CanonicalBytes()
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeObjectTestFrame(t, &framed, encoded)
+	}
+	framed.WriteByte(1)
+	trailing := &objectMemoryStream{reader: bytes.NewReader(framed.Bytes())}
+	if report, err := sourceSession.Serve(
+		context.Background(), trailing,
+	); !errors.Is(err, ErrObjectSession) ||
+		report.Requests != MaximumObjectSessionBatches || report.Objects != objects-1 {
+		t.Fatalf("post-budget client data report=%+v error=%v", report, err)
+	}
 }
 
 func TestArchiveObjectSessionFrameRejectsLimitsAndTruncation(t *testing.T) {
@@ -542,3 +576,20 @@ func writeObjectTestFrame(t testing.TB, writer io.Writer, encoded []byte) {
 		t.Fatal(err)
 	}
 }
+
+type objectMemoryStream struct {
+	reader *bytes.Reader
+	writer bytes.Buffer
+}
+
+func (stream *objectMemoryStream) Read(destination []byte) (int, error) {
+	return stream.reader.Read(destination)
+}
+
+func (stream *objectMemoryStream) Write(source []byte) (int, error) {
+	return stream.writer.Write(source)
+}
+
+func (*objectMemoryStream) Close() error { return nil }
+
+func (*objectMemoryStream) SetDeadline(time.Time) error { return nil }

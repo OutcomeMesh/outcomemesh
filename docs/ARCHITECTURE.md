@@ -293,6 +293,13 @@ an immutable canonical record before sending and reloads it on restart; the
 auditor commits the challenge before dialing and the verified response before
 publishing the receipt. Separate one-shot `omd` commands expose both roles with
 pinned/allowlisted transport identities and separate portable signing keys.
+The bulk object scope also has isolated `work-archive-object-serve-quic` and
+`work-archive-object-fetch-quic` commands. Both reconstruct the activation base
+from local node data and verify the target manifest/checkpoint under an explicit
+attestor trust set. The server fully replays before import; the client preserves
+an incomplete resumable store and only publishes after materialization plus a
+second full replay. Source restart and network-free client recovery are covered
+by a real process test.
 Automated scheduling, record retention/rotation, broader filesystem-fault
 soaks, and outbound share publication remain. The libp2p
 adapter carries both the

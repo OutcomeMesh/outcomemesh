@@ -81,4 +81,28 @@ func TestCustodyCommandsRejectIncompleteConfiguration(t *testing.T) {
 	if err := run([]string{"work-archive-custody-challenge-quic"}); err == nil {
 		t.Fatal("custody auditor accepted an incomplete configuration")
 	}
+	if err := run([]string{"work-archive-object-serve-quic"}); err == nil {
+		t.Fatal("archive object server accepted an incomplete configuration")
+	}
+	if err := run([]string{"work-archive-object-fetch-quic"}); err == nil {
+		t.Fatal("archive object client accepted an incomplete configuration")
+	}
+}
+
+func TestArchiveObjectPeerAllowlistIsCanonicalized(t *testing.T) {
+	first := types.DomainHash("test/cmd/archive-object-peer", []byte("first"))
+	second := types.DomainHash("test/cmd/archive-object-peer", []byte("second"))
+	parsed, err := parseArchivePeerIDs([]string{second.String(), first.String()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(parsed) != 2 || types.CompareHash(parsed[0], parsed[1]) >= 0 {
+		t.Fatalf("archive peer allowlist is not canonical: %v", parsed)
+	}
+	if _, err := parseArchivePeerIDs([]string{first.String(), first.String()}); err == nil {
+		t.Fatal("duplicate archive client identity was accepted")
+	}
+	if _, err := parseArchivePeerIDs(nil); err == nil {
+		t.Fatal("empty archive client allowlist was accepted")
+	}
 }

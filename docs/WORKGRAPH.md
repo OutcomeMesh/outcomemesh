@@ -533,12 +533,21 @@ the exact requested response. If more data remains, the receiver opens another
 stream and recomputes only its still-missing set. A real loopback fixture starts
 from the predecessor generation and proves that exactly one suffix object
 crosses the authenticated stream before full materialization and replay.
+One-shot `work-archive-object-serve-quic` and
+`work-archive-object-fetch-quic` commands now expose that path without trusting
+the network cache. Each side reconstructs the immutable activation base from
+its WorkGraph-enabled node and verifies the manifest/checkpoint against an
+explicit attestor quorum. The source performs full replay before import; the
+receiver keeps incomplete work only in its append-only store and atomically
+publishes after complete materialization and replay. A process fixture repeats
+the transfer after source restart and proves a complete client can recover
+without network access.
 
 This does not create network finality or prove independent failure domains.
 After pruning, the local node deliberately rejects forks whose parent is below
 its floor; enabling it is therefore an operator-selected local finalization
-horizon. Automated custody scheduling and evidence rotation, bulk
-archive-session CLI integration, disk-exhaustion campaigns, and longer physical-filesystem soaks remain before
+horizon. Automated custody scheduling and evidence rotation,
+disk-exhaustion campaigns, and longer physical-filesystem soaks remain before
 public activation. The
 integration suite now covers all four synchronous WorkChain batch classes:
 commit, checkpoint rotation, stale-fork prune, and canonical-floor transition.

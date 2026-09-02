@@ -192,7 +192,31 @@ func (session *ObjectSession) Serve(
 			report.SentBytes += uint64(len(object.Encoded))
 		}
 	}
+	if err := session.awaitObjectClientClose(ctx, stream); err != nil {
+		return report, err
+	}
 	return report, nil
+}
+
+// awaitObjectClientClose confirms that the fourth response reached the
+// receiver before a one-shot serving host is allowed to exit. EOF is transport
+// completion, not a fifth application message.
+func (session *ObjectSession) awaitObjectClientClose(
+	ctx context.Context,
+	stream ObjectSessionStream,
+) error {
+	if err := session.setDeadline(ctx, stream); err != nil {
+		return err
+	}
+	var unexpected [1]byte
+	read, err := stream.Read(unexpected[:])
+	if read == 0 && errors.Is(err, io.EOF) {
+		return nil
+	}
+	if err == nil {
+		err = errors.New("archive client sent data after the final response")
+	}
+	return errors.Join(ErrObjectSession, err)
 }
 
 func objectBatchAnswersRequest(batch ChunkBatch, request ChunkRequest) bool {
