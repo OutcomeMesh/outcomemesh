@@ -65,8 +65,13 @@ second full replay; a replica that already has the prior generation therefore
 fetches only new suffix chunks. A separate opt-in libp2p QUIC-v1 protocol now
 requires an exact server pin and a canonical allowlist of authenticated client
 identities, with independent concurrent and fixed-window limits. It is not
-trusted by consensus and is not yet exposed through a CLI or backed by live
-custody challenges.
+trusted by consensus. A second isolated QUIC-v1 custody protocol lets a trusted
+auditor issue a short-lived signed random challenge whose sampled chunk IDs are
+derived deterministically from the nonce, manifest, and current receipt. The
+replica returns the exact validated chunks, a signed digest proof, and a linked
+version-1 receipt with the requested renewal deadline committed by the
+challenge. Legacy full-replay version-0 receipts remain valid. Neither archive
+protocol is yet exposed through an operator CLI.
 Together with unaudited PoW parameters, the raw-seed CLI wallet, and provisional
 peer routing policy, this keeps the system a local development chain rather
 than a public testnet.
@@ -257,8 +262,9 @@ The CLI wallet is for development only.
   delta/checkpoint rotation, stale-fork pruning, opt-in canonical retained
   floors, logical history budget, restart, and reorg verification;
 - `node/workarchive/`: strict content-addressed history export/replay/restore,
-  multi-attestor anchors, expiring replica-custody bundles, and the policy gate
-  for disabled-by-default canonical-prefix pruning;
+  multi-attestor anchors, expiring and challenge-renewed replica-custody
+  receipts, and the policy gate for disabled-by-default canonical-prefix
+  pruning;
 - `node/mempool/`, `node/wire/`, `node/syncer/`, `node/session/`: bounded peer
   admission and transport-independent fork synchronization;
 - `node/discovery/`, `node/peers/`: signed peer advertisements, bounded

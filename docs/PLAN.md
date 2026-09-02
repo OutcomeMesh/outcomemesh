@@ -175,7 +175,11 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
   replica transfers only missing suffix objects through bounded, canonical,
   manifest-bound requests and batches over identity-pinned, allowlisted,
   independently rate-limited transport sessions, then fully replays the
-  materialized archive before publication. An anchor alone must never
+  materialized archive before publication. Fresh retention must be renewable
+  only through a signed, freshness-bounded random-sample challenge whose
+  deterministic manifest sample, returned-byte proof, predecessor receipt, and
+  requested term are linked into a versioned receipt over a separate pinned,
+  allowlisted, rate-limited transport scope. An anchor alone must never
   authorize deletion or override hard-work fork choice; canonical pruning is
   explicit local finalization and remains disabled by default.
 - Admission-deduplicated multi-hop forwarding across the explicit peer graph.

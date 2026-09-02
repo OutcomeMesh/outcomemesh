@@ -466,6 +466,15 @@ duplicate keys, location IDs, paths, directory identities, stale receipts, or
 insufficient remaining retention, then replays every distinct directory again
 and fsyncs the exact availability-bundle ID before touching WorkChain. The
 symlink-resolved evidence destination must lie outside every replica tree.
+Fresh custody can extend a receipt without claiming a second full replay. A
+trusted auditor signs a short-lived random nonce and an exact future retention
+deadline; the sampled chunk IDs are derived deterministically from that nonce,
+the manifest, and predecessor receipt. The replica returns every sampled chunk,
+a signature over their canonical batch digest, and a receipt-v1 link to the
+predecessor and proof. Legacy receipt v0 remains valid. A separate allowlisted,
+identity-pinned `/outcomemesh/workarchive-custody/1` QUIC-v1 stream executes one
+bounded challenge → batch → proof → renewal exchange under resource and rate
+limits independent of bulk archive transfer.
 
 The schema-4 pruning batch is permitted only with an explicitly non-zero local
 `CanonicalRetention`; zero is the default. The archive anchor must remain on
@@ -519,8 +528,8 @@ crosses the authenticated stream before full materialization and replay.
 This does not create network finality or prove independent failure domains.
 After pruning, the local node deliberately rejects forks whose parent is below
 its floor; enabling it is therefore an operator-selected local finalization
-horizon. Renewed custody challenges, archive-session CLI integration,
-disk-exhaustion campaigns, and longer physical-filesystem soaks remain before
+horizon. Durable custody scheduling/evidence retention, archive-session CLI
+integration, disk-exhaustion campaigns, and longer physical-filesystem soaks remain before
 public activation. The
 integration suite now covers all four synchronous WorkChain batch classes:
 commit, checkpoint rotation, stale-fork prune, and canonical-floor transition.

@@ -245,7 +245,12 @@ Persistent restore builds, closes, reopens, and verifies a temporary Pebble
 tree before directory rename and parent fsync, and never replaces an existing
 destination. A separate replica key set issues time-bounded custody receipts
 only after full replay. Prune authorization replays every distinct replica
-again and durably publishes the receipt bundle. With an explicit non-zero local
+again and durably publishes the receipt bundle. Receipt v1 can extend one exact
+predecessor only after a fresh signed random-sample challenge: sample IDs are
+deterministically derived from the nonce, manifest, and predecessor receipt;
+the signed response commits the canonical returned batch, and the renewal
+commits both proof ID and requested deadline. Receipt v0 remains decodable.
+With an explicit non-zero local
 retention horizon, one Pebble batch replaces the prefix with canonical headers,
 a full-state floor, and exact evidence IDs; reopen recomputes archived work and
 ancestry before accepting descendants. The default remains disabled because
@@ -279,9 +284,12 @@ authenticates both Ed25519 transport identities; the dialer must pin the exact
 server and the server admits only a sorted operator allowlist. One finite stream
 serves at most four existing 64-object/64-MiB batches, rejects repeated IDs, and
 has independent concurrent and per-peer/global fixed-window admission. A
-receiver may resume on a new stream from its append-only store. Live custody
-challenges and renewal, an operator CLI, broader filesystem-fault soaks, and
-outbound share publication remain. The libp2p
+receiver may resume on a new stream from its append-only store. A second
+`/outcomemesh/workarchive-custody/1` scope admits only configured auditor
+transport identities under separate limits. Its one-shot state machine is
+challenge → sampled batch → signed proof → linked renewed receipt, with strict
+frame sizes and deadlines. An operator CLI, durable scheduling, broader
+filesystem-fault soaks, and outbound share publication remain. The libp2p
 adapter carries both the
 versioned chain and separate WorkGraph share sessions under distinct opt-in
 protocol IDs and resource scopes. Ordinary CLI hosts leave both disabled. The

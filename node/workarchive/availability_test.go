@@ -203,11 +203,28 @@ func TestReplicaAvailabilityCodecsRejectMutationAndTrailingBytes(t *testing.T) {
 	} else if loadedID, _ := loaded.ID(); loadedID != bundleID {
 		t.Fatalf("loaded availability ID=%s want=%s", loadedID, bundleID)
 	}
+	v1Bytes := replicaReceiptV1CodecSeed()
+	v1Receipt, err := DecodeReplicaReceipt(v1Bytes)
+	if err != nil || v1Receipt.Version != ReplicaReceiptVersion1 {
+		t.Fatalf("v1 receipt decode=%+v err=%v", v1Receipt, err)
+	}
+	if canonical, err := v1Receipt.CanonicalBytes(); err != nil || !bytes.Equal(canonical, v1Bytes) {
+		t.Fatalf("v1 receipt canonical mismatch err=%v", err)
+	}
+	if _, err := DecodeReplicaReceipt(append(v1Bytes, 0)); !errors.Is(err, ErrReplicaReceipt) {
+		t.Fatalf("trailing v1 receipt error=%v", err)
+	}
+	mutatedV1 := append([]byte(nil), v1Bytes...)
+	mutatedV1[len(mutatedV1)-1] ^= 1
+	if _, err := DecodeReplicaReceipt(mutatedV1); !errors.Is(err, ErrReplicaReceipt) {
+		t.Fatalf("mutated v1 receipt error=%v", err)
+	}
 }
 
 func FuzzDecodeReplicaReceiptNeverPanics(f *testing.F) {
 	receiptBytes, _ := availabilityCodecSeeds()
 	f.Add(receiptBytes)
+	f.Add(replicaReceiptV1CodecSeed())
 	f.Add([]byte{0})
 	f.Fuzz(func(t *testing.T, input []byte) { _, _ = DecodeReplicaReceipt(input) })
 }
@@ -249,6 +266,32 @@ func availabilityCodecSeeds() ([]byte, []byte) {
 	}
 	bundleBytes, _ := bundle.CanonicalBytes()
 	return receiptBytes, bundleBytes
+}
+
+func replicaReceiptV1CodecSeed() []byte {
+	key := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{73}, ed25519.SeedSize))
+	receipt := ReplicaReceipt{
+		Version: ReplicaReceiptVersion1,
+		Binding: Binding{
+			NetworkID:        909,
+			GenesisID:        types.DomainHash("test/workarchive/availability-v1-genesis"),
+			ActivationHeight: 1,
+			BaseID:           types.DomainHash("test/workarchive/availability-v1-base"),
+		},
+		StatementID:       types.DomainHash("test/workarchive/availability-v1-statement"),
+		ManifestID:        types.DomainHash("test/workarchive/availability-v1-manifest"),
+		AnchorID:          types.DomainHash("test/workarchive/availability-v1-anchor"),
+		LocationID:        types.DomainHash("test/workarchive/availability-v1-location"),
+		PreviousReceiptID: types.DomainHash("test/workarchive/availability-v1-previous"),
+		CustodyProofID:    types.DomainHash("test/workarchive/availability-v1-proof"),
+		StoredAt:          2_000,
+		RetainUntil:       30_000,
+	}
+	copy(receipt.ReplicaPublicKey[:], key.Public().(ed25519.PublicKey))
+	message, _ := receipt.signatureMessage()
+	copy(receipt.Signature[:], ed25519.Sign(key, message))
+	encoded, _ := receipt.CanonicalBytes()
+	return encoded
 }
 
 func archiveReplicaFixture(

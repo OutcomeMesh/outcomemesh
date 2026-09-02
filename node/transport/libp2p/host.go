@@ -31,6 +31,7 @@ const (
 	ChainNotifyProtocol    protocol.ID = "/outcomemesh/chain-notify/1"
 	TiePairProtocol        protocol.ID = "/outcomemesh/tie-pair/2"
 	ArchiveObjectProtocol  protocol.ID = "/outcomemesh/workarchive/1"
+	ArchiveCustodyProtocol protocol.ID = "/outcomemesh/workarchive-custody/1"
 	maxListenAddresses                 = 8
 	maxAddressBytes                    = 256
 	// MaxConnectionLimit and MaxStreamsPerPeerLimit are hard implementation
@@ -54,6 +55,11 @@ const (
 	MaxArchiveObjectStreamsPerMinuteLimit        = 4
 	MaxArchiveObjectStreamsGlobalPerMinuteLimit  = 128
 	MaximumArchiveObjectPeers                    = 64
+	MaxArchiveCustodyStreamsLimit                = 8
+	MaxArchiveCustodyStreamsPerPeerLimit         = 1
+	MaxArchiveCustodyStreamsPerMinuteLimit       = 2
+	MaxArchiveCustodyStreamsGlobalPerMinuteLimit = 64
+	MaximumArchiveCustodyAuditors                = 64
 	MaxFileDescriptorLimit                       = 4_096
 )
 
@@ -85,6 +91,10 @@ type Config struct {
 	MaxArchiveObjectStreamsPerPeer          int
 	MaxArchiveObjectStreamsPerMinute        int
 	MaxArchiveObjectStreamsGlobalPerMinute  int
+	MaxArchiveCustodyStreams                int
+	MaxArchiveCustodyStreamsPerPeer         int
+	MaxArchiveCustodyStreamsPerMinute       int
+	MaxArchiveCustodyStreamsGlobalPerMinute int
 	MemoryBytes                             int64
 	MaxFileDescriptors                      int
 	GracePeriod                             time.Duration
@@ -110,6 +120,10 @@ func DefaultConfig() Config {
 		MaxArchiveObjectStreamsPerPeer:          1,
 		MaxArchiveObjectStreamsPerMinute:        1,
 		MaxArchiveObjectStreamsGlobalPerMinute:  16,
+		MaxArchiveCustodyStreams:                2,
+		MaxArchiveCustodyStreamsPerPeer:         1,
+		MaxArchiveCustodyStreamsPerMinute:       1,
+		MaxArchiveCustodyStreamsGlobalPerMinute: 8,
 		MemoryBytes:                             64 << 20,
 		MaxFileDescriptors:                      128,
 		GracePeriod:                             30 * time.Second,
@@ -146,6 +160,12 @@ type Host struct {
 	archiveObjectPeerCounts                 map[types.Hash]int
 	maxArchiveObjectStreamsPerMinute        int
 	maxGlobalArchiveObjectStreamsPerMinute  int
+	archiveCustodyMu                        sync.Mutex
+	archiveCustodyWindowStart               time.Time
+	archiveCustodyGlobalCount               int
+	archiveCustodyPeerCounts                map[types.Hash]int
+	maxArchiveCustodyStreamsPerMinute       int
+	maxGlobalArchiveCustodyStreamsPerMinute int
 }
 
 func New(ctx context.Context, privateKey ed25519.PrivateKey, config Config, handler Handler) (*Host, error) {
@@ -204,6 +224,9 @@ func New(ctx context.Context, privateKey ed25519.PrivateKey, config Config, hand
 		archiveObjectPeerCounts:                 make(map[types.Hash]int),
 		maxArchiveObjectStreamsPerMinute:        config.MaxArchiveObjectStreamsPerMinute,
 		maxGlobalArchiveObjectStreamsPerMinute:  config.MaxArchiveObjectStreamsGlobalPerMinute,
+		archiveCustodyPeerCounts:                make(map[types.Hash]int),
+		maxArchiveCustodyStreamsPerMinute:       config.MaxArchiveCustodyStreamsPerMinute,
+		maxGlobalArchiveCustodyStreamsPerMinute: config.MaxArchiveCustodyStreamsGlobalPerMinute,
 	}
 	result.setHandler(SessionProtocol, handler)
 	return result, nil
@@ -279,6 +302,34 @@ func (value *Host) SetArchiveObjectHandler(allowedRemotes []types.Hash, handler 
 		remoteID, err := outcomeIDFromPublicKey(stream.Conn().RemotePublicKey())
 		_, authorized := allowed[remoteID]
 		if err != nil || !authorized || !value.allowArchiveObjectStream(remoteID, time.Now()) {
+			_ = stream.Reset()
+			return
+		}
+		handler(value.context, remoteID, stream)
+	})
+	return nil
+}
+
+// SetArchiveCustodyHandler enables freshness challenges only for a canonical
+// allowlist of authenticated auditor transport identities. Custody has its own
+// resource scope and rate budget; object-transfer traffic cannot consume it.
+func (value *Host) SetArchiveCustodyHandler(allowedAuditors []types.Hash, handler Handler) error {
+	if value == nil || value.inner == nil || handler == nil || len(allowedAuditors) == 0 ||
+		len(allowedAuditors) > MaximumArchiveCustodyAuditors {
+		return ErrConfiguration
+	}
+	allowed := make(map[types.Hash]struct{}, len(allowedAuditors))
+	for index, remoteID := range allowedAuditors {
+		if remoteID.IsZero() ||
+			(index > 0 && types.CompareHash(allowedAuditors[index-1], remoteID) >= 0) {
+			return ErrConfiguration
+		}
+		allowed[remoteID] = struct{}{}
+	}
+	value.inner.SetStreamHandler(ArchiveCustodyProtocol, func(stream network.Stream) {
+		remoteID, err := outcomeIDFromPublicKey(stream.Conn().RemotePublicKey())
+		_, authorized := allowed[remoteID]
+		if err != nil || !authorized || !value.allowArchiveCustodyStream(remoteID, time.Now()) {
 			_ = stream.Reset()
 			return
 		}
@@ -378,6 +429,25 @@ func (value *Host) allowArchiveObjectStream(remoteID types.Hash, now time.Time) 
 	return true
 }
 
+func (value *Host) allowArchiveCustodyStream(remoteID types.Hash, now time.Time) bool {
+	value.archiveCustodyMu.Lock()
+	defer value.archiveCustodyMu.Unlock()
+	if value.archiveCustodyWindowStart.IsZero() ||
+		now.Sub(value.archiveCustodyWindowStart) >= time.Minute ||
+		now.Before(value.archiveCustodyWindowStart) {
+		value.archiveCustodyWindowStart = now
+		value.archiveCustodyGlobalCount = 0
+		clear(value.archiveCustodyPeerCounts)
+	}
+	if value.archiveCustodyGlobalCount >= value.maxGlobalArchiveCustodyStreamsPerMinute ||
+		value.archiveCustodyPeerCounts[remoteID] >= value.maxArchiveCustodyStreamsPerMinute {
+		return false
+	}
+	value.archiveCustodyGlobalCount++
+	value.archiveCustodyPeerCounts[remoteID]++
+	return true
+}
+
 func (value *Host) ID() types.Hash { return value.id }
 
 func (value *Host) Libp2pID() peer.ID {
@@ -467,6 +537,19 @@ func (value *Host) OpenArchiveObjectStream(
 		return nil, types.Hash{}, ErrUnexpectedPeer
 	}
 	return value.openStream(ctx, address, &expected, ArchiveObjectProtocol)
+}
+
+// OpenArchiveCustodyStream opens only the freshness-challenge protocol and
+// pins the replica's authenticated transport identity exactly.
+func (value *Host) OpenArchiveCustodyStream(
+	ctx context.Context,
+	address string,
+	expected types.Hash,
+) (network.Stream, types.Hash, error) {
+	if expected.IsZero() {
+		return nil, types.Hash{}, ErrUnexpectedPeer
+	}
+	return value.openStream(ctx, address, &expected, ArchiveCustodyProtocol)
 }
 
 // DisconnectPeer closes the authenticated connection behind a pinned direct
@@ -638,6 +721,15 @@ func validateConfig(ctx context.Context, privateKey ed25519.PrivateKey, config C
 		config.MaxArchiveObjectStreamsPerMinute > MaxArchiveObjectStreamsPerMinuteLimit ||
 		config.MaxArchiveObjectStreamsGlobalPerMinute < config.MaxArchiveObjectStreamsPerMinute ||
 		config.MaxArchiveObjectStreamsGlobalPerMinute > MaxArchiveObjectStreamsGlobalPerMinuteLimit ||
+		config.MaxArchiveCustodyStreams <= 0 ||
+		config.MaxArchiveCustodyStreams > MaxArchiveCustodyStreamsLimit ||
+		config.MaxArchiveCustodyStreamsPerPeer <= 0 ||
+		config.MaxArchiveCustodyStreamsPerPeer > MaxArchiveCustodyStreamsPerPeerLimit ||
+		config.MaxArchiveCustodyStreams < config.MaxArchiveCustodyStreamsPerPeer ||
+		config.MaxArchiveCustodyStreamsPerMinute <= 0 ||
+		config.MaxArchiveCustodyStreamsPerMinute > MaxArchiveCustodyStreamsPerMinuteLimit ||
+		config.MaxArchiveCustodyStreamsGlobalPerMinute < config.MaxArchiveCustodyStreamsPerMinute ||
+		config.MaxArchiveCustodyStreamsGlobalPerMinute > MaxArchiveCustodyStreamsGlobalPerMinuteLimit ||
 		config.MemoryBytes < 16<<20 || config.MemoryBytes > 2<<30 ||
 		config.MaxFileDescriptors < config.MaxConnections || config.MaxFileDescriptors > MaxFileDescriptorLimit ||
 		config.GracePeriod < 0 {
@@ -662,9 +754,11 @@ func newResourceManager(config Config) (network.ResourceManager, error) {
 	const internalStreamsPerPeer = 8
 	peerStreams := config.MaxStreamsPerPeer + config.MaxWorkStreamsPerPeer +
 		2*config.MaxVersionedChainStreamsPerPeer + config.MaxTiePairStreamsPerPeer +
-		config.MaxArchiveObjectStreamsPerPeer + internalStreamsPerPeer
+		config.MaxArchiveObjectStreamsPerPeer + config.MaxArchiveCustodyStreamsPerPeer +
+		internalStreamsPerPeer
 	totalStreams := config.MaxConnections*(config.MaxStreamsPerPeer+config.MaxWorkStreamsPerPeer+internalStreamsPerPeer) +
-		2*config.MaxVersionedChainStreams + config.MaxTiePairStreams + config.MaxArchiveObjectStreams
+		2*config.MaxVersionedChainStreams + config.MaxTiePairStreams +
+		config.MaxArchiveObjectStreams + config.MaxArchiveCustodyStreams
 	system := rcmgr.ResourceLimits{
 		Streams:         rcmgr.LimitVal(totalStreams),
 		StreamsInbound:  rcmgr.LimitVal(totalStreams),
@@ -715,6 +809,12 @@ func newResourceManager(config Config) (network.ResourceManager, error) {
 		StreamsOutbound: rcmgr.LimitVal(config.MaxArchiveObjectStreamsPerPeer),
 		Memory:          rcmgr.LimitVal64(config.MemoryBytes / 2),
 	}
+	archiveCustodyPerPeer := rcmgr.ResourceLimits{
+		Streams:         rcmgr.LimitVal(config.MaxArchiveCustodyStreamsPerPeer),
+		StreamsInbound:  rcmgr.LimitVal(config.MaxArchiveCustodyStreamsPerPeer),
+		StreamsOutbound: rcmgr.LimitVal(config.MaxArchiveCustodyStreamsPerPeer),
+		Memory:          rcmgr.LimitVal64(config.MemoryBytes / 2),
+	}
 	partial := rcmgr.PartialLimitConfig{
 		System:      system,
 		Transient:   system,
@@ -756,6 +856,12 @@ func newResourceManager(config Config) (network.ResourceManager, error) {
 				StreamsOutbound: rcmgr.LimitVal(config.MaxArchiveObjectStreams),
 				Memory:          rcmgr.LimitVal64(config.MemoryBytes / 2),
 			},
+			ArchiveCustodyProtocol: {
+				Streams:         rcmgr.LimitVal(config.MaxArchiveCustodyStreams),
+				StreamsInbound:  rcmgr.LimitVal(config.MaxArchiveCustodyStreams),
+				StreamsOutbound: rcmgr.LimitVal(config.MaxArchiveCustodyStreams),
+				Memory:          rcmgr.LimitVal64(config.MemoryBytes / 2),
+			},
 		},
 		ProtocolPeer: map[protocol.ID]rcmgr.ResourceLimits{
 			SessionProtocol:        applicationPerPeer,
@@ -764,6 +870,7 @@ func newResourceManager(config Config) (network.ResourceManager, error) {
 			ChainNotifyProtocol:    versionedChainPerPeer,
 			TiePairProtocol:        tiePairPerPeer,
 			ArchiveObjectProtocol:  archiveObjectPerPeer,
+			ArchiveCustodyProtocol: archiveCustodyPerPeer,
 		},
 		Conn: rcmgr.ResourceLimits{
 			Conns: 1, ConnsInbound: 1, ConnsOutbound: 1, FD: 1, Memory: 4 << 20,

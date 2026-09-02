@@ -355,6 +355,34 @@ just passed replay. This is point-in-time trusted
 custody, not proof that operators, devices, or failure domains are independent
 or that bytes will remain online.
 
+Freshness renewal uses a distinct sorted trusted-auditor policy. The auditor
+signs the statement, manifest, predecessor receipt, issuance/expiry times,
+requested renewal deadline, a 32-byte `crypto/rand` nonce, and the resulting
+sample IDs. Verifiers recompute those IDs by ranking every manifest descriptor
+with a domain-separated hash of the manifest, predecessor receipt, nonce, and
+descriptor ID, so the replica cannot substitute easier objects. At most eight
+samples and 64 MiB are returned. The replica validates the challenge, returns
+the exact manifest-checked batch, and signs its canonical digest and response
+time. Receipt v1 then commits the predecessor-receipt ID, proof ID, response
+time, and the deadline already signed by the auditor. This prevents one proof
+from being attached to another receipt or a different retention term. Challenge
+lifetime, response freshness, and renewal term are policy-bounded, and receipt
+v0 decoding remains byte-compatible.
+
+The dedicated `/outcomemesh/workarchive-custody/1` QUIC-v1 protocol is opt-in,
+pins the replica transport identity, and admits only a canonical allowlist of
+auditor transport identities before charging its independent rate window. One
+finite stream carries exactly challenge, batch, proof, and renewed receipt,
+each with a deadline and a type-specific pre-allocation bound. Transport keys
+and portable auditor/replica signing keys are deliberately separate. A valid
+exchange proves that the trusted replica key returned those sampled bytes at
+that time; it does not prove physical storage, prevent proxy retrieval, establish
+operator independence, or replace the full local replay required at pruning.
+Within one replica session the signed response is cached before transmission;
+the same challenge retries idempotently and a different challenge for that
+predecessor cannot create a sibling receipt. This guard is not yet persisted
+across replica process restart.
+
 With an explicitly non-zero local canonical-retention policy, one synchronous
 schema-4 batch may replace the strict prefix before the selected archive anchor
 with validated headers, turn the anchor into a full-state retained floor,
@@ -403,8 +431,8 @@ per peer and 16 globally per minute. A stream is finite: at most four batches,
 that differ from the exact request fail closed. Valid objects preceding a bad
 tail remain safe, reported, and resumable, while the session fails. These
 ceilings limit protocol amplification but do not prove that an allowed peer is
-an independent or durable replica. Live custody challenges, physical
-disk-exhaustion tests, long filesystem soaks, renewal/expiry operations, and an
+an independent or durable replica. Physical disk-exhaustion tests, long
+filesystem soaks, durable challenge scheduling/evidence retention, and an
 operator CLI remain activation blockers.
 
 The activation boundary is not a locally finalized block. The isolated router

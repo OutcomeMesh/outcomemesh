@@ -457,8 +457,34 @@ oversize responses and applies valid objects only through the append-only
 manifest validator. If data remains after four batches it closes cleanly,
 opens a new pinned stream, and recomputes the missing set. This makes transfer
 resumable without treating the sender or cache as a trust root. The handler is
-not yet wired into an operator CLI; live custody challenge/renewal remains a
-separate activation blocker.
+not yet wired into an operator CLI.
+
+Replica freshness uses another opt-in scope,
+`/outcomemesh/workarchive-custody/1`, and never negotiates the bulk-object
+protocol as a fallback. The auditor pins the replica's authenticated transport
+identity; the replica accepts a canonical allowlist of 1–64 auditor transport
+identities. Defaults allow one concurrent stream per peer and two host-wide,
+with hard maxima of one and eight. Its independent fixed window defaults to one
+stream per peer and eight globally per minute, with hard maxima of two and 64.
+Rejected identities do not spend that window, and exhausting it does not consume
+the bulk archive-object budget.
+
+One custody stream has exactly four length-prefixed canonical messages. The
+auditor sends a signed challenge no larger than 1 KiB. The replica returns the
+exact sampled `ChunkBatch` under the existing 64-MiB bound, a signed custody
+proof no larger than 512 bytes, and a linked replica receipt no larger than 512
+bytes, then closes. Every frame has a deadline and is length-checked before
+allocation. The challenge commits its requested renewal deadline and permits
+at most eight deterministically selected IDs. The proof commits the challenge,
+predecessor receipt, manifest, response time, replica key, and canonical batch
+digest; receipt v1 commits the predecessor and proof IDs. The receiver verifies
+all three signatures, exact response order, every chunk, freshness, and the
+term before accepting the renewal. Transport and evidence-signing keys remain
+separate. A replica session caches the signed response before its first write:
+an identical retry receives the same proof and receipt, while another challenge
+against that predecessor is rejected instead of creating a sibling renewal.
+Persisting that idempotency state across process restart, durable scheduling,
+and an operator CLI are still pending.
 
 The activation-aware chain session is a third protocol scope under
 `/outcomemesh/chain/1`; it never falls back to `/outcomemesh/session/0`. Its

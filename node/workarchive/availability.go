@@ -17,6 +17,7 @@ import (
 
 const (
 	ReplicaReceiptVersion0         uint16 = 0
+	ReplicaReceiptVersion1         uint16 = 1
 	AvailabilityBundleVersion0     uint16 = 0
 	MinimumReplicas                       = 2
 	MaximumReplicas                       = 64
@@ -26,9 +27,11 @@ const (
 )
 
 const (
-	replicaReceiptSignatureDomain = "OMESH/workgraph/archive/replica-receipt/signature/v0"
-	replicaReceiptIDDomain        = "OMESH/workgraph/archive/replica-receipt/id/v0"
-	availabilityBundleIDDomain    = "OMESH/workgraph/archive/availability-bundle/id/v0"
+	replicaReceiptSignatureDomain   = "OMESH/workgraph/archive/replica-receipt/signature/v0"
+	replicaReceiptIDDomain          = "OMESH/workgraph/archive/replica-receipt/id/v0"
+	replicaReceiptSignatureDomainV1 = "OMESH/workgraph/archive/replica-receipt/signature/v1"
+	replicaReceiptIDDomainV1        = "OMESH/workgraph/archive/replica-receipt/id/v1"
+	availabilityBundleIDDomain      = "OMESH/workgraph/archive/availability-bundle/id/v0"
 )
 
 var (
@@ -42,21 +45,24 @@ var (
 	availabilityBundleMagic = [8]byte{'O', 'M', 'W', 'A', 'R', 'A', 'V', 'L'}
 )
 
-// ReplicaReceipt is a time-bounded operator claim that one exact archive was
-// fully replayed and is assigned to one replica location. LocationID is an
+// ReplicaReceipt is a time-bounded operator claim that one exact archive is
+// assigned to one replica location. Version 0 follows a full replay; version 1
+// links a fresh sampled-custody proof to its predecessor. LocationID is an
 // opaque public commitment to a failure domain; policy still has to decide
 // whether the trusted replica keys are independently operated.
 type ReplicaReceipt struct {
-	Version          uint16
-	Binding          Binding
-	StatementID      types.Hash
-	ManifestID       types.Hash
-	AnchorID         types.Hash
-	LocationID       types.Hash
-	StoredAt         uint64
-	RetainUntil      uint64
-	ReplicaPublicKey [ed25519.PublicKeySize]byte
-	Signature        [ed25519.SignatureSize]byte
+	Version           uint16
+	Binding           Binding
+	StatementID       types.Hash
+	ManifestID        types.Hash
+	AnchorID          types.Hash
+	LocationID        types.Hash
+	PreviousReceiptID types.Hash
+	CustodyProofID    types.Hash
+	StoredAt          uint64
+	RetainUntil       uint64
+	ReplicaPublicKey  [ed25519.PublicKeySize]byte
+	Signature         [ed25519.SignatureSize]byte
 }
 
 type ReplicaPolicy struct {
@@ -175,6 +181,17 @@ func DecodeReplicaReceipt(input []byte) (ReplicaReceipt, error) {
 		}
 		copy(destination[:], value)
 	}
+	if receipt.Version == ReplicaReceiptVersion1 {
+		for _, destination := range []*types.Hash{
+			&receipt.PreviousReceiptID, &receipt.CustodyProofID,
+		} {
+			value, decodeErr := decoder.Fixed(types.HashSize)
+			if decodeErr != nil {
+				return ReplicaReceipt{}, decodeErr
+			}
+			copy(destination[:], value)
+		}
+	}
 	if receipt.StoredAt, err = decoder.U64(); err != nil {
 		return ReplicaReceipt{}, err
 	}
@@ -202,7 +219,11 @@ func (receipt ReplicaReceipt) ID() (types.Hash, error) {
 	if err != nil {
 		return types.Hash{}, err
 	}
-	return types.DomainHash(replicaReceiptIDDomain, encoded), nil
+	domain := replicaReceiptIDDomain
+	if receipt.Version == ReplicaReceiptVersion1 {
+		domain = replicaReceiptIDDomainV1
+	}
+	return types.DomainHash(domain, encoded), nil
 }
 
 func (bundle AvailabilityBundle) CanonicalBytes() ([]byte, error) {
@@ -499,6 +520,10 @@ func (receipt ReplicaReceipt) unsignedBytes() ([]byte, error) {
 	encoder.Fixed(receipt.ManifestID[:])
 	encoder.Fixed(receipt.AnchorID[:])
 	encoder.Fixed(receipt.LocationID[:])
+	if receipt.Version == ReplicaReceiptVersion1 {
+		encoder.Fixed(receipt.PreviousReceiptID[:])
+		encoder.Fixed(receipt.CustodyProofID[:])
+	}
 	encoder.U64(receipt.StoredAt)
 	encoder.U64(receipt.RetainUntil)
 	encoder.Fixed(receipt.ReplicaPublicKey[:])
@@ -510,16 +535,27 @@ func (receipt ReplicaReceipt) signatureMessage() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	hash := types.DomainHash(replicaReceiptSignatureDomain, unsigned)
+	domain := replicaReceiptSignatureDomain
+	if receipt.Version == ReplicaReceiptVersion1 {
+		domain = replicaReceiptSignatureDomainV1
+	}
+	hash := types.DomainHash(domain, unsigned)
 	return hash[:], nil
 }
 
 func (receipt ReplicaReceipt) verifyShape() error {
-	if receipt.Version != ReplicaReceiptVersion0 || receipt.Binding.Validate() != nil ||
+	if (receipt.Version != ReplicaReceiptVersion0 && receipt.Version != ReplicaReceiptVersion1) ||
+		receipt.Binding.Validate() != nil ||
 		receipt.StatementID.IsZero() || receipt.ManifestID.IsZero() || receipt.AnchorID.IsZero() ||
 		receipt.LocationID.IsZero() || receipt.StoredAt == 0 || receipt.RetainUntil <= receipt.StoredAt ||
 		receipt.RetainUntil-receipt.StoredAt > MaximumReplicaTermSeconds ||
 		types.Hash(receipt.ReplicaPublicKey).IsZero() {
+		return ErrReplicaReceipt
+	}
+	if (receipt.Version == ReplicaReceiptVersion0 &&
+		(!receipt.PreviousReceiptID.IsZero() || !receipt.CustodyProofID.IsZero())) ||
+		(receipt.Version == ReplicaReceiptVersion1 &&
+			(receipt.PreviousReceiptID.IsZero() || receipt.CustodyProofID.IsZero())) {
 		return ErrReplicaReceipt
 	}
 	return nil

@@ -388,6 +388,32 @@ Implemented in an isolated, not-yet-activated consensus package:
   materializes and fully replays the complete archive. Concurrent, global-rate,
   corrupt-tail, canonical-allowlist, race, and frame-fuzz cases are separate
   gates. The protocol remains outside ordinary CLI and consensus paths.
+- live replica freshness and receipt renewal now have strict canonical evidence.
+  A trusted auditor creates a short-lived signed challenge from a 32-byte
+  `crypto/rand` nonce and a requested future retention deadline. Up to eight
+  chunk IDs are selected deterministically from the manifest, predecessor
+  receipt, and nonce under the existing 64-MiB batch ceiling, so the replica
+  cannot choose its sample. The replica returns the exact validated chunks and
+  a signed proof over their canonical digest. Receipt v1 links the predecessor
+  receipt and proof IDs, response time, and challenge-bound deadline; legacy v0
+  receipt bytes and IDs remain unchanged. Freshness, replay, wrong-key,
+  biased-ID, corrupt-byte, alternate-term, codec mutation, and v0→v1→v1 chain
+  cases fail closed and both new decoders have fuzz gates and golden IDs.
+- custody traffic runs over its own opt-in
+  `/outcomemesh/workarchive-custody/1` libp2p QUIC-v1 scope. The auditor pins the
+  replica transport ID; the replica requires a sorted auditor allowlist before
+  charging an independent rate window. Defaults admit one concurrent custody
+  stream per peer, two host-wide, one per peer and eight globally per minute;
+  hard maxima are one, eight, two, and 64. One finite stream carries challenge,
+  sampled batch, proof, and renewed receipt in strict order with per-frame
+  deadlines and pre-allocation bounds. Real QUIC tests cover the complete
+  renewal, outsider rejection, wrong server pin, independent rate accounting,
+  reordered/truncated frames, and matching evidence IDs on both endpoints. The
+  replica caches a signed response before writing it, returns the identical
+  proof/receipt on an identical retry, and rejects a second challenge against
+  the same predecessor instead of creating an in-process sibling renewal.
+  This is fresh retrievability evidence from a trusted replica key, not proof of
+  physical storage, non-proxying, independent operation, or consensus finality.
 - an isolated activation router now owns strict v0/v1 block admission. It
   dispatches unchanged canonical encodings from their leading version, permits
   v0 only below `H` and v1 only from `H`, and lazily creates one WorkChain tree
@@ -634,8 +660,8 @@ No WorkGraph field has entered a version-0 block yet. The v1 store and opt-in
 QUIC session remain isolated from every ordinary v0 chain/CLI path and are
 reachable only through the explicitly marked experimental commands;
 adversarial discovery/eclipse and longer real-QUIC rapid-parent churn soaks,
-topology-derived peer selection, network replica challenges, archive-session
-CLI integration, canonical-prune
+topology-derived peer selection, durable custody scheduling/evidence retention,
+archive-session CLI integration, canonical-prune
 disk-exhaustion/long-soak campaigns, production gossip-budget calibration, and
 broader adaptive economic-strategy analysis remain before activation.
 
