@@ -170,7 +170,9 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
   export, expiring independently keyed replica-custody receipts, and an atomic
   canonical retained-floor transition. Successive generations must be
   composable from the exact retained predecessor archive plus the executable
-  suffix, without restoring pruned chain payloads. An anchor alone must never
+  suffix, without restoring pruned chain payloads. Published chunk boundaries
+  and IDs must remain stable across those generations so a content-addressed
+  replica transfers only missing suffix objects. An anchor alone must never
   authorize deletion or override hard-work fork choice; canonical pruning is
   explicit local finalization and remains disabled by default.
 - Admission-deduplicated multi-hop forwarding across the explicit peer graph.

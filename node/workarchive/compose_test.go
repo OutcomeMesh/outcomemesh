@@ -44,13 +44,22 @@ func TestArchiveCompositionSupportsSuccessiveRetainedFloors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const expectedManifestID = "2c69c86a50bdc835f60f2b2ed9947f30ccfa4666f377eb4677f99cfa8ca20fe8"
+	const expectedManifestID = "5b0f9d5355c49b60b1c95e1657c97aca1d9a4110beaed5b1f7a1550f5c861891"
 	if manifestID.String() != expectedManifestID {
 		t.Fatalf("composed manifest ID=%s want=%s", manifestID, expectedManifestID)
 	}
 	if manifest.BlockCount != fixture.manifest.BlockCount+2 || len(manifest.Chunks) != 3 ||
 		manifest.Anchor.ID != secondAnchor.ID {
 		t.Fatalf("composed archive=%+v", manifest)
+	}
+	if len(manifest.Chunks) < len(fixture.manifest.Chunks) {
+		t.Fatalf("composed chunks=%d predecessor=%d", len(manifest.Chunks), len(fixture.manifest.Chunks))
+	}
+	for index, descriptor := range fixture.manifest.Chunks {
+		if manifest.Chunks[index] != descriptor {
+			t.Fatalf("composed prefix chunk %d changed: got=%+v want=%+v",
+				index, manifest.Chunks[index], descriptor)
+		}
 	}
 	previousStatementID := mustStatementID(t, fixture.checkpoint.Statement)
 	statement, err := manifest.ArchiveStatement(2, previousStatementID)
@@ -169,6 +178,18 @@ func TestArchiveCompositionRejectsInvalidSourcesAndNestedDestination(t *testing.
 	}
 	if _, err := os.Lstat(wrongCheckpointDestination); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("wrong retained-floor statement published destination: %v", err)
+	}
+	tooSmallChunks := DefaultExportOptions()
+	tooSmallChunks.BlocksPerChunk = 1
+	tooSmallDestination := filepath.Join(t.TempDir(), "split-stable-prefix")
+	if _, _, err := ComposeDirectory(
+		tooSmallDestination, fixture.archivePath, fixture.checkpoint, fixture.policy,
+		fixture.base, fixture.parameters, fixture.source, suffixTip.ID, tooSmallChunks,
+	); !errors.Is(err, ErrArchiveCompose) {
+		t.Fatalf("stable prefix split error=%v", err)
+	}
+	if _, err := os.Lstat(tooSmallDestination); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("stable prefix split published destination: %v", err)
 	}
 
 	corruptPath := filepath.Join(t.TempDir(), "corrupt-previous")

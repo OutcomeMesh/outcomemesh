@@ -13,7 +13,9 @@ import (
 
 const (
 	ManifestVersion0     uint16 = 0
+	ManifestVersion1     uint16 = 1
 	ChunkVersion0        uint16 = 0
+	ChunkVersion1        uint16 = 1
 	DefaultChunkBlocks          = 128
 	MaximumChunkBlocks          = 256
 	MaximumArchiveBlocks uint64 = 4_194_304
@@ -93,7 +95,8 @@ type Manifest struct {
 }
 
 func (manifest Manifest) Validate() error {
-	if manifest.Version != ManifestVersion0 || manifest.Binding.Validate() != nil ||
+	if (manifest.Version != ManifestVersion0 && manifest.Version != ManifestVersion1) ||
+		manifest.Binding.Validate() != nil ||
 		manifest.Anchor.Validate() != nil ||
 		manifest.Anchor.Height < manifest.Binding.ActivationHeight ||
 		manifest.AncestryRoot.IsZero() || manifest.BlockCount == 0 ||
@@ -299,12 +302,15 @@ type Chunk struct {
 }
 
 func (chunk Chunk) Validate() error {
-	if chunk.Version != ChunkVersion0 || chunk.NetworkID == 0 || chunk.BaseID.IsZero() ||
-		chunk.AnchorID.IsZero() || chunk.FirstHeight == 0 || len(chunk.Blocks) == 0 ||
+	if (chunk.Version != ChunkVersion0 && chunk.Version != ChunkVersion1) ||
+		chunk.NetworkID == 0 || chunk.BaseID.IsZero() ||
+		(chunk.Version == ChunkVersion0 && chunk.AnchorID.IsZero()) ||
+		(chunk.Version == ChunkVersion1 && !chunk.AnchorID.IsZero()) ||
+		chunk.FirstHeight == 0 || len(chunk.Blocks) == 0 ||
 		len(chunk.Blocks) > MaximumChunkBlocks {
 		return ErrChunk
 	}
-	encodedSize := 8 + 2 + 4 + 2*types.HashSize + 4 + 8 + uvarintSize(uint64(len(chunk.Blocks)))
+	encodedSize := chunkFixedBytes(chunk.Version) + uvarintSize(uint64(len(chunk.Blocks)))
 	var previousID types.Hash
 	for index, block := range chunk.Blocks {
 		if err := block.ValidateBasic(); err != nil || block.Header.Seal.NetworkID != chunk.NetworkID ||
@@ -339,7 +345,9 @@ func (chunk Chunk) CanonicalBytes() ([]byte, error) {
 	encoder.U16(chunk.Version)
 	encoder.U32(chunk.NetworkID)
 	encoder.Fixed(chunk.BaseID[:])
-	encoder.Fixed(chunk.AnchorID[:])
+	if chunk.Version == ChunkVersion0 {
+		encoder.Fixed(chunk.AnchorID[:])
+	}
 	encoder.U32(chunk.Index)
 	encoder.U64(chunk.FirstHeight)
 	encoder.Uvarint(uint64(len(chunk.Blocks)))
@@ -374,10 +382,14 @@ func DecodeChunk(input []byte) (Chunk, error) {
 	} else {
 		copy(chunk.BaseID[:], value)
 	}
-	if value, decodeErr := decoder.Fixed(types.HashSize); decodeErr != nil {
-		return Chunk{}, decodeErr
-	} else {
-		copy(chunk.AnchorID[:], value)
+	if chunk.Version == ChunkVersion0 {
+		if value, decodeErr := decoder.Fixed(types.HashSize); decodeErr != nil {
+			return Chunk{}, decodeErr
+		} else {
+			copy(chunk.AnchorID[:], value)
+		}
+	} else if chunk.Version != ChunkVersion1 {
+		return Chunk{}, ErrChunk
 	}
 	if chunk.Index, err = decoder.U32(); err != nil {
 		return Chunk{}, err
@@ -446,4 +458,12 @@ func decodeBinding(decoder *codec.Decoder) (Binding, error) {
 func uvarintSize(value uint64) int {
 	var encoded [binary.MaxVarintLen64]byte
 	return binary.PutUvarint(encoded[:], value)
+}
+
+func chunkFixedBytes(version uint16) int {
+	result := 8 + 2 + 4 + types.HashSize + 4 + 8
+	if version == ChunkVersion0 {
+		result += types.HashSize
+	}
+	return result
 }

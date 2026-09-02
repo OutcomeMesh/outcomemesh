@@ -439,10 +439,12 @@ an explicit sorted trusted-key policy with a quorum of at least two. Verificatio
 recomputes the selected ancestry from local WorkChain data; a valid signature
 cannot keep an anchor valid after its branch is reorganized away. Checkpoint
 files use bounded strict decoding and atomic file/directory fsync publication.
-The content-addressed version-0 archive now commits the exact binding, anchor,
+The content-addressed archive manifest commits the exact binding, anchor,
 ancestry root/count, total block/byte counts, and ordered chunk descriptors.
-Each chunk additionally binds network, tree base, anchor, index, first height,
-and up to 256 canonical blocks under a 64-MiB ceiling. Export snapshots only the
+Every chunk binds network, tree base, index, first height, and up to 256
+canonical blocks under a 64-MiB ceiling; legacy v0 chunks additionally bind the
+terminal anchor while current v1 chunks derive that binding from the manifest.
+Export snapshots only the
 selected activation-to-anchor IDs, writes immutable 0600 files, and rechecks
 the selected ancestry before directory fsync/rename. Verification rejects
 unexpected or non-regular files, checks every chunk ID and boundary, and
@@ -488,14 +490,20 @@ again while streaming; immediately before rename the composer requires the
 floor record, target tip, and full ancestry commitment to remain unchanged. The
 result is a normal self-contained archive, so existing verification, restore,
 attestation, replica custody, and the next floor transition need no alternate
-trust path. This currently re-encodes all output chunks rather than referencing
-the predecessor directory or sharing storage across archive generations.
+trust path. In format v1 a chunk does not embed the terminal archive anchor;
+instead, the manifest binds its ordered descriptor to the final tip and ancestry.
+Composition freezes every predecessor chunk boundary, so all prior content IDs
+remain identical and only suffix IDs are new. Network/base/index/height and the
+canonical blocks remain inside each chunk, and replay still validates the full
+chain. Legacy anchor-bound v0 archives remain accepted. Standalone directories
+currently materialize every referenced file; object-transfer negotiation and
+physical filesystem dedup are separate optimizations.
 
 This does not create network finality or prove independent failure domains.
 After pruning, the local node deliberately rejects forks whose parent is below
 its floor; enabling it is therefore an operator-selected local finalization
-horizon. Network replica transport, renewed custody challenges, cross-generation
-chunk reuse, disk-exhaustion campaigns, and longer physical-filesystem soaks
+horizon. Network replica transport, renewed custody challenges, missing-object
+negotiation, disk-exhaustion campaigns, and longer physical-filesystem soaks
 remain before public activation. The integration suite now covers all four synchronous WorkChain
 batch classes: commit, checkpoint rotation, stale-fork prune, and canonical-
 floor transition.

@@ -16,6 +16,7 @@ import (
 const manifestFileName = "manifest.omwm"
 
 type ExportOptions struct {
+	Version        uint16
 	BlocksPerChunk uint16
 	Limits         Limits
 }
@@ -27,14 +28,17 @@ type archivePlan struct {
 	BlockCount    uint64
 }
 
-type archiveBlockStream func(func(workblock.Block) error) error
+type archiveBlockStream func(func(workblock.Block, bool) error) error
 
 func DefaultExportOptions() ExportOptions {
-	return ExportOptions{BlocksPerChunk: DefaultChunkBlocks, Limits: DefaultLimits()}
+	return ExportOptions{
+		Version: ManifestVersion1, BlocksPerChunk: DefaultChunkBlocks, Limits: DefaultLimits(),
+	}
 }
 
 func (options ExportOptions) Validate() error {
-	if options.BlocksPerChunk == 0 || options.BlocksPerChunk > MaximumChunkBlocks ||
+	if (options.Version != ManifestVersion0 && options.Version != ManifestVersion1) ||
+		options.BlocksPerChunk == 0 || options.BlocksPerChunk > MaximumChunkBlocks ||
 		options.Limits.Validate() != nil {
 		return ErrArchiveLimit
 	}
@@ -82,7 +86,7 @@ func exportDirectory(
 		Anchor: history.Anchor, AncestryNodes: history.AncestryNodes,
 		AncestryRoot: history.AncestryRoot, BlockCount: uint64(len(history.BlockIDs)),
 	}
-	stream := func(yield func(workblock.Block) error) error {
+	stream := func(yield func(workblock.Block, bool) error) error {
 		for _, id := range history.BlockIDs {
 			block, readErr := chain.BlockByID(id)
 			if readErr != nil {
@@ -92,7 +96,7 @@ func exportDirectory(
 			if idErr != nil || blockID != id {
 				return storage.ErrCorrupt
 			}
-			if err := yield(block); err != nil {
+			if err := yield(block, false); err != nil {
 				return err
 			}
 		}
@@ -158,10 +162,13 @@ func publishArchiveDirectory(
 			return ErrArchiveLimit
 		}
 		chunk := Chunk{
-			Version: ChunkVersion0, NetworkID: binding.NetworkID, BaseID: binding.BaseID,
-			AnchorID: plan.Anchor.ID, Index: uint32(len(descriptors)),
+			Version: options.Version, NetworkID: binding.NetworkID, BaseID: binding.BaseID,
+			Index:       uint32(len(descriptors)),
 			FirstHeight: current[0].Header.Seal.Height,
 			Blocks:      append([]workblock.Block(nil), current...),
+		}
+		if chunk.Version == ChunkVersion0 {
+			chunk.AnchorID = plan.Anchor.ID
 		}
 		encoded, err := chunk.CanonicalBytes()
 		if err != nil {
@@ -192,7 +199,7 @@ func publishArchiveDirectory(
 	expectedParent := binding.BaseID
 	expectedHeight := binding.ActivationHeight
 	var blockCount uint64
-	emit := func(block workblock.Block) error {
+	emit := func(block workblock.Block, flushAfter bool) error {
 		if blockCount >= plan.BlockCount || block.ValidateBasic() != nil ||
 			block.Header.Seal.NetworkID != binding.NetworkID ||
 			block.Header.Seal.Height != expectedHeight ||
@@ -206,7 +213,7 @@ func publishArchiveDirectory(
 		blockBytes := block.CanonicalBytes()
 		blockFieldBytes := uvarintSize(uint64(len(blockBytes))) + len(blockBytes)
 		candidateCount := len(current) + 1
-		candidateBytes := 8 + 2 + 4 + 2*types.HashSize + 4 + 8 +
+		candidateBytes := chunkFixedBytes(options.Version) +
 			uvarintSize(uint64(candidateCount)) + currentFieldBytes + blockFieldBytes
 		if len(current) == int(options.BlocksPerChunk) ||
 			(len(current) > 0 && candidateBytes > MaximumChunkBytes) {
@@ -214,7 +221,7 @@ func publishArchiveDirectory(
 				return err
 			}
 			candidateCount = 1
-			candidateBytes = 8 + 2 + 4 + 2*types.HashSize + 4 + 8 +
+			candidateBytes = chunkFixedBytes(options.Version) +
 				uvarintSize(1) + blockFieldBytes
 		}
 		if candidateCount > MaximumChunkBlocks || candidateBytes > MaximumChunkBytes {
@@ -230,6 +237,11 @@ func publishArchiveDirectory(
 			}
 			expectedHeight++
 		}
+		if flushAfter {
+			if err := flush(); err != nil {
+				return err
+			}
+		}
 		return nil
 	}
 	if err := stream(emit); err != nil {
@@ -238,12 +250,14 @@ func publishArchiveDirectory(
 	if blockCount != plan.BlockCount || expectedParent != plan.Anchor.ID {
 		return Manifest{}, types.Hash{}, ErrArchiveOrder
 	}
-	if err := flush(); err != nil {
-		return Manifest{}, types.Hash{}, err
+	if len(current) > 0 {
+		if err := flush(); err != nil {
+			return Manifest{}, types.Hash{}, err
+		}
 	}
 
 	manifest := Manifest{
-		Version: ManifestVersion0, Binding: binding, Anchor: plan.Anchor,
+		Version: options.Version, Binding: binding, Anchor: plan.Anchor,
 		AncestryNodes: plan.AncestryNodes, AncestryRoot: plan.AncestryRoot,
 		BlockCount: blockCount, TotalChunkBytes: totalChunkBytes, Chunks: descriptors,
 	}

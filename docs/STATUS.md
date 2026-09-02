@@ -347,8 +347,18 @@ Implemented in an isolated, not-yet-activated consensus package:
   commitment. An end-to-end test performs archive→custody→prune→compose→attest→
   verify→restore→custody→second-prune, while negative cases cover an empty
   suffix, corrupt source, nested destination, and a winning reorganization at
-  the publication boundary. The new output is self-contained and therefore
-  rewrites old chunks; layered storage/deduplication remains separate work.
+  the publication boundary.
+- archive format v1 now gives composition stable cross-generation content IDs.
+  A chunk no longer embeds the terminal archive anchor; it still binds version,
+  network, immutable tree base, position, height, and canonical blocks. The
+  manifest binds the ordered descriptors to the final tip and ancestry.
+  Composition freezes all predecessor chunk boundaries and rejects a smaller
+  chunk policy, with the end-to-end test requiring every prior descriptor to be
+  exactly unchanged. Thus only suffix IDs are new to a content-addressed object
+  set while every output directory remains a complete ordinary archive. Strict
+  decoding, replay, restore, and fuzz seeds cover both legacy anchor-bound v0
+  and v1. Filesystem-level dedup and missing-object network transfer remain
+  operational work.
 - an isolated activation router now owns strict v0/v1 block admission. It
   dispatches unchanged canonical encodings from their leading version, permits
   v0 only below `H` and v1 only from `H`, and lazily creates one WorkChain tree
@@ -595,8 +605,8 @@ No WorkGraph field has entered a version-0 block yet. The v1 store and opt-in
 QUIC session remain isolated from every ordinary v0 chain/CLI path and are
 reachable only through the explicitly marked experimental commands;
 adversarial discovery/eclipse and longer real-QUIC rapid-parent churn soaks,
-topology-derived peer selection, network replica challenges and archive
-chunk reuse/transport, canonical-prune disk-exhaustion/long-soak campaigns,
+topology-derived peer selection, network replica challenges and missing-object
+archive transport, canonical-prune disk-exhaustion/long-soak campaigns,
 production gossip-budget calibration, and broader adaptive economic-strategy
 analysis remain before activation.
 

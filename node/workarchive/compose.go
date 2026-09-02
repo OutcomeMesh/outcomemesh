@@ -11,7 +11,7 @@ import (
 	"github.com/outcomemesh/outcomemesh/storage"
 )
 
-// ComposeDirectory builds a new self-contained version-0 archive after local
+// ComposeDirectory builds a new self-contained archive after local
 // canonical pruning. The already archived prefix is read from the exact
 // manifest recorded in the retained floor; only the executable suffix is read
 // from WorkChain. Every source byte is checked again and the selected ancestry
@@ -88,11 +88,18 @@ func composeDirectory(
 		history.BlockIDs[int(previous.BlockCount)-1] != previous.Anchor.ID {
 		return Manifest{}, types.Hash{}, ErrArchiveCompose
 	}
+	if previous.Version == ManifestVersion1 && options.Version == ManifestVersion1 {
+		for _, descriptor := range previous.Chunks {
+			if descriptor.BlockCount > options.BlocksPerChunk {
+				return Manifest{}, types.Hash{}, ErrArchiveCompose
+			}
+		}
+	}
 	plan := archivePlan{
 		Anchor: history.Anchor, AncestryNodes: history.AncestryNodes,
 		AncestryRoot: history.AncestryRoot, BlockCount: uint64(len(history.BlockIDs)),
 	}
-	stream := func(yield func(workblock.Block) error) error {
+	stream := func(yield func(workblock.Block, bool) error) error {
 		if err := streamArchiveBlocks(
 			previousArchivePath, previous, options.Limits, yield,
 		); err != nil {
@@ -107,7 +114,7 @@ func composeDirectory(
 			if idErr != nil || blockID != id {
 				return errors.Join(ErrArchiveCompose, storage.ErrCorrupt)
 			}
-			if err := yield(block); err != nil {
+			if err := yield(block, false); err != nil {
 				return err
 			}
 		}
@@ -141,7 +148,7 @@ func streamArchiveBlocks(
 	path string,
 	manifest Manifest,
 	limits Limits,
-	yield func(workblock.Block) error,
+	yield func(workblock.Block, bool) error,
 ) error {
 	if path == "" || manifest.Validate() != nil || limits.Validate() != nil || yield == nil ||
 		manifest.BlockCount > limits.MaximumBlocks ||
@@ -179,13 +186,16 @@ func streamArchiveBlocks(
 			return err
 		}
 		canonical, err := chunk.CanonicalBytes()
-		if err != nil || !bytes.Equal(canonical, encoded) || chunk.Index != descriptor.Index ||
+		if err != nil || !bytes.Equal(canonical, encoded) || chunk.Version != manifest.Version ||
+			chunk.Index != descriptor.Index ||
 			chunk.NetworkID != manifest.Binding.NetworkID || chunk.BaseID != manifest.Binding.BaseID ||
-			chunk.AnchorID != manifest.Anchor.ID || chunk.FirstHeight != descriptor.FirstHeight ||
+			(manifest.Version == ManifestVersion0 && chunk.AnchorID != manifest.Anchor.ID) ||
+			(manifest.Version == ManifestVersion1 && !chunk.AnchorID.IsZero()) ||
+			chunk.FirstHeight != descriptor.FirstHeight ||
 			len(chunk.Blocks) != int(descriptor.BlockCount) {
 			return errors.Join(ErrChunk, err)
 		}
-		for _, block := range chunk.Blocks {
+		for blockIndex, block := range chunk.Blocks {
 			if block.Header.Seal.Height != expectedHeight ||
 				block.Header.Seal.AnchorParent != expectedParent {
 				return ErrArchiveOrder
@@ -194,7 +204,7 @@ func streamArchiveBlocks(
 			if err != nil {
 				return err
 			}
-			if err := yield(block); err != nil {
+			if err := yield(block, blockIndex+1 == len(chunk.Blocks)); err != nil {
 				return err
 			}
 			expectedParent = blockID

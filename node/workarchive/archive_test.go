@@ -36,7 +36,10 @@ func TestArchiveExportVerifyRestoreRoundTrip(t *testing.T) {
 			t.Fatalf("archive file %s mode=%v want=600", entry.Name(), info.Mode().Perm())
 		}
 	}
-	const expectedManifestID = "3037d2dff2a4f3ad7a863b65c39555dac7b10818c50818bbc4a043ce44a4cc31"
+	if fixture.manifest.Version != ManifestVersion1 {
+		t.Fatalf("archive version=%d want=%d", fixture.manifest.Version, ManifestVersion1)
+	}
+	const expectedManifestID = "134f196109d61f7df0cc98d8d18320cc0edf4f38f9607b4eb069819ec4e22644"
 	if fixture.manifestID.String() != expectedManifestID {
 		t.Fatalf("manifest ID=%s want=%s", fixture.manifestID, expectedManifestID)
 	}
@@ -94,6 +97,45 @@ func TestArchiveExportVerifyRestoreRoundTrip(t *testing.T) {
 		DefaultExportOptions(),
 	); !errors.Is(err, ErrArchiveExists) {
 		t.Fatalf("existing export destination error=%v", err)
+	}
+}
+
+func TestArchiveVersionZeroRemainsVerifiableAndRestorable(t *testing.T) {
+	fixture := newArchiveFixture(t)
+	options := DefaultExportOptions()
+	options.Version = ManifestVersion0
+	options.BlocksPerChunk = 2
+	archivePath := filepath.Join(t.TempDir(), "archive-v0")
+	manifest, _, err := ExportDirectory(
+		archivePath, fixture.binding, fixture.source, fixture.manifest.Anchor.ID, options,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if manifest.Version != ManifestVersion0 {
+		t.Fatalf("legacy manifest version=%d", manifest.Version)
+	}
+	firstChunk, err := DecodeChunk(mustReadArchiveFile(t, filepath.Join(archivePath, chunkFileName(0))))
+	if err != nil || firstChunk.Version != ChunkVersion0 ||
+		firstChunk.AnchorID != manifest.Anchor.ID {
+		t.Fatalf("legacy chunk=%+v err=%v", firstChunk, err)
+	}
+	statement, err := manifest.ArchiveStatement(1, types.Hash{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkpoint := signedCheckpoint(t, statement, fixture.keys)
+	if _, err := VerifyArchiveDirectory(
+		archivePath, checkpoint, fixture.policy, fixture.base,
+		fixture.parameters, DefaultLimits(),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := RestoreDirectory(
+		archivePath, filepath.Join(t.TempDir(), "restore-v0"), checkpoint, fixture.policy,
+		fixture.base, fixture.parameters, DefaultLimits(), workchain.DefaultPolicy(),
+	); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -194,13 +236,13 @@ func TestArchiveCodecRejectsTrailingOversizeAndInvalidPolicy(t *testing.T) {
 	}
 	unknownManifest := append([]byte(nil), manifestBytes...)
 	unknownManifest[len(manifestMagic)] = 0
-	unknownManifest[len(manifestMagic)+1] = 1
+	unknownManifest[len(manifestMagic)+1] = 2
 	if _, err := DecodeManifest(unknownManifest); !errors.Is(err, ErrManifest) {
 		t.Fatalf("unknown archive manifest version error=%v", err)
 	}
 	unknownChunk := append([]byte(nil), chunkBytes...)
 	unknownChunk[len(chunkMagic)] = 0
-	unknownChunk[len(chunkMagic)+1] = 1
+	unknownChunk[len(chunkMagic)+1] = 2
 	if _, err := DecodeChunk(unknownChunk); !errors.Is(err, ErrChunk) {
 		t.Fatalf("unknown archive chunk version error=%v", err)
 	}
@@ -213,6 +255,20 @@ func TestArchiveCodecRejectsTrailingOversizeAndInvalidPolicy(t *testing.T) {
 	invalidOptions.BlocksPerChunk = MaximumChunkBlocks + 1
 	if err := invalidOptions.Validate(); !errors.Is(err, ErrArchiveLimit) {
 		t.Fatalf("over-maximum chunk target error=%v", err)
+	}
+	invalidOptions = DefaultExportOptions()
+	invalidOptions.Version = ManifestVersion1 + 1
+	if err := invalidOptions.Validate(); !errors.Is(err, ErrArchiveLimit) {
+		t.Fatalf("unknown archive output version error=%v", err)
+	}
+	_, v1ChunkBytes := archiveCodecSeedsForVersion(t, ManifestVersion1)
+	v1Chunk, err := DecodeChunk(v1ChunkBytes)
+	if err != nil || v1Chunk.Version != ChunkVersion1 || !v1Chunk.AnchorID.IsZero() {
+		t.Fatalf("v1 chunk=%+v err=%v", v1Chunk, err)
+	}
+	v1Chunk.AnchorID = types.DomainHash("test/workarchive/v1-forbidden-anchor")
+	if _, err := v1Chunk.CanonicalBytes(); !errors.Is(err, ErrChunk) {
+		t.Fatalf("v1 anchor-bound chunk error=%v", err)
 	}
 }
 
@@ -285,7 +341,9 @@ func TestArchiveRestoreFailureBeforePublishLeavesNoDestination(t *testing.T) {
 
 func FuzzDecodeArchiveManifestNeverPanics(f *testing.F) {
 	manifestBytes, _ := archiveCodecSeeds(f)
+	manifestV1Bytes, _ := archiveCodecSeedsForVersion(f, ManifestVersion1)
 	f.Add(manifestBytes)
+	f.Add(manifestV1Bytes)
 	f.Add([]byte("not-an-archive-manifest"))
 	f.Fuzz(func(t *testing.T, input []byte) {
 		manifest, err := DecodeManifest(input)
@@ -304,7 +362,9 @@ func FuzzDecodeArchiveManifestNeverPanics(f *testing.F) {
 
 func FuzzDecodeArchiveChunkNeverPanics(f *testing.F) {
 	_, chunkBytes := archiveCodecSeeds(f)
+	_, chunkV1Bytes := archiveCodecSeedsForVersion(f, ManifestVersion1)
 	f.Add(chunkBytes)
+	f.Add(chunkV1Bytes)
 	f.Add([]byte("not-an-archive-chunk"))
 	f.Fuzz(func(t *testing.T, input []byte) {
 		chunk, err := DecodeChunk(input)
@@ -418,6 +478,10 @@ func newArchiveFixture(t testing.TB) archiveFixture {
 }
 
 func archiveCodecSeeds(t testing.TB) ([]byte, []byte) {
+	return archiveCodecSeedsForVersion(t, ManifestVersion0)
+}
+
+func archiveCodecSeedsForVersion(t testing.TB, version uint16) ([]byte, []byte) {
 	t.Helper()
 	parameters := archiveTestParameters()
 	base := archiveTestBase()
@@ -438,9 +502,12 @@ func archiveCodecSeeds(t testing.TB) ([]byte, []byte) {
 		ActivationHeight: parameters.ActivationHeight, BaseID: base.Tip.ID,
 	}
 	chunk := Chunk{
-		Version: ChunkVersion0, NetworkID: binding.NetworkID, BaseID: binding.BaseID,
-		AnchorID: tip.ID, FirstHeight: parameters.ActivationHeight,
-		Blocks: []workblock.Block{block},
+		Version: version, NetworkID: binding.NetworkID, BaseID: binding.BaseID,
+		FirstHeight: parameters.ActivationHeight,
+		Blocks:      []workblock.Block{block},
+	}
+	if version == ChunkVersion0 {
+		chunk.AnchorID = tip.ID
 	}
 	chunkBytes, err := chunk.CanonicalBytes()
 	if err != nil {
@@ -448,7 +515,7 @@ func archiveCodecSeeds(t testing.TB) ([]byte, []byte) {
 	}
 	chunkID := types.DomainHash(chunkIDDomain, chunkBytes)
 	manifest := Manifest{
-		Version: ManifestVersion0, Binding: binding, Anchor: tip,
+		Version: version, Binding: binding, Anchor: tip,
 		AncestryNodes: count, AncestryRoot: root, BlockCount: 1,
 		TotalChunkBytes: uint64(len(chunkBytes)),
 		Chunks: []ChunkDescriptor{{

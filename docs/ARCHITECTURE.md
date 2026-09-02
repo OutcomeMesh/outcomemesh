@@ -254,14 +254,20 @@ can be composed without restoring the pruned database: the composer fully
 verifies the exact predecessor manifest recorded by the floor, streams that
 prefix plus the selected executable suffix into a fresh self-contained v0
 archive, then rechecks the unchanged floor and ancestry before atomic rename.
-It is bounded and streaming, but rewrites the complete output rather than
-introducing layered dependencies. Local maintenance also
+Archive format v1 makes chunk IDs independent of the terminal archive anchor.
+Composition freezes every predecessor chunk boundary, so those descriptors and
+content IDs remain byte-identical and only suffix IDs are new. The manifest
+still lists the complete ordered stream and each directory remains standalone;
+v0 anchor-bound archives remain strictly decodable and restorable. Physical
+copy-on-write/dedup materialization is an operator concern rather than a trusted
+layer dependency. Local maintenance also
 marks canonical ancestry and every side branch reaching a configurable cutoff,
 then atomically removes only complete
 stale subtrees while decrementing the exact logical history counter. Its default
 window is 4,096 heights, zero disables it, and it does not prune canonical
-history. Network replica challenges, content-addressed cross-generation chunk
-reuse, broader filesystem-fault soaks, and outbound share publication remain. The libp2p
+history. Network replica challenges, object-transfer negotiation and physical
+dedup materialization, broader filesystem-fault soaks, and outbound share
+publication remain. The libp2p
 adapter carries both the
 versioned chain and separate WorkGraph share sessions under distinct opt-in
 protocol IDs and resource scopes. Ordinary CLI hosts leave both disabled. The

@@ -328,7 +328,7 @@ These attestations are operational evidence, not consensus votes, Sybil
 resistance, data-availability proofs, or finality. Colluding or compromised
 trusted keys can attest a manifest and then withhold its bytes; signatures do
 not prove continuing availability or independent operator control. The
-version-0 manifest and chunks are content addressed and strictly bounded.
+versioned manifest and chunks are content addressed and strictly bounded.
 Verification rejects non-regular/extra files and replays the complete ordered
 activation-to-anchor block stream against the caller's independently verified
 activation base and consensus parameters. Restore never imports an archived
@@ -368,17 +368,24 @@ new extendable database; injected pre-sync failure is atomic.
 This operation creates a local finalization horizon: a future heavier fork
 diverging below the floor is unavailable and rejected, even though the archive
 signatures create no network consensus finality. A pruned node can build the
-next complete version-0 archive through `ComposeDirectory`: it fully replays
+next complete archive through `ComposeDirectory`: it fully replays
 the exact predecessor checkpoint/manifest recorded by the unchanged floor,
 streams those content-addressed blocks followed by the selected locally
 executable suffix, and rechecks floor metadata plus ancestry immediately before
 non-replacing rename and parent fsync. Corruption, a nested destination, an
 empty suffix, or a pre-publication reorganization fails without output. The
 result is independently restorable and can authorize a later floor after new
-attestation and custody receipts. Composition still reads and rewrites the full
-history; cross-generation chunk reuse and network transfer are not implemented.
-Network custody challenges, physical disk-exhaustion tests, long filesystem
-soaks, renewal/expiry operations, and an operator CLI remain activation blockers.
+attestation and custody receipts. Version-1 chunks omit the terminal archive
+anchor from their own canonical bytes; network/base/index/first-height and full
+block bytes remain bound, while the manifest binds their complete order to the
+terminal anchor and ancestry commitment. Composition preserves every predecessor
+chunk boundary, rejecting a smaller target chunk policy, so all prefix IDs stay
+identical and only suffix content IDs are new. Ordinary replay still validates
+the complete chain. Version-0 anchor-bound archives remain accepted. Standalone
+directories currently write all referenced files; physical deduplication and
+missing-object transport are not yet implemented. Network custody challenges,
+physical disk-exhaustion tests, long filesystem soaks, renewal/expiry operations,
+and an operator CLI remain activation blockers.
 
 The activation boundary is not a locally finalized block. The isolated router
 can create a separate v1 tree for every known v0 node at height `H-1` and uses

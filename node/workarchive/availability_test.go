@@ -25,7 +25,7 @@ func TestReplicaAvailabilityAuthorizesCanonicalPrune(t *testing.T) {
 	}
 	if bundleID, err := bundle.ID(); err != nil {
 		t.Fatal(err)
-	} else if bundleID.String() != "d1c16895c3d74a2b82debbf2fa7e46d6cadf13292ce214a1697e7af32deca897" {
+	} else if bundleID.String() != "225e8a645c60c08ad3bdd206a21adce5690f3e1d39e698751feaa271710b951f" {
 		t.Fatalf("availability bundle ID=%s", bundleID)
 	}
 	encoded, err := bundle.CanonicalBytes()

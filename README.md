@@ -55,8 +55,12 @@ not a data-availability proof or consensus finality. After a floor advance,
 `ComposeDirectory` can stream the exact prior archive together with only the
 still-executable suffix into a new self-contained archive, without restoring the
 old WorkChain database; it rechecks both floor identity and selected ancestry
-before publication. The output is deliberately complete rather than a layered
-or remotely referenced archive, and no CLI enables these operations.
+before publication. Archive format v1 removes the terminal anchor from chunk
+identity and freezes predecessor chunk boundaries, so every old content ID is
+stable and only suffix chunks are new in the cross-generation object set. Each
+directory remains complete and independently restorable; physical deduplication
+or remote object lookup is not trusted by consensus, and no CLI enables these
+operations.
 Together with unaudited PoW parameters, the raw-seed CLI wallet, and provisional
 peer routing policy, this keeps the system a local development chain rather
 than a public testnet.
