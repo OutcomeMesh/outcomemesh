@@ -393,7 +393,17 @@ manifest before no-replace publication. A complete archive is materialized
 outside the store and fully replayed before atomic directory publication;
 partial downloads never become an archive. The object store and serving peer
 remain untrusted availability caches, not consensus or state-snapshot inputs.
-Authenticated/rate-limited network binding, live custody challenges, physical
+The opt-in `/outcomemesh/workarchive/1` QUIC-v1 binding requires the client to
+pin the server's authenticated Ed25519 transport identity and rejects clients
+outside a canonical operator allowlist before consuming the protocol rate
+budget. Archive streams have separate resource-manager scopes, one concurrent
+stream per peer and four host-wide by default, plus fixed windows of one stream
+per peer and 16 globally per minute. A stream is finite: at most four batches,
+256 objects, and 256 MiB of chunk payload. Repeated request IDs and responses
+that differ from the exact request fail closed. Valid objects preceding a bad
+tail remain safe, reported, and resumable, while the session fails. These
+ceilings limit protocol amplification but do not prove that an allowed peer is
+an independent or durable replica. Live custody challenges, physical
 disk-exhaustion tests, long filesystem soaks, renewal/expiry operations, and an
 operator CLI remain activation blockers.
 

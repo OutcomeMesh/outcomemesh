@@ -62,8 +62,11 @@ directory remains complete and independently restorable. A bounded local
 object store can import only a fully replayed archive, negotiate sorted missing
 IDs in manifest-bound batches, and materialize a complete archive only after a
 second full replay; a replica that already has the prior generation therefore
-fetches only new suffix chunks. This transport-neutral layer is not trusted by
-consensus and is not yet attached to a network protocol or CLI.
+fetches only new suffix chunks. A separate opt-in libp2p QUIC-v1 protocol now
+requires an exact server pin and a canonical allowlist of authenticated client
+identities, with independent concurrent and fixed-window limits. It is not
+trusted by consensus and is not yet exposed through a CLI or backed by live
+custody challenges.
 Together with unaudited PoW parameters, the raw-seed CLI wallet, and provisional
 peer routing policy, this keeps the system a local development chain rather
 than a public testnet.

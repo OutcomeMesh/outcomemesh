@@ -372,6 +372,22 @@ Implemented in an isolated, not-yet-activated consensus package:
   budget, nested-output, naming, codec, and concurrent-put failures. The codecs
   are registered in the common fuzz-smoke gate. No network peer is trusted and
   partial object sets never become restorable archives.
+- archive-object exchange now runs over a distinct, opt-in
+  `/outcomemesh/workarchive/1` libp2p QUIC-v1 protocol. The dialer must pin the
+  exact authenticated server identity; the server requires 1–64 sorted unique
+  client IDs and rejects an outsider before charging the archive rate window.
+  Its resource scope defaults to one concurrent stream per peer and four
+  host-wide (hard maxima two and 16), while an independent fixed window admits
+  one stream per peer and 16 globally per minute by default (hard maxima four
+  and 128). Each stream has per-frame deadlines and ends after at most four
+  batches, 256 objects, and 256 MiB of chunk payload. Repeated IDs, truncated or
+  oversize frames, wrong manifests, and incomplete/substituted responses fail
+  closed. A 257-object test stops after exactly 256 and resumes with only the
+  final object. The real QUIC fixture rejects an unauthorized identity and a
+  wrong server pin, transfers exactly the one composed suffix object, then
+  materializes and fully replays the complete archive. Concurrent, global-rate,
+  corrupt-tail, canonical-allowlist, race, and frame-fuzz cases are separate
+  gates. The protocol remains outside ordinary CLI and consensus paths.
 - an isolated activation router now owns strict v0/v1 block admission. It
   dispatches unchanged canonical encodings from their leading version, permits
   v0 only below `H` and v1 only from `H`, and lazily creates one WorkChain tree
@@ -618,10 +634,10 @@ No WorkGraph field has entered a version-0 block yet. The v1 store and opt-in
 QUIC session remain isolated from every ordinary v0 chain/CLI path and are
 reachable only through the explicitly marked experimental commands;
 adversarial discovery/eclipse and longer real-QUIC rapid-parent churn soaks,
-topology-derived peer selection, network replica challenges and authenticated,
-rate-limited archive-object sessions, canonical-prune disk-exhaustion/long-soak
-campaigns, production gossip-budget calibration, and broader adaptive
-economic-strategy analysis remain before activation.
+topology-derived peer selection, network replica challenges, archive-session
+CLI integration, canonical-prune
+disk-exhaustion/long-soak campaigns, production gossip-budget calibration, and
+broader adaptive economic-strategy analysis remain before activation.
 
 ## Milestones 6–10 — not integrated
 

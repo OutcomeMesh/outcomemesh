@@ -435,6 +435,31 @@ about 82.1 KiB/s per peer and 5.13 MiB/s globally averaged over the window.
 Window-boundary bursts, QUIC/IP overhead, and retransmissions are separate
 capacity concerns.
 
+Archive chunks use a dedicated opt-in protocol scope,
+`/outcomemesh/workarchive/1`; it never falls back to the chain or WorkGraph
+sessions. The client must pin the exact server identity embedded in the direct
+QUIC-v1 address. The server installs the handler with a canonical allowlist of
+1–64 authenticated OutcomeMesh peer IDs, and unauthorized identities are reset
+before consuming its rate budget. Defaults permit one concurrent archive
+stream per peer and four host-wide, with hard maxima of two and 16. A separate
+fixed window admits one stream per peer and 16 globally per minute by default;
+hard maxima are four and 128.
+
+The application session uses `uint32_be(length) || canonical_message` frames
+because each alternating message already has a distinct archive request/batch
+magic. Length is rejected before allocation. One stream serves at most four
+requests; every request contains at most 64 sorted unique IDs and every response
+contains exactly those IDs with at most 64 MiB of combined chunk payload.
+Consequently a stream carries at most 256 objects and 256 MiB of chunk payload.
+The server rejects an ID repeated anywhere in the stream. The receiver rejects
+missing, reordered, substituted, wrong-manifest, corrupt, truncated, or
+oversize responses and applies valid objects only through the append-only
+manifest validator. If data remains after four batches it closes cleanly,
+opens a new pinned stream, and recomputes the missing set. This makes transfer
+resumable without treating the sender or cache as a trust root. The handler is
+not yet wired into an operator CLI; live custody challenge/renewal remains a
+separate activation blocker.
+
 The activation-aware chain session is a third protocol scope under
 `/outcomemesh/chain/1`; it never falls back to `/outcomemesh/session/0`. Its
 defaults allow one concurrent stream per peer and four across the host, with

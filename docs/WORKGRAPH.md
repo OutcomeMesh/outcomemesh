@@ -506,13 +506,22 @@ missing, materialization builds a fresh standalone directory, fully replays it,
 and atomically publishes it without replacing an existing destination. A
 replica seeded from the predecessor archive therefore requests only the new
 suffix objects; incomplete or corrupt caches cannot authorize restore or prune.
+An opt-in `/outcomemesh/workarchive/1` libp2p QUIC-v1 stream now carries these
+messages. The initiator pins the exact authenticated server identity; the
+server uses a canonical explicit client allowlist and rejects outsiders before
+its independent rate window. One stream carries at most four batches (256
+objects and 256 MiB of chunk payload), forbids repeated IDs, and accepts only
+the exact requested response. If more data remains, the receiver opens another
+stream and recomputes only its still-missing set. A real loopback fixture starts
+from the predecessor generation and proves that exactly one suffix object
+crosses the authenticated stream before full materialization and replay.
 
 This does not create network finality or prove independent failure domains.
 After pruning, the local node deliberately rejects forks whose parent is below
 its floor; enabling it is therefore an operator-selected local finalization
-horizon. Network replica transport, renewed custody challenges,
-authenticated/rate-limited object sessions, disk-exhaustion campaigns, and
-longer physical-filesystem soaks remain before public activation. The
+horizon. Renewed custody challenges, archive-session CLI integration,
+disk-exhaustion campaigns, and longer physical-filesystem soaks remain before
+public activation. The
 integration suite now covers all four synchronous WorkChain batch classes:
 commit, checkpoint rotation, stale-fork prune, and canonical-floor transition.
 

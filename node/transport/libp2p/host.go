@@ -30,6 +30,7 @@ const (
 	VersionedChainProtocol protocol.ID = "/outcomemesh/chain/1"
 	ChainNotifyProtocol    protocol.ID = "/outcomemesh/chain-notify/1"
 	TiePairProtocol        protocol.ID = "/outcomemesh/tie-pair/2"
+	ArchiveObjectProtocol  protocol.ID = "/outcomemesh/workarchive/1"
 	maxListenAddresses                 = 8
 	maxAddressBytes                    = 256
 	// MaxConnectionLimit and MaxStreamsPerPeerLimit are hard implementation
@@ -48,6 +49,11 @@ const (
 	MaxTiePairStreamsPerPeerLimit                = 1
 	MaxTiePairStreamsPerMinuteLimit              = 4
 	MaxTiePairStreamsGlobalPerMinuteLimit        = 128
+	MaxArchiveObjectStreamsLimit                 = 16
+	MaxArchiveObjectStreamsPerPeerLimit          = 2
+	MaxArchiveObjectStreamsPerMinuteLimit        = 4
+	MaxArchiveObjectStreamsGlobalPerMinuteLimit  = 128
+	MaximumArchiveObjectPeers                    = 64
 	MaxFileDescriptorLimit                       = 4_096
 )
 
@@ -75,6 +81,10 @@ type Config struct {
 	MaxTiePairStreamsPerPeer                int
 	MaxTiePairStreamsPerMinute              int
 	MaxTiePairStreamsGlobalPerMinute        int
+	MaxArchiveObjectStreams                 int
+	MaxArchiveObjectStreamsPerPeer          int
+	MaxArchiveObjectStreamsPerMinute        int
+	MaxArchiveObjectStreamsGlobalPerMinute  int
 	MemoryBytes                             int64
 	MaxFileDescriptors                      int
 	GracePeriod                             time.Duration
@@ -96,6 +106,10 @@ func DefaultConfig() Config {
 		MaxTiePairStreamsPerPeer:                1,
 		MaxTiePairStreamsPerMinute:              2,
 		MaxTiePairStreamsGlobalPerMinute:        32,
+		MaxArchiveObjectStreams:                 4,
+		MaxArchiveObjectStreamsPerPeer:          1,
+		MaxArchiveObjectStreamsPerMinute:        1,
+		MaxArchiveObjectStreamsGlobalPerMinute:  16,
 		MemoryBytes:                             64 << 20,
 		MaxFileDescriptors:                      128,
 		GracePeriod:                             30 * time.Second,
@@ -126,6 +140,12 @@ type Host struct {
 	tiePairPeerCounts                       map[types.Hash]int
 	maxTiePairStreamsPerMinute              int
 	maxGlobalTiePairStreamsPerMinute        int
+	archiveObjectMu                         sync.Mutex
+	archiveObjectWindowStart                time.Time
+	archiveObjectGlobalCount                int
+	archiveObjectPeerCounts                 map[types.Hash]int
+	maxArchiveObjectStreamsPerMinute        int
+	maxGlobalArchiveObjectStreamsPerMinute  int
 }
 
 func New(ctx context.Context, privateKey ed25519.PrivateKey, config Config, handler Handler) (*Host, error) {
@@ -181,6 +201,9 @@ func New(ctx context.Context, privateKey ed25519.PrivateKey, config Config, hand
 		tiePairPeerCounts:                       make(map[types.Hash]int),
 		maxTiePairStreamsPerMinute:              config.MaxTiePairStreamsPerMinute,
 		maxGlobalTiePairStreamsPerMinute:        config.MaxTiePairStreamsGlobalPerMinute,
+		archiveObjectPeerCounts:                 make(map[types.Hash]int),
+		maxArchiveObjectStreamsPerMinute:        config.MaxArchiveObjectStreamsPerMinute,
+		maxGlobalArchiveObjectStreamsPerMinute:  config.MaxArchiveObjectStreamsGlobalPerMinute,
 	}
 	result.setHandler(SessionProtocol, handler)
 	return result, nil
@@ -228,6 +251,34 @@ func (value *Host) SetTiePairHandler(expectedRemote types.Hash, handler Handler)
 	value.inner.SetStreamHandler(TiePairProtocol, func(stream network.Stream) {
 		remoteID, err := outcomeIDFromPublicKey(stream.Conn().RemotePublicKey())
 		if err != nil || remoteID != expectedRemote || !value.allowTiePairStream(remoteID, time.Now()) {
+			_ = stream.Reset()
+			return
+		}
+		handler(value.context, remoteID, stream)
+	})
+	return nil
+}
+
+// SetArchiveObjectHandler enables archive transfer only for an explicit,
+// canonical allowlist of authenticated transport identities. Rejected peers do
+// not consume the archive protocol's independent fixed-window rate budget.
+func (value *Host) SetArchiveObjectHandler(allowedRemotes []types.Hash, handler Handler) error {
+	if value == nil || value.inner == nil || handler == nil || len(allowedRemotes) == 0 ||
+		len(allowedRemotes) > MaximumArchiveObjectPeers {
+		return ErrConfiguration
+	}
+	allowed := make(map[types.Hash]struct{}, len(allowedRemotes))
+	for index, remoteID := range allowedRemotes {
+		if remoteID.IsZero() ||
+			(index > 0 && types.CompareHash(allowedRemotes[index-1], remoteID) >= 0) {
+			return ErrConfiguration
+		}
+		allowed[remoteID] = struct{}{}
+	}
+	value.inner.SetStreamHandler(ArchiveObjectProtocol, func(stream network.Stream) {
+		remoteID, err := outcomeIDFromPublicKey(stream.Conn().RemotePublicKey())
+		_, authorized := allowed[remoteID]
+		if err != nil || !authorized || !value.allowArchiveObjectStream(remoteID, time.Now()) {
 			_ = stream.Reset()
 			return
 		}
@@ -309,6 +360,24 @@ func (value *Host) allowWorkStream(remoteID types.Hash, now time.Time) bool {
 	return true
 }
 
+func (value *Host) allowArchiveObjectStream(remoteID types.Hash, now time.Time) bool {
+	value.archiveObjectMu.Lock()
+	defer value.archiveObjectMu.Unlock()
+	if value.archiveObjectWindowStart.IsZero() ||
+		now.Sub(value.archiveObjectWindowStart) >= time.Minute || now.Before(value.archiveObjectWindowStart) {
+		value.archiveObjectWindowStart = now
+		value.archiveObjectGlobalCount = 0
+		clear(value.archiveObjectPeerCounts)
+	}
+	if value.archiveObjectGlobalCount >= value.maxGlobalArchiveObjectStreamsPerMinute ||
+		value.archiveObjectPeerCounts[remoteID] >= value.maxArchiveObjectStreamsPerMinute {
+		return false
+	}
+	value.archiveObjectGlobalCount++
+	value.archiveObjectPeerCounts[remoteID]++
+	return true
+}
+
 func (value *Host) ID() types.Hash { return value.id }
 
 func (value *Host) Libp2pID() peer.ID {
@@ -384,6 +453,20 @@ func (value *Host) OpenChainNotifyStream(ctx context.Context, address string, ex
 // protocol. The expected observer transport identity should always be pinned.
 func (value *Host) OpenTiePairStream(ctx context.Context, address string, expected *types.Hash) (network.Stream, types.Hash, error) {
 	return value.openStream(ctx, address, expected, TiePairProtocol)
+}
+
+// OpenArchiveObjectStream opens the allowlisted archive protocol and requires
+// an exact remote identity pin. Archive bytes are never requested from an
+// address whose authenticated key differs from operator configuration.
+func (value *Host) OpenArchiveObjectStream(
+	ctx context.Context,
+	address string,
+	expected types.Hash,
+) (network.Stream, types.Hash, error) {
+	if expected.IsZero() {
+		return nil, types.Hash{}, ErrUnexpectedPeer
+	}
+	return value.openStream(ctx, address, &expected, ArchiveObjectProtocol)
 }
 
 // DisconnectPeer closes the authenticated connection behind a pinned direct
@@ -546,6 +629,15 @@ func validateConfig(ctx context.Context, privateKey ed25519.PrivateKey, config C
 		config.MaxTiePairStreamsPerMinute > MaxTiePairStreamsPerMinuteLimit ||
 		config.MaxTiePairStreamsGlobalPerMinute < config.MaxTiePairStreamsPerMinute ||
 		config.MaxTiePairStreamsGlobalPerMinute > MaxTiePairStreamsGlobalPerMinuteLimit ||
+		config.MaxArchiveObjectStreams <= 0 ||
+		config.MaxArchiveObjectStreams > MaxArchiveObjectStreamsLimit ||
+		config.MaxArchiveObjectStreamsPerPeer <= 0 ||
+		config.MaxArchiveObjectStreamsPerPeer > MaxArchiveObjectStreamsPerPeerLimit ||
+		config.MaxArchiveObjectStreams < config.MaxArchiveObjectStreamsPerPeer ||
+		config.MaxArchiveObjectStreamsPerMinute <= 0 ||
+		config.MaxArchiveObjectStreamsPerMinute > MaxArchiveObjectStreamsPerMinuteLimit ||
+		config.MaxArchiveObjectStreamsGlobalPerMinute < config.MaxArchiveObjectStreamsPerMinute ||
+		config.MaxArchiveObjectStreamsGlobalPerMinute > MaxArchiveObjectStreamsGlobalPerMinuteLimit ||
 		config.MemoryBytes < 16<<20 || config.MemoryBytes > 2<<30 ||
 		config.MaxFileDescriptors < config.MaxConnections || config.MaxFileDescriptors > MaxFileDescriptorLimit ||
 		config.GracePeriod < 0 {
@@ -569,9 +661,10 @@ func newResourceManager(config Config) (network.ResourceManager, error) {
 	// below enforces the exact application-stream limit.
 	const internalStreamsPerPeer = 8
 	peerStreams := config.MaxStreamsPerPeer + config.MaxWorkStreamsPerPeer +
-		2*config.MaxVersionedChainStreamsPerPeer + config.MaxTiePairStreamsPerPeer + internalStreamsPerPeer
+		2*config.MaxVersionedChainStreamsPerPeer + config.MaxTiePairStreamsPerPeer +
+		config.MaxArchiveObjectStreamsPerPeer + internalStreamsPerPeer
 	totalStreams := config.MaxConnections*(config.MaxStreamsPerPeer+config.MaxWorkStreamsPerPeer+internalStreamsPerPeer) +
-		2*config.MaxVersionedChainStreams + config.MaxTiePairStreams
+		2*config.MaxVersionedChainStreams + config.MaxTiePairStreams + config.MaxArchiveObjectStreams
 	system := rcmgr.ResourceLimits{
 		Streams:         rcmgr.LimitVal(totalStreams),
 		StreamsInbound:  rcmgr.LimitVal(totalStreams),
@@ -616,6 +709,12 @@ func newResourceManager(config Config) (network.ResourceManager, error) {
 		StreamsOutbound: rcmgr.LimitVal(config.MaxTiePairStreamsPerPeer),
 		Memory:          32 << 20,
 	}
+	archiveObjectPerPeer := rcmgr.ResourceLimits{
+		Streams:         rcmgr.LimitVal(config.MaxArchiveObjectStreamsPerPeer),
+		StreamsInbound:  rcmgr.LimitVal(config.MaxArchiveObjectStreamsPerPeer),
+		StreamsOutbound: rcmgr.LimitVal(config.MaxArchiveObjectStreamsPerPeer),
+		Memory:          rcmgr.LimitVal64(config.MemoryBytes / 2),
+	}
 	partial := rcmgr.PartialLimitConfig{
 		System:      system,
 		Transient:   system,
@@ -651,6 +750,12 @@ func newResourceManager(config Config) (network.ResourceManager, error) {
 				StreamsOutbound: rcmgr.LimitVal(config.MaxTiePairStreams),
 				Memory:          rcmgr.LimitVal64(config.MemoryBytes / 2),
 			},
+			ArchiveObjectProtocol: {
+				Streams:         rcmgr.LimitVal(config.MaxArchiveObjectStreams),
+				StreamsInbound:  rcmgr.LimitVal(config.MaxArchiveObjectStreams),
+				StreamsOutbound: rcmgr.LimitVal(config.MaxArchiveObjectStreams),
+				Memory:          rcmgr.LimitVal64(config.MemoryBytes / 2),
+			},
 		},
 		ProtocolPeer: map[protocol.ID]rcmgr.ResourceLimits{
 			SessionProtocol:        applicationPerPeer,
@@ -658,6 +763,7 @@ func newResourceManager(config Config) (network.ResourceManager, error) {
 			VersionedChainProtocol: versionedChainPerPeer,
 			ChainNotifyProtocol:    versionedChainPerPeer,
 			TiePairProtocol:        tiePairPerPeer,
+			ArchiveObjectProtocol:  archiveObjectPerPeer,
 		},
 		Conn: rcmgr.ResourceLimits{
 			Conns: 1, ConnsInbound: 1, ConnsOutbound: 1, FD: 1, Memory: 4 << 20,

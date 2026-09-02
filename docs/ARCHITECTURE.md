@@ -269,13 +269,18 @@ standalone temporary archive, fully replays it, and only then publishes the
 directory. Thus a store seeded with the predecessor generation requests only
 the new suffix while neither the cache nor its peer is a trust root. Physical
 copy-on-write materialization remains an operator concern. Local maintenance
-also
-marks canonical ancestry and every side branch reaching a configurable cutoff,
+also marks canonical ancestry and every side branch reaching a configurable
+cutoff,
 then atomically removes only complete
 stale subtrees while decrementing the exact logical history counter. Its default
 window is 4,096 heights, zero disables it, and it does not prune canonical
-history. Binding archive-object exchange to authenticated, rate-limited network
-sessions, renewed replica challenges, broader filesystem-fault soaks, and
+history. Archive objects use a dedicated opt-in libp2p scope. Direct QUIC-v1
+authenticates both Ed25519 transport identities; the dialer must pin the exact
+server and the server admits only a sorted operator allowlist. One finite stream
+serves at most four existing 64-object/64-MiB batches, rejects repeated IDs, and
+has independent concurrent and per-peer/global fixed-window admission. A
+receiver may resume on a new stream from its append-only store. Live custody
+challenges and renewal, an operator CLI, broader filesystem-fault soaks, and
 outbound share publication remain. The libp2p
 adapter carries both the
 versioned chain and separate WorkGraph share sessions under distinct opt-in
