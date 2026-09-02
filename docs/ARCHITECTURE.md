@@ -288,8 +288,13 @@ receiver may resume on a new stream from its append-only store. A second
 `/outcomemesh/workarchive-custody/1` scope admits only configured auditor
 transport identities under separate limits. Its one-shot state machine is
 challenge → sampled batch → signed proof → linked renewed receipt, with strict
-frame sizes and deadlines. An operator CLI, durable scheduling, broader
-filesystem-fault soaks, and outbound share publication remain. The libp2p
+frame sizes and deadlines. The replica commits the complete response tuple to
+an immutable canonical record before sending and reloads it on restart; the
+auditor commits the challenge before dialing and the verified response before
+publishing the receipt. Separate one-shot `omd` commands expose both roles with
+pinned/allowlisted transport identities and separate portable signing keys.
+Automated scheduling, record retention/rotation, broader filesystem-fault
+soaks, and outbound share publication remain. The libp2p
 adapter carries both the
 versioned chain and separate WorkGraph share sessions under distinct opt-in
 protocol IDs and resource scopes. Ordinary CLI hosts leave both disabled. The

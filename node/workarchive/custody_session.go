@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"os"
 	"sync"
 	"time"
 
@@ -83,6 +84,7 @@ type CustodySession struct {
 	config            CustodySessionConfig
 	serveMu           sync.Mutex
 	cachedResponse    *cachedCustodyResponse
+	recordPath        string
 }
 
 type cachedCustodyResponse struct {
@@ -126,6 +128,41 @@ func NewCustodyReplicaSession(
 		manifest: manifest, receipt: receipt, policy: policy, store: store,
 		replicaPrivateKey: append(ed25519.PrivateKey(nil), replicaPrivateKey...), config: config,
 	}, nil
+}
+
+// NewDurableCustodyReplicaSession restores the immutable first renewal for one
+// predecessor, or publishes it atomically before the first network response.
+func NewDurableCustodyReplicaSession(
+	manifest Manifest,
+	receipt ReplicaReceipt,
+	store *ObjectStore,
+	policy CustodyPolicy,
+	replicaPrivateKey ed25519.PrivateKey,
+	recordPath string,
+	config CustodySessionConfig,
+) (*CustodySession, error) {
+	if recordPath == "" {
+		return nil, ErrCustodySession
+	}
+	session, err := NewCustodyReplicaSession(
+		manifest, receipt, store, policy, replicaPrivateKey, config,
+	)
+	if err != nil {
+		return nil, err
+	}
+	session.recordPath = recordPath
+	record, err := LoadCustodyRecordFile(recordPath, manifest, receipt, policy)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return session, nil
+		}
+		return nil, err
+	}
+	session.cachedResponse, err = cachedCustodyResponseFromRecord(record)
+	if err != nil {
+		return nil, err
+	}
+	return session, nil
 }
 
 // Audit runs exactly one challenge exchange on a stream whose replica
@@ -249,6 +286,9 @@ func (session *CustodySession) Serve(
 		if err := session.writeResponse(ctx, stream, session.cachedResponse); err != nil {
 			return CustodyServeReport{}, err
 		}
+		if err := session.awaitAuditorClose(ctx, stream); err != nil {
+			return CustodyServeReport{}, err
+		}
 		return session.cachedResponse.report, nil
 	}
 	batch, proof, err := AnswerCustodyChallenge(
@@ -265,36 +305,21 @@ func (session *CustodySession) Serve(
 	if err != nil {
 		return CustodyServeReport{}, errors.Join(ErrCustodySession, err)
 	}
-	encodedBatch, err := batch.CanonicalBytes()
+	record := CustodyRecord{
+		Version: CustodyRecordVersion0, Challenge: challenge, Batch: batch,
+		Proof: proof, RenewedReceipt: renewed,
+	}
+	if session.recordPath != "" {
+		record, _, err = PublishCustodyRecordFile(
+			session.recordPath, record, session.manifest, session.receipt, session.policy,
+		)
+		if err != nil {
+			return CustodyServeReport{}, errors.Join(ErrCustodySession, err)
+		}
+	}
+	cached, err := cachedCustodyResponseFromRecord(record)
 	if err != nil {
 		return CustodyServeReport{}, err
-	}
-	encodedProof, err := proof.CanonicalBytes()
-	if err != nil {
-		return CustodyServeReport{}, err
-	}
-	encodedRenewal, err := renewed.CanonicalBytes()
-	if err != nil {
-		return CustodyServeReport{}, err
-	}
-	proofID, err := proof.ID()
-	if err != nil {
-		return CustodyServeReport{}, err
-	}
-	renewedID, err := renewed.ID()
-	if err != nil {
-		return CustodyServeReport{}, err
-	}
-	report := CustodyServeReport{
-		ChallengeID: challengeID, ProofID: proofID, RenewedReceiptID: renewedID,
-		Objects: uint16(len(batch.Objects)), RespondedAt: respondedAt,
-	}
-	for _, object := range batch.Objects {
-		report.SentBytes += uint64(len(object.Encoded))
-	}
-	cached := &cachedCustodyResponse{
-		challengeID: challengeID, batch: encodedBatch, proof: encodedProof,
-		renewal: encodedRenewal, report: report,
 	}
 	// Cache before the first write. A transport failure can then retry only this
 	// exact signed result instead of creating a sibling renewal.
@@ -302,7 +327,48 @@ func (session *CustodySession) Serve(
 	if err := session.writeResponse(ctx, stream, cached); err != nil {
 		return CustodyServeReport{}, err
 	}
-	return report, nil
+	if err := session.awaitAuditorClose(ctx, stream); err != nil {
+		return CustodyServeReport{}, err
+	}
+	return cached.report, nil
+}
+
+func cachedCustodyResponseFromRecord(record CustodyRecord) (*cachedCustodyResponse, error) {
+	challengeID, err := record.Challenge.ID()
+	if err != nil {
+		return nil, err
+	}
+	batch, err := record.Batch.CanonicalBytes()
+	if err != nil {
+		return nil, err
+	}
+	proof, err := record.Proof.CanonicalBytes()
+	if err != nil {
+		return nil, err
+	}
+	renewal, err := record.RenewedReceipt.CanonicalBytes()
+	if err != nil {
+		return nil, err
+	}
+	proofID, err := record.Proof.ID()
+	if err != nil {
+		return nil, err
+	}
+	renewedID, err := record.RenewedReceipt.ID()
+	if err != nil {
+		return nil, err
+	}
+	report := CustodyServeReport{
+		ChallengeID: challengeID, ProofID: proofID, RenewedReceiptID: renewedID,
+		Objects: uint16(len(record.Batch.Objects)), RespondedAt: record.Proof.RespondedAt,
+	}
+	for _, object := range record.Batch.Objects {
+		report.SentBytes += uint64(len(object.Encoded))
+	}
+	return &cachedCustodyResponse{
+		challengeID: challengeID, batch: batch, proof: proof, renewal: renewal,
+		report: report,
+	}, nil
 }
 
 func (session *CustodySession) writeResponse(
@@ -326,6 +392,27 @@ func (session *CustodySession) writeResponse(
 		}
 	}
 	return nil
+}
+
+// awaitAuditorClose is the transport-level completion acknowledgement. It adds
+// no fifth protocol message: after validating all three response frames, Audit
+// closes its stream and Serve observes EOF before a one-shot host may exit.
+func (session *CustodySession) awaitAuditorClose(
+	ctx context.Context,
+	stream CustodySessionStream,
+) error {
+	if err := session.setDeadline(ctx, stream); err != nil {
+		return err
+	}
+	var unexpected [1]byte
+	read, err := stream.Read(unexpected[:])
+	if read == 0 && errors.Is(err, io.EOF) {
+		return nil
+	}
+	if err == nil {
+		err = errors.New("auditor sent data after custody response")
+	}
+	return errors.Join(ErrCustodySession, err)
 }
 
 func validateCustodySessionInputs(

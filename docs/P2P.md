@@ -479,12 +479,29 @@ at most eight deterministically selected IDs. The proof commits the challenge,
 predecessor receipt, manifest, response time, replica key, and canonical batch
 digest; receipt v1 commits the predecessor and proof IDs. The receiver verifies
 all three signatures, exact response order, every chunk, freshness, and the
-term before accepting the renewal. Transport and evidence-signing keys remain
-separate. A replica session caches the signed response before its first write:
+term before accepting the renewal, then closes the stream. The replica observes
+that EOF as a transport-level completion acknowledgement before a one-shot host
+may exit; no fifth application message is added. Transport and evidence-signing
+keys remain separate. A replica session caches the signed response before its first write:
 an identical retry receives the same proof and receipt, while another challenge
 against that predecessor is rejected instead of creating a sibling renewal.
-Persisting that idempotency state across process restart, durable scheduling,
-and an operator CLI are still pending.
+Before its first network write, the durable replica session commits one
+canonical `CustodyRecord` containing the challenge, batch, proof, and renewal.
+Publication fsyncs a mode-0600 temporary file, installs it with a no-replace
+hard link, and fsyncs the directory. Restart verifies that record against the
+manifest, predecessor receipt, and auditor policy; the original challenge gets
+the exact committed bytes and a sibling challenge fails closed. A real process
+test kills publication immediately before and after the link boundary.
+
+`omd work-archive-custody-serve-quic` runs the one-shot allowlisted replica and
+`omd work-archive-custody-challenge-quic` runs the identity-pinned auditor. The
+auditor durably publishes its signed challenge before dialing, commits the
+verified response record before exposing the renewed receipt, and can finish a
+retry locally after a crash. Both commands require distinct transport and
+portable evidence keys. A two-process QUIC test completes an audit, restarts the
+replica on the same keys and record, receives the byte-identical response, then
+proves auditor-side recovery without a live server. Automated scheduling and
+retention/rotation of accumulated records are still pending.
 
 The activation-aware chain session is a third protocol scope under
 `/outcomemesh/chain/1`; it never falls back to `/outcomemesh/session/0`. Its

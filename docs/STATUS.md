@@ -411,7 +411,17 @@ Implemented in an isolated, not-yet-activated consensus package:
   reordered/truncated frames, and matching evidence IDs on both endpoints. The
   replica caches a signed response before writing it, returns the identical
   proof/receipt on an identical retry, and rejects a second challenge against
-  the same predecessor instead of creating an in-process sibling renewal.
+  the same predecessor instead of creating an in-process sibling renewal. The
+  response cache now has a canonical durable form: a mode-0600 file commits the
+  challenge, exact batch, proof, and renewal through fsync plus atomic
+  no-replace link before the first network byte. Startup verifies and restores
+  it, so idempotency and sibling rejection survive process restart. Crash tests
+  cover both sides of publication, concurrent writers converge on one answer,
+  corrupt records fail closed, and the decoder is in the fuzz-smoke gate.
+  One-shot `omd` replica/auditor commands persist the challenge and response,
+  enforce pinned/allowlisted QUIC identities plus four distinct
+  transport/evidence keys, and recover the renewed receipt locally. A real
+  two-process test restarts the replica and requires byte-identical evidence.
   This is fresh retrievability evidence from a trusted replica key, not proof of
   physical storage, non-proxying, independent operation, or consensus finality.
 - an isolated activation router now owns strict v0/v1 block admission. It
@@ -660,8 +670,8 @@ No WorkGraph field has entered a version-0 block yet. The v1 store and opt-in
 QUIC session remain isolated from every ordinary v0 chain/CLI path and are
 reachable only through the explicitly marked experimental commands;
 adversarial discovery/eclipse and longer real-QUIC rapid-parent churn soaks,
-topology-derived peer selection, durable custody scheduling/evidence retention,
-archive-session CLI integration, canonical-prune
+topology-derived peer selection, automated custody scheduling/evidence rotation,
+bulk archive-session CLI integration, canonical-prune
 disk-exhaustion/long-soak campaigns, production gossip-budget calibration, and
 broader adaptive economic-strategy analysis remain before activation.
 

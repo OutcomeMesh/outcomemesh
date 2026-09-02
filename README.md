@@ -70,8 +70,10 @@ auditor issue a short-lived signed random challenge whose sampled chunk IDs are
 derived deterministically from the nonce, manifest, and current receipt. The
 replica returns the exact validated chunks, a signed digest proof, and a linked
 version-1 receipt with the requested renewal deadline committed by the
-challenge. Legacy full-replay version-0 receipts remain valid. Neither archive
-protocol is yet exposed through an operator CLI.
+challenge. Legacy full-replay version-0 receipts remain valid. The custody
+protocol is exposed through one-shot replica and auditor `omd` commands with
+separate transport/evidence keys and immutable restart records; the bulk
+archive-object protocol does not yet have an operator CLI.
 Together with unaudited PoW parameters, the raw-seed CLI wallet, and provisional
 peer routing policy, this keeps the system a local development chain rather
 than a public testnet.
@@ -106,7 +108,10 @@ both sides of commit, replay-checkpoint rotation, stale-fork pruning, and the
 canonical retained-floor transition
 durability boundaries. It also kills WorkGraph archive restore immediately
 before directory publication and immediately after rename, requiring either no
-destination or a fully reopenable and extendable database. Raise the
+destination or a fully reopenable and extendable database. The suite also kills
+custody-record publication on both sides of its atomic link,
+then runs two real `omd` custody processes, restarts the replica, and requires
+the exact first proof and renewed receipt to be replayed. Raise the
 v0 QUIC soak length with, for example,
 `OUTCOMEMESH_SOAK_CYCLES=25 make test-process` (hard cap: 100 cycles).
 The completed campaign case also runs the read-only coordinator/observer audit

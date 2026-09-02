@@ -22,6 +22,9 @@ const (
 	archiveCrashSourceEnvironment      = "OUTCOMEMESH_ARCHIVE_CRASH_SOURCE"
 	archiveCrashDestinationEnvironment = "OUTCOMEMESH_ARCHIVE_CRASH_DESTINATION"
 	archiveCrashMarkerEnvironment      = "OUTCOMEMESH_ARCHIVE_CRASH_MARKER"
+	custodyCrashModeEnvironment        = "OUTCOMEMESH_CUSTODY_CRASH_MODE"
+	custodyCrashPathEnvironment        = "OUTCOMEMESH_CUSTODY_CRASH_PATH"
+	custodyCrashMarkerEnvironment      = "OUTCOMEMESH_CUSTODY_CRASH_MARKER"
 )
 
 func TestArchiveRestoreProcessCrashAtomicity(t *testing.T) {
@@ -67,6 +70,55 @@ func TestArchiveRestoreProcessCrashAtomicity(t *testing.T) {
 	}
 }
 
+func TestCustodyRecordProcessCrashAtomicity(t *testing.T) {
+	fixture := newCustodyRecordFixture(t)
+	for _, boundary := range []string{"before", "after"} {
+		t.Run(boundary, func(t *testing.T) {
+			recordPath := filepath.Join(t.TempDir(), "custody.omcr")
+			marker := filepath.Join(t.TempDir(), "reached")
+			command := exec.Command(
+				os.Args[0], "-test.run=^TestCustodyRecordCrashHelper$", "-test.count=1",
+			)
+			command.Env = append(os.Environ(),
+				custodyCrashModeEnvironment+"="+boundary,
+				custodyCrashPathEnvironment+"="+recordPath,
+				custodyCrashMarkerEnvironment+"="+marker,
+			)
+			if err := command.Start(); err != nil {
+				t.Fatal(err)
+			}
+			waitForArchiveCrashMarker(t, marker, command)
+			if err := command.Process.Kill(); err != nil {
+				t.Fatal(err)
+			}
+			_ = command.Wait()
+
+			if boundary == "before" {
+				if _, err := os.Stat(recordPath); !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("pre-link custody record error=%v", err)
+				}
+				if _, created, err := PublishCustodyRecordFile(
+					recordPath, fixture.record, fixture.manifest,
+					fixture.receipt, fixture.policy,
+				); err != nil || !created {
+					t.Fatalf("custody retry created=%t error=%v", created, err)
+				}
+			}
+			loaded, err := LoadCustodyRecordFile(
+				recordPath, fixture.manifest, fixture.receipt, fixture.policy,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			loadedBytes, _ := loaded.CanonicalBytes()
+			expectedBytes, _ := fixture.record.CanonicalBytes()
+			if !bytes.Equal(loadedBytes, expectedBytes) {
+				t.Fatal("crash-recovered custody record differs from signed response")
+			}
+		})
+	}
+}
+
 func TestArchiveRestoreCrashHelper(t *testing.T) {
 	mode := os.Getenv(archiveCrashModeEnvironment)
 	if mode == "" {
@@ -103,6 +155,30 @@ func TestArchiveRestoreCrashHelper(t *testing.T) {
 		archiveTestParameters(), DefaultLimits(), workchain.DefaultPolicy(), hooks,
 	)
 	t.Fatalf("archive crash hook returned: %v", err)
+}
+
+func TestCustodyRecordCrashHelper(t *testing.T) {
+	mode := os.Getenv(custodyCrashModeEnvironment)
+	if mode == "" {
+		t.Skip("subprocess helper")
+	}
+	recordPath := os.Getenv(custodyCrashPathEnvironment)
+	marker := os.Getenv(custodyCrashMarkerEnvironment)
+	fixture := newCustodyRecordFixture(t)
+	hooks := custodyRecordHooks{}
+	switch mode {
+	case "before":
+		hooks.beforePublish = func() { blockAtArchiveCrashMarker(marker) }
+	case "after":
+		hooks.afterPublish = func() { blockAtArchiveCrashMarker(marker) }
+	default:
+		t.Fatalf("unknown custody crash mode %q", mode)
+	}
+	_, _, err := publishCustodyRecordFile(
+		recordPath, fixture.record, fixture.manifest, fixture.receipt,
+		fixture.policy, hooks,
+	)
+	t.Fatalf("custody crash hook returned: %v", err)
 }
 
 func processArchiveCheckpoint(t testing.TB, manifest Manifest) (Checkpoint, Policy) {

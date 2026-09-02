@@ -475,6 +475,15 @@ predecessor and proof. Legacy receipt v0 remains valid. A separate allowlisted,
 identity-pinned `/outcomemesh/workarchive-custody/1` QUIC-v1 stream executes one
 bounded challenge → batch → proof → renewal exchange under resource and rate
 limits independent of bulk archive transfer.
+The replica durably publishes the complete canonical exchange before its first
+response byte and reloads it after restart, so the same challenge receives the
+exact first proof/receipt while a sibling renewal is rejected. The auditor
+publishes its signed challenge before dialing and its verified exchange before
+the renewed receipt. One-shot `work-archive-custody-serve-quic` and
+`work-archive-custody-challenge-quic` commands enforce pinned/allowlisted
+transport peers and four-way transport/evidence key separation. Process tests
+cover the publication crash boundary, replica restart, exact response replay,
+and auditor recovery without a live replica.
 
 The schema-4 pruning batch is permitted only with an explicitly non-zero local
 `CanonicalRetention`; zero is the default. The archive anchor must remain on
@@ -528,8 +537,8 @@ crosses the authenticated stream before full materialization and replay.
 This does not create network finality or prove independent failure domains.
 After pruning, the local node deliberately rejects forks whose parent is below
 its floor; enabling it is therefore an operator-selected local finalization
-horizon. Durable custody scheduling/evidence retention, archive-session CLI
-integration, disk-exhaustion campaigns, and longer physical-filesystem soaks remain before
+horizon. Automated custody scheduling and evidence rotation, bulk
+archive-session CLI integration, disk-exhaustion campaigns, and longer physical-filesystem soaks remain before
 public activation. The
 integration suite now covers all four synchronous WorkChain batch classes:
 commit, checkpoint rotation, stale-fork prune, and canonical-floor transition.

@@ -374,14 +374,25 @@ pins the replica transport identity, and admits only a canonical allowlist of
 auditor transport identities before charging its independent rate window. One
 finite stream carries exactly challenge, batch, proof, and renewed receipt,
 each with a deadline and a type-specific pre-allocation bound. Transport keys
-and portable auditor/replica signing keys are deliberately separate. A valid
+and portable auditor/replica signing keys are deliberately separate. After
+verification the auditor closes the stream; the replica waits for that bounded
+EOF before a one-shot process exits, avoiding loss of the final QUIC frames
+without introducing another application message. A valid
 exchange proves that the trusted replica key returned those sampled bytes at
 that time; it does not prove physical storage, prevent proxy retrieval, establish
 operator independence, or replace the full local replay required at pruning.
 Within one replica session the signed response is cached before transmission;
 the same challenge retries idempotently and a different challenge for that
-predecessor cannot create a sibling receipt. This guard is not yet persisted
-across replica process restart.
+predecessor cannot create a sibling receipt. The durable session persists the
+complete verified challenge/batch/proof/renewal tuple before transmission using
+a fsynced mode-0600 temporary file, atomic no-replace link, and directory fsync.
+Restart accepts only a canonical record valid for the exact manifest,
+predecessor receipt, and trusted-auditor policy. Thus a retry replays the first
+signed outcome and a different challenge cannot create a sibling even across a
+process crash. The auditor similarly persists its challenge before dialing and
+its verified response before publishing the renewed receipt. Corrupt,
+conflicting, symlink, and partial records fail closed; automated challenge
+scheduling and evidence-retention policy remain operator responsibilities.
 
 With an explicitly non-zero local canonical-retention policy, one synchronous
 schema-4 batch may replace the strict prefix before the selected archive anchor

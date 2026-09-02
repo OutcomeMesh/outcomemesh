@@ -212,6 +212,14 @@ func TestCustodySessionRejectsReorderedAndTruncatedFrames(t *testing.T) {
 	); !errors.Is(err, ErrCustodySession) {
 		t.Fatalf("failed first renewal write error=%v", err)
 	}
+	trailingInput := append(append([]byte(nil), challengePrefix[:]...), encodedChallenge...)
+	trailingInput = append(trailingInput, 1)
+	trailing := &custodyMemoryStream{reader: bytes.NewReader(trailingInput)}
+	if _, err := replicaSession.Serve(
+		context.Background(), trailing,
+	); !errors.Is(err, ErrCustodySession) {
+		t.Fatalf("post-response auditor data error=%v", err)
+	}
 	firstResponse, firstAudit, firstServe := runCustodyPipeSession(
 		t, replicaSession, auditorSession, challenge,
 	)
@@ -363,3 +371,20 @@ func (*custodyFailWriteStream) Write([]byte) (int, error) {
 func (*custodyFailWriteStream) Close() error { return nil }
 
 func (*custodyFailWriteStream) SetDeadline(time.Time) error { return nil }
+
+type custodyMemoryStream struct {
+	reader *bytes.Reader
+	writer bytes.Buffer
+}
+
+func (stream *custodyMemoryStream) Read(destination []byte) (int, error) {
+	return stream.reader.Read(destination)
+}
+
+func (stream *custodyMemoryStream) Write(source []byte) (int, error) {
+	return stream.writer.Write(source)
+}
+
+func (*custodyMemoryStream) Close() error { return nil }
+
+func (*custodyMemoryStream) SetDeadline(time.Time) error { return nil }
