@@ -367,11 +367,18 @@ new extendable database; injected pre-sync failure is atomic.
 
 This operation creates a local finalization horizon: a future heavier fork
 diverging below the floor is unavailable and rejected, even though the archive
-signatures create no network consensus finality. A pruned node cannot build a
-new complete version-0 archive without restoring or recomposing prior replica
-payloads. Network custody challenges, incremental archive composition,
-physical disk-exhaustion tests, long filesystem soaks, renewal/expiry operations,
-and an operator CLI remain activation blockers.
+signatures create no network consensus finality. A pruned node can build the
+next complete version-0 archive through `ComposeDirectory`: it fully replays
+the exact predecessor checkpoint/manifest recorded by the unchanged floor,
+streams those content-addressed blocks followed by the selected locally
+executable suffix, and rechecks floor metadata plus ancestry immediately before
+non-replacing rename and parent fsync. Corruption, a nested destination, an
+empty suffix, or a pre-publication reorganization fails without output. The
+result is independently restorable and can authorize a later floor after new
+attestation and custody receipts. Composition still reads and rewrites the full
+history; cross-generation chunk reuse and network transfer are not implemented.
+Network custody challenges, physical disk-exhaustion tests, long filesystem
+soaks, renewal/expiry operations, and an operator CLI remain activation blockers.
 
 The activation boundary is not a locally finalized block. The isolated router
 can create a separate v1 tree for every known v0 node at height `H-1` and uses

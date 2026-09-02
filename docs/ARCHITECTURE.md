@@ -249,13 +249,19 @@ again and durably publishes the receipt bundle. With an explicit non-zero local
 retention horizon, one Pebble batch replaces the prefix with canonical headers,
 a full-state floor, and exact evidence IDs; reopen recomputes archived work and
 ancestry before accepting descendants. The default remains disabled because
-the floor intentionally rejects deeper reorganizations. Local maintenance also
+the floor intentionally rejects deeper reorganizations. A subsequent archive
+can be composed without restoring the pruned database: the composer fully
+verifies the exact predecessor manifest recorded by the floor, streams that
+prefix plus the selected executable suffix into a fresh self-contained v0
+archive, then rechecks the unchanged floor and ancestry before atomic rename.
+It is bounded and streaming, but rewrites the complete output rather than
+introducing layered dependencies. Local maintenance also
 marks canonical ancestry and every side branch reaching a configurable cutoff,
 then atomically removes only complete
 stale subtrees while decrementing the exact logical history counter. Its default
 window is 4,096 heights, zero disables it, and it does not prune canonical
-history. Network replica challenges, incremental archive composition, broader
-filesystem-fault soaks, and outbound share publication remain. The libp2p
+history. Network replica challenges, content-addressed cross-generation chunk
+reuse, broader filesystem-fault soaks, and outbound share publication remain. The libp2p
 adapter carries both the
 versioned chain and separate WorkGraph share sessions under distinct opt-in
 protocol IDs and resource scopes. Ordinary CLI hosts leave both disabled. The

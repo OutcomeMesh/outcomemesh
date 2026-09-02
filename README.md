@@ -51,7 +51,12 @@ availability bundle is fsynced before one Pebble batch replaces the strict
 prefix with canonical headers and a full-state retained floor. Reopen verifies
 the header chain, target, cumulative work, timestamps, ancestry commitment, and
 floor state before applying later deltas. This is trusted operational custody,
-not a data-availability proof or consensus finality, and no CLI enables it.
+not a data-availability proof or consensus finality. After a floor advance,
+`ComposeDirectory` can stream the exact prior archive together with only the
+still-executable suffix into a new self-contained archive, without restoring the
+old WorkChain database; it rechecks both floor identity and selected ancestry
+before publication. The output is deliberately complete rather than a layered
+or remotely referenced archive, and no CLI enables these operations.
 Together with unaudited PoW parameters, the raw-seed CLI wallet, and provisional
 peer routing policy, this keeps the system a local development chain rather
 than a public testnet.

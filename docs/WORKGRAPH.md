@@ -479,14 +479,24 @@ retained floor can advance again, and the recovered chain remains extendable.
 A real subprocess killed on either side of this batch recovers exactly the old
 or new database.
 
+After the floor advances, `ComposeDirectory` can produce the next complete v0
+archive without reconstructing the pruned WorkChain database. It requires the
+exact predecessor checkpoint and manifest recorded by the floor, fully replays
+that archive, and streams its blocks followed by the selected executable suffix
+through the same bounded publisher. The source manifest/chunks are checked
+again while streaming; immediately before rename the composer requires the
+floor record, target tip, and full ancestry commitment to remain unchanged. The
+result is a normal self-contained archive, so existing verification, restore,
+attestation, replica custody, and the next floor transition need no alternate
+trust path. This currently re-encodes all output chunks rather than referencing
+the predecessor directory or sharing storage across archive generations.
+
 This does not create network finality or prove independent failure domains.
 After pruning, the local node deliberately rejects forks whose parent is below
 its floor; enabling it is therefore an operator-selected local finalization
-horizon. A pruned store also cannot emit another complete version-0 archive
-without restoring or recomposing the earlier replica payloads. Network replica
-transport, renewed custody challenges, incremental archive composition, disk-
-exhaustion campaigns, and longer physical-filesystem soaks remain before public
-activation. The integration suite now covers all four synchronous WorkChain
+horizon. Network replica transport, renewed custody challenges, cross-generation
+chunk reuse, disk-exhaustion campaigns, and longer physical-filesystem soaks
+remain before public activation. The integration suite now covers all four synchronous WorkChain
 batch classes: commit, checkpoint rotation, stale-fork prune, and canonical-
 floor transition.
 

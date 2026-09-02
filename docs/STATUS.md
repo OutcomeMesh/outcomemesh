@@ -338,6 +338,17 @@ Implemented in an isolated, not-yet-activated consensus package:
   extension, race, decoder fuzzing, and real process kills on both sides of the
   batch. This is trusted point-in-time custody and an operator-selected local
   finalization horizon, not network availability or consensus finality.
+- a pruned WorkChain can now produce its next independently restorable archive
+  without restoring the prior database. `ComposeDirectory` requires the exact
+  predecessor checkpoint and manifest IDs stored in the persistent floor,
+  fully replays that archive, then streams its verified prefix and only the
+  executable selected suffix through the same bounded v0 archive publisher.
+  Before rename it rechecks the entire floor record, target tip, and ancestry
+  commitment. An end-to-end test performs archive→custody→prune→compose→attest→
+  verify→restore→custody→second-prune, while negative cases cover an empty
+  suffix, corrupt source, nested destination, and a winning reorganization at
+  the publication boundary. The new output is self-contained and therefore
+  rewrites old chunks; layered storage/deduplication remains separate work.
 - an isolated activation router now owns strict v0/v1 block admission. It
   dispatches unchanged canonical encodings from their leading version, permits
   v0 only below `H` and v1 only from `H`, and lazily creates one WorkChain tree
@@ -584,8 +595,8 @@ No WorkGraph field has entered a version-0 block yet. The v1 store and opt-in
 QUIC session remain isolated from every ordinary v0 chain/CLI path and are
 reachable only through the explicitly marked experimental commands;
 adversarial discovery/eclipse and longer real-QUIC rapid-parent churn soaks,
-topology-derived peer selection, network replica challenges and incremental
-archive composition, canonical-prune disk-exhaustion/long-soak campaigns,
+topology-derived peer selection, network replica challenges and archive
+chunk reuse/transport, canonical-prune disk-exhaustion/long-soak campaigns,
 production gossip-budget calibration, and broader adaptive economic-strategy
 analysis remain before activation.
 

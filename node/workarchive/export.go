@@ -20,6 +20,15 @@ type ExportOptions struct {
 	Limits         Limits
 }
 
+type archivePlan struct {
+	Anchor        storage.Tip
+	AncestryNodes uint64
+	AncestryRoot  types.Hash
+	BlockCount    uint64
+}
+
+type archiveBlockStream func(func(workblock.Block) error) error
+
 func DefaultExportOptions() ExportOptions {
 	return ExportOptions{BlocksPerChunk: DefaultChunkBlocks, Limits: DefaultLimits()}
 }
@@ -59,11 +68,6 @@ func exportDirectory(
 		options.Validate() != nil {
 		return Manifest{}, types.Hash{}, ErrArchive
 	}
-	if _, err := os.Lstat(path); err == nil {
-		return Manifest{}, types.Hash{}, ErrArchiveExists
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return Manifest{}, types.Hash{}, err
-	}
 	history, err := chain.SelectedHistorySnapshot(anchorID, options.Limits.MaximumBlocks)
 	if err != nil {
 		return Manifest{}, types.Hash{}, err
@@ -74,7 +78,62 @@ func exportDirectory(
 		history.AncestryNodes != uint64(len(history.BlockIDs))+1 {
 		return Manifest{}, types.Hash{}, ErrArchive
 	}
+	plan := archivePlan{
+		Anchor: history.Anchor, AncestryNodes: history.AncestryNodes,
+		AncestryRoot: history.AncestryRoot, BlockCount: uint64(len(history.BlockIDs)),
+	}
+	stream := func(yield func(workblock.Block) error) error {
+		for _, id := range history.BlockIDs {
+			block, readErr := chain.BlockByID(id)
+			if readErr != nil {
+				return readErr
+			}
+			blockID, idErr := block.Header.ID()
+			if idErr != nil || blockID != id {
+				return storage.ErrCorrupt
+			}
+			if err := yield(block); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	verifySelection := func() error {
+		baseID, baseErr := chain.BaseID()
+		tip, tipErr := chain.TipByID(anchorID)
+		root, count, ancestryErr := chain.SelectedAncestryCommitment(anchorID)
+		if baseErr != nil || tipErr != nil || ancestryErr != nil || baseID != history.BaseID ||
+			!storage.EqualTips(tip, history.Anchor) || root != history.AncestryRoot ||
+			count != history.AncestryNodes {
+			return errors.Join(ErrChain, baseErr, tipErr, ancestryErr)
+		}
+		return nil
+	}
+	return publishArchiveDirectory(
+		path, binding, plan, options, stream, beforePublish, verifySelection,
+	)
+}
 
+func publishArchiveDirectory(
+	path string,
+	binding Binding,
+	plan archivePlan,
+	options ExportOptions,
+	stream archiveBlockStream,
+	beforePublish func() error,
+	verifySelection func() error,
+) (Manifest, types.Hash, error) {
+	if path == "" || binding.Validate() != nil || plan.Anchor.Validate() != nil ||
+		plan.Anchor.Height < binding.ActivationHeight || plan.AncestryRoot.IsZero() ||
+		plan.BlockCount == 0 || plan.BlockCount > options.Limits.MaximumBlocks ||
+		plan.AncestryNodes != plan.BlockCount+1 || options.Validate() != nil || stream == nil {
+		return Manifest{}, types.Hash{}, ErrArchive
+	}
+	if _, err := os.Lstat(path); err == nil {
+		return Manifest{}, types.Hash{}, ErrArchiveExists
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return Manifest{}, types.Hash{}, err
+	}
 	parent := filepath.Dir(path)
 	if err := os.MkdirAll(parent, 0o755); err != nil {
 		return Manifest{}, types.Hash{}, err
@@ -100,7 +159,7 @@ func exportDirectory(
 		}
 		chunk := Chunk{
 			Version: ChunkVersion0, NetworkID: binding.NetworkID, BaseID: binding.BaseID,
-			AnchorID: history.Anchor.ID, Index: uint32(len(descriptors)),
+			AnchorID: plan.Anchor.ID, Index: uint32(len(descriptors)),
 			FirstHeight: current[0].Header.Seal.Height,
 			Blocks:      append([]workblock.Block(nil), current...),
 		}
@@ -113,11 +172,10 @@ func exportDirectory(
 			return ErrArchiveLimit
 		}
 		id := types.DomainHash(chunkIDDomain, encoded)
-		lastHeight := current[len(current)-1].Header.Seal.Height
 		descriptor := ChunkDescriptor{
 			ID: id, Index: chunk.Index, FirstHeight: chunk.FirstHeight,
-			LastHeight: lastHeight, BlockCount: uint16(len(current)),
-			EncodedBytes: uint32(len(encoded)),
+			LastHeight: current[len(current)-1].Header.Seal.Height,
+			BlockCount: uint16(len(current)), EncodedBytes: uint32(len(encoded)),
 		}
 		if err := writeNewArchiveFile(
 			filepath.Join(temporaryPath, chunkFileName(chunk.Index)), encoded,
@@ -131,14 +189,19 @@ func exportDirectory(
 		return nil
 	}
 
-	for _, id := range history.BlockIDs {
-		block, err := chain.BlockByID(id)
-		if err != nil {
-			return Manifest{}, types.Hash{}, err
+	expectedParent := binding.BaseID
+	expectedHeight := binding.ActivationHeight
+	var blockCount uint64
+	emit := func(block workblock.Block) error {
+		if blockCount >= plan.BlockCount || block.ValidateBasic() != nil ||
+			block.Header.Seal.NetworkID != binding.NetworkID ||
+			block.Header.Seal.Height != expectedHeight ||
+			block.Header.Seal.AnchorParent != expectedParent {
+			return ErrArchiveOrder
 		}
 		blockID, err := block.Header.ID()
-		if err != nil || blockID != id {
-			return Manifest{}, types.Hash{}, storage.ErrCorrupt
+		if err != nil {
+			return err
 		}
 		blockBytes := block.CanonicalBytes()
 		blockFieldBytes := uvarintSize(uint64(len(blockBytes))) + len(blockBytes)
@@ -148,30 +211,41 @@ func exportDirectory(
 		if len(current) == int(options.BlocksPerChunk) ||
 			(len(current) > 0 && candidateBytes > MaximumChunkBytes) {
 			if err := flush(); err != nil {
-				return Manifest{}, types.Hash{}, err
+				return err
 			}
 			candidateCount = 1
 			candidateBytes = 8 + 2 + 4 + 2*types.HashSize + 4 + 8 +
 				uvarintSize(1) + blockFieldBytes
 		}
 		if candidateCount > MaximumChunkBlocks || candidateBytes > MaximumChunkBytes {
-			return Manifest{}, types.Hash{}, ErrChunk
+			return ErrChunk
 		}
 		current = append(current, block)
 		currentFieldBytes += blockFieldBytes
+		blockCount++
+		expectedParent = blockID
+		if blockCount < plan.BlockCount {
+			if expectedHeight == ^uint64(0) {
+				return ErrArchiveOrder
+			}
+			expectedHeight++
+		}
+		return nil
+	}
+	if err := stream(emit); err != nil {
+		return Manifest{}, types.Hash{}, err
+	}
+	if blockCount != plan.BlockCount || expectedParent != plan.Anchor.ID {
+		return Manifest{}, types.Hash{}, ErrArchiveOrder
 	}
 	if err := flush(); err != nil {
 		return Manifest{}, types.Hash{}, err
 	}
 
 	manifest := Manifest{
-		Version: ManifestVersion0, Binding: binding, Anchor: history.Anchor,
-		AncestryNodes: history.AncestryNodes, AncestryRoot: history.AncestryRoot,
-		BlockCount: uint64(len(history.BlockIDs)), TotalChunkBytes: totalChunkBytes,
-		Chunks: descriptors,
-	}
-	if uint32(len(descriptors)) > options.Limits.MaximumChunks {
-		return Manifest{}, types.Hash{}, ErrArchiveLimit
+		Version: ManifestVersion0, Binding: binding, Anchor: plan.Anchor,
+		AncestryNodes: plan.AncestryNodes, AncestryRoot: plan.AncestryRoot,
+		BlockCount: blockCount, TotalChunkBytes: totalChunkBytes, Chunks: descriptors,
 	}
 	manifestBytes, err := manifest.CanonicalBytes()
 	if err != nil {
@@ -183,21 +257,15 @@ func exportDirectory(
 	); err != nil {
 		return Manifest{}, types.Hash{}, err
 	}
-
 	if beforePublish != nil {
 		if err := beforePublish(); err != nil {
 			return Manifest{}, types.Hash{}, errors.Join(ErrArchivePublish, err)
 		}
 	}
-	baseID, baseErr := chain.BaseID()
-	tip, tipErr := chain.TipByID(anchorID)
-	root, count, ancestryErr := chain.SelectedAncestryCommitment(anchorID)
-	if baseErr != nil || tipErr != nil || ancestryErr != nil || baseID != history.BaseID ||
-		!storage.EqualTips(tip, history.Anchor) || root != history.AncestryRoot ||
-		count != history.AncestryNodes {
-		return Manifest{}, types.Hash{}, errors.Join(
-			ErrChain, baseErr, tipErr, ancestryErr,
-		)
+	if verifySelection != nil {
+		if err := verifySelection(); err != nil {
+			return Manifest{}, types.Hash{}, err
+		}
 	}
 	if err := syncDirectory(temporaryPath); err != nil {
 		return Manifest{}, types.Hash{}, err

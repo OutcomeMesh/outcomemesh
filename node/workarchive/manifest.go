@@ -36,6 +36,7 @@ var (
 	ErrArchiveOrder   = errors.New("WorkGraph archive blocks are out of order")
 	ErrArchiveExists  = errors.New("WorkGraph archive destination already exists")
 	ErrArchivePublish = errors.New("WorkGraph archive publication failed")
+	ErrArchiveCompose = errors.New("invalid WorkGraph archive composition")
 )
 
 var (

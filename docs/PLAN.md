@@ -168,9 +168,11 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
 - A versioned multi-attestor archive anchor bound to the exact selected
   WorkChain ancestry, followed separately by a content-addressed restorable
   export, expiring independently keyed replica-custody receipts, and an atomic
-  canonical retained-floor transition. An anchor alone must never authorize
-  deletion or override hard-work fork choice; canonical pruning is explicit
-  local finalization and remains disabled by default.
+  canonical retained-floor transition. Successive generations must be
+  composable from the exact retained predecessor archive plus the executable
+  suffix, without restoring pruned chain payloads. An anchor alone must never
+  authorize deletion or override hard-work fork choice; canonical pruning is
+  explicit local finalization and remains disabled by default.
 - Admission-deduplicated multi-hop forwarding across the explicit peer graph.
 - Reputation/latency/ASN-ranked peerbook selection with an inventory-free,
   exact-context WorkGraph capability probe.
