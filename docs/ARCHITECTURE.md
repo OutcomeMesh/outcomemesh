@@ -258,16 +258,25 @@ Archive format v1 makes chunk IDs independent of the terminal archive anchor.
 Composition freezes every predecessor chunk boundary, so those descriptors and
 content IDs remain byte-identical and only suffix IDs are new. The manifest
 still lists the complete ordered stream and each directory remains standalone;
-v0 anchor-bound archives remain strictly decodable and restorable. Physical
-copy-on-write/dedup materialization is an operator concern rather than a trusted
-layer dependency. Local maintenance also
+v0 anchor-bound archives remain strictly decodable and restorable. A local
+file-per-ID object store scans and verifies every canonical chunk on reopen and
+enforces exact object and byte budgets. It imports an archive only after full
+replay. Versioned request and batch objects bind the manifest ID, require 1–64
+strictly hash-sorted unique IDs, and cap each response at 64 MiB of chunk data.
+The receiver revalidates every chunk against its manifest descriptor before an
+atomic no-replace insert. Materialization writes every referenced object into a
+standalone temporary archive, fully replays it, and only then publishes the
+directory. Thus a store seeded with the predecessor generation requests only
+the new suffix while neither the cache nor its peer is a trust root. Physical
+copy-on-write materialization remains an operator concern. Local maintenance
+also
 marks canonical ancestry and every side branch reaching a configurable cutoff,
 then atomically removes only complete
 stale subtrees while decrementing the exact logical history counter. Its default
 window is 4,096 heights, zero disables it, and it does not prune canonical
-history. Network replica challenges, object-transfer negotiation and physical
-dedup materialization, broader filesystem-fault soaks, and outbound share
-publication remain. The libp2p
+history. Binding archive-object exchange to authenticated, rate-limited network
+sessions, renewed replica challenges, broader filesystem-fault soaks, and
+outbound share publication remain. The libp2p
 adapter carries both the
 versioned chain and separate WorkGraph share sessions under distinct opt-in
 protocol IDs and resource scopes. Ordinary CLI hosts leave both disabled. The

@@ -357,8 +357,21 @@ Implemented in an isolated, not-yet-activated consensus package:
   exactly unchanged. Thus only suffix IDs are new to a content-addressed object
   set while every output directory remains a complete ordinary archive. Strict
   decoding, replay, restore, and fuzz seeds cover both legacy anchor-bound v0
-  and v1. Filesystem-level dedup and missing-object network transfer remain
-  operational work.
+  and v1.
+- stable v1 IDs now have a bounded transport-neutral object exchange. A local
+  append-only store accepts only canonical content-addressed chunks, rejects
+  non-regular/extra/non-canonical files on reopen, and applies exact object and
+  byte budgets. Archive import begins with full replay. Missing-object requests
+  and batches bind the exact manifest, contain at most 64 strictly sorted unique
+  IDs/objects, and cap combined chunk bytes at 64 MiB. Every received object is
+  checked against its descriptor before atomic no-replace insertion. Complete
+  materialization occurs outside the store, is fully replayed, and is renamed
+  only after verification. The end-to-end fixture seeds both peers with the
+  predecessor generation, proves that only one new suffix object crosses the
+  exchange, restores the resulting standalone archive, and covers corruption,
+  budget, nested-output, naming, codec, and concurrent-put failures. The codecs
+  are registered in the common fuzz-smoke gate. No network peer is trusted and
+  partial object sets never become restorable archives.
 - an isolated activation router now owns strict v0/v1 block admission. It
   dispatches unchanged canonical encodings from their leading version, permits
   v0 only below `H` and v1 only from `H`, and lazily creates one WorkChain tree
@@ -605,10 +618,10 @@ No WorkGraph field has entered a version-0 block yet. The v1 store and opt-in
 QUIC session remain isolated from every ordinary v0 chain/CLI path and are
 reachable only through the explicitly marked experimental commands;
 adversarial discovery/eclipse and longer real-QUIC rapid-parent churn soaks,
-topology-derived peer selection, network replica challenges and missing-object
-archive transport, canonical-prune disk-exhaustion/long-soak campaigns,
-production gossip-budget calibration, and broader adaptive economic-strategy
-analysis remain before activation.
+topology-derived peer selection, network replica challenges and authenticated,
+rate-limited archive-object sessions, canonical-prune disk-exhaustion/long-soak
+campaigns, production gossip-budget calibration, and broader adaptive
+economic-strategy analysis remain before activation.
 
 ## Milestones 6–10 — not integrated
 

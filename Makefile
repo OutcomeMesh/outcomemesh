@@ -63,6 +63,8 @@ test-fuzz-smoke:
 	$(GO) test ./node/workarchive -run '^$$' -fuzz '^FuzzDecodeArchiveChunkNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/workarchive -run '^$$' -fuzz '^FuzzDecodeReplicaReceiptNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/workarchive -run '^$$' -fuzz '^FuzzDecodeAvailabilityBundleNeverPanics$$' -fuzztime=$(FUZZTIME)
+	$(GO) test ./node/workarchive -run '^$$' -fuzz '^FuzzDecodeChunkRequestNeverPanics$$' -fuzztime=$(FUZZTIME)
+	$(GO) test ./node/workarchive -run '^$$' -fuzz '^FuzzDecodeChunkBatchNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./sim/workgraphmodel -run '^$$' -fuzz '^FuzzRunSelfishStrategiesNeverBreakAccounting$$' -fuzztime=$(FUZZTIME)
 
 test-process:

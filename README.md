@@ -58,9 +58,12 @@ old WorkChain database; it rechecks both floor identity and selected ancestry
 before publication. Archive format v1 removes the terminal anchor from chunk
 identity and freezes predecessor chunk boundaries, so every old content ID is
 stable and only suffix chunks are new in the cross-generation object set. Each
-directory remains complete and independently restorable; physical deduplication
-or remote object lookup is not trusted by consensus, and no CLI enables these
-operations.
+directory remains complete and independently restorable. A bounded local
+object store can import only a fully replayed archive, negotiate sorted missing
+IDs in manifest-bound batches, and materialize a complete archive only after a
+second full replay; a replica that already has the prior generation therefore
+fetches only new suffix chunks. This transport-neutral layer is not trusted by
+consensus and is not yet attached to a network protocol or CLI.
 Together with unaudited PoW parameters, the raw-seed CLI wallet, and provisional
 peer routing policy, this keeps the system a local development chain rather
 than a public testnet.

@@ -172,7 +172,9 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
   composable from the exact retained predecessor archive plus the executable
   suffix, without restoring pruned chain payloads. Published chunk boundaries
   and IDs must remain stable across those generations so a content-addressed
-  replica transfers only missing suffix objects. An anchor alone must never
+  replica transfers only missing suffix objects through bounded, canonical,
+  manifest-bound requests and batches, then fully replays the materialized
+  archive before publication. An anchor alone must never
   authorize deletion or override hard-work fork choice; canonical pruning is
   explicit local finalization and remains disabled by default.
 - Admission-deduplicated multi-hop forwarding across the explicit peer graph.

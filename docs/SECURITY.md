@@ -382,10 +382,20 @@ terminal anchor and ancestry commitment. Composition preserves every predecessor
 chunk boundary, rejecting a smaller target chunk policy, so all prefix IDs stay
 identical and only suffix content IDs are new. Ordinary replay still validates
 the complete chain. Version-0 anchor-bound archives remain accepted. Standalone
-directories currently write all referenced files; physical deduplication and
-missing-object transport are not yet implemented. Network custody challenges,
-physical disk-exhaustion tests, long filesystem soaks, renewal/expiry operations,
-and an operator CLI remain activation blockers.
+directories still write all referenced files. A separate local object store
+deduplicates immutable v1 chunks by content ID. Reopen rejects extra,
+non-regular, non-canonical-name, hash-mismatched, or non-canonical chunk files
+and enforces configured object and byte ceilings. Import first performs full
+archive replay. Missing-object requests and responses are bound to one exact
+manifest ID, strictly sorted and duplicate-free, limited to 64 objects and
+64 MiB of chunk payload, and every received object is checked against the
+manifest before no-replace publication. A complete archive is materialized
+outside the store and fully replayed before atomic directory publication;
+partial downloads never become an archive. The object store and serving peer
+remain untrusted availability caches, not consensus or state-snapshot inputs.
+Authenticated/rate-limited network binding, live custody challenges, physical
+disk-exhaustion tests, long filesystem soaks, renewal/expiry operations, and an
+operator CLI remain activation blockers.
 
 The activation boundary is not a locally finalized block. The isolated router
 can create a separate v1 tree for every known v0 node at height `H-1` and uses
