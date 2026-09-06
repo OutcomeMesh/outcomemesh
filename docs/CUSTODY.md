@@ -935,6 +935,12 @@ Successful output says `local_pair_retired=true`,
 start a replacement. Cross-host acceptance enforcement and one durable activation
 decision remain required; no live receipt or active journal is produced here.
 
+The acceptance-path inventory and required cross-host ordering are tracked in
+[`CUSTODY_AUTHORITY.md`](CUSTODY_AUTHORITY.md). The live deletion path now checks
+freshness again inside its prepared storage batch and retains no-replace
+availability evidence on a failed attempt. That closes a time-of-authorization
+gap; it does not turn these local retirement markers into remote revocations.
+
 ## Recovery limits and deployment gates
 
 An expired challenge can retrieve only an already committed response whose

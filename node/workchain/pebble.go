@@ -307,12 +307,13 @@ func (persistence *workPersistence) pruneCanonicalPrefix(
 	nodes map[types.Hash]*chainNode,
 	remove []types.Hash,
 	anchor *chainNode,
-	boundary CanonicalFloor,
+	boundary *CanonicalFloor,
+	authorize func() (uint64, error),
 ) (uint64, uint64, error) {
-	if len(remove) == 0 || anchor == nil || anchor.block == nil || anchor.state == nil {
+	if len(remove) == 0 || anchor == nil || anchor.block == nil || anchor.state == nil || boundary == nil {
 		return 0, 0, ErrCanonicalPrune
 	}
-	floorBytes, err := encodeCanonicalFloor(boundary)
+	floorBytes, err := encodeCanonicalFloor(*boundary)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -413,6 +414,25 @@ func (persistence *workPersistence) pruneCanonicalPrefix(
 	}
 	if persistence.commitHook != nil {
 		if err := persistence.commitHook(); err != nil {
+			return 0, 0, err
+		}
+	}
+	if authorize != nil {
+		verifiedAt, err := authorize()
+		if err != nil {
+			return 0, 0, err
+		}
+		if verifiedAt < boundary.VerifiedAt || verifiedAt >= boundary.RetainUntil {
+			return 0, 0, ErrCanonicalPrune
+		}
+		boundary.VerifiedAt = verifiedAt
+		updatedFloor, err := encodeCanonicalFloor(*boundary)
+		if err != nil || len(updatedFloor) != len(floorBytes) {
+			return 0, 0, ErrCanonicalPrune
+		}
+		// Only a fixed-width timestamp changes. Logical-byte accounting above
+		// remains exact; none of the prepared deletions is visible yet.
+		if err := batch.Set(workKeyFloor, updatedFloor, nil); err != nil {
 			return 0, 0, err
 		}
 	}

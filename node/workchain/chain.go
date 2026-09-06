@@ -619,6 +619,32 @@ func (store *Store) PruneStaleForks() (PruneReport, error) {
 func (store *Store) PruneCanonicalPrefix(
 	boundary CanonicalFloor,
 ) (CanonicalPruneReport, error) {
+	return store.pruneCanonicalPrefix(boundary, nil)
+}
+
+// PruneCanonicalPrefixAuthorized additionally calls authorize after acquiring
+// the store lock and preparing the entire deletion batch, immediately before
+// issuing the synchronous commit. An error discards the batch without changing
+// memory or disk. The returned time becomes the durable floor's VerifiedAt and
+// must not precede its initial value. This is an authorization time, not a claim
+// about when the disk completes its write.
+//
+// The callback must be bounded and must not call this store (its lock is held).
+// It does not itself provide a remote revocation protocol: a mutable external
+// authority must remain guarded through completion of this method, not merely
+// be read once in the callback. A nil callback is rejected.
+func (store *Store) PruneCanonicalPrefixAuthorized(
+	boundary CanonicalFloor, authorize func() (uint64, error),
+) (CanonicalPruneReport, error) {
+	if authorize == nil {
+		return CanonicalPruneReport{}, ErrCanonicalPrune
+	}
+	return store.pruneCanonicalPrefix(boundary, authorize)
+}
+
+func (store *Store) pruneCanonicalPrefix(
+	boundary CanonicalFloor, authorize func() (uint64, error),
+) (CanonicalPruneReport, error) {
 	if store == nil || boundary.validate() != nil {
 		return CanonicalPruneReport{}, ErrCanonicalPrune
 	}
@@ -695,7 +721,7 @@ func (store *Store) PruneCanonicalPrefix(
 		return CanonicalPruneReport{}, err
 	}
 	added, released, err := store.persistence.pruneCanonicalPrefix(
-		store.nodes, remove, anchor, boundary,
+		store.nodes, remove, anchor, &boundary, authorize,
 	)
 	if err != nil {
 		return CanonicalPruneReport{}, err

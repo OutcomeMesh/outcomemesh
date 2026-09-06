@@ -126,7 +126,7 @@ func TestArchiveCompositionSupportsSuccessiveRetainedFloors(t *testing.T) {
 	composedFixture.manifestID = manifestID
 	composedFixture.checkpoint = checkpoint
 	replicas, replicaPolicy := archiveReplicaFixture(t, composedFixture, 2_000, 30_000)
-	result, err := PruneCanonicalPrefix(
+	result, err := pruneArchiveAt(
 		fixture.source, replicas, filepath.Join(t.TempDir(), "availability.omav"),
 		checkpoint, fixture.policy, replicaPolicy, fixture.base, fixture.parameters,
 		DefaultLimits(), 2_001,
@@ -271,7 +271,7 @@ func preparePrunedArchiveFixture(t testing.TB) (archiveFixture, storage.Tip) {
 	if report, err := fixture.source.PruneStaleForks(); err != nil || report.RemovedNodes == 0 {
 		t.Fatalf("composition stale-fork preparation report=%+v err=%v", report, err)
 	}
-	if _, err := PruneCanonicalPrefix(
+	if _, err := pruneArchiveAt(
 		fixture.source, replicas, filepath.Join(t.TempDir(), "availability.omav"),
 		fixture.checkpoint, fixture.policy, replicaPolicy, fixture.base,
 		fixture.parameters, DefaultLimits(), 1_001,

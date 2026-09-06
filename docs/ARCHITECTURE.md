@@ -245,7 +245,14 @@ Persistent restore builds, closes, reopens, and verifies a temporary Pebble
 tree before directory rename and parent fsync, and never replaces an existing
 destination. A separate replica key set issues time-bounded custody receipts
 only after full replay. Prune authorization replays every distinct replica
-again and durably publishes the receipt bundle. Receipt v1 can extend one exact
+again and durably publishes the receipt bundle without replacing existing
+evidence. The destructive API uses live clock samples, with a final bounded
+time/cancellation callback inside WorkChain's fully prepared deletion batch.
+An authorization failure changes neither the floor nor its payloads; successful
+`VerifiedAt` records the final sample before the synchronous commit is issued.
+The callback is not a revocation service or a distributed lock; current-policy
+and cross-host drain requirements are separated in `CUSTODY_AUTHORITY.md`.
+Receipt v1 can extend one exact
 predecessor only after a fresh signed random-sample challenge: sample IDs are
 deterministically derived from the nonce, manifest, and predecessor receipt;
 the signed response commits the canonical returned batch, and the renewal

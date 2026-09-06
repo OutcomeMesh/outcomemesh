@@ -326,9 +326,7 @@ func (bundle AvailabilityBundle) Verify(
 		if _, exists := trusted[receipt.ReplicaPublicKey]; !exists ||
 			receipt.Binding != checkpointPolicy.Binding || receipt.StatementID != statementID ||
 			receipt.ManifestID != bundle.ManifestID || receipt.AnchorID != bundle.AnchorID ||
-			receipt.StoredAt > now || now-receipt.StoredAt > replicaPolicy.MaximumReceiptAge ||
-			receipt.RetainUntil <= now ||
-			receipt.RetainUntil-now < replicaPolicy.MinimumRemainingTerm || receipt.verifySignature() != nil {
+			receipt.verifyAvailabilityTime(replicaPolicy, now) != nil || receipt.verifySignature() != nil {
 			return ErrAvailability
 		}
 		if _, exists := locations[receipt.LocationID]; exists {
@@ -339,8 +337,21 @@ func (bundle AvailabilityBundle) Verify(
 	return nil
 }
 
-// VerifyReplicaSet replays every distinct directory again at authorization
-// time. A receipt alone is never treated as proof that bytes still exist.
+// verifyAvailabilityTime is the cheap final time gate for an already verified,
+// immutable receipt and policy. Subtraction follows ordered comparisons, so
+// neither an expired receipt nor extreme unsigned times can wrap into validity.
+func (receipt ReplicaReceipt) verifyAvailabilityTime(policy ReplicaPolicy, now uint64) error {
+	if now == 0 || receipt.StoredAt > now || now-receipt.StoredAt > policy.MaximumReceiptAge ||
+		receipt.RetainUntil <= now || receipt.RetainUntil-now < policy.MinimumRemainingTerm {
+		return ErrAvailability
+	}
+	return nil
+}
+
+// VerifyReplicaSet replays every distinct directory and evaluates receipts at
+// the supplied time. This is a point-in-time inspection, not a live deletion
+// permit: callers performing maintenance must use PruneCanonicalPrefix, which
+// samples current time again at the final batch authorization boundary.
 func VerifyReplicaSet(
 	replicas []Replica,
 	checkpoint Checkpoint,
@@ -400,72 +411,6 @@ func VerifyReplicaSet(
 		return AvailabilityBundle{}, err
 	}
 	return bundle, nil
-}
-
-// PruneCanonicalPrefix is the policy-enforcing entry point for destructive
-// canonical maintenance. It rechecks selected ancestry and every replica
-// immediately before invoking WorkChain's single-batch transition.
-func PruneCanonicalPrefix(
-	chain *workchain.Store,
-	replicas []Replica,
-	availabilityPath string,
-	checkpoint Checkpoint,
-	checkpointPolicy Policy,
-	replicaPolicy ReplicaPolicy,
-	base workchain.Base,
-	parameters workblock.Parameters,
-	limits Limits,
-	now uint64,
-) (CanonicalPruneResult, error) {
-	if chain == nil || availabilityPath == "" || VerifyChain(checkpoint, checkpointPolicy, chain) != nil {
-		return CanonicalPruneResult{}, ErrChain
-	}
-	evidenceResolved, err := resolvedArchivePath(availabilityPath)
-	if err != nil {
-		return CanonicalPruneResult{}, err
-	}
-	for _, replica := range replicas {
-		replicaResolved, pathErr := resolvedArchivePath(replica.Directory)
-		if pathErr != nil || pathContains(replicaResolved, evidenceResolved) {
-			return CanonicalPruneResult{}, ErrAvailability
-		}
-	}
-	bundle, err := VerifyReplicaSet(
-		replicas, checkpoint, checkpointPolicy, replicaPolicy, base, parameters, limits, now,
-	)
-	if err != nil {
-		return CanonicalPruneResult{}, err
-	}
-	statementID, err := checkpoint.Statement.ID()
-	if err != nil {
-		return CanonicalPruneResult{}, err
-	}
-	bundleID, err := bundle.ID()
-	if err != nil {
-		return CanonicalPruneResult{}, err
-	}
-	if err := SaveAvailabilityBundleFile(
-		availabilityPath, bundle, checkpoint, checkpointPolicy, replicaPolicy, now, bundleID,
-	); err != nil {
-		return CanonicalPruneResult{}, err
-	}
-	retainUntil := bundle.Receipts[0].RetainUntil
-	for _, receipt := range bundle.Receipts[1:] {
-		if receipt.RetainUntil < retainUntil {
-			retainUntil = receipt.RetainUntil
-		}
-	}
-	report, err := chain.PruneCanonicalPrefix(workchain.CanonicalFloor{
-		Pruned: true, BaseID: checkpoint.Statement.BaseID, Anchor: checkpoint.Statement.Anchor,
-		AncestryNodes: checkpoint.Statement.AncestryNodes,
-		AncestryRoot:  checkpoint.Statement.AncestryRoot,
-		StatementID:   statementID, ManifestID: checkpoint.Statement.ArchiveManifestID,
-		AvailabilityID: bundleID, VerifiedAt: now, RetainUntil: retainUntil,
-	})
-	if err != nil {
-		return CanonicalPruneResult{}, err
-	}
-	return CanonicalPruneResult{Bundle: bundle, Report: report}, nil
 }
 
 func pathContains(directory, path string) bool {

@@ -251,6 +251,14 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
       independently authoritative retirement decision at every acceptance path,
       then one crash-safe activation linked to the reviewed proposal. Test stale
       and partitioned/restarted remote participants before allowing any cutover.
+      - [x] Final deletion-time authorization boundary: live wall-clock samples
+        after replica replay/publication and inside WorkChain's prepared batch;
+        fail closed on expiry, insufficient remaining term, cancellation, and
+        backwards time. Preserve immutable availability evidence on failed
+        attempts. This does not distribute or enforce remote revocations.
+      - [ ] Implement the current-authority and drain protocol described in
+        `CUSTODY_AUTHORITY.md`; cover every listed live acceptance path without
+        changing historical verification into a freshness claim.
   - [ ] Filesystem-full, inode-exhaustion, power-loss, and long-running retention
     campaigns before deployment claims.
   - [x] Isolate the 2026-09-06 tie-pair/campaign early-close race with a

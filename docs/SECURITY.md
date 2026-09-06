@@ -355,6 +355,39 @@ just passed replay. This is point-in-time trusted
 custody, not proof that operators, devices, or failure domains are independent
 or that bytes will remain online.
 
+Destructive archive maintenance no longer accepts a caller-supplied fixed time.
+`workarchive.PruneCanonicalPrefix` takes a context and samples the live wall
+clock before and after replica replay, after durable evidence publication, and
+at the final prepared-batch boundary. The last check runs with the WorkChain
+lock held, after ancestry/index/state/accounting work, so waiting for the chain
+or preparing a large batch cannot carry an expired authorization into the
+commit. It rechecks receipt age, exclusive retention expiry, inclusive minimum
+remaining term, cancellation, and backwards wall time, including subsecond
+regressions. The cheap last gate does not repeat full signature verification.
+Inputs, trust sets, and archive directories must remain immutable during the
+operation. Cancellation is not per replayed block and cannot undo an issued
+commit. `VerifiedAt` means the last authorization sample, not the completion
+time of the disk write; process suspension or slow storage after that sample
+cannot be certified away. There is no new consensus timestamp or wire format.
+
+The lower-level `workchain.Store.PruneCanonicalPrefix` remains a trusted
+chain-local primitive, not a policy-enforcing public maintenance command. Its
+`PruneCanonicalPrefixAuthorized` counterpart rejects a nil callback and discards
+the prepared batch if the callback fails or returns a regressed/expired time.
+An external mutable authority must be guarded through method completion;
+checking a revocation flag once in this callback would still race retirement.
+The current high-level path enforces freshness under its supplied static key
+policy, not global revocation. See `CUSTODY_AUTHORITY.md` for the unclosed paths.
+
+Availability files now use no-replace publication. Exact retries verify and
+fsync the existing regular inode; conflicting bundles, damaged files, and
+symlinks are rejected without replacing the path. A failure after publication
+preserves the evidence even though no floor advanced. Retry performs the full
+live checks again; existence of the file cannot authorize deletion. Keep a
+separate destination for each evidence ID. These guarantees assume exclusive
+operator control over the containing directory; they do not prevent an owner
+from replacing or rolling back the entire evidence tree.
+
 Freshness renewal uses a distinct sorted trusted-auditor policy. The auditor
 signs the statement, manifest, predecessor receipt, issuance/expiry times,
 requested renewal deadline, a 32-byte `crypto/rand` nonce, and the resulting

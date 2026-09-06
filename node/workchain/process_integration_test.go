@@ -36,6 +36,9 @@ func TestPebbleProcessCrashAtomicity(t *testing.T) {
 		{operation: "prune", boundary: "after"},
 		{operation: "canonical", boundary: "before"},
 		{operation: "canonical", boundary: "after"},
+		{operation: "authorized", boundary: "before"},
+		{operation: "authorized", boundary: "decision"},
+		{operation: "authorized", boundary: "after"},
 	} {
 		name := fixture.operation + "-" + fixture.boundary
 		t.Run(name, func(t *testing.T) {
@@ -115,7 +118,7 @@ func TestWorkChainCrashHelper(t *testing.T) {
 	parameters := testParameters()
 	base := testBase(t, parameters)
 	parts := strings.Split(mode, "-")
-	if len(parts) != 2 || (parts[1] != "before" && parts[1] != "after") {
+	if len(parts) != 2 || (parts[1] != "before" && parts[1] != "after" && parts[1] != "decision") {
 		t.Fatalf("unknown crash mode %q", mode)
 	}
 	operation, boundary := parts[0], parts[1]
@@ -148,6 +151,7 @@ type processCrashSummary struct {
 	Checkpoints []types.Hash
 	FloorID     types.Hash
 	FloorPruned bool
+	VerifiedAt  uint64
 	Archived    []types.Hash
 }
 
@@ -160,7 +164,7 @@ func crashPolicy(operation string) Policy {
 		policy.CheckpointKeep = 2
 	case "prune":
 		policy.ForkRetention = 1
-	case "canonical":
+	case "canonical", "authorized":
 		policy.ForkRetention = 1
 		policy.CanonicalRetention = 1
 	default:
@@ -184,11 +188,11 @@ func prepareCrashStore(
 	}
 	switch operation {
 	case "commit":
-	case "checkpoint", "canonical":
+	case "checkpoint", "canonical", "authorized":
 		parentID := base.Tip.ID
 		timestamp := base.Tip.Timestamp
 		blocks := 2
-		if operation == "canonical" {
+		if operation == "canonical" || operation == "authorized" {
 			blocks = 5
 		}
 		for height := 1; height <= blocks; height++ {
@@ -247,7 +251,7 @@ func runCrashOperation(t testing.TB, store *Store, operation string, parameters 
 		if report, err := store.PruneStaleForks(); err != nil || report.RemovedNodes == 0 {
 			t.Fatalf("prune operation report=%+v err=%v", report, err)
 		}
-	case "canonical":
+	case "canonical", "authorized":
 		tip, err := store.Tip()
 		if err != nil {
 			t.Fatal(err)
@@ -269,7 +273,18 @@ func runCrashOperation(t testing.TB, store *Store, operation string, parameters 
 			t.Fatal(err)
 		}
 		boundary := canonicalTestFloor(store.baseID, anchor, root, count, "process-crash")
-		if report, err := store.PruneCanonicalPrefix(boundary); err != nil || report.RemovedNodes == 0 {
+		var report CanonicalPruneReport
+		if operation == "authorized" {
+			report, err = store.PruneCanonicalPrefixAuthorized(boundary, func() (uint64, error) {
+				if os.Getenv(crashModeEnvironment) == "authorized-decision" {
+					blockAtCrashMarker(os.Getenv(crashMarkerEnvironment))
+				}
+				return 200, nil
+			})
+		} else {
+			report, err = store.PruneCanonicalPrefix(boundary)
+		}
+		if err != nil || report.RemovedNodes == 0 {
 			t.Fatalf("canonical prune operation report=%+v err=%v", report, err)
 		}
 	default:
@@ -336,7 +351,7 @@ func crashStoreSummary(t testing.TB, store *Store) processCrashSummary {
 		TipID: tip.ID, StateRoot: state.Root(), Height: tip.Height, Timestamp: tip.Timestamp,
 		Work: append([]byte(nil), tip.CumulativeWork...), History: history,
 		Nodes: append([]types.Hash(nil), nodes...), Checkpoints: checkpoints,
-		FloorID: floor.Anchor.ID, FloorPruned: floor.Pruned, Archived: archived,
+		FloorID: floor.Anchor.ID, FloorPruned: floor.Pruned, VerifiedAt: floor.VerifiedAt, Archived: archived,
 	}
 }
 
@@ -345,7 +360,7 @@ func equalCrashSummary(left, right processCrashSummary) bool {
 		left.Height == right.Height && left.Timestamp == right.Timestamp && left.History == right.History &&
 		bytes.Equal(left.Work, right.Work) && hashSlicesEqual(left.Nodes, right.Nodes) &&
 		hashSlicesEqual(left.Checkpoints, right.Checkpoints) && left.FloorID == right.FloorID &&
-		left.FloorPruned == right.FloorPruned && hashSlicesEqual(left.Archived, right.Archived)
+		left.FloorPruned == right.FloorPruned && left.VerifiedAt == right.VerifiedAt && hashSlicesEqual(left.Archived, right.Archived)
 }
 
 func hashSlicesEqual(left, right []types.Hash) bool {

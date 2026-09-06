@@ -64,7 +64,7 @@ func TestReplicaAvailabilityAuthorizesCanonicalPrune(t *testing.T) {
 	if err := os.WriteFile(blockedParent, []byte("blocked"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := PruneCanonicalPrefix(
+	if _, err := pruneArchiveAt(
 		fixture.source, replicas, filepath.Join(blockedParent, "availability.omav"),
 		fixture.checkpoint, fixture.policy, replicaPolicy,
 		fixture.base, fixture.parameters, DefaultLimits(), 1_001,
@@ -74,7 +74,7 @@ func TestReplicaAvailabilityAuthorizesCanonicalPrune(t *testing.T) {
 	if floor, err := fixture.source.CanonicalFloor(); err != nil || floor.Pruned {
 		t.Fatalf("availability publication failure changed floor=%+v err=%v", floor, err)
 	}
-	result, err := PruneCanonicalPrefix(
+	result, err := pruneArchiveAt(
 		fixture.source, replicas, filepath.Join(t.TempDir(), "availability.omav"),
 		fixture.checkpoint, fixture.policy, replicaPolicy,
 		fixture.base, fixture.parameters, DefaultLimits(), 1_001,
@@ -134,7 +134,7 @@ func TestReplicaAvailabilityRejectsDuplicateStaleAndMissingBytes(t *testing.T) {
 	); !errors.Is(err, ErrAvailability) {
 		t.Fatalf("expired replica receipts error=%v", err)
 	}
-	if _, err := PruneCanonicalPrefix(
+	if _, err := pruneArchiveAt(
 		fixture.source, replicas, filepath.Join(replicas[0].Directory, "availability.omav"),
 		fixture.checkpoint, fixture.policy, replicaPolicy,
 		fixture.base, fixture.parameters, DefaultLimits(), 1_001,
@@ -145,7 +145,7 @@ func TestReplicaAvailabilityRejectsDuplicateStaleAndMissingBytes(t *testing.T) {
 	if err := os.Symlink(replicas[0].Directory, replicaAlias); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := PruneCanonicalPrefix(
+	if _, err := pruneArchiveAt(
 		fixture.source, replicas, filepath.Join(replicaAlias, "availability.omav"),
 		fixture.checkpoint, fixture.policy, replicaPolicy,
 		fixture.base, fixture.parameters, DefaultLimits(), 1_001,

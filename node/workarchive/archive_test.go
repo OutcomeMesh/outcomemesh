@@ -383,6 +383,7 @@ func FuzzDecodeArchiveChunkNeverPanics(f *testing.F) {
 
 type archiveFixture struct {
 	source           *workchain.Store
+	sourcePath       string
 	archivePath      string
 	base             workchain.Base
 	parameters       workblock.Parameters
@@ -403,9 +404,8 @@ func newArchiveFixture(t testing.TB) archiveFixture {
 	workPolicy := workchain.DefaultPolicy()
 	workPolicy.ForkRetention = 1
 	workPolicy.CanonicalRetention = 1
-	source, err := workchain.OpenWithPolicy(
-		filepath.Join(t.TempDir(), "source"), base, parameters, workPolicy,
-	)
+	sourcePath := filepath.Join(t.TempDir(), "source")
+	source, err := workchain.OpenWithPolicy(sourcePath, base, parameters, workPolicy)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -470,7 +470,7 @@ func newArchiveFixture(t testing.TB) archiveFixture {
 		t.Fatal(err)
 	}
 	return archiveFixture{
-		source: source, archivePath: archivePath, base: base, parameters: parameters,
+		source: source, sourcePath: sourcePath, archivePath: archivePath, base: base, parameters: parameters,
 		binding: binding, manifest: manifest, manifestID: manifestID,
 		checkpoint: checkpoint, policy: policy, keys: keys,
 		sideActivation: sideActivation, sideActivationID: sideActivationID,

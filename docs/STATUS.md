@@ -1,6 +1,6 @@
 # Implementation status
 
-Updated: 2026-09-06
+Updated: 2026-09-07
 
 This file records evidence against `PLAN.md`. A milestone remains open until all
 of its exit gates pass; implementing most deliverables does not close it.
@@ -338,6 +338,23 @@ Implemented in an isolated, not-yet-activated consensus package:
   extension, race, decoder fuzzing, and real process kills on both sides of the
   batch. This is trusted point-in-time custody and an operator-selected local
   finalization horizon, not network availability or consensus finality.
+  The destructive archive API now takes a context and uses the real clock,
+  rather than accepting a fixed observation timestamp. It checks time again
+  after replay and evidence publication, then inside the prepared WorkChain
+  batch after lock acquisition and all deletion/accounting preparation.
+  Expiry, insufficient remaining retention, cancellation, and wall-clock
+  rollback (including subsecond rollback) discard the batch. The final sample
+  is the persisted `VerifiedAt`, not a disk-completion timestamp. Availability
+  publication is now no-replace: exact retries fsync the existing bytes, while
+  another valid bundle or malformed/symlink destination is rejected. Tests
+  cover each time boundary, inclusive age/remaining-term limits, cancellation,
+  chain-lock waiting, failed-batch restart, concurrent publication, and process
+  kills before/at authorization and after commit.
+  End-to-end process kills also cover published evidence before chain mutation,
+  the final in-batch sample, and completed deletion; an expired restarted
+  attempt cannot use the leftover file as authorization. Independently deployed
+  current authority and active cutover remain unimplemented; see
+  `CUSTODY_AUTHORITY.md`.
 - a pruned WorkChain can now produce its next independently restorable archive
   without restoring the prior database. `ComposeDirectory` requires the exact
   predecessor checkpoint and manifest IDs stored in the persistent floor,
