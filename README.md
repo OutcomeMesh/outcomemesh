@@ -85,7 +85,10 @@ Incomplete targets are preserved, never overwritten or treated as ready.
 An append-only backup-pin journal now selects the latest explicitly pinned
 bundle and checks that each update preserves the earlier evidence. Operators
 must place and protect that journal in an independent failure domain; it is not
-a deployed remote pin service or a freshness guarantee. See
+a deployed remote pin service or a freshness guarantee. Read-only outage
+reconciliation compares pinned auditor/replica backups, distinguishes stale
+responses from current proof-age bounds, and reports conflicts without importing
+records, changing a baseline, or authorizing a restart. See
 [the custody runbook](docs/CUSTODY.md) for retention rules and remaining
 backup/reconciliation gates. Separate
 archive-object serve/fetch commands replay the source before import, resume into

@@ -258,6 +258,15 @@ errors while draining the closing stream do not revoke it or trigger redelivery.
 EOF is transport lifecycle coordination, not proof that the coordinator has
 fsynced its own campaign journal; existing lost-ACK/reconciliation rules remain.
 
+The campaign host installs one dispatcher before announcing readiness. Between
+slots, an authenticated stream may wait up to thirty seconds for the next
+published binding without reading application bytes. The old binding is retired
+before the completed stream closes, so the next request cannot be checked
+against a retired slot while checkpoint polling catches up. Cancellation or a
+readiness timeout resets the waiting stream. Existing peer authentication,
+concurrency and rate limits still apply, and the eventual slot handler still
+enforces the original signed admission window; waiting cannot extend it.
+
 The campaign receiver reuses the same protocol and authenticated host across
 all signed plan slots. It installs only the pair binding named by the exact
 numbered checkpoint and independently published checkpoint ID. Local receipt

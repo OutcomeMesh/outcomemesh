@@ -495,13 +495,98 @@ intended pin operation with its original expectation. Process-kill tests bracket
 pin publication and verify exact retries with released locks. They do not prove
 power-loss durability or independently deployed storage/freshness operations.
 
+## Read-only outage reconciliation
+
+`work-archive-custody-reconcile` compares two **retained, immutable** bundles:
+an auditor backup containing its artifact tree and a replica-only backup. Both
+must share the same manifest, immutable initial receipt, and custody policy.
+Select each checkpoint ID from its independently maintained pin authority, not
+from metadata found inside an arbitrary candidate. If currentness matters,
+first verify each candidate with its own `work-archive-custody-verify-pinned-backup`
+command and a separately retained current head ID. Reconciliation accepts the
+explicit checkpoint IDs; it does not itself lock or refresh the pin authorities.
+
+```sh
+omd work-archive-custody-reconcile \
+  --auditor-backup backups/auditor-000007 \
+  --auditor-checkpoint-id "$AUDITOR_CHECKPOINT_ID" \
+  --replica-backup backups/replica-000008 \
+  --replica-checkpoint-id "$REPLICA_CHECKPOINT_ID" \
+  --manifest manifest.omwm --receipt initial.omrr \
+  --auditor-public-key "$AUDITOR_PUBLIC_KEY"
+```
+
+Supply the same policy flags used by both journals. The assessment uses the
+local Unix clock by default. `--at SECONDS` permits a repeatable historical
+assessment; it must be nonzero. The printed time is an input, not a trusted time
+attestation. Never backdate this flag to present stale evidence as current.
+
+The command verifies both exact inventories, replays both chains, and holds
+their existing bundle locks throughout inspection. It neither initializes nor
+repairs evidence and never opens a network session or loads private keys. Like
+backup verification, it needs writable access to the existing permanent lock
+files and uses fsync. Do not use retained bundles as live journals or modify
+their contents out of band.
+
+Four output lines describe the result:
+
+- `work_archive_custody_reconciliation` binds the two checkpoint IDs and the
+  assessment time. `relation` is `aligned`, `auditor-ahead`, `replica-ahead`, or
+  `diverged`; `common_sequence` and `first_divergence` compare exact committed
+  entry IDs. A longer divergent history is not a winner. This is a custody
+  evidence comparison, not blockchain fork choice.
+- `work_archive_custody_reconciliation_freshness` reports each committed head's
+  response time, proof-age bound, and receipt expiry separately. Sequence-zero
+  journals have no custody proof, so their response time is zero and
+  `proof_within_age` is false even if the initial receipt is unexpired.
+- `work_archive_custody_reconciliation_pending` describes only the auditor's
+  next cycle. It checks the signed request against its actual predecessor and
+  compares full response bytes if both sides retain a response. A matching
+  response may come from an auditor artifact, the replica's committed next slot,
+  or both. Unreferenced bodies are never treated as committed responses. Without
+  local intent or a local response record, a peer's later slot is not silently
+  adopted as the auditor's pending request.
+- `work_archive_custody_reconciliation_review` gives an advisory `next_step`
+  and counts missing/conflicting committed artifacts, unclassified artifact
+  entries, orphan body IDs, and journal pending files. Unclassified entries
+  include unknown names, future-cycle directories, and artifact temporaries;
+  an unknown directory counts as one entry, not all its descendants. Its full
+  contents remain bound by the previously verified checkpoint.
+
+Historical signature/batch/renewal validity does not expire, but live proof
+acceptance still obeys `max-proof-age-seconds`, and retention has its own end.
+Thus `state=historical-response` can coexist with `proof_within_age=false` and
+`receipt_unexpired=false`. These time fields alone are never permission to use
+a response: conflicts and all review blockers remain relevant. Malformed pending
+requests/records or wrong pins/trust fail the command; structurally valid
+conflicting evidence is reported without selecting or rewriting either side.
+
+`review-historical-response` means an exact historical candidate was identified
+for review, **not imported**. `review-rebaseline` means the selected snapshots
+cannot support an ordinary fresh cycle as assessed, **not permission to create
+a new baseline**. A reply absent from a snapshot may exist in newer remote
+evidence. Collect that evidence and establish that old authorities cannot run
+before deciding how to recover. Missing/unknown/partial artifacts and orphan
+bodies must be preserved and investigated, not deleted to clear a review flag.
+
+Every report prints `automatic_resume=false` and `availability_attested=false`.
+Exit zero means inspection completed, including when it found a conflict; it is
+not a successful restore or approval to start a service. There is no `--apply`,
+import, challenge replacement, signature generation, pin update, or rebaseline
+operation. Two matching snapshots are still only historical snapshots and may
+both predate later decisions. Reviewed historical transfer, explicitly linked
+rebaseline, participant fencing, and crash-safe cutover remain separate plan
+items. Process tests verify repeatable offline assessment with stale evidence
+while leaving both bundles, the pending challenge, and the auditor head intact.
+
 ## Recovery limits and deployment gates
 
 An expired challenge can retrieve only an already committed response whose
 proof is still within `max-proof-age-seconds`. An unanswered expired challenge
 cannot mint a fresh proof. A stale committed proof also fails. Preserve the
 journals and artifacts on these errors; do not delete a challenge to generate a
-sibling. Long-outage reconciliation and an explicit rebaseline workflow remain
+sibling. Read-only reconciliation above can identify historical candidates and
+blockers, but historical transfer and an explicit rebaseline workflow remain
 separate work.
 
 Use a local filesystem with working file locks, no-replace hard links, atomic

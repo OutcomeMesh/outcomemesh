@@ -469,6 +469,26 @@ current pinned backup until a separate pin append succeeds; newer unpinned local
 or remote decisions still require reconciliation. No scheduling, storage service,
 cleanup, authority fencing, or cutover is installed by these commands.
 
+Read-only outage reconciliation accepts separately supplied checkpoint IDs for
+an auditor bundle with artifacts and a replica-only bundle under the same trust
+baseline. It verifies both bundles and keeps their existing locks throughout
+comparison. Exact committed slot IDs determine the common prefix; a longer
+divergent chain is never selected. Canonical historical artifacts are compared
+byte-for-byte with committed decisions. A pending response must match the signed
+intent and, when both copies contain it, the full response bytes. An orphan is
+not a committed replica response. Unknown and partial files remain evidence for
+review, not authorization to generate another request.
+
+Historical verification uses the original signed response time. Separate report
+fields evaluate proof age and retention expiry at the caller's assessment time;
+they neither weaken live session checks nor attest that the clock or replica is
+currently trustworthy. Reports always deny automatic resume and are not consumed
+by writers. A missing response in a pinned snapshot is not proof that the remote
+participant never committed one later. Even matching snapshots cannot authorize
+cutover, historical import, or a new baseline without later-evidence collection
+and fencing. No files, receipts, challenges, pins, or services are created or
+changed by inspection; existing writable lock handles and fsync are still used.
+
 With an explicitly non-zero local canonical-retention policy, one synchronous
 schema-4 batch may replace the strict prefix before the selected archive anchor
 with validated headers, turn the anchor into a full-state retained floor,

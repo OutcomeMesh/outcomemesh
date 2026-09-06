@@ -216,12 +216,23 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
     independence, external freshness, or safe participant cutover.
   - [ ] Explicit long-outage reconciliation/rebaseline without silently replacing
     an expired challenge or discarding the previous evidence chain.
+    - [x] Read-only comparison of independently pinned auditor/replica backups:
+      exact common prefix, pending intent/response matching, retained-evidence
+      blockers, and historical validity separated from proof/receipt freshness.
+    - [ ] Reviewed historical-evidence transfer and explicit linked rebaseline,
+      including participant fencing and restart/crash recovery. A comparison
+      report alone must not authorize a new challenge or resumed authority.
   - [ ] Filesystem-full, inode-exhaustion, power-loss, and long-running retention
     campaigns before deployment claims.
   - [x] Isolate the 2026-09-06 tie-pair/campaign early-close race with a
     failing-before-fix process regression, add bounded EOF-based host/slot
     retirement, and distinguish nested transport timeouts from signed-slot
     expiry without changing pending-delivery safety rules.
+  - [x] Close the between-slot observer readiness gap found by the 2026-09-06
+    process gate: keep one authenticated handler installed, bound readiness
+    waiting, and retire the old binding before stream close. A delayed second-
+    slot regression fails before the fix and completes without reconnect after
+    it; request budgets, signed slot times, and role ordering are unchanged.
 - Admission-deduplicated multi-hop forwarding across the explicit peer graph.
 - Reputation/latency/ASN-ranked peerbook selection with an inventory-free,
   exact-context WorkGraph capability probe.

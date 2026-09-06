@@ -1028,11 +1028,19 @@ func TestProcessTieCampaignV2ObserversSurviveBetweenSlotRestartAndAudit(t *testi
 	}
 	coordinatorTransportID := processTransportPeerID(t, coordinatorTransportKeyPath)
 	for index := range observers {
+		var environment []string
+		if index == 0 {
+			// Hold the non-restarted observer between publication and handler
+			// readiness. A next-slot stream must not hit the retired slot handler
+			// or consume a retry from the two-stream fixed-window budget.
+			environment = []string{tieCampaignCrashModeEnvironment + "=delay-second-slot-ready"}
+		}
 		observers[index].receiver, observers[index].transportID, observers[index].address =
-			startTieCampaignReceiverProcess(
+			startTieCampaignReceiverProcessWithOptions(
 				t, observers[index].data, observers[index].transportKey, observers[index].receiptKey,
 				coordinatorTransportID.String(), planPath, planID.String(), coordinatorPublicKey,
 				publicationDirectory, observers[index].confirmationDirectory,
+				"/ip4/127.0.0.1/udp/0/quic-v1", environment,
 			)
 	}
 	var routes strings.Builder
@@ -1091,6 +1099,16 @@ func TestProcessTieCampaignV2ObserversSurviveBetweenSlotRestartAndAudit(t *testi
 	if completeFields["slots"] != "2" || completeFields["next_sequence"] != "3" ||
 		completeFields["skipped"] != "0" || completeFields["skipped_sequences"] != "-" {
 		t.Fatalf("unexpected v2 campaign completion: %s", coordinatorOutput)
+	}
+	readyWithoutRetry := false
+	for _, line := range strings.Split(coordinatorOutput, "\n") {
+		fields := outputFields(line, "work_tie_campaign_observer_ack")
+		if fields["sequence"] == "2" && fields["observer"] == observers[0].publicKeyText {
+			readyWithoutRetry = fields["reconnected"] == "false"
+		}
+	}
+	if !readyWithoutRetry {
+		t.Fatal("delayed slot readiness consumed a reconnect/retry")
 	}
 	for index := range observers {
 		observerOutput := waitTieReceiverProcess(t, observers[index].receiver)
@@ -2047,6 +2065,12 @@ func TestOMDHelperProcess(t *testing.T) {
 		os.Exit(2)
 	}
 	switch os.Getenv(tieCampaignCrashModeEnvironment) {
+	case "delay-second-slot-ready":
+		tieCampaignBeforeSlotReady = func(sequence uint64) {
+			if sequence == 2 {
+				time.Sleep(time.Second)
+			}
+		}
 	case "before-request":
 		marker := os.Getenv(tieCampaignCrashMarkerEnvironment)
 		tieCampaignBeforeRequest = func() {

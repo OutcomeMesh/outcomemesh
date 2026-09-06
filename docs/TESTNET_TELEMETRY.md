@@ -496,6 +496,14 @@ receivers; both commands must remain alive until the latter boundary.
 Upgrade both CLI participants together so the coordinator keeps its host alive
 for this terminal drain as well as the observer.
 
+Between slots, a stable dispatcher waits for the next published binding instead
+of sending a new request to the retired handler. This readiness wait reads no
+application bytes, is cancellation-aware, and is bounded to thirty seconds;
+peer stream budgets and signed admission deadlines are unchanged. The restart
+process regression also delays the non-restarted observer's second-slot handler
+by one second: its request must wait and succeed without a reconnect, while the
+other observer still exercises restart and receipt-chain recovery.
+
 Nested transport timeouts and actual signed-slot expiry are reported separately.
 After a delivery timeout, the driver checks its campaign clock before adding
 `ErrOutsideSlot`. The durable phase stays `Delivering`, including when the clock

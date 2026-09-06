@@ -29,6 +29,7 @@ import (
 var (
 	tieCampaignBeforeRequest         func()
 	tieCampaignAfterFirstObservation func()
+	tieCampaignBeforeSlotReady       func(uint64)
 )
 
 func runWorkTelemetryTieCampaignReceiveQUIC(arguments []string) (resultErr error) {
@@ -136,6 +137,11 @@ func runWorkTelemetryTieCampaignReceiveQUIC(arguments []string) (resultErr error
 	if len(addresses) == 0 {
 		return errors.New("tie campaign receiver has no direct QUIC address")
 	}
+	gate := newTieCampaignSlotGate()
+	defer gate.close()
+	if err := host.SetTiePairHandler(coordinatorPeerID, gate.dispatch); err != nil {
+		return err
+	}
 	status, err := collector.Status()
 	if err != nil {
 		return err
@@ -146,7 +152,7 @@ func runWorkTelemetryTieCampaignReceiveQUIC(arguments []string) (resultErr error
 		strings.Join(addresses, ","), *publishedDirectory, *confirmedDirectory,
 	)
 	if err := driveObserverTieCampaign(
-		ctx, host, coordinatorPeerID, observerPublicKey, plan, binding, planID,
+		ctx, gate, coordinatorPeerID, observerPublicKey, plan, binding, planID,
 		collector, observer, router, files, *receiptPath, *pollInterval,
 	); err != nil {
 		return err
@@ -165,7 +171,7 @@ func runWorkTelemetryTieCampaignReceiveQUIC(arguments []string) (resultErr error
 
 func driveObserverTieCampaign(
 	ctx context.Context,
-	host *libp2ptransport.Host,
+	gate *tieCampaignSlotGate,
 	coordinatorPeerID types.Hash,
 	observerPublicKey types.Hash,
 	plan calibration.TiePlan,
@@ -219,8 +225,11 @@ func driveObserverTieCampaign(
 		if err != nil {
 			return err
 		}
+		if tieCampaignBeforeSlotReady != nil {
+			tieCampaignBeforeSlotReady(sequence)
+		}
 		receiptTail, recoveredDelivery, err := serveObserverCampaignSlot(
-			ctx, host, coordinatorPeerID, observerPublicKey, plan, binding, planID,
+			ctx, gate, coordinatorPeerID, observerPublicKey, plan, binding, planID,
 			checkpoint, collector, observer, router, files, receiptPath, pollInterval,
 		)
 		if errors.Is(err, errObserverCampaignSlotMissed) {
@@ -288,7 +297,7 @@ type observerCampaignSlotResult struct {
 
 func serveObserverCampaignSlot(
 	ctx context.Context,
-	host *libp2ptransport.Host,
+	gate *tieCampaignSlotGate,
 	coordinatorPeerID types.Hash,
 	observerPublicKey types.Hash,
 	plan calibration.TiePlan,
@@ -309,6 +318,7 @@ func serveObserverCampaignSlot(
 	completed := make(chan observerCampaignSlotResult, 1)
 	fatal := make(chan error, 1)
 	var stateMu sync.Mutex
+	slotHandler := &tieCampaignSlotHandler{}
 	active := true
 	claimed := false
 	claim := func() bool {
@@ -329,6 +339,9 @@ func serveObserverCampaignSlot(
 		stateMu.Lock()
 		active = false
 		stateMu.Unlock()
+		// Retire before closing the completed stream. A coordinator can begin
+		// its next slot as soon as that close acknowledges its write-side EOF.
+		gate.retire(slotHandler)
 	}
 	reportFatal := func(err error) {
 		select {
@@ -337,121 +350,118 @@ func serveObserverCampaignSlot(
 		}
 	}
 	reset := func(stream libp2pnetwork.Stream) { _ = stream.Reset() }
-	err := host.SetTiePairHandler(
-		coordinatorPeerID,
-		func(handlerContext context.Context, remoteID types.Hash, stream libp2pnetwork.Stream) {
-			if remoteID != coordinatorPeerID {
+	slotHandler.handle = func(handlerContext context.Context, remoteID types.Hash, stream libp2pnetwork.Stream) {
+		if remoteID != coordinatorPeerID {
+			reset(stream)
+			return
+		}
+		if tieCampaignBeforeRequest != nil {
+			tieCampaignBeforeRequest()
+		}
+		status, err := collector.Status()
+		if err != nil {
+			reset(stream)
+			reportFatal(err)
+			return
+		}
+		isCurrent := status.NextSequence == sequence
+		isRecovery := status.NextSequence == sequence+1
+		if !isCurrent && !isRecovery {
+			reset(stream)
+			return
+		}
+		deadline := time.Now().Add(30 * time.Second)
+		if isCurrent {
+			slot := plan.Slots[sequence-1]
+			now := unixNow()
+			if now < slot.StartedAt || now >= slot.EndedAt {
 				reset(stream)
 				return
 			}
-			if tieCampaignBeforeRequest != nil {
-				tieCampaignBeforeRequest()
-			}
-			status, err := collector.Status()
-			if err != nil {
-				reset(stream)
-				reportFatal(err)
-				return
-			}
-			isCurrent := status.NextSequence == sequence
-			isRecovery := status.NextSequence == sequence+1
-			if !isCurrent && !isRecovery {
-				reset(stream)
-				return
-			}
-			deadline := time.Now().Add(30 * time.Second)
-			if isCurrent {
-				slot := plan.Slots[sequence-1]
-				now := unixNow()
-				if now < slot.StartedAt || now >= slot.EndedAt {
-					reset(stream)
-					return
-				}
-				deadline = time.Unix(int64(slot.EndedAt), 0)
-			}
-			if err := stream.SetDeadline(deadline); err != nil {
-				reset(stream)
-				return
-			}
-			request, err := tieexchange.ReadRequest(stream, exchangeBinding)
-			if err != nil {
-				reset(stream)
-				return
-			}
-			actualPairID, err := tieproducer.ArtifactID(request.Artifact)
-			if err != nil || actualPairID != checkpoint.PairID {
-				reset(stream)
-				return
-			}
-			pair, err := tieproducer.DecodePair(request.Artifact, plan, binding, planID)
-			if err != nil || !claim() {
-				reset(stream)
-				return
-			}
-			defer release()
+			deadline = time.Unix(int64(slot.EndedAt), 0)
+		}
+		if err := stream.SetDeadline(deadline); err != nil {
+			reset(stream)
+			return
+		}
+		request, err := tieexchange.ReadRequest(stream, exchangeBinding)
+		if err != nil {
+			reset(stream)
+			return
+		}
+		actualPairID, err := tieproducer.ArtifactID(request.Artifact)
+		if err != nil || actualPairID != checkpoint.PairID {
+			reset(stream)
+			return
+		}
+		pair, err := tieproducer.DecodePair(request.Artifact, plan, binding, planID)
+		if err != nil || !claim() {
+			reset(stream)
+			return
+		}
+		defer release()
 
-			var receiptTail types.Hash
-			if isCurrent {
-				attemptContext, attemptCancel := context.WithDeadline(handlerContext, deadline)
-				_, err = tieproducer.AdmitPair(attemptContext, router, tieproducer.Config{
-					Plan: plan, Binding: binding, ExpectedPlanID: planID, Sequence: sequence,
-				}, pair)
-				attemptCancel()
-				if err == nil {
-					err = observer.Err()
-				}
-				var current calibration.TieCollectorStatus
-				if err == nil {
-					current, err = collector.Status()
-				}
-				if err == nil && (current.NextSequence != sequence+1 || current.InvalidCurrent ||
-					current.LastReceiptID.IsZero()) {
-					err = errors.New("portable pair did not produce a completed durable receipt")
-				}
-				receiptTail = current.LastReceiptID
-			} else {
-				receiptTail, err = persistedReceiptForPair(receiptPath, plan, binding, pair, sequence)
+		var receiptTail types.Hash
+		if isCurrent {
+			attemptContext, attemptCancel := context.WithDeadline(handlerContext, deadline)
+			_, err = tieproducer.AdmitPair(attemptContext, router, tieproducer.Config{
+				Plan: plan, Binding: binding, ExpectedPlanID: planID, Sequence: sequence,
+			}, pair)
+			attemptCancel()
+			if err == nil {
+				err = observer.Err()
 			}
-			if err != nil {
-				reset(stream)
-				reportFatal(err)
-				return
+			var current calibration.TieCollectorStatus
+			if err == nil {
+				current, err = collector.Status()
 			}
-			if err := tieexchange.WriteAcknowledgement(stream, tieexchange.Acknowledgement{
-				Binding: exchangeBinding, ObserverPublicKey: observerPublicKey, ReceiptTail: receiptTail,
-			}); err != nil {
-				reset(stream)
-				return
+			if err == nil && (current.NextSequence != sequence+1 || current.InvalidCurrent ||
+				current.LastReceiptID.IsZero()) {
+				err = errors.New("portable pair did not produce a completed durable receipt")
 			}
-			if _, err := tieexchange.ReadConfirmation(stream, exchangeBinding, receiptTail); err != nil {
-				reset(stream)
-				return
-			}
-			if err := files.Confirm(sequence, checkpoint.PairID, receiptTail); err != nil {
-				reset(stream)
-				reportFatal(err)
-				return
-			}
-			if err := tieexchange.WriteConfirmationAcknowledgement(
-				stream,
-				tieexchange.ConfirmationAcknowledgement{
-					Binding: exchangeBinding, ReceiptTail: receiptTail,
-				},
-			); err != nil {
-				reset(stream)
-				return
-			}
-			if err := awaitTiePairCoordinatorClose(handlerContext, stream); err != nil {
-				reset(stream)
-				reportFatal(err)
-				return
-			}
-			deactivate()
-			_ = stream.Close()
-			completed <- observerCampaignSlotResult{receiptTail: receiptTail, recovered: isRecovery}
-		},
-	)
-	if err != nil {
+			receiptTail = current.LastReceiptID
+		} else {
+			receiptTail, err = persistedReceiptForPair(receiptPath, plan, binding, pair, sequence)
+		}
+		if err != nil {
+			reset(stream)
+			reportFatal(err)
+			return
+		}
+		if err := tieexchange.WriteAcknowledgement(stream, tieexchange.Acknowledgement{
+			Binding: exchangeBinding, ObserverPublicKey: observerPublicKey, ReceiptTail: receiptTail,
+		}); err != nil {
+			reset(stream)
+			return
+		}
+		if _, err := tieexchange.ReadConfirmation(stream, exchangeBinding, receiptTail); err != nil {
+			reset(stream)
+			return
+		}
+		if err := files.Confirm(sequence, checkpoint.PairID, receiptTail); err != nil {
+			reset(stream)
+			reportFatal(err)
+			return
+		}
+		if err := tieexchange.WriteConfirmationAcknowledgement(
+			stream,
+			tieexchange.ConfirmationAcknowledgement{
+				Binding: exchangeBinding, ReceiptTail: receiptTail,
+			},
+		); err != nil {
+			reset(stream)
+			return
+		}
+		if err := awaitTiePairCoordinatorClose(handlerContext, stream); err != nil {
+			reset(stream)
+			reportFatal(err)
+			return
+		}
+		deactivate()
+		_ = stream.Close()
+		completed <- observerCampaignSlotResult{receiptTail: receiptTail, recovered: isRecovery}
+	}
+	if err := gate.install(slotHandler); err != nil {
 		return types.Hash{}, false, err
 	}
 	ticker := time.NewTicker(pollInterval)

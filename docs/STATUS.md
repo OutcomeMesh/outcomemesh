@@ -493,7 +493,21 @@ Implemented in an isolated, not-yet-activated consensus package:
   rolled-back pin store; absent that receipt, the store itself is trusted.
   Independent storage/access-control deployment and pin freshness, scheduled
   backups, cross-host cutover, compaction review,
-  ENOSPC/inode-fault campaigns, and long-outage reconciliation remain pending.
+  ENOSPC/inode-fault campaigns, and mutating long-outage recovery remain pending.
+  The read-only reconciliation stage now compares independently pinned auditor
+  and replica backups under their existing bundle locks. It reports the exact
+  common prefix and first divergence, inspects committed auditor artifacts and
+  the next signed challenge/response, and never selects the longer conflicting
+  chain. Historical records remain verifiable after an outage while proof-age
+  and receipt-expiry fields are evaluated separately at the declared time.
+  Unknown/future-cycle artifacts, temporary files, and orphan bodies require
+  review and are not promoted to decisions. Unit tests cover temporal boundaries,
+  conflicting challenges and responses, prefix/rotation cases, incomplete scope,
+  wrong trust/IDs, and unchanged evidence. A CLI process test repeats an offline
+  stale-response assessment and proves it neither appends a record nor replaces
+  the request; a focused fuzz target exercises pending-intent classification.
+  Report success is not recovery approval. Historical transfer, linked
+  rebaseline, and participant fencing remain open plan items.
   QUIC follow-up (2026-09-06): the first combined process run failed in
   `TestProcessTiePairQUICReachesIndependentV2ObserversAndRecoversAck` with a
   remote QUIC close, and in the coordinator-journal-before-rename case of
@@ -510,6 +524,17 @@ Implemented in an isolated, not-yet-activated consensus package:
   phase without a skip or local advance. These fixes change no wire encoding,
   signed slot, sibling ordering, or confirmation-file format. Broader network
   fault/long-soak and crash-after-confirmation reconciliation gates remain.
+  A later full-process run exposed a separate between-slot readiness race in
+  the two-observer restart campaign. While an observer waited for the next
+  published checkpoint, a new request could reach the retired slot's handler,
+  reset, and exhaust the default two-stream fixed-window allowance on retry.
+  Campaign receivers now install one authenticated dispatcher before readiness
+  output and wait at most 30 seconds for a slot handler. The old binding is
+  retired before its completed stream closes; delayed cleanup cannot retire a
+  successor. No payload is read or admitted during the wait. Existing identity,
+  stream/rate, publication, slot-time, and signed role-order checks remain.
+  The delayed-second-slot process regression fails on the former dispatch order
+  and passes repeatedly after the fix, without reconnecting the delayed observer.
   This is fresh retrievability evidence from a trusted replica key, not proof of
   physical storage, non-proxying, independent operation, or consensus finality.
 - an isolated activation router now owns strict v0/v1 block admission. It

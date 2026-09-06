@@ -333,6 +333,16 @@ latest-pin verification rejects older bundles even at the same custody head.
 The pin store is a local operational authority, not a signed consensus object.
 Its physical independence and freshness still need deployment; an external head
 receipt is necessary to detect rollback of the entire pin store as well.
+A read-only outage reconciler verifies one auditor and one replica-only bundle
+against independently supplied checkpoint IDs. It compares the exact slot-ID
+prefix without choosing a longer divergent history, checks canonical auditor
+artifacts against committed records and the next signed intent, and distinguishes
+historical response validity from assessment-time proof age and receipt expiry.
+Retained orphan/temporary/unknown evidence remains a review blocker. Bounded
+slot/body indexes avoid a segment scan for every cycle; payloads are loaded one
+cycle at a time. Reports authorize no imports, fresh challenges, baseline changes,
+or participant restart. Historical transfer, linked rebaseline, and fencing still
+need separate implementation and review.
 Cross-host cutover, compaction review, broader filesystem-fault
 soaks, and outbound share publication remain. The libp2p
 adapter carries both the
