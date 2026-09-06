@@ -259,6 +259,20 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
       - [ ] Implement the current-authority and drain protocol described in
         `CUSTODY_AUTHORITY.md`; cover every listed live acceptance path without
         changing historical verification into a freshness claim.
+        - [x] Bounded reference admission/drain kernel: independently pinned
+          assignment, separated control/evidence keys, signed compare-and-append
+          entries, explicit operation tickets, immutable stop intent and terminal
+          retirement only after every consumer closes its pending work. Preserve
+          completed IDs and drain capacity; require exact pinned replay. Cover
+          role/shape/binding rejection, concurrent admission, canonical vectors,
+          codec fuzzing and an independent small state-machine model.
+        - [ ] Durable authority history: serialize validation/publication/apply,
+          fsync before grants, replay against independent pins, and test each
+          crash boundary. Never bootstrap an empty authority on missing history.
+        - [ ] Current-authority transport and durable consumer operations: no
+          stale-snapshot fallback, no duplicate effect on retry/restart, and no
+          completion before the final effect has drained. Enforce at every
+          audit/serve/prune acceptance path and test real partitions.
   - [ ] Filesystem-full, inode-exhaustion, power-loss, and long-running retention
     campaigns before deployment claims.
   - [x] Isolate the 2026-09-06 tie-pair/campaign early-close race with a

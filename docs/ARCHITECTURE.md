@@ -252,6 +252,13 @@ An authorization failure changes neither the floor nor its payloads; successful
 `VerifiedAt` records the final sample before the synchronous commit is issued.
 The callback is not a revocation service or a distributed lock; current-policy
 and cross-host drain requirements are separated in `CUSTODY_AUTHORITY.md`.
+An isolated `node/custodyauthority` reference machine now specifies admission,
+stop, explicit consumer completion and terminal retirement under one pinned
+assignment. It retains pending work through replay and never treats elapsed
+time as completion. The kernel does not import storage, transport or wall time;
+it is operational policy, not part of deterministic consensus. Durable history,
+current-authority transport, single-execution consumer recovery and connection
+to live acceptance paths remain separate gates; there is no active rebaseline.
 Receipt v1 can extend one exact
 predecessor only after a fresh signed random-sample challenge: sample IDs are
 deterministically derived from the nonce, manifest, and predecessor receipt;

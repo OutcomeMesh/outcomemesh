@@ -574,6 +574,19 @@ Implemented in an isolated, not-yet-activated consensus package:
   local markers do not stop legacy binaries, copied/rolled-back directories,
   unjournaled signing or independent remote acceptance. Neither a proposal nor
   a local retirement pair is a new live receipt or global fence.
+  A bounded in-memory reference kernel now lives in `node/custodyauthority`.
+  Its immutable assignment binds exact archive/receipt/policy context and a
+  separate set of consumer control keys. Signed compare-and-append admissions
+  create unique operation tickets; stop rejects further admissions, and retire
+  requires the exact stop entry plus explicit closure of every pending ticket
+  by its own consumer. Time, disconnection and replay never close a ticket.
+  Completed operation IDs remain retained, and exhausted admission capacity
+  does not block draining. Exact independent sequence/head pins reject valid
+  but incomplete replay. Tests cover detached state, wrong keys/roles/bindings,
+  replay/duplicates, capacity limits, concurrent compare-and-append, golden
+  encodings, decoder fuzzing and a separate small transition model. This is not
+  a durable or network service: runtime acceptance paths are not connected yet,
+  and signed reference entries are not live permissions or activation evidence.
   QUIC follow-up (2026-09-06): the first combined process run failed in
   `TestProcessTiePairQUICReachesIndependentV2ObserversAndRecoversAck` with a
   remote QUIC close, and in the coordinator-journal-before-rename case of

@@ -79,6 +79,10 @@ test-fuzz-smoke:
 	$(GO) test ./node/workarchive -run '^$$' -fuzz '^FuzzDecodeCustodyHistoricalApplicationNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/workarchive -run '^$$' -fuzz '^FuzzDecodeCustodyRebaselineProposal$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/workarchive -run '^$$' -fuzz '^FuzzDecodeCustodyParticipantRetirement$$' -fuzztime=$(FUZZTIME)
+	$(GO) test ./node/custodyauthority -run '^$$' -fuzz '^FuzzDecodeAuthorityAssignment$$' -fuzztime=$(FUZZTIME)
+	$(GO) test ./node/custodyauthority -run '^$$' -fuzz '^FuzzDecodeAuthorityCommand$$' -fuzztime=$(FUZZTIME)
+	$(GO) test ./node/custodyauthority -run '^$$' -fuzz '^FuzzDecodeAuthorityEntry$$' -fuzztime=$(FUZZTIME)
+	$(GO) test ./node/custodyauthority -run '^$$' -fuzz '^FuzzAuthorityDrainStateMachine$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/workarchive -run '^$$' -fuzz '^FuzzReadCustodySessionFrameNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./sim/workgraphmodel -run '^$$' -fuzz '^FuzzRunSelfishStrategiesNeverBreakAccounting$$' -fuzztime=$(FUZZTIME)
 

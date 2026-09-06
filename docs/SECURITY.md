@@ -379,6 +379,28 @@ checking a revocation flag once in this callback would still race retirement.
 The current high-level path enforces freshness under its supplied static key
 policy, not global revocation. See `CUSTODY_AUTHORITY.md` for the unclosed paths.
 
+The new `node/custodyauthority` package is a bounded in-memory reference machine,
+not a revocation deployment. Its fixed-size commands and co-signed entries bind
+an independently pinned assignment and exact predecessor position. Consumer
+control keys are disjoint from all evidence keys and the authority key. Only
+the consumer that owns a pending ticket may sign its terminal disposition;
+stop forbids new admissions, and retirement requires zero pending tickets plus
+the original stop entry ID. No clock, disconnect or replay can release work.
+This deliberately sacrifices cutover liveness for an unresolved consumer; it
+does not add force-complete, leases or an operator reset exception.
+
+The format assumes trusted consumer behavior and one durably ordered authority.
+Signatures cannot prove a consumer waited for its last effect or prevent an
+authority from signing forks. The current implementation has neither durable
+history nor transport and does not issue runtime grants. Its `NewState` must
+never be used to recover lost history; replay requires independent assignment
+and exact sequence/head pins, which establish that selected history, not that
+it is the latest remote history. A separate serialized durable adapter must
+commit before any grant escapes; `ValidateNext`/`Apply` alone are not that
+transaction. All old runtime acceptance paths remain under their existing
+policies until explicitly integrated. No authority entry is accepted as a
+replica receipt, challenge, availability bundle or rebaseline proposal.
+
 Availability files now use no-replace publication. Exact retries verify and
 fsync the existing regular inode; conflicting bundles, damaged files, and
 symlinks are rejected without replacing the path. A failure after publication
