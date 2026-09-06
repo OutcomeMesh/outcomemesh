@@ -307,7 +307,13 @@ across processes. Rotation seals body directories without moving decision slots
 or deleting history. One-cycle CLI invocations derive due times from replayed
 receipts and recover incomplete output publication. `CUSTODY.md` documents the
 timer integration, filesystem assumptions, and recovery limits.
-Record retention/compaction, disk budgets, broader filesystem-fault
+Local journal growth limits charge logical bytes and paths, including temporary
+links and unreferenced evidence. Append reserves body and slot publication under
+the journal lock; rotation reserves one directory. Lowered limits preserve
+historical replay and exact committed retries. A streaming inventory caps replay
+metadata at 1,048,576 paths. These limits neither reserve physical filesystem
+space nor cover the separate auditor artifacts or replica object store.
+Record/artifact retention and compaction, broader filesystem-fault
 soaks, and outbound share publication remain. The libp2p
 adapter carries both the
 versioned chain and separate WorkGraph share sessions under distinct opt-in

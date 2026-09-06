@@ -184,10 +184,28 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
   response before delivery, recover interrupted publication, and serialize
   append/replay/segment rotation across processes. Timer-driven invocations must
   retry the exact unfinished challenge and preserve completed evidence during
-  segmentation. Disk-budget enforcement and evidence-retention policy remain
-  separate gates. An anchor alone must never
-  authorize deletion or override hard-work fork choice; canonical pruning is
+  segmentation. Local disk growth must account for bodies, slots, temporary
+  links, orphan evidence, and rotation directories before publication, preserve
+  replay and committed retries after a limit reduction, and bound replay's path
+  inventory. Evidence-retention policy and long-outage reconciliation remain
+  separate gates. An anchor alone must never authorize deletion or override
+  hard-work fork choice; canonical pruning is
   explicit local finalization and remains disabled by default.
+
+  Custody storage follow-through:
+
+  - [x] Journal byte/path admission limits, crash-completion reserve, usage
+    reporting, and reduced-limit recovery tests.
+  - [ ] Define evidence retention and backup/independent-head requirements,
+    including the separate auditor artifact directory; no automatic deletion
+    before these rules and their recovery tests are reviewed.
+  - [ ] Explicit long-outage reconciliation/rebaseline without silently replacing
+    an expired challenge or discarding the previous evidence chain.
+  - [ ] Filesystem-full, inode-exhaustion, power-loss, and long-running retention
+    campaigns before deployment claims.
+  - [ ] Investigate the intermittent tie-pair/campaign QUIC close and slot-time
+    failures recorded in the 2026-09-06 process run (`STATUS.md`); successful
+    retries do not close this reliability gate.
 - Admission-deduplicated multi-hop forwarding across the explicit peer graph.
 - Reputation/latency/ASN-ranked peerbook selection with an inventory-free,
   exact-context WorkGraph capability probe.

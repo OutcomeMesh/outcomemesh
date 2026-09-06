@@ -127,6 +127,11 @@ func TestCustodyJournalProcessCrashAtomicity(t *testing.T) {
 	for _, boundary := range []string{"body", "slot", "seal"} {
 		t.Run(boundary, func(t *testing.T) {
 			journalPath := filepath.Join(t.TempDir(), "custody-journal")
+			initial, _, err := OpenOrCreateCustodyJournal(journalPath, fixture.manifest, fixture.receipt, fixture.policy)
+			if err != nil {
+				t.Fatal(err)
+			}
+			limits, _ := custodyJournalFirstAppendBudget(t, fixture, initial)
 			marker := filepath.Join(t.TempDir(), "reached")
 			command := exec.Command(
 				os.Args[0], "-test.run=^TestCustodyJournalCrashHelper$", "-test.count=1",
@@ -145,8 +150,8 @@ func TestCustodyJournalProcessCrashAtomicity(t *testing.T) {
 			}
 			_ = command.Wait()
 
-			journal, state, err := OpenOrCreateCustodyJournal(
-				journalPath, fixture.manifest, fixture.receipt, fixture.policy,
+			journal, state, err := OpenOrCreateCustodyJournalWithLimits(
+				journalPath, fixture.manifest, fixture.receipt, fixture.policy, limits,
 			)
 			if err != nil {
 				t.Fatal(err)
@@ -243,6 +248,11 @@ func TestCustodyJournalCrashHelper(t *testing.T) {
 	journal, _, err := OpenOrCreateCustodyJournal(
 		journalPath, fixture.manifest, fixture.receipt, fixture.policy,
 	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	limits, _ := custodyJournalFirstAppendBudget(t, fixture, journal)
+	journal, _, err = OpenOrCreateCustodyJournalWithLimits(journalPath, fixture.manifest, fixture.receipt, fixture.policy, limits)
 	if err != nil {
 		t.Fatal(err)
 	}

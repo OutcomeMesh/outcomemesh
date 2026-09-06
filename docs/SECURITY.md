@@ -405,8 +405,16 @@ The journal is local evidence, not a remote rollback anchor: deleting a complete
 valid suffix or restoring an old complete copy requires an independent retained
 head to detect. Operators must protect the journal and lock inode from external
 mutation and use a filesystem supporting the documented durability primitives.
-External timers, disk-budget enforcement, evidence-retention policy, and
-long-outage reconciliation remain deployment concerns; see `CUSTODY.md`.
+Local growth admission counts logical bytes and all journal paths, including
+orphan bodies, duplicate hard links, pending files, and directories. Body/slot
+temporary-link reserves are checked together while holding the journal lock;
+reduced caps do not invalidate committed evidence. A streaming preflight imposes
+a hard replay path ceiling before path/slot indexes are allocated. All writers
+must use the intended local limits: they are per handle, not a volume quota or
+an immutable protocol rule. Other disk consumers and filesystem metadata remain
+outside these counters. External timers, physical free-space/inode monitoring,
+evidence/artifact retention, and long-outage reconciliation remain deployment
+concerns; see `CUSTODY.md`.
 
 With an explicitly non-zero local canonical-retention policy, one synchronous
 schema-4 batch may replace the strict prefix before the selected archive anchor

@@ -446,8 +446,27 @@ Implemented in an isolated, not-yet-activated consensus package:
   exit without a server, same-challenge/sibling contention, append versus
   rotation, corrupt evidence, changed policy, and process kills after body,
   slot, and segment publication. See `CUSTODY.md` for the operator workflow and
-  filesystem assumptions. Retention compaction, disk budgets, and long-outage
+  filesystem assumptions. Local journal limits now default to 4 GiB logical
+  bytes and 262,144 paths. Admission counts active/sealed/orphan bodies, slots,
+  directories, and temporary links under the process lock, reserving body and
+  slot publication together. Rotation needs an additional directory allowance.
+  Streaming inventory enforces a hard 1,048,576-path ceiling before replay builds
+  its indexes. Reduced limits preserve replay, exact committed-response
+  redelivery, and local artifact recovery. CLI flags expose the limits and a
+  startup usage report. Boundary tests cover no-write refusals, abandoned-link
+  completion, rotation repair, and overflow; real process tests exercise tight
+  budgets, offline recovery after increasing a cap, and over-budget redelivery.
+  This is logical accounting, not physical free-space reservation. Evidence and
+  artifact retention/compaction, ENOSPC/inode-fault campaigns, and long-outage
   reconciliation remain pending.
+  Verification caveat (2026-09-06): the first combined process run failed in
+  `TestProcessTiePairQUICReachesIndependentV2ObserversAndRecoversAck` with a
+  remote QUIC close, and in the coordinator-journal-before-rename case of
+  `TestProcessTieCampaignStorageFailuresRecoverWithoutFalseAdvance` with a
+  slot-deadline error after a transport close. Both passed in an isolated rerun,
+  and the subsequent complete CLI process run passed. These paths do not use the
+  custody journal; their intermittent transport/timing failures still need
+  diagnosis and are not resolved by the storage-limit change.
   This is fresh retrievability evidence from a trusted replica key, not proof of
   physical storage, non-proxying, independent operation, or consensus finality.
 - an isolated activation router now owns strict v0/v1 block admission. It
@@ -696,7 +715,7 @@ No WorkGraph field has entered a version-0 block yet. The v1 store and opt-in
 QUIC session remain isolated from every ordinary v0 chain/CLI path and are
 reachable only through the explicitly marked experimental commands;
 adversarial discovery/eclipse and longer real-QUIC rapid-parent churn soaks,
-topology-derived peer selection, custody evidence retention/disk budgets and
+topology-derived peer selection, custody evidence/artifact retention and
 long-outage reconciliation,
 canonical-prune
 disk-exhaustion/long-soak campaigns, production gossip-budget calibration, and

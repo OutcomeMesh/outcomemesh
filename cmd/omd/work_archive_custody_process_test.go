@@ -149,6 +149,20 @@ func TestProcessArchiveCustodyJournalRunsTwoRestartedCycles(t *testing.T) {
 	if err := publishImmutableArtifact(pendingRecord, recordBytes); err != nil {
 		t.Fatal(err)
 	}
+	// Refusing journal growth must preserve the verified record so an operator
+	// can raise the cap and finish the same cycle without contacting the replica.
+	limitedOutput, err := runProcessCustodyJournalChallenge(t, fixture, address, replicaPeerID,
+		pendingJournal, pendingArtifacts, 7_200, 0, "--journal-max-paths", "9")
+	if err == nil || !strings.Contains(limitedOutput, workarchive.ErrCustodyJournalBudget.Error()) {
+		t.Fatalf("undersized journal budget was accepted: %v\n%s", err, limitedOutput)
+	}
+	_, limitedState, err := workarchive.OpenOrCreateCustodyJournal(pendingJournal, fixture.manifest, fixture.receipt, fixture.custodyPolicy)
+	if err != nil || limitedState.Sequence != 0 {
+		t.Fatalf("refused append changed custody head: %+v %v", limitedState, err)
+	}
+	if preserved, err := os.ReadFile(pendingRecord); err != nil || !bytes.Equal(preserved, recordBytes) {
+		t.Fatalf("budget refusal changed pending evidence: %v", err)
+	}
 	pendingOutput, err := runProcessCustodyJournalChallenge(t, fixture, address, replicaPeerID, pendingJournal, pendingArtifacts, 7_200, 0)
 	if err != nil {
 		t.Fatalf("pending record journal recovery: %v\n%s", err, pendingOutput)
@@ -171,7 +185,9 @@ func TestProcessArchiveCustodyJournalRunsTwoRestartedCycles(t *testing.T) {
 	if err := publishImmutableArtifact(retryChallenge, challengeBytes); err != nil {
 		t.Fatal(err)
 	}
-	retryServer, retryPeer, retryAddress := startProcessCustodyJournalServer(t, fixture, replicaJournal)
+	// Lowering the replica's cap below existing usage must still allow exact
+	// network redelivery of the durable response. Its active segment is empty.
+	retryServer, retryPeer, retryAddress := startProcessCustodyJournalServer(t, fixture, replicaJournal, "--journal-max-paths", "9")
 	retryOutput, err := runProcessCustodyJournalChallenge(t, fixture, retryAddress, retryPeer, retryJournal, retryArtifacts, 7_200, 0)
 	if err != nil {
 		t.Fatalf("journal response redelivery: %v\n%s", err, retryOutput)
@@ -213,12 +229,16 @@ func TestProcessArchiveCustodyJournalRunsTwoRestartedCycles(t *testing.T) {
 	}
 	recoveredOutput, err := runProcessCustodyJournalChallenge(
 		t, fixture, restartedAddress, restartedPeerID, auditorJournal, auditorArtifacts, 10_800, 0,
+		"--journal-max-paths", "9",
 	)
 	if err != nil {
 		t.Fatalf("journal head artifact recovery: %v\n%s", err, recoveredOutput)
 	}
 	if fields := outputFields(recoveredOutput, "work_archive_custody_verified"); fields["sequence"] != "2" || fields["recovered"] != "true" {
 		t.Fatalf("journal did not restore completed artifacts locally: %s", recoveredOutput)
+	}
+	if fields := outputFields(recoveredOutput, "work_archive_custody_journal_usage"); fields["over_budget"] != "true" || fields["max_paths"] != "9" {
+		t.Fatalf("over-budget journal usage was not reported: %s", recoveredOutput)
 	}
 	auditor, _, err := workarchive.OpenOrCreateCustodyJournal(auditorJournal, fixture.manifest, fixture.receipt, fixture.custodyPolicy)
 	if err != nil {
@@ -486,10 +506,11 @@ func startProcessCustodyJournalServer(
 	t testing.TB,
 	fixture processCustodyFixture,
 	journalPath string,
+	extraFlags ...string,
 ) (*serverProcess, string, string) {
 	t.Helper()
 	auditorPeerID := processTransportPeerID(t, fixture.auditorTransport).String()
-	command := helperCommand(nil,
+	arguments := []string{
 		"work-archive-custody-serve-quic",
 		"--key", fixture.replicaTransport,
 		"--listen", "/ip4/127.0.0.1/udp/0/quic-v1",
@@ -501,7 +522,8 @@ func startProcessCustodyJournalServer(
 		"--object-store", fixture.objectStorePath,
 		"--journal", journalPath,
 		"--rotate-every", "1",
-	)
+	}
+	command := helperCommand(nil, append(arguments, extraFlags...)...)
 	stdout, err := command.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -581,9 +603,10 @@ func runProcessCustodyJournalChallenge(
 	artifactPath string,
 	renewalSeconds uint64,
 	minimumInterval uint64,
+	extraFlags ...string,
 ) (string, error) {
 	t.Helper()
-	return runProcessCommandError(30*time.Second,
+	arguments := []string{
 		"work-archive-custody-challenge-quic",
 		"--key", fixture.auditorTransport,
 		"--peer", address,
@@ -597,7 +620,8 @@ func runProcessCustodyJournalChallenge(
 		"--minimum-interval-seconds", strconv.FormatUint(minimumInterval, 10),
 		"--rotate-every", "1",
 		"--samples", "1",
-	)
+	}
+	return runProcessCommandError(30*time.Second, append(arguments, extraFlags...)...)
 }
 
 func assertProcessCustodyJournalState(

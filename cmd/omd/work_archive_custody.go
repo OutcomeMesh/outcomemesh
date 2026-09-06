@@ -23,6 +23,47 @@ import (
 
 const defaultCustodyRenewalTerm = 30 * 24 * 60 * 60
 
+type archiveCustodyJournalLimitFlags struct {
+	bytes *uint64
+	paths *uint64
+}
+
+func addArchiveCustodyJournalLimitFlags(flags *flag.FlagSet) archiveCustodyJournalLimitFlags {
+	defaults := workarchive.DefaultCustodyJournalLimits()
+	return archiveCustodyJournalLimitFlags{
+		bytes: flags.Uint64("journal-max-bytes", defaults.MaximumBytes, "local journal logical-byte growth limit, including temporary links"),
+		paths: flags.Uint64("journal-max-paths", defaults.MaximumPaths, "local journal path growth limit, including directories and temporary links"),
+	}
+}
+
+func (values archiveCustodyJournalLimitFlags) limits() workarchive.CustodyJournalLimits {
+	return workarchive.CustodyJournalLimits{MaximumBytes: *values.bytes, MaximumPaths: *values.paths}
+}
+
+func (values archiveCustodyJournalLimitFlags) validate(flags *flag.FlagSet, journalPath string) error {
+	explicit := false
+	flags.Visit(func(value *flag.Flag) {
+		if value.Name == "journal-max-bytes" || value.Name == "journal-max-paths" {
+			explicit = true
+		}
+	})
+	if explicit && journalPath == "" {
+		return errors.New("journal-max-bytes and journal-max-paths require a custody journal")
+	}
+	return values.limits().Validate()
+}
+
+func reportCustodyJournalUsage(journal *workarchive.CustodyJournal, limits workarchive.CustodyJournalLimits) error {
+	usage, err := journal.Usage()
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(os.Stderr, "work_archive_custody_journal_usage bytes=%d max_bytes=%d paths=%d max_paths=%d pending_bytes=%d pending_files=%d over_budget=%t\n",
+		usage.Bytes, limits.MaximumBytes, usage.Paths, limits.MaximumPaths,
+		usage.PendingBytes, usage.PendingFiles, usage.OverBudget(limits))
+	return err
+}
+
 type archiveCustodyPolicyFlags struct {
 	challengeLifetime *uint64
 	proofAge          *uint64
@@ -82,6 +123,7 @@ func runWorkArchiveCustodyServeQUIC(arguments []string) error {
 	journalPath := flags.String("journal", "", "append-only custody journal (receipt is its immutable initial receipt)")
 	rotateEvery := flags.Uint64("rotate-every", 0, "seal active journal bodies after each N completed renewals (zero disables)")
 	policyFlags := addArchiveCustodyPolicyFlags(flags)
+	journalLimitFlags := addArchiveCustodyJournalLimitFlags(flags)
 	if err := flags.Parse(arguments); err != nil {
 		return err
 	}
@@ -93,6 +135,9 @@ func runWorkArchiveCustodyServeQUIC(arguments []string) error {
 	}
 	if *journalPath == "" && *rotateEvery != 0 {
 		return errors.New("rotate-every requires a custody journal")
+	}
+	if err := journalLimitFlags.validate(flags, *journalPath); err != nil {
+		return err
 	}
 	if err := policyFlags.validate(); err != nil {
 		return err
@@ -125,10 +170,13 @@ func runWorkArchiveCustodyServeQUIC(arguments []string) error {
 	var journal *workarchive.CustodyJournal
 	if *journalPath != "" {
 		var state workarchive.CustodyJournalState
-		journal, state, err = workarchive.OpenOrCreateCustodyJournal(
-			*journalPath, manifest, receipt, policy,
+		journal, state, err = workarchive.OpenOrCreateCustodyJournalWithLimits(
+			*journalPath, manifest, receipt, policy, journalLimitFlags.limits(),
 		)
 		if err != nil {
+			return err
+		}
+		if err := reportCustodyJournalUsage(journal, journalLimitFlags.limits()); err != nil {
 			return err
 		}
 		receipt = state.CurrentReceipt
@@ -246,6 +294,7 @@ func runWorkArchiveCustodyChallengeQUIC(arguments []string) error {
 	lifetime := flags.Uint64("lifetime-seconds", 60, "signed challenge lifetime")
 	samples := flags.Uint("samples", 2, "requested deterministic chunk samples")
 	policyFlags := addArchiveCustodyPolicyFlags(flags)
+	journalLimitFlags := addArchiveCustodyJournalLimitFlags(flags)
 	if err := flags.Parse(arguments); err != nil {
 		return err
 	}
@@ -262,6 +311,9 @@ func runWorkArchiveCustodyChallengeQUIC(arguments []string) error {
 	}
 	if *journalPath == "" && (*artifactDirectory != "" || *renewalSeconds != 0 || *minimumInterval != 0 || *rotateEvery != 0) {
 		return errors.New("artifacts, renewal-seconds, minimum-interval-seconds, and rotate-every require a custody journal")
+	}
+	if err := journalLimitFlags.validate(flags, *journalPath); err != nil {
+		return err
 	}
 	if err := policyFlags.validate(); err != nil {
 		return err
@@ -298,10 +350,13 @@ func runWorkArchiveCustodyChallengeQUIC(arguments []string) error {
 		if custodyPathsOverlap(*journalPath, *artifactDirectory) {
 			return errors.New("custody journal and cycle artifacts must be separate directories")
 		}
-		journal, journalState, err = workarchive.OpenOrCreateCustodyJournal(
-			*journalPath, manifest, receipt, policy,
+		journal, journalState, err = workarchive.OpenOrCreateCustodyJournalWithLimits(
+			*journalPath, manifest, receipt, policy, journalLimitFlags.limits(),
 		)
 		if err != nil {
+			return err
+		}
+		if err := reportCustodyJournalUsage(journal, journalLimitFlags.limits()); err != nil {
 			return err
 		}
 		receipt = journalState.CurrentReceipt

@@ -303,6 +303,7 @@ type CustodyJournal struct {
 	header   CustodyJournalHeader
 	manifest Manifest
 	policy   CustodyPolicy
+	limits   CustodyJournalLimits
 	mu       sync.Mutex
 }
 
@@ -312,6 +313,22 @@ func OpenOrCreateCustodyJournal(
 	initialReceipt ReplicaReceipt,
 	policy CustodyPolicy,
 ) (*CustodyJournal, CustodyJournalState, error) {
+	return OpenOrCreateCustodyJournalWithLimits(path, manifest, initialReceipt, policy, DefaultCustodyJournalLimits())
+}
+
+// OpenOrCreateCustodyJournalWithLimits applies local growth limits without
+// changing the immutable custody policy. Existing evidence can still be replayed
+// above these limits, up to the hard replay path ceiling.
+func OpenOrCreateCustodyJournalWithLimits(
+	path string,
+	manifest Manifest,
+	initialReceipt ReplicaReceipt,
+	policy CustodyPolicy,
+	limits CustodyJournalLimits,
+) (*CustodyJournal, CustodyJournalState, error) {
+	if err := limits.Validate(); err != nil {
+		return nil, CustodyJournalState{}, err
+	}
 	if path == "" || policy.validate() != nil || manifest.Validate() != nil ||
 		initialReceipt.verifySignature() != nil {
 		return nil, CustodyJournalState{}, ErrCustodyJournal
@@ -337,7 +354,7 @@ func OpenOrCreateCustodyJournal(
 		return nil, CustodyJournalState{}, err
 	}
 	defer lock.Close()
-	if err := initializeCustodyJournal(path, header); err != nil {
+	if err := initializeCustodyJournal(path, header, limits); err != nil {
 		return nil, CustodyJournalState{}, err
 	}
 	manifestBytes, err := manifest.CanonicalBytes()
@@ -349,7 +366,7 @@ func OpenOrCreateCustodyJournal(
 		return nil, CustodyJournalState{}, err
 	}
 	policy.TrustedAuditors = append([][ed25519.PublicKeySize]byte(nil), policy.TrustedAuditors...)
-	journal := &CustodyJournal{path: path, header: header, manifest: manifest, policy: policy}
+	journal := &CustodyJournal{path: path, header: header, manifest: manifest, policy: policy, limits: limits}
 	state, err := journal.scan()
 	if err != nil {
 		return nil, CustodyJournalState{}, err
@@ -468,14 +485,21 @@ func (journal *CustodyJournal) append(
 		return CustodyJournalEntry{}, false, err
 	}
 	entryID := types.DomainHash(custodyJournalEntryIDDomain, encoded)
+	slot := custodyJournalSlot{
+		Version: custodyJournalSlotVersion0, Sequence: entry.Sequence, EntryID: entryID,
+	}
+	currentBody, bodyExists, err := journal.findBody(entryID)
+	if err != nil || (bodyExists && !bytes.Equal(currentBody, encoded)) {
+		return CustodyJournalEntry{}, false, errors.Join(ErrCustodyJournal, err)
+	}
+	if err := journal.admitAppend(bodyExists, uint64(len(encoded)), slot); err != nil {
+		return CustodyJournalEntry{}, false, err
+	}
 	if err := journal.publishBody(entryID, encoded); err != nil {
 		return CustodyJournalEntry{}, false, err
 	}
 	if hooks.afterBody != nil {
 		hooks.afterBody()
-	}
-	slot := custodyJournalSlot{
-		Version: custodyJournalSlotVersion0, Sequence: entry.Sequence, EntryID: entryID,
 	}
 	created, err := journal.publishSlot(slot)
 	if err != nil {
@@ -537,6 +561,13 @@ func (journal *CustodyJournal) rotate(hooks custodyJournalHooks) (bool, error) {
 	if len(entries) == 0 {
 		return false, nil
 	}
+	usage, err := inventoryCustodyJournal(journal.path)
+	if err != nil {
+		return false, err
+	}
+	if err := usage.admit(journal.limits, 0, 1); err != nil {
+		return false, err
+	}
 	var nonce [16]byte
 	if _, err := io.ReadFull(rand.Reader, nonce[:]); err != nil {
 		return false, err
@@ -570,7 +601,7 @@ func (journal *CustodyJournal) rotate(hooks custodyJournalHooks) (bool, error) {
 	return true, nil
 }
 
-func initializeCustodyJournal(path string, header CustodyJournalHeader) error {
+func initializeCustodyJournal(path string, header CustodyJournalHeader, limits CustodyJournalLimits) error {
 	if err := requireCustodyJournalDirectory(path); err != nil {
 		return err
 	}
@@ -593,6 +624,17 @@ func initializeCustodyJournal(path string, header CustodyJournalHeader) error {
 		return err
 	}
 	headerPath := filepath.Join(path, custodyJournalHeaderName)
+	if _, err := os.Lstat(headerPath); errors.Is(err, os.ErrNotExist) {
+		usage, err := inventoryCustodyJournal(path)
+		if err != nil {
+			return err
+		}
+		if err := usage.admit(limits, 2*uint64(len(encoded)), 2); err != nil {
+			return err
+		}
+	} else if err != nil {
+		return errors.Join(ErrCustodyJournal, err)
+	}
 	created, err := publishCustodyJournalBytes(
 		filepath.Join(path, custodyJournalPendingName), headerPath, encoded,
 	)
@@ -610,6 +652,9 @@ func initializeCustodyJournal(path string, header CustodyJournalHeader) error {
 }
 
 func (journal *CustodyJournal) scan() (CustodyJournalState, error) {
+	if _, err := inventoryCustodyJournal(journal.path); err != nil {
+		return CustodyJournalState{}, err
+	}
 	headerBytes, err := readRegularArchiveFile(
 		filepath.Join(journal.path, custodyJournalHeaderName), MaximumCustodyJournalHeaderBytes,
 	)
@@ -981,6 +1026,13 @@ func (journal *CustodyJournal) findBody(entryID types.Hash) ([]byte, bool, error
 func publishCustodyJournalBytes(pendingDirectory, destination string, encoded []byte) (bool, error) {
 	if len(encoded) == 0 {
 		return false, ErrCustodyJournal
+	}
+	// Reopening or retrying a durable decision must not allocate a new temporary
+	// file, including when the filesystem or local growth budget is full.
+	if _, err := readRegularArchiveFile(destination, MaximumCustodyJournalHeaderBytes); err == nil {
+		return false, syncDirectory(filepath.Dir(destination))
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return false, err
 	}
 	pending, err := writeCustodyJournalTemporary(pendingDirectory, encoded)
 	if err != nil {

@@ -3,12 +3,47 @@ package main
 import (
 	"bytes"
 	"crypto/ed25519"
+	"flag"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/outcomemesh/outcomemesh/core/types"
+	"github.com/outcomemesh/outcomemesh/node/workarchive"
 )
+
+func TestCustodyJournalLimitFlags(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		args    []string
+		journal string
+		valid   bool
+	}{
+		{name: "legacy defaults", valid: true},
+		{name: "journal defaults", journal: "journal", valid: true},
+		{name: "custom limits", journal: "journal", args: []string{"--journal-max-bytes", "1048576", "--journal-max-paths", "64"}, valid: true},
+		{name: "bytes require journal", args: []string{"--journal-max-bytes", "1048576"}},
+		{name: "explicit default requires journal", args: []string{"--journal-max-paths", "262144"}},
+		{name: "zero bytes", journal: "journal", args: []string{"--journal-max-bytes", "0"}},
+		{name: "insufficient paths", journal: "journal", args: []string{"--journal-max-paths", "8"}},
+		{name: "excess paths", journal: "journal", args: []string{"--journal-max-paths", "1048577"}},
+		{name: "excess bytes", journal: "journal", args: []string{"--journal-max-bytes", "1099511627777"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			flags := flag.NewFlagSet(test.name, flag.ContinueOnError)
+			values := addArchiveCustodyJournalLimitFlags(flags)
+			if err := flags.Parse(test.args); err != nil {
+				t.Fatal(err)
+			}
+			if err := values.validate(flags, test.journal); (err == nil) != test.valid {
+				t.Fatalf("validation error=%v want_valid=%t", err, test.valid)
+			}
+			if len(test.args) == 0 && values.limits() != workarchive.DefaultCustodyJournalLimits() {
+				t.Fatal("CLI defaults differ from core journal defaults")
+			}
+		})
+	}
+}
 
 func TestCustodyImmutableArtifactIsIdempotentAndNoReplace(t *testing.T) {
 	directory := t.TempDir()
