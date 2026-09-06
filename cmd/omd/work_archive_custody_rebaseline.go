@@ -16,7 +16,7 @@ import (
 
 func runWorkArchiveCustodyRebaseline(arguments []string) error {
 	flags := flag.NewFlagSet("work-archive-custody-rebaseline", flag.ContinueOnError)
-	mode := flags.String("mode", "verify", "create a proposal, or verify one; neither activates participants")
+	mode := flags.String("mode", "verify", "create/verify a proposal, or retire-local/verify-local-retirement; no activation")
 	proposalPath := flags.String("proposal", "", "separate immutable proposal file; create never replaces it")
 	expectedText := flags.String("expected-id", "", "independently reviewed proposal ID; required only for verify")
 	evidence := workarchive.CustodyRebaselineEvidence{}
@@ -39,6 +39,11 @@ func runWorkArchiveCustodyRebaseline(arguments []string) error {
 	locationText := flags.String("location-id", "", "independently selected next replica location commitment")
 	lifetime := flags.Uint64("review-lifetime-seconds", 300, "create only: signed review window, at most 600 seconds")
 	retainUntil := flags.Uint64("retain-until", 0, "create only: proposed UTC Unix retention deadline; must extend the old receipt")
+	local := workarchive.CustodyLocalParticipants{}
+	flags.StringVar(&local.AuditorJournal, "auditor-journal", "", "retirement only: exact local old auditor journal to disable permanently")
+	flags.StringVar(&local.AuditorArtifacts, "auditor-artifacts", "", "retirement only: old auditor's complete artifact directory")
+	flags.StringVar(&local.ReplicaJournal, "replica-journal", "", "retirement only: exact local old replica journal to disable permanently")
+	retirementText := flags.String("retirement-id", "", "independently retained local retirement pair ID; verify-local-retirement only")
 	if err := flags.Parse(arguments); err != nil {
 		return err
 	}
@@ -46,6 +51,20 @@ func runWorkArchiveCustodyRebaseline(arguments []string) error {
 		*auditorText == "" || *nextAuditorText == "" || *nextReplicaText == "" || *locationText == "" ||
 		evidence.Recovery == "" || evidence.TransferPackage == "" || evidence.AuditorBackup == "" || evidence.ReplicaBackup == "" {
 		return errors.New("proposal, archive, complete recovery evidence, independent IDs, receipt, and old/new public assignments are required")
+	}
+	localMode := *mode == "retire-local" || *mode == "verify-local-retirement"
+	localOptions := false
+	flags.Visit(func(f *flag.Flag) {
+		if f.Name == "auditor-journal" || f.Name == "auditor-artifacts" || f.Name == "replica-journal" || f.Name == "retirement-id" {
+			localOptions = true
+		}
+	})
+	if !localMode && localOptions {
+		return errors.New("local participant paths and retirement-id require an explicit local retirement mode")
+	}
+	if localMode && (local.AuditorJournal == "" || local.AuditorArtifacts == "" || local.ReplicaJournal == "" ||
+		(*mode == "retire-local" && *retirementText != "") || (*mode == "verify-local-retirement" && *retirementText == "")) {
+		return errors.New("local retirement requires both journal paths and auditor artifacts; retirement-id is required only for verification")
 	}
 	switch *mode {
 	case "create":
@@ -57,7 +76,7 @@ func runWorkArchiveCustodyRebaseline(arguments []string) error {
 		} else if !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
-	case "verify":
+	case "verify", "retire-local", "verify-local-retirement":
 		createOnly := false
 		flags.Visit(func(f *flag.Flag) {
 			if f.Name == "next-replica-key" || f.Name == "retain-until" || f.Name == "review-lifetime-seconds" {
@@ -65,10 +84,10 @@ func runWorkArchiveCustodyRebaseline(arguments []string) error {
 			}
 		})
 		if *expectedText == "" || createOnly {
-			return errors.New("verify requires expected-id and accepts no private key or new time/term options")
+			return errors.New("review/retirement requires expected-id and accepts no private key or new time/term options")
 		}
 	default:
-		return errors.New("mode must be create or verify; activate, resume, and fence are unsupported")
+		return errors.New("mode must be create, verify, retire-local, or verify-local-retirement; activation and cross-host fencing are unsupported")
 	}
 	// No proposal or temporary output may land inside an evidence, archive, or
 	// node-data tree, or replace one of the explicitly supplied input files.
@@ -78,7 +97,17 @@ func runWorkArchiveCustodyRebaseline(arguments []string) error {
 			return errors.New("proposal must be separate from every input and node-data directory")
 		}
 	}
+	if localMode {
+		for _, target := range []string{local.AuditorJournal, local.AuditorArtifacts, local.ReplicaJournal} {
+			for _, input := range []string{*proposalPath, *archiveFlags.data, *archiveFlags.manifest, *archiveFlags.checkpoint, *receiptPath} {
+				if input != "" && workarchive.CustodyEvidencePathsOverlap(target, input) {
+					return errors.New("local retirement targets must be separate from proposal, trust files and node data")
+				}
+			}
+		}
+	}
 	var expectedID types.Hash
+	var retirementID types.Hash
 	for _, item := range []struct {
 		text string
 		out  *types.Hash
@@ -92,11 +121,18 @@ func runWorkArchiveCustodyRebaseline(arguments []string) error {
 		}
 		*item.out = id
 	}
-	if *mode == "verify" {
+	if *mode != "create" {
 		var err error
 		expectedID, err = parseHash(*expectedText)
 		if err != nil || expectedID.IsZero() {
 			return errors.New("expected-id must be independently retained and nonzero")
+		}
+	}
+	if *mode == "verify-local-retirement" {
+		var err error
+		retirementID, err = parseHash(*retirementText)
+		if err != nil || retirementID.IsZero() {
+			return errors.New("retirement-id must be independently retained and nonzero")
 		}
 	}
 	if err := policyFlags.validate(); err != nil {
@@ -162,6 +198,27 @@ func runWorkArchiveCustodyRebaseline(arguments []string) error {
 		}
 		proposal, err = workarchive.DecodeCustodyRebaselineProposal(encoded)
 		if err != nil {
+			return err
+		}
+		if localMode {
+			var pair workarchive.CustodyLocalRetirementPair
+			var changed bool
+			if *mode == "retire-local" {
+				pair, changed, err = workarchive.RetireLocalCustodyParticipants(ctx, local, proposal, expectedID, evidence, archive,
+					verification.manifest, initial, policyFlags.policy(oldAuditor), next)
+			} else {
+				pair, err = workarchive.VerifyLocalCustodyRetirement(ctx, local, retirementID, proposal, expectedID, evidence, archive,
+					verification.manifest, initial, policyFlags.policy(oldAuditor), next)
+			}
+			if err != nil {
+				return err
+			}
+			id, err := pair.ID()
+			if err != nil {
+				return err
+			}
+			_, err = fmt.Printf("work_archive_custody_retirement mode=%s id=%s proposal=%s decided_at=%d changed=%t local_pair_retired=true global_participants_fenced=false active_cutover=false availability_attested=false\n",
+				*mode, id, expectedID, pair.Auditor.DecidedAt, changed)
 			return err
 		}
 		if err := workarchive.VerifyCustodyRebaselineProposal(ctx, proposal, expectedID, evidence, archive, verification.manifest,

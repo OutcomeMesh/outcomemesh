@@ -741,12 +741,13 @@ access-control boundary against someone who rewrites files or ignores pins.
 Do not downgrade the header or extract its receipt into an unjournaled service.
 The separately running original participant has not been stopped. A fresh
 linked proposal can now be prepared as described below; enforceable
-old-participant fencing and crash-safe active cutover remain unimplemented.
+cross-host fencing and crash-safe active cutover remain unimplemented. The
+separate local-retirement mode below can disable managed old journal roots.
 
 ## Propose a linked rebaseline after full replay
 
-`work-archive-custody-rebaseline` prepares or verifies an **inactive proposal**.
-It does not restore service. Creation revalidates the complete historical
+The `create` and `verify` modes of `work-archive-custody-rebaseline` prepare or
+verify an **inactive proposal**. They do not restore service. Creation revalidates the complete historical
 application against the original backups and handoff, then replays every chunk
 and block of a complete archive through consensus execution. A retained sampled
 batch, signed manifest, old receipt, or application marker alone is insufficient.
@@ -833,7 +834,106 @@ independently enforced retirement decision covering old/copy/restarted authority
 paths, followed by one durable activation linked to the reviewed proposal.
 Crashes before, between, and after those decisions must not permit two active
 authorities or revive retired keys. No local flag or proposal signature supplies
-that deployment mechanism; activation, resume, and fencing modes are rejected.
+that deployment mechanism; activation, resume, and cross-host fencing are not
+implemented. The local-only operation below is deliberately a separate mode.
+
+## Retire the managed local participants
+
+`--mode retire-local` permanently disables the **two named local journal roots**.
+This is an administrative state change, not proposal verification or activation.
+Use it only on the actual old auditor/replica roots after all processes using
+those roots have been upgraded to the guarded journal-backed implementation (or
+quiesced). An already loaded legacy binary, an unjournaled service, a copied
+directory or an extracted key does not participate in this local lock protocol.
+The command cannot discover or stop those authorities. Do not deploy a mixed
+old/new runtime and interpret its output as a global fence.
+
+The auditor holds its artifact lock and a `CustodyJournalDecision` for the entire
+cycle: checking/recovering artifacts, issuing the challenge, network exchange,
+record publication, journal append, and rotation. The replica acquires the same
+permanent journal lock after decoding the bounded request and holds it through
+head revalidation, signing, append, response writes and stream completion. Cached
+and restart-loaded responses take the same guard. A session whose journal head
+has changed fails without sending an older cached result. Library users must
+hold a decision scope around their whole authority operation and use its methods
+until `Close`; calling methods on the original journal while holding its scope
+would try to acquire that lock again. Raw cryptographic helpers are not fenced.
+
+Retirement takes the auditor artifact lock first, then both journal locks in
+canonical resolved-path order. It waits for active guarded operations to drain;
+the existing bounded lock wait returns busy instead of claiming successful
+retirement if it cannot acquire them. Both current inventories must exactly
+match the reviewed source checkpoints, including the auditor's pending intent.
+An advanced head, changed artifact, relocated body or unknown retained file
+blocks the operation before the first marker. The three target directories must
+be distinct and outside the source backups, handoff, reconstruction, archive,
+proposal, trust files and verification node. Missing roots or lock files are not
+initialized or repaired.
+
+Using the previously reviewed `rebaseline_args` and proposal ID:
+
+```sh
+local_retirement_args=(
+  "${rebaseline_args[@]}" --expected-id "$REVIEWED_PROPOSAL_ID"
+  --auditor-journal /live/old-auditor/journal
+  --auditor-artifacts /live/old-auditor/artifacts
+  --replica-journal /live/old-replica/journal
+)
+
+# Irreversible through supported APIs; does not start any replacement.
+omd work-archive-custody-rebaseline --mode retire-local \
+  "${local_retirement_args[@]}"
+
+# Retain the returned pair ID independently. Verification has no time override.
+omd work-archive-custody-rebaseline --mode verify-local-retirement \
+  "${local_retirement_args[@]}" --retirement-id "$LOCAL_RETIREMENT_ID"
+```
+
+Each root receives a fixed 260-byte `retirement.omcrt`, published by fsync and a
+no-replace hard link. It binds the reviewed proposal ID, that participant's full
+pre-retirement checkpoint, and the original pair-decision timestamp. The returned
+pair ID commits the ordered auditor/replica marker IDs. These are local integrity
+commitments, not operator signatures or noncopyable remote revocation proofs.
+The immutable initial receipt, header, slots, bodies and artifacts are unchanged.
+Scratch files are siblings outside the pinned trees: failed/uncommitted attempts
+are retained, never rediscovered as authority or automatically promoted. Only
+the successfully committed temporary link is removed. The 260-byte/one-path
+administrative addition can exceed a reduced local growth limit but not the hard
+replay ceilings. Filesystem exhaustion and power-loss certification remain open.
+
+The pair is **not an atomic two-directory transaction**. The first marker
+durably commits intent to retire both exact participants. A crash before that
+marker leaves both active; after it, the auditor stays retired even if the replica
+has not yet been disabled. No success is reported until both markers and full
+inventories verify. Retry replays all original evidence and may finish the same
+already committed intent after proposal expiry, preserving the first timestamp.
+It does not claim fresh review or re-enable anything. Without a committed marker,
+an expired proposal cannot begin retirement. If the remaining live participant
+advances after a partial crash, retry fails; retain the partial retirement and
+review the additional evidence rather than deleting a marker or rolling back.
+A replica-only marker is also rejected: ordered publication cannot produce it,
+so the missing first decision must not be silently reconstructed from the second.
+
+Any retirement path, even corrupt, truncated, a directory or a symlink, blocks
+live initialization before child-directory repair, plus stale-handle append,
+rotation and new decision scopes. There is no unretire, overwrite or header-
+downgrade API. Well-formed retired journals remain readable: replay validates the
+exact journal tree with only the separately checked marker excluded from its
+pre-retirement digest. Normal checkpoints and backups include the marker; copying
+a retired journal therefore preserves the live-use prohibition. Dedicated pair
+verification also checks the exact original artifact tree and both independent
+source pins, so a candidate cannot bless altered history by rehashing its marker.
+
+An idle upgraded service may still have a listening socket; its next request
+fails the guard and the CLI exits without sending its cached response. Retirement
+does not send OS signals, erase keys, revoke transport identities, undo bytes
+already delivered to another machine or change remote trust policies. A complete
+rollback to an unretired snapshot still needs an independent authority to detect.
+Successful output says `local_pair_retired=true`,
+`global_participants_fenced=false`, `active_cutover=false`, and
+`availability_attested=false`. Do not use a local retirement ID as permission to
+start a replacement. Cross-host acceptance enforcement and one durable activation
+decision remain required; no live receipt or active journal is produced here.
 
 ## Recovery limits and deployment gates
 
@@ -844,8 +944,9 @@ journals and artifacts on these errors; do not delete a challenge to generate a
 sibling. Read-only reconciliation above can identify historical candidates and
 blockers, the handoff stage can package one exact response, and explicit
 application can reconstruct a historical-only auditor copy. Full replay can then
-produce an inactive linked rebaseline proposal. Enforceable participant fencing
-and crash-safe active cutover remain separate work.
+produce an inactive linked rebaseline proposal, followed by explicit retirement
+of guarded local roots. Cross-host acceptance enforcement and crash-safe active
+cutover remain separate work.
 
 Use a local filesystem with working file locks, no-replace hard links, atomic
 directory rename, and fsync semantics. The implementation has lock adapters for

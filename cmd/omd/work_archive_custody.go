@@ -53,7 +53,9 @@ func (values archiveCustodyJournalLimitFlags) validate(flags *flag.FlagSet, jour
 	return values.limits().Validate()
 }
 
-func reportCustodyJournalUsage(journal *workarchive.CustodyJournal, limits workarchive.CustodyJournalLimits) error {
+func reportCustodyJournalUsage(journal interface {
+	Usage() (workarchive.CustodyJournalUsage, error)
+}, limits workarchive.CustodyJournalLimits) error {
 	usage, err := journal.Usage()
 	if err != nil {
 		return err
@@ -344,7 +346,7 @@ func runWorkArchiveCustodyChallengeQUIC(arguments []string) error {
 	var auditorPublicKey [ed25519.PublicKeySize]byte
 	copy(auditorPublicKey[:], auditorKey.Public().(ed25519.PublicKey))
 	policy := policyFlags.policy(auditorPublicKey)
-	var journal *workarchive.CustodyJournal
+	var journal *workarchive.CustodyJournalDecision
 	var journalState workarchive.CustodyJournalState
 	if *journalPath != "" {
 		if custodyPathsOverlap(*journalPath, *artifactDirectory) {
@@ -355,9 +357,18 @@ func runWorkArchiveCustodyChallengeQUIC(arguments []string) error {
 			return lockErr
 		}
 		defer artifactLock.Close()
-		journal, journalState, err = workarchive.OpenOrCreateCustodyJournalWithLimits(
+		opened, _, openErr := workarchive.OpenOrCreateCustodyJournalWithLimits(
 			*journalPath, manifest, receipt, policy, journalLimitFlags.limits(),
 		)
+		if openErr != nil {
+			return openErr
+		}
+		journal, err = opened.AcquireDecision()
+		if err != nil {
+			return err
+		}
+		defer journal.Close()
+		journalState, err = journal.State()
 		if err != nil {
 			return err
 		}

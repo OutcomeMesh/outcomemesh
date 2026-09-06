@@ -236,13 +236,21 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
       sign only in a proposal-specific domain. Require independent review inputs,
       recheck expiry after replay, and preserve immutable proposal files. No live
       receipt, challenge, journal writer, or activation is created.
-    - [ ] Active rebaseline/cutover with enforceable old-participant fencing and
-      restart/crash recovery. Neither a report, handoff, reconstruction, nor
-      signed proposal authorizes a new challenge or resumed authority. A local
-      quarantine header and changed keys are not a cross-host fence. Require
-      durable retirement enforcement at every old authority/acceptance path,
-      then one crash-safe activation decision linked to the reviewed proposal;
-      test stale/restarted participants and crashes between those decisions.
+    - [x] Managed local participant retirement: hold the permanent journal lock
+      across the whole auditor cycle and replica response, including cached
+      replies; verify both exact pinned inventories before retiring either root.
+      Publish proposal-linked no-replace tombstones, preserve every old byte,
+      and complete a crashed pair only from its original durable intent. Keep
+      retired evidence replayable/backuppable but reject live open, stale handles,
+      signing scopes, append, rotation and cached serving. Cover concurrent calls,
+      expiry/rollback, partial-state drift, process kills and actual CLI restarts.
+    - [ ] Cross-host authority/acceptance enforcement and active rebaseline:
+      local tombstones cover only the named roots and upgraded journal-backed
+      participants. They do not revoke copied keys, rolled-back roots, legacy
+      unjournaled services, or another host's acceptance policy. Establish an
+      independently authoritative retirement decision at every acceptance path,
+      then one crash-safe activation linked to the reviewed proposal. Test stale
+      and partitioned/restarted remote participants before allowing any cutover.
   - [ ] Filesystem-full, inode-exhaustion, power-loss, and long-running retention
     campaigns before deployment claims.
   - [x] Isolate the 2026-09-06 tie-pair/campaign early-close race with a

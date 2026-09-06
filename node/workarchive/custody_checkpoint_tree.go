@@ -30,6 +30,15 @@ func digestCustodyEvidenceTree(root string, maximumBytes, maximumPaths uint64) (
 // same bytes. All created files have separate inodes, even source hard links.
 // Failed or canceled copies remain incomplete; this walker never removes them.
 func walkCustodyEvidenceTree(ctx context.Context, root, destination string, maximumBytes, maximumPaths uint64) (CustodyCheckpointTree, error) {
+	return walkCustodyEvidenceTreeExceptRetirement(ctx, root, destination, maximumBytes, maximumPaths, false)
+}
+
+// The only exclusion is the root's separately validated retirement marker.
+// Never use this for copying or an ordinary checkpoint; both must retain it.
+func walkCustodyEvidenceTreeExceptRetirement(ctx context.Context, root, destination string, maximumBytes, maximumPaths uint64, excludeRetirement bool) (CustodyCheckpointTree, error) {
+	if excludeRetirement && destination != "" {
+		return CustodyCheckpointTree{}, ErrCustodyCheckpoint
+	}
 	if ctx == nil {
 		return CustodyCheckpointTree{}, ErrCustodyCheckpoint
 	}
@@ -90,7 +99,16 @@ func walkCustodyEvidenceTree(ctx context.Context, root, destination string, maxi
 					return fail(fmt.Errorf("evidence path ceiling %d", maximumPaths))
 				}
 				discovered += uint64(len(batch))
-				entries = append(entries, batch...)
+				for _, entry := range batch {
+					if excludeRetirement && depth == 0 && entry.Name() == custodyRetirementFileName {
+						info, err := os.Lstat(filepath.Join(path, entry.Name()))
+						if err != nil || !info.Mode().IsRegular() || info.Size() != MaximumCustodyParticipantRetirementBytes {
+							return fail(ErrCustodyRetirement)
+						}
+						continue
+					}
+					entries = append(entries, entry)
+				}
 				if errors.Is(readErr, io.EOF) {
 					break
 				}

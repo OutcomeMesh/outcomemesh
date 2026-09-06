@@ -184,7 +184,12 @@ func NewJournalCustodyReplicaSession(
 	if journal.header.Version != CustodyJournalHeaderVersion0 {
 		return nil, ErrCustodyJournalHistoricalOnly
 	}
-	head, exists, err := journal.Head()
+	decision, err := journal.AcquireDecision()
+	if err != nil {
+		return nil, err
+	}
+	defer decision.Close()
+	head, exists, err := decision.Head()
 	if err != nil {
 		return nil, err
 	}
@@ -326,12 +331,43 @@ func (session *CustodySession) Serve(
 	}
 	session.serveMu.Lock()
 	defer session.serveMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return CustodyServeReport{}, err
+	}
+	var decision *CustodyJournalDecision
+	var currentSequence uint64
+	if session.journal != nil {
+		decision, err = session.journal.AcquireDecision()
+		if err != nil {
+			return CustodyServeReport{}, err
+		}
+		defer func() { _ = stream.Close(); _ = decision.Close() }()
+		if err := ctx.Err(); err != nil {
+			return CustodyServeReport{}, err
+		}
+		state, stateErr := decision.State()
+		if stateErr != nil {
+			return CustodyServeReport{}, stateErr
+		}
+		currentSequence = state.Sequence
+		expectedReceipt, idErr := session.receipt.ID()
+		if session.cachedResponse != nil {
+			expectedReceipt = session.cachedResponse.report.RenewedReceiptID
+		}
+		currentReceipt, currentErr := state.CurrentReceipt.ID()
+		if idErr != nil || currentErr != nil || currentReceipt != expectedReceipt {
+			return CustodyServeReport{}, ErrCustodySession
+		}
+	}
 	respondedAt := session.config.Now()
 	for _, cached := range []*cachedCustodyResponse{
 		session.cachedResponse, session.recoveryResponse,
 	} {
 		if cached == nil || cached.challengeID != challengeID {
 			continue
+		}
+		if decision != nil && cached.report.JournalSequence != currentSequence {
+			return CustodyServeReport{}, ErrCustodySession
 		}
 		if respondedAt < cached.report.RespondedAt ||
 			respondedAt-cached.report.RespondedAt > session.policy.MaximumProofAge {
@@ -380,8 +416,8 @@ func (session *CustodySession) Serve(
 		}
 	}
 	journalSequence := uint64(0)
-	if session.journal != nil {
-		entry, _, appendErr := session.journal.Append(record)
+	if decision != nil {
+		entry, _, appendErr := decision.Append(record)
 		if appendErr != nil {
 			return CustodyServeReport{}, errors.Join(ErrCustodySession, appendErr)
 		}

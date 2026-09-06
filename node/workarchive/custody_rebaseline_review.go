@@ -165,8 +165,18 @@ func (proposal CustodyRebaselineProposal) verifyAssignment(evidence CustodyRebas
 func reviewCustodyRebaselineInputs(ctx context.Context, evidence CustodyRebaselineEvidence, archive CustodyRebaselineArchive,
 	manifest Manifest, initial ReplicaReceipt, oldPolicy CustodyPolicy, next CustodyRebaselineAssignment,
 ) (ReplicaReceipt, error) {
-	fail := func(err error) (ReplicaReceipt, error) {
-		return ReplicaReceipt{}, errors.Join(ErrCustodyRebaseline, err)
+	transfer, err := reviewCustodyRebaselineTransfer(ctx, evidence, archive, manifest, initial, oldPolicy, next)
+	if err != nil {
+		return ReplicaReceipt{}, err
+	}
+	return transfer.Entry.Record.RenewedReceipt, nil
+}
+
+func reviewCustodyRebaselineTransfer(ctx context.Context, evidence CustodyRebaselineEvidence, archive CustodyRebaselineArchive,
+	manifest Manifest, initial ReplicaReceipt, oldPolicy CustodyPolicy, next CustodyRebaselineAssignment,
+) (CustodyHistoricalTransfer, error) {
+	fail := func(err error) (CustodyHistoricalTransfer, error) {
+		return CustodyHistoricalTransfer{}, errors.Join(ErrCustodyRebaseline, err)
 	}
 	if ctx == nil || evidence.ApplicationID.IsZero() || archive.Directory == "" ||
 		archive.Limits.Validate() != nil || oldPolicy.validate() != nil || next.Policy.validate() != nil ||
@@ -220,5 +230,5 @@ func reviewCustodyRebaselineInputs(ctx context.Context, evidence CustodyRebaseli
 	if err := ctx.Err(); err != nil {
 		return fail(err)
 	}
-	return transfer.Entry.Record.RenewedReceipt, nil
+	return transfer, nil
 }

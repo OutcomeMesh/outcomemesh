@@ -417,6 +417,10 @@ func (journal *CustodyJournal) Head() (CustodyJournalEntry, bool, error) {
 		return CustodyJournalEntry{}, false, err
 	}
 	defer lock.Close()
+	return journal.headLocked()
+}
+
+func (journal *CustodyJournal) headLocked() (CustodyJournalEntry, bool, error) {
 	state, err := journal.scan()
 	if err != nil {
 		return CustodyJournalEntry{}, false, err
@@ -463,6 +467,13 @@ func (journal *CustodyJournal) append(
 		return CustodyJournalEntry{}, false, err
 	}
 	defer lock.Close()
+	return journal.appendLocked(record, hooks)
+}
+
+func (journal *CustodyJournal) appendLocked(record CustodyRecord, hooks custodyJournalHooks) (CustodyJournalEntry, bool, error) {
+	if err := requireActiveCustodyJournal(journal.path); err != nil {
+		return CustodyJournalEntry{}, false, err
+	}
 	state, err := journal.scan()
 	if err != nil || state.Sequence == ^uint64(0) {
 		return CustodyJournalEntry{}, false, errors.Join(ErrCustodyJournal, err)
@@ -572,6 +583,13 @@ func (journal *CustodyJournal) rotate(hooks custodyJournalHooks) (bool, error) {
 		return false, err
 	}
 	defer lock.Close()
+	return journal.rotateLocked(hooks)
+}
+
+func (journal *CustodyJournal) rotateLocked(hooks custodyJournalHooks) (bool, error) {
+	if err := requireActiveCustodyJournal(journal.path); err != nil {
+		return false, err
+	}
 	if _, err := journal.scan(); err != nil {
 		return false, err
 	}
@@ -628,6 +646,9 @@ func initializeCustodyJournal(path string, header CustodyJournalHeader, limits C
 		return ErrCustodyJournalHistoricalOnly
 	}
 	if err := requireCustodyJournalDirectory(path); err != nil {
+		return err
+	}
+	if err := requireActiveCustodyJournal(path); err != nil {
 		return err
 	}
 	// Reject a quarantine header before creating or repairing any child path.
@@ -778,6 +799,9 @@ func (journal *CustodyJournal) scan() (CustodyJournalState, error) {
 			return CustodyJournalState{}, err
 		}
 	}
+	if err := verifyCustodyRetirementJournal(journal.path, header, headerBytes, state); err != nil {
+		return CustodyJournalState{}, err
+	}
 	return state, nil
 }
 
@@ -794,6 +818,12 @@ func (journal *CustodyJournal) validateLayout() error {
 		custodyJournalPendingName: true,
 	}
 	for _, entry := range rootEntries {
+		if entry.Name() == custodyRetirementFileName {
+			if entry.Type()&os.ModeSymlink != 0 || entry.IsDir() {
+				return ErrCustodyRetirement
+			}
+			continue
+		}
 		wantDirectory, exists := expectedRoot[entry.Name()]
 		if !exists || entry.Type()&os.ModeSymlink != 0 || entry.IsDir() != wantDirectory {
 			return ErrCustodyJournal

@@ -181,6 +181,8 @@ func TestProcessArchiveCustodyRebaselineProposesWithoutCutover(t *testing.T) {
 	if _, err := workarchive.VerifyCustodyBackup(rBackup, rID, f.manifest, initial, policy); err != nil {
 		t.Fatal(err)
 	}
+	checkProcessLocalCustodyRetirement(t, f, args, fields["id"], aJournal, artifacts, rJournal, initialPath,
+		replicaKey, auditorKey, challenge)
 }
 
 func mustReadProcessRebaseline(t testing.TB, path string) []byte {

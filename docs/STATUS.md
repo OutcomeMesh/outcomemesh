@@ -540,9 +540,23 @@ Implemented in an isolated, not-yet-activated consensus package:
   Tests cover full replay/corruption, wrong trust and re-signed wrong bindings,
   key reuse, cancellation, expiry during replay, canonical byte mutations, and
   an actual CLI create/verify/refusal workflow with expired historical receipts.
-  Enforceable old-participant fencing and active rebaseline/cutover remain open;
-  neither a proposal nor a historical reconstruction can become a live receipt
-  or participant. A new signature is not a cross-host fence or proof of uptime.
+  Local retirement now guards the entire auditor cycle and replica response
+  with the permanent journal lock, including replies already cached in memory.
+  It drains those scopes, requires the exact pinned auditor/artifact and replica
+  inventories, then publishes one permanent proposal-linked marker per journal.
+  A crash between markers leaves a partial retirement, not a successful fence;
+  exact retry can finish the original intent after proposal expiry only if the
+  other participant has not changed. Live opens, stale handles, append, rotation
+  and cached serving reject retirement. Historical replay and backup preserve
+  the marker and verify the journal's exact pre-retirement inventory. Unit tests
+  cover cache draining, competing requests, drift, rehashed markers and time
+  boundaries; six process-kill points and a real already-started QUIC replica
+  plus refused auditor/replica restarts cover the runtime path. No source backup,
+  historical reconstruction, receipt signature or proposal is rewritten.
+  Cross-host authority/acceptance enforcement and active cutover remain open:
+  local markers do not stop legacy binaries, copied/rolled-back directories,
+  unjournaled signing or independent remote acceptance. Neither a proposal nor
+  a local retirement pair is a new live receipt or global fence.
   QUIC follow-up (2026-09-06): the first combined process run failed in
   `TestProcessTiePairQUICReachesIndependentV2ObserversAndRecoversAck` with a
   remote QUIC close, and in the coordinator-journal-before-rename case of
