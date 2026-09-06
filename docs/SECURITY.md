@@ -402,8 +402,8 @@ Body segmentation deletes no history and startup repairs an interrupted active
 directory recreation. A retry after challenge expiry is restricted to an
 already committed response that still passes the original proof-age limit.
 The journal is local evidence, not a remote rollback anchor: deleting a complete
-valid suffix or restoring an old complete copy requires an independent retained
-head to detect. Operators must protect the journal and lock inode from external
+valid suffix or restoring an old complete copy requires an independently retained
+checkpoint to detect. Operators must protect the journal and lock inode from external
 mutation and use a filesystem supporting the documented durability primitives.
 Local growth admission counts logical bytes and all journal paths, including
 orphan bodies, duplicate hard links, pending files, and directories. Body/slot
@@ -413,8 +413,23 @@ a hard replay path ceiling before path/slot indexes are allocated. All writers
 must use the intended local limits: they are per handle, not a volume quota or
 an immutable protocol rule. Other disk consumers and filesystem metadata remain
 outside these counters. External timers, physical free-space/inode monitoring,
-evidence/artifact retention, and long-outage reconciliation remain deployment
+managed evidence backups, and long-outage reconciliation remain deployment
 concerns; see `CUSTODY.md`.
+
+Custody checkpoints bind both the replayed journal and the entire auditor
+artifact tree, not just the head. The permanent artifact lock precedes the
+journal lock and covers the auditor's pre-dial signed request as well as its
+local recovery. All writers must use the same artifact/journal pair and honor
+these locks. The verifier requires an externally supplied nonzero checkpoint
+ID, rejects substitutions and exact-inventory mismatches, and does not repair
+the candidate. Artifact hashes preserve bytes; they do not validate arbitrary
+pending files as decisions. Root names and file metadata are not authenticated,
+and no protection against a hostile concurrent filesystem writer is claimed.
+The tool does not provide external pin freshness, automatic backups, storage
+independence, or consensus finality. A stale or missing independent pin cannot
+establish the latest state. A later known decision requires reconciliation,
+even when an older backup verifies. Retain all evidence, including partial
+files, and never run two restored copies as concurrent decision authorities.
 
 With an explicitly non-zero local canonical-retention policy, one synchronous
 schema-4 batch may replace the strict prefix before the selected archive anchor

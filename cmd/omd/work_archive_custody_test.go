@@ -110,6 +110,11 @@ func TestCustodyCommandsRequireFourDistinctIdentities(t *testing.T) {
 }
 
 func TestCustodyCommandsRejectIncompleteConfiguration(t *testing.T) {
+	for _, command := range []string{"work-archive-custody-checkpoint", "work-archive-custody-verify-checkpoint"} {
+		if err := run([]string{command}); err == nil {
+			t.Fatalf("%s accepted an incomplete configuration", command)
+		}
+	}
 	if err := run([]string{"work-archive-custody-serve-quic"}); err == nil {
 		t.Fatal("custody replica accepted an incomplete configuration")
 	}

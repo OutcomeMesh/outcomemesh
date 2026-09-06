@@ -77,8 +77,11 @@ adds a replay-verified renewal chain, an interval gate for external timers,
 local recovery of unfinished outputs, and segment rotation that preserves all
 evidence. Local byte/path growth limits include temporary files and retain
 read/retry access to committed evidence when a cap is lowered. They are not a
-physical disk quota. See [the custody runbook](docs/CUSTODY.md) for the operator
-workflow and remaining retention/reconciliation gates. Separate
+physical disk quota. Paired checkpoints bind the journal and auditor artifacts,
+including pending challenges, for cold-copy verification against an independently
+retained ID. They do not copy data or authorize deletion. See
+[the custody runbook](docs/CUSTODY.md) for retention rules and remaining
+backup/reconciliation gates. Separate
 archive-object serve/fetch commands replay the source before import, resume into
 an append-only destination store, and publish only a complete replayed archive.
 Together with unaudited PoW parameters, the raw-seed CLI wallet, and provisional

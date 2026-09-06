@@ -175,6 +175,123 @@ invocation restores the exact head artifacts and returns `recovered=true`.
 Existing conflicting artifacts fail rather than being overwritten. An incomplete
 rotation at the head threshold is retried during startup recovery.
 
+The permanent `custody.lock` in the artifact root now serializes the whole
+journal-mode auditor invocation, including pre-dial challenge publication and
+offline recovery. The lock order is artifacts first, journal second; journal
+operations still release their own lock before network I/O. Contention returns
+the same bounded, retryable busy error as journal locking. Keep one stable
+artifact root paired with each auditor journal, and use this version for every
+writer. Older binaries, a different artifact root for the same journal, and
+out-of-band file edits do not participate in that serialization. Never delete
+either lock file to clear contention.
+
+## Evidence retention and cold-copy checkpoints
+
+For this experimental version the retention rule is **retain all evidence**.
+Receipt expiry is not a deletion deadline. Keep the initial header, all slots,
+active and sealed bodies, unreferenced bodies, pending files, and the entire
+auditor artifact directory, including unfinished and partially written files.
+Do not discard an old segment, challenge, or checkpoint to satisfy a disk cap.
+Increase storage capacity or stop admitting new cycles. A future deletion or
+compaction policy needs its own review and recovery tests; none is enabled here.
+
+`work-archive-custody-checkpoint` produces a small canonical `.omccp` inventory,
+not a backup of the evidence. It replays the complete existing journal against
+the supplied manifest, initial receipt, and fixed auditor policy, then hashes
+both directory trees under the artifact/journal locks. It binds the header,
+sequence, head entry, current receipt, every relative file name and byte, and
+every directory, including empty ones. The auditor tree is required unless the
+operator explicitly selects `--replica-only`. A pending signed challenge can
+change this checkpoint even when the journal head has not advanced.
+
+Tree hashing streams file contents and bounds directory metadata before sorting.
+Each tree is limited to 1 TiB logical file bytes, 1,048,576 paths, and directory
+depth three below its root. Hard links count once per path. These are checkpoint
+inspection ceilings, not new growth limits for the auditor. Symlinks and special
+files fail closed. Root names, inodes, timestamps, ownership, and permissions
+are not part of the digest, so a byte-preserving cold copy can be checked on a
+different volume. Protect copy permissions and private material separately.
+The journal is semantically replayed; arbitrary artifact/temporary bytes are
+preserved and hashed, not promoted to valid decisions. The auditor still checks
+their canonical evidence and challenge settings when it resumes.
+
+Capture on the auditor, using the same policy flags as the running command:
+
+```sh
+omd work-archive-custody-checkpoint \
+  --journal auditor-journal --artifacts auditor-cycles \
+  --manifest manifest.omwm --receipt initial.omrr \
+  --auditor-public-key "$AUDITOR_PUBLIC_KEY" \
+  --checkpoint checkpoints/custody-000001.omccp
+```
+
+The checkpoint output must be outside both trees, including symlink and existing
+case-insensitive directory aliases. Publication is mode 0600,
+fsynced, and no-replace; an identical retry is allowed, a changed inventory
+requires a new output name. Capture can create an absent artifact lock for a
+stopped older installation, but never initializes a journal or repairs a missing
+active directory. Finish any interrupted rotation on the authoritative instance
+before checkpointing; preserve the original failure evidence for diagnosis.
+
+Cold-backup procedure:
+
+1. Stop the local writer and its timer/supervisor. For coordinated participant
+   backups, stop both sides before taking their separate checkpoints. Keep them
+   stopped through copying and verification; capture releases its locks on
+   return and does not create a filesystem snapshot.
+2. Capture a new checkpoint. Retain the printed `id`, checkpoint bytes, trusted
+   manifest, initial receipt, and policy configuration in an independent,
+   access-controlled failure domain. A checkpoint stored only beside its backup
+   cannot detect replacement of both with an older valid pair. Keep the history
+   and identify which pin is current; never derive `--expected-id` from the copy
+   being tested. This tool does not provide an external pin service.
+3. Copy the **entire** journal and auditor trees to a fresh, non-serving location,
+   including dotfiles, empty directories, and permanent lock files. Use a
+   byte-preserving cold-copy or filesystem-snapshot facility, then durably flush
+   it using that platform's supported backup procedure. Do not copy over an
+   existing authoritative journal. No copying, uploading, deletion, or service
+   cutover is performed by the checkpoint commands.
+4. Check the copy before starting any recovery command, using the independently
+   retained checkpoint and ID:
+
+   ```sh
+   omd work-archive-custody-verify-checkpoint \
+     --journal restored/auditor-journal --artifacts restored/auditor-cycles \
+     --manifest manifest.omwm --receipt initial.omrr \
+     --auditor-public-key "$AUDITOR_PUBLIC_KEY" \
+     --checkpoint checkpoints/custody-000001.omccp \
+     --expected-id "$INDEPENDENT_CHECKPOINT_ID"
+   ```
+
+   Verification checks the pin first, replays the journal, and requires an exact
+   inventory match. It requires existing lock files and never creates, repairs,
+   overwrites, or deletes evidence. The local lock files need read/write access
+   for kernel locking. Missing pending artifacts, an older valid prefix, a
+   same-head copy missing a later challenge, and even a newer valid head fail.
+   This is exact-copy verification, not ancestry or freshness reconciliation.
+5. Before a real cutover, confirm that no later local or remote decisions are
+   known and that the old authority cannot restart. Resume only one instance
+   with the same identities, trust configuration, and challenge settings. A
+   pending verified record can finish locally without changing its challenge.
+   If later evidence exists, the independently retained pin is missing or stale,
+   or the outage exceeds the freshness bounds, preserve both copies and stop:
+   do not regenerate a challenge or silently rebaseline. The reconciliation
+   workflow remains a separate gate.
+
+For a replica checkpoint, replace `--artifacts ...` with `--replica-only` in both
+commands. Back up the replica object store separately and use the existing full
+archive materialization/replay checks; this checkpoint does not inventory it.
+Transport/evidence private seeds also need a separate secure recovery policy;
+these two commands need only the auditor public key and do not package seeds.
+
+A successful check establishes integrity at the checkpoint, not that it contains
+the latest possible decision or that a physical backup survived power loss.
+Renewals or artifact writes after capture need a new independent checkpoint and
+backup. The restore drill tests an exact pending-record continuation in a new
+directory without a live replica; managed backup publication, external pin
+maintenance, cross-host cutover, and long-duration filesystem-fault campaigns
+remain deployment work.
+
 ## Recovery limits and deployment gates
 
 An expired challenge can retrieve only an already committed response whose
@@ -193,7 +310,8 @@ they are not power-loss or disk-exhaustion certification.
 
 The journal assumes exclusive operator control over its files. It detects
 corruption and gaps, but a complete rollback to an earlier valid prefix requires
-an independently retained head to detect. Two separately copied journals are
-also separate decision authorities. Policy migration, evidence deletion,
-artifact retention, cross-host reconciliation, and long filesystem-fault
-campaigns remain activation gates.
+an independently retained checkpoint to detect. The paired inventory also covers
+signed intentions that have not reached the head. Two separately copied journals
+are separate decision authorities. Policy migration, evidence deletion,
+managed backup/pin maintenance, cross-host reconciliation, and long
+filesystem-fault campaigns remain activation gates.

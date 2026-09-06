@@ -456,9 +456,22 @@ Implemented in an isolated, not-yet-activated consensus package:
   startup usage report. Boundary tests cover no-write refusals, abandoned-link
   completion, rotation repair, and overflow; real process tests exercise tight
   budgets, offline recovery after increasing a cap, and over-budget redelivery.
-  This is logical accounting, not physical free-space reservation. Evidence and
-  artifact retention/compaction, ENOSPC/inode-fault campaigns, and long-outage
-  reconciliation remain pending.
+  This is logical accounting, not physical free-space reservation.
+  The evidence-retention rule is now explicit: keep the full journal and auditor
+  tree, including uncommitted and partial files; expiry does not authorize
+  deletion. A permanent artifact lock serializes entire auditor invocations.
+  New canonical custody checkpoints take artifact then journal locks, replay the
+  chain, and hash both complete inventories with bounded streaming file reads.
+  CLI capture publishes a no-replace checkpoint; verification requires an
+  independently retained ID and never initializes or repairs the copy. Tests
+  distinguish an older valid prefix and a same-head copy missing a later signed
+  request, preserve orphans/empty/partial files, reject wrong trust and pins, and
+  check lock ordering, path/byte/depth ceilings, case-insensitive directory
+  aliases, and canonical encoding. A process
+  restore drill verifies a new-directory cold copy and finishes its pending
+  record offline with unchanged challenge/response bytes. Managed backup
+  publication, external pin maintenance, cross-host cutover, compaction review,
+  ENOSPC/inode-fault campaigns, and long-outage reconciliation remain pending.
   QUIC follow-up (2026-09-06): the first combined process run failed in
   `TestProcessTiePairQUICReachesIndependentV2ObserversAndRecoversAck` with a
   remote QUIC close, and in the coordinator-journal-before-rename case of
@@ -723,7 +736,7 @@ No WorkGraph field has entered a version-0 block yet. The v1 store and opt-in
 QUIC session remain isolated from every ordinary v0 chain/CLI path and are
 reachable only through the explicitly marked experimental commands;
 adversarial discovery/eclipse and longer real-QUIC rapid-parent churn soaks,
-topology-derived peer selection, custody evidence/artifact retention and
+topology-derived peer selection, managed custody backups/compaction and
 long-outage reconciliation,
 canonical-prune
 disk-exhaustion/long-soak campaigns, production gossip-budget calibration, and

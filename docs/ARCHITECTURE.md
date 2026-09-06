@@ -313,7 +313,14 @@ the journal lock; rotation reserves one directory. Lowered limits preserve
 historical replay and exact committed retries. A streaming inventory caps replay
 metadata at 1,048,576 paths. These limits neither reserve physical filesystem
 space nor cover the separate auditor artifacts or replica object store.
-Record/artifact retention and compaction, broader filesystem-fault
+The auditor's permanent artifact lock covers the whole invocation, before any
+journal lock. Paired custody checkpoints take those locks in the same order,
+fully replay the journal, and commit to both complete directory inventories.
+An independent checkpoint ID lets an operator reject a rolled-back cold copy,
+including a same-head copy missing an uncommitted signed challenge. Exact-copy
+verification never initializes or repairs evidence. The retention policy is to
+keep all evidence; checkpointing neither copies nor deletes it. Managed backup
+publication, external pin maintenance, compaction review, broader filesystem-fault
 soaks, and outbound share publication remain. The libp2p
 adapter carries both the
 versioned chain and separate WorkGraph share sessions under distinct opt-in

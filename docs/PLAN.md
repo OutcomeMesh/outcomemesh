@@ -196,9 +196,13 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
 
   - [x] Journal byte/path admission limits, crash-completion reserve, usage
     reporting, and reduced-limit recovery tests.
-  - [ ] Define evidence retention and backup/independent-head requirements,
-    including the separate auditor artifact directory; no automatic deletion
-    before these rules and their recovery tests are reviewed.
+  - [x] Define non-deleting evidence retention and cold-backup/independent-pin
+    requirements, including the separate auditor artifact directory. Add paired
+    canonical checkpoints, exact-copy verification without repair, whole-cycle
+    auditor locking, and a pending-record restore drill. No automatic deletion.
+  - [ ] Managed crash-safe backup publication, independent pin maintenance,
+    cross-host cutover review, and deployment-scale restore drills. A manually
+    verified cold copy does not close these operational gates.
   - [ ] Explicit long-outage reconciliation/rebaseline without silently replacing
     an expired challenge or discarding the previous evidence chain.
   - [ ] Filesystem-full, inode-exhaustion, power-loss, and long-running retention

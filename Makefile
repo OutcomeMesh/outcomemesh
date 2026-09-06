@@ -72,11 +72,12 @@ test-fuzz-smoke:
 	$(GO) test ./node/workarchive -run '^$$' -fuzz '^FuzzDecodeCustodyJournalHeaderNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/workarchive -run '^$$' -fuzz '^FuzzDecodeCustodyJournalEntryNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/workarchive -run '^$$' -fuzz '^FuzzDecodeCustodyJournalSlotNeverPanics$$' -fuzztime=$(FUZZTIME)
+	$(GO) test ./node/workarchive -run '^$$' -fuzz '^FuzzDecodeCustodyCheckpointNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/workarchive -run '^$$' -fuzz '^FuzzReadCustodySessionFrameNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./sim/workgraphmodel -run '^$$' -fuzz '^FuzzRunSelfishStrategiesNeverBreakAccounting$$' -fuzztime=$(FUZZTIME)
 
 test-process:
-	$(GO) test -tags=integration ./cmd/omd -run '^TestProcess(QUICRestartSoak|WorkGraphActivationQUICRestart|Archive(ObjectQUICMaterializesAndRecoversAcrossRestart|Custody(QUICSurvivesReplicaRestart|JournalRunsTwoRestartedCycles))|ControlledTieProducerRecoversWaitingState|TiePair(QUICReachesIndependentV2ObserversAndRecoversAck|CompletionWaitsForCoordinatorEOF)|TieCampaign.*)$$' -count=1 -timeout=10m
+	$(GO) test -tags=integration ./cmd/omd -run '^TestProcess(QUICRestartSoak|WorkGraphActivationQUICRestart|Archive(ObjectQUICMaterializesAndRecoversAcrossRestart|Custody(QUICSurvivesReplicaRestart|JournalRunsTwoRestartedCycles|CheckpointRestoresPendingCycle))|ControlledTieProducerRecoversWaitingState|TiePair(QUICReachesIndependentV2ObserversAndRecoversAck|CompletionWaitsForCoordinatorEOF)|TieCampaign.*)$$' -count=1 -timeout=10m
 	$(GO) test -tags=integration ./node/workchain -run '^TestPebbleProcessCrashAtomicity$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./node/workarchive -run '^Test(ArchiveRestoreProcessCrashAtomicity|Custody(Record|Journal)ProcessCrashAtomicity)$$' -count=1 -timeout=2m
 

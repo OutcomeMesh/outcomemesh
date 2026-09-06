@@ -12,18 +12,44 @@ var ErrCustodyJournalBusy = errors.New("custody journal is busy; retry the opera
 // The lock inode is permanent. Closing the descriptor releases the kernel
 // lock, including on process death; deleting it would permit split ownership.
 func acquireCustodyJournalLock(root string) (*os.File, error) {
+	return acquireCustodyEvidenceLock(root, custodyJournalLockName, true)
+}
+
+// AcquireCustodyArtifacts serializes the whole auditor invocation, including
+// challenge publication before the journal append. Always acquire this lock
+// before opening or locking its journal. Close releases it; never unlink it.
+func AcquireCustodyArtifacts(root string) (*os.File, error) {
+	if root == "" {
+		return nil, ErrCustodyJournal
+	}
+	if err := makeCustodyJournalRoot(root); err != nil {
+		return nil, err
+	}
+	return acquireCustodyEvidenceLock(root, custodyArtifactsLockName, true)
+}
+
+const custodyArtifactsLockName = "custody.lock"
+
+func acquireCustodyEvidenceLock(root, name string, create bool) (*os.File, error) {
 	if err := requireCustodyJournalDirectory(root); err != nil {
 		return nil, err
 	}
-	path := filepath.Join(root, custodyJournalLockName)
+	path := filepath.Join(root, name)
 	info, err := os.Lstat(path)
+	if !create && err != nil {
+		return nil, err
+	}
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
 	if err == nil && (!info.Mode().IsRegular() || info.Size() != 0) {
 		return nil, ErrCustodyJournal
 	}
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+	flags := os.O_RDWR
+	if create {
+		flags |= os.O_CREATE
+	}
+	file, err := os.OpenFile(path, flags, 0o600)
 	if err != nil {
 		return nil, err
 	}

@@ -350,6 +350,11 @@ func runWorkArchiveCustodyChallengeQUIC(arguments []string) error {
 		if custodyPathsOverlap(*journalPath, *artifactDirectory) {
 			return errors.New("custody journal and cycle artifacts must be separate directories")
 		}
+		artifactLock, lockErr := workarchive.AcquireCustodyArtifacts(*artifactDirectory)
+		if lockErr != nil {
+			return lockErr
+		}
+		defer artifactLock.Close()
 		journal, journalState, err = workarchive.OpenOrCreateCustodyJournalWithLimits(
 			*journalPath, manifest, receipt, policy, journalLimitFlags.limits(),
 		)
@@ -679,45 +684,7 @@ func custodyArtifactExists(path string) bool {
 }
 
 func custodyPathsOverlap(left, right string) bool {
-	left, leftErr := resolveCustodyArtifactPath(left)
-	right, rightErr := resolveCustodyArtifactPath(right)
-	if leftErr != nil || rightErr != nil {
-		return true
-	}
-	contains := func(parent, child string) bool {
-		relative, err := filepath.Rel(parent, child)
-		return err == nil && relative != ".." &&
-			!strings.HasPrefix(relative, ".."+string(filepath.Separator))
-	}
-	return contains(left, right) || contains(right, left)
-}
-
-func resolveCustodyArtifactPath(path string) (string, error) {
-	path, err := filepath.Abs(path)
-	if err != nil {
-		return "", err
-	}
-	var suffix []string
-	for {
-		if _, err := os.Lstat(path); err == nil {
-			resolved, err := filepath.EvalSymlinks(path)
-			if err != nil {
-				return "", err
-			}
-			for index := len(suffix) - 1; index >= 0; index-- {
-				resolved = filepath.Join(resolved, suffix[index])
-			}
-			return resolved, nil
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return "", err
-		}
-		parent := filepath.Dir(path)
-		if parent == path {
-			return "", errors.New("cannot resolve custody artifact path")
-		}
-		suffix = append(suffix, filepath.Base(path))
-		path = parent
-	}
+	return workarchive.CustodyEvidencePathsOverlap(left, right)
 }
 
 func loadArchiveManifest(path string) (workarchive.Manifest, error) {
