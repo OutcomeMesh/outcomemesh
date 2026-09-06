@@ -484,6 +484,14 @@ the renewed receipt. One-shot `work-archive-custody-serve-quic` and
 transport peers and four-way transport/evidence key separation. Process tests
 cover the publication crash boundary, replica restart, exact response replay,
 and auditor recovery without a live replica.
+Journal mode now extends this to repeated cycles: the immutable initial receipt
+and policy digest lead a gapless chain of complete custody records. Permanent
+sequence slots commit each decision, while large content-addressed bodies may
+be moved into non-deleting segments. Kernel locking serializes replay, append,
+and rotation across processes. The auditor's interval gate is derived from the
+replayed receipt, and per-cycle artifacts preserve exact retries and local
+completion after a crash. See `CUSTODY.md` for flags, recovery behavior, and the
+remaining retention/reconciliation limits.
 
 The schema-4 pruning batch is permitted only with an explicitly non-zero local
 `CanonicalRetention`; zero is the default. The archive anchor must remain on
@@ -546,7 +554,7 @@ without network access.
 This does not create network finality or prove independent failure domains.
 After pruning, the local node deliberately rejects forks whose parent is below
 its floor; enabling it is therefore an operator-selected local finalization
-horizon. Automated custody scheduling and evidence rotation,
+horizon. Custody evidence retention, disk budgets, long-outage reconciliation,
 disk-exhaustion campaigns, and longer physical-filesystem soaks remain before
 public activation. The
 integration suite now covers all four synchronous WorkChain batch classes:

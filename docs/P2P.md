@@ -535,8 +535,16 @@ verified response record before exposing the renewed receipt, and can finish a
 retry locally after a crash. Both commands require distinct transport and
 portable evidence keys. A two-process QUIC test completes an audit, restarts the
 replica on the same keys and record, receives the byte-identical response, then
-proves auditor-side recovery without a live server. Automated scheduling and
-retention/rotation of accumulated records are still pending.
+proves auditor-side recovery without a live server. Both commands also support
+policy-bound custody journals. The replica journals a response before sending;
+after restart it can redeliver the last response or extend the current head.
+An expired request may retrieve only its existing, still-fresh proof; it cannot
+cause a new proof. The auditor uses deterministic cycle artifacts, restores
+missing head outputs locally, and skips network activity until its configured
+interval is due. Non-deleting segment rotation and cross-process disk locking
+preserve the receipt chain. The wire framing and protocol ID remain unchanged.
+See `CUSTODY.md`; external timers, long-outage reconciliation, and evidence
+deletion policy remain operator/deployment concerns.
 
 The activation-aware chain session is a third protocol scope under
 `/outcomemesh/chain/1`; it never falls back to `/outcomemesh/session/0`. Its

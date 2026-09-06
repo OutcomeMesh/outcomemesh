@@ -72,7 +72,11 @@ replica returns the exact validated chunks, a signed digest proof, and a linked
 version-1 receipt with the requested renewal deadline committed by the
 challenge. Legacy full-replay version-0 receipts remain valid. The custody
 protocol is exposed through one-shot replica and auditor `omd` commands with
-separate transport/evidence keys and immutable restart records. Separate
+separate transport/evidence keys and immutable restart records. Journal mode
+adds a replay-verified renewal chain, an interval gate for external timers,
+local recovery of unfinished outputs, and segment rotation that preserves all
+evidence. See [the custody runbook](docs/CUSTODY.md) for the operator workflow
+and remaining retention/reconciliation gates. Separate
 archive-object serve/fetch commands replay the source before import, resume into
 an append-only destination store, and publish only a complete replayed archive.
 Together with unaudited PoW parameters, the raw-seed CLI wallet, and provisional
@@ -114,7 +118,9 @@ custody-record publication on both sides of its atomic link,
 then runs two real `omd` custody processes, restarts the replica, and requires
 the exact first proof and renewed receipt to be replayed. It also imports,
 transfers, materializes, fully replays, locally recovers, and repeats an archive
-object fetch after restarting the pinned source. Raise the
+object fetch after restarting the pinned source. Custody journal process tests
+cover body/slot/segment crash boundaries, lost-response redelivery, two cycles
+with replica restart, and local restoration of completed artifacts. Raise the
 v0 QUIC soak length with, for example,
 `OUTCOMEMESH_SOAK_CYCLES=25 make test-process` (hard cap: 100 cycles).
 The completed campaign case also runs the read-only coordinator/observer audit

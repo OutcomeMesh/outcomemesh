@@ -18,13 +18,16 @@ import (
 )
 
 const (
-	archiveCrashModeEnvironment        = "OUTCOMEMESH_ARCHIVE_CRASH_MODE"
-	archiveCrashSourceEnvironment      = "OUTCOMEMESH_ARCHIVE_CRASH_SOURCE"
-	archiveCrashDestinationEnvironment = "OUTCOMEMESH_ARCHIVE_CRASH_DESTINATION"
-	archiveCrashMarkerEnvironment      = "OUTCOMEMESH_ARCHIVE_CRASH_MARKER"
-	custodyCrashModeEnvironment        = "OUTCOMEMESH_CUSTODY_CRASH_MODE"
-	custodyCrashPathEnvironment        = "OUTCOMEMESH_CUSTODY_CRASH_PATH"
-	custodyCrashMarkerEnvironment      = "OUTCOMEMESH_CUSTODY_CRASH_MARKER"
+	archiveCrashModeEnvironment          = "OUTCOMEMESH_ARCHIVE_CRASH_MODE"
+	archiveCrashSourceEnvironment        = "OUTCOMEMESH_ARCHIVE_CRASH_SOURCE"
+	archiveCrashDestinationEnvironment   = "OUTCOMEMESH_ARCHIVE_CRASH_DESTINATION"
+	archiveCrashMarkerEnvironment        = "OUTCOMEMESH_ARCHIVE_CRASH_MARKER"
+	custodyCrashModeEnvironment          = "OUTCOMEMESH_CUSTODY_CRASH_MODE"
+	custodyCrashPathEnvironment          = "OUTCOMEMESH_CUSTODY_CRASH_PATH"
+	custodyCrashMarkerEnvironment        = "OUTCOMEMESH_CUSTODY_CRASH_MARKER"
+	custodyJournalCrashModeEnvironment   = "OUTCOMEMESH_CUSTODY_JOURNAL_CRASH_MODE"
+	custodyJournalCrashPathEnvironment   = "OUTCOMEMESH_CUSTODY_JOURNAL_CRASH_PATH"
+	custodyJournalCrashMarkerEnvironment = "OUTCOMEMESH_CUSTODY_JOURNAL_CRASH_MARKER"
 )
 
 func TestArchiveRestoreProcessCrashAtomicity(t *testing.T) {
@@ -119,6 +122,54 @@ func TestCustodyRecordProcessCrashAtomicity(t *testing.T) {
 	}
 }
 
+func TestCustodyJournalProcessCrashAtomicity(t *testing.T) {
+	fixture := newCustodyRecordFixture(t)
+	for _, boundary := range []string{"body", "slot", "seal"} {
+		t.Run(boundary, func(t *testing.T) {
+			journalPath := filepath.Join(t.TempDir(), "custody-journal")
+			marker := filepath.Join(t.TempDir(), "reached")
+			command := exec.Command(
+				os.Args[0], "-test.run=^TestCustodyJournalCrashHelper$", "-test.count=1",
+			)
+			command.Env = append(os.Environ(),
+				custodyJournalCrashModeEnvironment+"="+boundary,
+				custodyJournalCrashPathEnvironment+"="+journalPath,
+				custodyJournalCrashMarkerEnvironment+"="+marker,
+			)
+			if err := command.Start(); err != nil {
+				t.Fatal(err)
+			}
+			waitForArchiveCrashMarker(t, marker, command)
+			if err := command.Process.Kill(); err != nil {
+				t.Fatal(err)
+			}
+			_ = command.Wait()
+
+			journal, state, err := OpenOrCreateCustodyJournal(
+				journalPath, fixture.manifest, fixture.receipt, fixture.policy,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantSequence := uint64(0)
+			if boundary != "body" {
+				wantSequence = 1
+			}
+			if state.Sequence != wantSequence {
+				t.Fatalf("post-%s crash sequence=%d want=%d", boundary, state.Sequence, wantSequence)
+			}
+			entry, created, err := journal.Append(fixture.record)
+			if err != nil || entry.Sequence != 1 || created != (boundary == "body") {
+				t.Fatalf("post-%s append entry=%+v created=%t error=%v", boundary, entry, created, err)
+			}
+			if state, err := journal.State(); err != nil || state.Sequence != 1 ||
+				state.CurrentReceipt != fixture.record.RenewedReceipt {
+				t.Fatalf("post-%s recovered state=%+v error=%v", boundary, state, err)
+			}
+		})
+	}
+}
+
 func TestArchiveRestoreCrashHelper(t *testing.T) {
 	mode := os.Getenv(archiveCrashModeEnvironment)
 	if mode == "" {
@@ -179,6 +230,39 @@ func TestCustodyRecordCrashHelper(t *testing.T) {
 		fixture.policy, hooks,
 	)
 	t.Fatalf("custody crash hook returned: %v", err)
+}
+
+func TestCustodyJournalCrashHelper(t *testing.T) {
+	mode := os.Getenv(custodyJournalCrashModeEnvironment)
+	if mode == "" {
+		t.Skip("subprocess helper")
+	}
+	journalPath := os.Getenv(custodyJournalCrashPathEnvironment)
+	marker := os.Getenv(custodyJournalCrashMarkerEnvironment)
+	fixture := newCustodyRecordFixture(t)
+	journal, _, err := OpenOrCreateCustodyJournal(
+		journalPath, fixture.manifest, fixture.receipt, fixture.policy,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hooks := custodyJournalHooks{}
+	switch mode {
+	case "body":
+		hooks.afterBody = func() { blockAtArchiveCrashMarker(marker) }
+		_, _, err = journal.append(fixture.record, hooks)
+	case "slot":
+		hooks.afterSlot = func() { blockAtArchiveCrashMarker(marker) }
+		_, _, err = journal.append(fixture.record, hooks)
+	case "seal":
+		if _, _, err = journal.Append(fixture.record); err == nil {
+			hooks.afterSeal = func() { blockAtArchiveCrashMarker(marker) }
+			_, err = journal.rotate(hooks)
+		}
+	default:
+		t.Fatalf("unknown custody journal crash mode %q", mode)
+	}
+	t.Fatalf("custody journal crash hook returned: %v", err)
 }
 
 func processArchiveCheckpoint(t testing.TB, manifest Manifest) (Checkpoint, Policy) {

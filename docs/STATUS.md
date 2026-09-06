@@ -433,6 +433,21 @@ Implemented in an isolated, not-yet-activated consensus package:
   enforce pinned/allowlisted QUIC identities plus four distinct
   transport/evidence keys, and recover the renewed receipt locally. A real
   two-process test restarts the replica and requires byte-identical evidence.
+  Repeated cycles now use a policy-bound append-only journal with canonical
+  header/entry/slot encodings, immutable sequence slots, content-addressed bodies,
+  and complete receipt-chain replay. A permanent kernel lock serializes disk
+  operations across processes; body and slot publication precede network output.
+  Non-deleting segment rotation survives a crash before active-directory
+  recreation. The CLI accepts journal/artifact paths, a renewal duration, an
+  interval gate, and a rotation threshold for external timer invocations. It
+  restores missing head artifacts locally and can redeliver a still-fresh
+  journaled response after replica restart. Regression coverage includes two
+  restarted cycles, lost-response redelivery, local artifact recovery, not-due
+  exit without a server, same-challenge/sibling contention, append versus
+  rotation, corrupt evidence, changed policy, and process kills after body,
+  slot, and segment publication. See `CUSTODY.md` for the operator workflow and
+  filesystem assumptions. Retention compaction, disk budgets, and long-outage
+  reconciliation remain pending.
   This is fresh retrievability evidence from a trusted replica key, not proof of
   physical storage, non-proxying, independent operation, or consensus finality.
 - an isolated activation router now owns strict v0/v1 block admission. It
@@ -681,7 +696,8 @@ No WorkGraph field has entered a version-0 block yet. The v1 store and opt-in
 QUIC session remain isolated from every ordinary v0 chain/CLI path and are
 reachable only through the explicitly marked experimental commands;
 adversarial discovery/eclipse and longer real-QUIC rapid-parent churn soaks,
-topology-derived peer selection, automated custody scheduling/evidence rotation,
+topology-derived peer selection, custody evidence retention/disk budgets and
+long-outage reconciliation,
 canonical-prune
 disk-exhaustion/long-soak campaigns, production gossip-budget calibration, and
 broader adaptive economic-strategy analysis remain before activation.

@@ -179,7 +179,13 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
   only through a signed, freshness-bounded random-sample challenge whose
   deterministic manifest sample, returned-byte proof, predecessor receipt, and
   requested term are linked into a versioned receipt over a separate pinned,
-  allowlisted, rate-limited transport scope. An anchor alone must never
+  allowlisted, rate-limited transport scope. Repeated custody cycles must derive
+  their state from an immutable policy-bound evidence journal, commit each
+  response before delivery, recover interrupted publication, and serialize
+  append/replay/segment rotation across processes. Timer-driven invocations must
+  retry the exact unfinished challenge and preserve completed evidence during
+  segmentation. Disk-budget enforcement and evidence-retention policy remain
+  separate gates. An anchor alone must never
   authorize deletion or override hard-work fork choice; canonical pruning is
   explicit local finalization and remains disabled by default.
 - Admission-deduplicated multi-hop forwarding across the explicit peer graph.

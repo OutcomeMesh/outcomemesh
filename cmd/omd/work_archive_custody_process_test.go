@@ -115,6 +115,147 @@ func TestProcessArchiveCustodyQUICSurvivesReplicaRestart(t *testing.T) {
 	}
 }
 
+func TestProcessArchiveCustodyJournalRunsTwoRestartedCycles(t *testing.T) {
+	fixture := newProcessCustodyFixture(t)
+	replicaJournal := filepath.Join(fixture.root, "replica-journal")
+	auditorJournal := filepath.Join(fixture.root, "auditor-journal")
+	auditorArtifacts := filepath.Join(fixture.root, "auditor-cycles")
+
+	firstServer, replicaPeerID, address := startProcessCustodyJournalServer(
+		t, fixture, replicaJournal,
+	)
+	firstOutput, err := runProcessCustodyJournalChallenge(
+		t, fixture, address, replicaPeerID, auditorJournal, auditorArtifacts, 7_200, 0,
+	)
+	if err != nil {
+		t.Fatalf("first journal custody audit: %v\nclient=%s\nserver=%s", err, firstOutput, firstServer.stderr.String())
+	}
+	if fields := outputFields(firstOutput, "work_archive_custody_verified"); fields["sequence"] != "1" || fields["journal"] != auditorJournal || fields["recovered"] != "false" {
+		t.Fatalf("first journal custody output is incomplete: %s", firstOutput)
+	}
+	waitProcessCustodyServer(t, firstServer)
+	assertProcessCustodyJournalState(t, fixture, replicaJournal, 1)
+	assertProcessCustodyJournalState(t, fixture, auditorJournal, 1)
+	// A record committed just before the auditor's journal append can finish
+	// locally on restart, including restoration of the missing output files.
+	pendingArtifacts := filepath.Join(fixture.root, "pending-cycles")
+	pendingJournal := filepath.Join(fixture.root, "pending-journal")
+	_, completedRecord, _ := custodyCycleArtifactPaths(auditorArtifacts, 1)
+	_, pendingRecord, _ := custodyCycleArtifactPaths(pendingArtifacts, 1)
+	recordBytes, err := os.ReadFile(completedRecord)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := publishImmutableArtifact(pendingRecord, recordBytes); err != nil {
+		t.Fatal(err)
+	}
+	pendingOutput, err := runProcessCustodyJournalChallenge(t, fixture, address, replicaPeerID, pendingJournal, pendingArtifacts, 7_200, 0)
+	if err != nil {
+		t.Fatalf("pending record journal recovery: %v\n%s", err, pendingOutput)
+	}
+	if fields := outputFields(pendingOutput, "work_archive_custody_verified"); fields["sequence"] != "1" || fields["recovered"] != "true" {
+		t.Fatalf("pending record was not journaled locally: %s", pendingOutput)
+	}
+	assertProcessCustodyJournalState(t, fixture, pendingJournal, 1)
+
+	// Model a client that persisted its challenge but lost the response before
+	// committing it. The restarted replica must redeliver its first decision.
+	retryArtifacts := filepath.Join(fixture.root, "retry-cycles")
+	retryJournal := filepath.Join(fixture.root, "retry-journal")
+	firstChallenge, _, _ := custodyCycleArtifactPaths(auditorArtifacts, 1)
+	retryChallenge, _, _ := custodyCycleArtifactPaths(retryArtifacts, 1)
+	challengeBytes, err := os.ReadFile(firstChallenge)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := publishImmutableArtifact(retryChallenge, challengeBytes); err != nil {
+		t.Fatal(err)
+	}
+	retryServer, retryPeer, retryAddress := startProcessCustodyJournalServer(t, fixture, replicaJournal)
+	retryOutput, err := runProcessCustodyJournalChallenge(t, fixture, retryAddress, retryPeer, retryJournal, retryArtifacts, 7_200, 0)
+	if err != nil {
+		t.Fatalf("journal response redelivery: %v\n%s", err, retryOutput)
+	}
+	waitProcessCustodyServer(t, retryServer)
+	assertProcessCustodyJournalState(t, fixture, replicaJournal, 1)
+	_, originalState, err := workarchive.OpenOrCreateCustodyJournal(auditorJournal, fixture.manifest, fixture.receipt, fixture.custodyPolicy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, retryState, err := workarchive.OpenOrCreateCustodyJournal(retryJournal, fixture.manifest, fixture.receipt, fixture.custodyPolicy)
+	if err != nil || originalState != retryState {
+		t.Fatalf("redelivery changed journal decision: %v", err)
+	}
+
+	secondServer, restartedPeerID, restartedAddress := startProcessCustodyJournalServer(
+		t, fixture, replicaJournal,
+	)
+	if restartedPeerID != replicaPeerID {
+		t.Fatalf("journal replica identity changed after restart: %s != %s", restartedPeerID, replicaPeerID)
+	}
+	secondOutput, err := runProcessCustodyJournalChallenge(
+		t, fixture, restartedAddress, restartedPeerID, auditorJournal, auditorArtifacts, 10_800, 0,
+	)
+	if err != nil {
+		t.Fatalf("second journal custody audit: %v\nclient=%s\nserver=%s", err, secondOutput, secondServer.stderr.String())
+	}
+	if fields := outputFields(secondOutput, "work_archive_custody_verified"); fields["sequence"] != "2" || fields["recovered"] != "false" {
+		t.Fatalf("second journal custody output is incomplete: %s", secondOutput)
+	}
+	waitProcessCustodyServer(t, secondServer)
+	assertProcessCustodyJournalState(t, fixture, replicaJournal, 2)
+	assertProcessCustodyJournalState(t, fixture, auditorJournal, 2)
+	recoveryChallenge, recoveryRecord, recoveryReceipt := custodyCycleArtifactPaths(auditorArtifacts, 2)
+	for _, path := range []string{recoveryChallenge, recoveryRecord, recoveryReceipt} {
+		if err := os.Remove(path); err != nil {
+			t.Fatal(err)
+		}
+	}
+	recoveredOutput, err := runProcessCustodyJournalChallenge(
+		t, fixture, restartedAddress, restartedPeerID, auditorJournal, auditorArtifacts, 10_800, 0,
+	)
+	if err != nil {
+		t.Fatalf("journal head artifact recovery: %v\n%s", err, recoveredOutput)
+	}
+	if fields := outputFields(recoveredOutput, "work_archive_custody_verified"); fields["sequence"] != "2" || fields["recovered"] != "true" {
+		t.Fatalf("journal did not restore completed artifacts locally: %s", recoveredOutput)
+	}
+	auditor, _, err := workarchive.OpenOrCreateCustodyJournal(auditorJournal, fixture.manifest, fixture.receipt, fixture.custodyPolicy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	head, _, err := auditor.Head()
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectedReceipt, _ := head.Record.RenewedReceipt.CanonicalBytes()
+	actualReceipt, err := os.ReadFile(recoveryReceipt)
+	if err != nil || !bytes.Equal(expectedReceipt, actualReceipt) {
+		t.Fatalf("recovered receipt differs: %v", err)
+	}
+
+	// An external timer may call the auditor command as often as it wants. With
+	// no unfinished cycle artifacts it exits before dialing until the interval
+	// derived from the replayed receipt is due.
+	notDueOutput, err := runProcessCustodyJournalChallenge(
+		t, fixture, restartedAddress, restartedPeerID, auditorJournal, auditorArtifacts,
+		10_800, 3_600,
+	)
+	if err != nil {
+		t.Fatalf("journal not-due check: %v\n%s", err, notDueOutput)
+	}
+	if fields := outputFields(notDueOutput, "work_archive_custody_not_due"); fields["sequence"] != "3" || fields["journal"] != auditorJournal || fields["due_at"] == "" {
+		t.Fatalf("journal not-due output is incomplete: %s", notDueOutput)
+	}
+
+	for _, journalPath := range []string{replicaJournal, auditorJournal} {
+		segments, err := os.ReadDir(filepath.Join(journalPath, "objects", "segments"))
+		if err != nil || len(segments) != 2 {
+			t.Fatalf("journal %s sealed segments=%d error=%v", journalPath, len(segments), err)
+		}
+	}
+}
+
 type processCustodyFixture struct {
 	root             string
 	manifestPath     string
@@ -341,6 +482,71 @@ func startProcessCustodyServer(
 	return nil, "", ""
 }
 
+func startProcessCustodyJournalServer(
+	t testing.TB,
+	fixture processCustodyFixture,
+	journalPath string,
+) (*serverProcess, string, string) {
+	t.Helper()
+	auditorPeerID := processTransportPeerID(t, fixture.auditorTransport).String()
+	command := helperCommand(nil,
+		"work-archive-custody-serve-quic",
+		"--key", fixture.replicaTransport,
+		"--listen", "/ip4/127.0.0.1/udp/0/quic-v1",
+		"--auditor-peer-id", auditorPeerID,
+		"--replica-key", fixture.replicaEvidence,
+		"--auditor-public-key", fixture.auditorPublicKey,
+		"--manifest", fixture.manifestPath,
+		"--receipt", fixture.receiptPath,
+		"--object-store", fixture.objectStorePath,
+		"--journal", journalPath,
+		"--rotate-every", "1",
+	)
+	stdout, err := command.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stderr := new(bytes.Buffer)
+	command.Stderr = stderr
+	if err := command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	server := &serverProcess{command: command, stderr: stderr}
+	t.Cleanup(func() {
+		if command.ProcessState == nil || !command.ProcessState.Exited() {
+			_ = command.Process.Kill()
+		}
+	})
+	type readyResult struct {
+		line string
+		err  error
+	}
+	ready := make(chan readyResult, 1)
+	reader := bufio.NewReader(stdout)
+	go func() {
+		line, readErr := reader.ReadString('\n')
+		ready <- readyResult{line: line, err: readErr}
+		_, _ = io.Copy(io.Discard, reader)
+	}()
+	select {
+	case result := <-ready:
+		if result.err != nil {
+			_ = command.Process.Kill()
+			t.Fatalf("journal custody server readiness: %v stderr=%s", result.err, stderr.String())
+		}
+		fields := outputFields(result.line, "work_archive_custody_receiving")
+		if fields["transport_peer_id"] == "" || fields["listen"] == "" {
+			_ = command.Process.Kill()
+			t.Fatalf("journal custody readiness output is incomplete: %s", result.line)
+		}
+		return server, fields["transport_peer_id"], strings.Split(fields["listen"], ",")[0]
+	case <-time.After(20 * time.Second):
+		_ = command.Process.Kill()
+		t.Fatalf("journal custody readiness timeout stderr=%s", stderr.String())
+	}
+	return nil, "", ""
+}
+
 func runProcessCustodyChallenge(
 	t testing.TB,
 	fixture processCustodyFixture,
@@ -364,6 +570,50 @@ func runProcessCustodyChallenge(
 		"--renew-until", strconv.FormatUint(fixture.renewUntil, 10),
 		"--samples", "1",
 	)
+}
+
+func runProcessCustodyJournalChallenge(
+	t testing.TB,
+	fixture processCustodyFixture,
+	address string,
+	replicaPeerID string,
+	journalPath string,
+	artifactPath string,
+	renewalSeconds uint64,
+	minimumInterval uint64,
+) (string, error) {
+	t.Helper()
+	return runProcessCommandError(30*time.Second,
+		"work-archive-custody-challenge-quic",
+		"--key", fixture.auditorTransport,
+		"--peer", address,
+		"--peer-id", replicaPeerID,
+		"--auditor-key", fixture.auditorEvidence,
+		"--manifest", fixture.manifestPath,
+		"--receipt", fixture.receiptPath,
+		"--journal", journalPath,
+		"--artifacts", artifactPath,
+		"--renewal-seconds", strconv.FormatUint(renewalSeconds, 10),
+		"--minimum-interval-seconds", strconv.FormatUint(minimumInterval, 10),
+		"--rotate-every", "1",
+		"--samples", "1",
+	)
+}
+
+func assertProcessCustodyJournalState(
+	t testing.TB,
+	fixture processCustodyFixture,
+	path string,
+	wantSequence uint64,
+) {
+	t.Helper()
+	_, state, err := workarchive.OpenOrCreateCustodyJournal(
+		path, fixture.manifest, fixture.receipt, fixture.custodyPolicy,
+	)
+	if err != nil || state.Sequence != wantSequence ||
+		state.CurrentReceipt.RetainUntil <= fixture.receipt.RetainUntil {
+		t.Fatalf("custody journal %s state=%+v error=%v", path, state, err)
+	}
 }
 
 func waitProcessCustodyServer(t testing.TB, server *serverProcess) {

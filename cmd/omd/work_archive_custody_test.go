@@ -89,6 +89,34 @@ func TestCustodyCommandsRejectIncompleteConfiguration(t *testing.T) {
 	}
 }
 
+func TestCustodyJournalCycleArtifactsAreDeterministicAndSeparate(t *testing.T) {
+	root := t.TempDir()
+	challenge, record, receipt := custodyCycleArtifactPaths(root, 27)
+	want := filepath.Join(root, "cycle-00000000000000000027")
+	if challenge != filepath.Join(want, "challenge.omcc") ||
+		record != filepath.Join(want, "record.omcr") ||
+		receipt != filepath.Join(want, "receipt.omrr") {
+		t.Fatalf("unexpected custody cycle paths: %q %q %q", challenge, record, receipt)
+	}
+	journal := filepath.Join(root, "journal")
+	if !custodyPathsOverlap(journal, filepath.Join(journal, "artifacts")) {
+		t.Fatal("nested custody artifacts were not rejected")
+	}
+	if custodyPathsOverlap(journal, filepath.Join(root, "artifacts")) {
+		t.Fatal("separate custody journal and artifacts were rejected")
+	}
+	if err := os.Mkdir(journal, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(root, "alias")
+	if err := os.Symlink(journal, alias); err != nil {
+		t.Fatal(err)
+	}
+	if !custodyPathsOverlap(journal, filepath.Join(alias, "artifacts")) {
+		t.Fatal("symlink alias hid overlapping custody directories")
+	}
+}
+
 func TestArchiveObjectPeerAllowlistIsCanonicalized(t *testing.T) {
 	first := types.DomainHash("test/cmd/archive-object-peer", []byte("first"))
 	second := types.DomainHash("test/cmd/archive-object-peer", []byte("second"))

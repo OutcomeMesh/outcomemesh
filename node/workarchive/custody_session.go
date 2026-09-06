@@ -67,6 +67,7 @@ type CustodyAuditReport struct {
 }
 
 type CustodyServeReport struct {
+	JournalSequence  uint64
 	ChallengeID      types.Hash
 	ProofID          types.Hash
 	RenewedReceiptID types.Hash
@@ -84,7 +85,9 @@ type CustodySession struct {
 	config            CustodySessionConfig
 	serveMu           sync.Mutex
 	cachedResponse    *cachedCustodyResponse
+	recoveryResponse  *cachedCustodyResponse
 	recordPath        string
+	journal           *CustodyJournal
 }
 
 type cachedCustodyResponse struct {
@@ -165,6 +168,45 @@ func NewDurableCustodyReplicaSession(
 	return session, nil
 }
 
+// NewJournalCustodyReplicaSession derives the current receipt by replaying the
+// journal. The latest completed response remains available for an auditor that
+// lost the final network frames, while a fresh challenge may extend the current
+// head. A new response is journaled before any response bytes are sent.
+func NewJournalCustodyReplicaSession(
+	journal *CustodyJournal,
+	store *ObjectStore,
+	replicaPrivateKey ed25519.PrivateKey,
+	config CustodySessionConfig,
+) (*CustodySession, error) {
+	if journal == nil {
+		return nil, ErrCustodySession
+	}
+	head, exists, err := journal.Head()
+	if err != nil {
+		return nil, err
+	}
+	receipt := journal.header.InitialReceipt
+	if exists {
+		receipt = head.Record.RenewedReceipt
+	}
+	session, err := NewCustodyReplicaSession(
+		journal.manifest, receipt, store, journal.policy,
+		replicaPrivateKey, config,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if exists {
+		session.recoveryResponse, err = cachedCustodyResponseFromRecord(head.Record)
+		if err != nil {
+			return nil, err
+		}
+		session.recoveryResponse.report.JournalSequence = head.Sequence
+	}
+	session.journal = journal
+	return session, nil
+}
+
 // Audit runs exactly one challenge exchange on a stream whose replica
 // transport identity was already authenticated and pinned by the caller.
 func (session *CustodySession) Audit(
@@ -179,10 +221,18 @@ func (session *CustodySession) Audit(
 		return CustodyResponse{}, CustodyAuditReport{}, ErrCustodySession
 	}
 	defer stream.Close()
-	if err := challenge.Verify(
-		session.manifest, session.receipt, session.policy, session.config.Now(),
-	); err != nil {
-		return CustodyResponse{}, CustodyAuditReport{}, errors.Join(ErrCustodySession, err)
+	now := session.config.Now()
+	if err := challenge.Verify(session.manifest, session.receipt, session.policy, now); err != nil {
+		// An exact durable challenge may be retried after its request window when
+		// the replica already committed the response. The returned proof still
+		// has to satisfy MaximumProofAge below; a replica without that response
+		// rejects the expired request.
+		if now <= challenge.ExpiresAt || now-challenge.ExpiresAt > session.policy.MaximumProofAge ||
+			challenge.Verify(
+				session.manifest, session.receipt, session.policy, challenge.ExpiresAt,
+			) != nil {
+			return CustodyResponse{}, CustodyAuditReport{}, errors.Join(ErrCustodySession, err)
+		}
 	}
 	encodedChallenge, err := challenge.CanonicalBytes()
 	if err != nil {
@@ -215,7 +265,7 @@ func (session *CustodySession) Audit(
 	if err != nil {
 		return CustodyResponse{}, CustodyAuditReport{}, errors.Join(ErrCustodySession, err)
 	}
-	now := session.config.Now()
+	now = session.config.Now()
 	if err := VerifyReplicaRenewal(
 		session.manifest, session.receipt, renewed, challenge, batch, proof,
 		session.policy, now,
@@ -267,29 +317,38 @@ func (session *CustodySession) Serve(
 	if err != nil {
 		return CustodyServeReport{}, errors.Join(ErrCustodySession, err)
 	}
-	respondedAt := session.config.Now()
-	if err := challenge.Verify(
-		session.manifest, session.receipt, session.policy, respondedAt,
-	); err != nil {
-		return CustodyServeReport{}, errors.Join(ErrCustodySession, err)
-	}
 	challengeID, err := challenge.ID()
 	if err != nil {
 		return CustodyServeReport{}, err
 	}
 	session.serveMu.Lock()
 	defer session.serveMu.Unlock()
-	if session.cachedResponse != nil {
-		if session.cachedResponse.challengeID != challengeID {
+	respondedAt := session.config.Now()
+	for _, cached := range []*cachedCustodyResponse{
+		session.cachedResponse, session.recoveryResponse,
+	} {
+		if cached == nil || cached.challengeID != challengeID {
+			continue
+		}
+		if respondedAt < cached.report.RespondedAt ||
+			respondedAt-cached.report.RespondedAt > session.policy.MaximumProofAge {
 			return CustodyServeReport{}, ErrCustodySession
 		}
-		if err := session.writeResponse(ctx, stream, session.cachedResponse); err != nil {
+		if err := session.writeResponse(ctx, stream, cached); err != nil {
 			return CustodyServeReport{}, err
 		}
 		if err := session.awaitAuditorClose(ctx, stream); err != nil {
 			return CustodyServeReport{}, err
 		}
-		return session.cachedResponse.report, nil
+		return cached.report, nil
+	}
+	if session.cachedResponse != nil {
+		return CustodyServeReport{}, ErrCustodySession
+	}
+	if err := challenge.Verify(
+		session.manifest, session.receipt, session.policy, respondedAt,
+	); err != nil {
+		return CustodyServeReport{}, errors.Join(ErrCustodySession, err)
 	}
 	batch, proof, err := AnswerCustodyChallenge(
 		session.store, session.manifest, session.receipt, challenge, session.policy,
@@ -317,10 +376,20 @@ func (session *CustodySession) Serve(
 			return CustodyServeReport{}, errors.Join(ErrCustodySession, err)
 		}
 	}
+	journalSequence := uint64(0)
+	if session.journal != nil {
+		entry, _, appendErr := session.journal.Append(record)
+		if appendErr != nil {
+			return CustodyServeReport{}, errors.Join(ErrCustodySession, appendErr)
+		}
+		record = entry.Record
+		journalSequence = entry.Sequence
+	}
 	cached, err := cachedCustodyResponseFromRecord(record)
 	if err != nil {
 		return CustodyServeReport{}, err
 	}
+	cached.report.JournalSequence = journalSequence
 	// Cache before the first write. A transport failure can then retry only this
 	// exact signed result instead of creating a sibling renewal.
 	session.cachedResponse = cached

@@ -79,14 +79,20 @@ func runWorkArchiveCustodyServeQUIC(arguments []string) error {
 	receiptPath := flags.String("receipt", "", "current canonical replica receipt file")
 	objectStorePath := flags.String("object-store", "", "verified content-addressed archive object store")
 	recordPath := flags.String("record", "", "durable no-replace custody response record")
+	journalPath := flags.String("journal", "", "append-only custody journal (receipt is its immutable initial receipt)")
+	rotateEvery := flags.Uint64("rotate-every", 0, "seal active journal bodies after each N completed renewals (zero disables)")
 	policyFlags := addArchiveCustodyPolicyFlags(flags)
 	if err := flags.Parse(arguments); err != nil {
 		return err
 	}
 	if *transportKeyPath == "" || *auditorPeerIDText == "" || *replicaKeyPath == "" ||
 		*auditorPublicKeyText == "" || *manifestPath == "" || *receiptPath == "" ||
-		*objectStorePath == "" || *recordPath == "" {
-		return errors.New("transport/replica keys, auditor identities, manifest, receipt, object store, and record are required")
+		*objectStorePath == "" || (*recordPath == "" && *journalPath == "") ||
+		(*recordPath != "" && *journalPath != "") {
+		return errors.New("keys, auditor identities, manifest, receipt, object store, and exactly one of record or journal are required")
+	}
+	if *journalPath == "" && *rotateEvery != 0 {
+		return errors.New("rotate-every requires a custody journal")
 	}
 	if err := policyFlags.validate(); err != nil {
 		return err
@@ -116,6 +122,17 @@ func runWorkArchiveCustodyServeQUIC(arguments []string) error {
 		return err
 	}
 	policy := policyFlags.policy(auditorPublicKey)
+	var journal *workarchive.CustodyJournal
+	if *journalPath != "" {
+		var state workarchive.CustodyJournalState
+		journal, state, err = workarchive.OpenOrCreateCustodyJournal(
+			*journalPath, manifest, receipt, policy,
+		)
+		if err != nil {
+			return err
+		}
+		receipt = state.CurrentReceipt
+	}
 	if err := validateCustodyKeySeparation(
 		transportKey.Public().(ed25519.PublicKey), receipt.ReplicaPublicKey,
 		auditorPeerID, auditorPublicKey,
@@ -129,9 +146,16 @@ func runWorkArchiveCustodyServeQUIC(arguments []string) error {
 		return err
 	}
 	sessionConfig := workarchive.DefaultCustodySessionConfig()
-	session, err := workarchive.NewDurableCustodyReplicaSession(
-		manifest, receipt, store, policy, replicaKey, *recordPath, sessionConfig,
-	)
+	var session *workarchive.CustodySession
+	if journal != nil {
+		session, err = workarchive.NewJournalCustodyReplicaSession(
+			journal, store, replicaKey, sessionConfig,
+		)
+	} else {
+		session, err = workarchive.NewDurableCustodyReplicaSession(
+			manifest, receipt, store, policy, replicaKey, *recordPath, sessionConfig,
+		)
+	}
 	if err != nil {
 		return err
 	}
@@ -183,11 +207,20 @@ func runWorkArchiveCustodyServeQUIC(arguments []string) error {
 		if outcome.err != nil {
 			return outcome.err
 		}
+		sequence := outcome.report.JournalSequence
+		if journal != nil {
+			if *rotateEvery != 0 && sequence%*rotateEvery == 0 {
+				if _, rotateErr := journal.Rotate(); rotateErr != nil {
+					return rotateErr
+				}
+			}
+		}
 		fmt.Printf(
-			"work_archive_custody_served challenge=%s proof=%s renewal=%s objects=%d bytes=%d responded_at=%d record=%s\n",
+			"work_archive_custody_served challenge=%s proof=%s renewal=%s objects=%d bytes=%d responded_at=%d record=%s journal=%s sequence=%d\n",
 			outcome.report.ChallengeID, outcome.report.ProofID,
 			outcome.report.RenewedReceiptID, outcome.report.Objects,
 			outcome.report.SentBytes, outcome.report.RespondedAt, *recordPath,
+			*journalPath, sequence,
 		)
 		return nil
 	}
@@ -204,7 +237,12 @@ func runWorkArchiveCustodyChallengeQUIC(arguments []string) error {
 	challengePath := flags.String("challenge", "", "durable no-replace signed challenge file")
 	recordPath := flags.String("record", "", "durable no-replace verified custody response record")
 	outReceiptPath := flags.String("out-receipt", "", "no-replace renewed replica receipt output")
+	journalPath := flags.String("journal", "", "append-only custody journal (receipt is its immutable initial receipt)")
+	artifactDirectory := flags.String("artifacts", "", "durable per-sequence challenge/record/receipt directory")
 	renewUntil := flags.Uint64("renew-until", 0, "requested receipt retention deadline as Unix seconds")
+	renewalSeconds := flags.Uint64("renewal-seconds", 0, "retention term from first attempt time in journal mode")
+	minimumInterval := flags.Uint64("minimum-interval-seconds", 0, "skip a fresh journal cycle until this interval has elapsed")
+	rotateEvery := flags.Uint64("rotate-every", 0, "seal active journal bodies after each N completed renewals (zero disables)")
 	lifetime := flags.Uint64("lifetime-seconds", 60, "signed challenge lifetime")
 	samples := flags.Uint("samples", 2, "requested deterministic chunk samples")
 	policyFlags := addArchiveCustodyPolicyFlags(flags)
@@ -213,13 +251,23 @@ func runWorkArchiveCustodyChallengeQUIC(arguments []string) error {
 	}
 	if *transportKeyPath == "" || *peerAddress == "" || *replicaPeerIDText == "" ||
 		*auditorKeyPath == "" || *manifestPath == "" || *receiptPath == "" ||
-		*challengePath == "" || *recordPath == "" || *outReceiptPath == "" ||
-		*renewUntil == 0 || *samples < workarchive.MinimumCustodySamples ||
+		((*journalPath == "" && (*challengePath == "" || *recordPath == "" ||
+			*outReceiptPath == "" || *renewUntil == 0)) ||
+			(*journalPath != "" && (*artifactDirectory == "" || *challengePath != "" ||
+				*recordPath != "" || *outReceiptPath != "" || *renewUntil != 0 ||
+				*renewalSeconds == 0))) ||
+		*samples < workarchive.MinimumCustodySamples ||
 		*samples > workarchive.MaximumCustodySamples {
 		return errors.New("transport/auditor keys, pinned replica, artifacts, outputs, renewal deadline, and bounded samples are required")
 	}
+	if *journalPath == "" && (*artifactDirectory != "" || *renewalSeconds != 0 || *minimumInterval != 0 || *rotateEvery != 0) {
+		return errors.New("artifacts, renewal-seconds, minimum-interval-seconds, and rotate-every require a custody journal")
+	}
 	if err := policyFlags.validate(); err != nil {
 		return err
+	}
+	if *journalPath != "" && *renewalSeconds > *policyFlags.renewalTerm {
+		return errors.New("requested custody renewal term exceeds policy")
 	}
 	transportKey, err := loadPrivateKey(*transportKeyPath)
 	if err != nil {
@@ -244,20 +292,82 @@ func runWorkArchiveCustodyChallengeQUIC(arguments []string) error {
 	var auditorPublicKey [ed25519.PublicKeySize]byte
 	copy(auditorPublicKey[:], auditorKey.Public().(ed25519.PublicKey))
 	policy := policyFlags.policy(auditorPublicKey)
+	var journal *workarchive.CustodyJournal
+	var journalState workarchive.CustodyJournalState
+	if *journalPath != "" {
+		if custodyPathsOverlap(*journalPath, *artifactDirectory) {
+			return errors.New("custody journal and cycle artifacts must be separate directories")
+		}
+		journal, journalState, err = workarchive.OpenOrCreateCustodyJournal(
+			*journalPath, manifest, receipt, policy,
+		)
+		if err != nil {
+			return err
+		}
+		receipt = journalState.CurrentReceipt
+		cycle := journalState.Sequence + 1
+		if cycle == 0 {
+			return errors.New("custody journal sequence exhausted")
+		}
+		*challengePath, *recordPath, *outReceiptPath = custodyCycleArtifactPaths(
+			*artifactDirectory, cycle,
+		)
+	}
 	if err := validateCustodyKeySeparation(
 		transportKey.Public().(ed25519.PublicKey), auditorPublicKey,
 		replicaPeerID, receipt.ReplicaPublicKey,
 	); err != nil {
 		return err
 	}
+	if journal != nil {
+		head, exists, headErr := journal.Head()
+		if headErr != nil {
+			return headErr
+		}
+		if exists {
+			recovered, recoverErr := recoverCustodyCycleArtifacts(*artifactDirectory, head)
+			if recoverErr != nil {
+				return recoverErr
+			}
+			if *rotateEvery != 0 && head.Sequence%*rotateEvery == 0 {
+				if _, err := journal.Rotate(); err != nil {
+					return err
+				}
+			}
+			if recovered {
+				_, recordOutput, receiptOutput := custodyCycleArtifactPaths(*artifactDirectory, head.Sequence)
+				renewedID, _ := head.Record.RenewedReceipt.ID()
+				fmt.Printf("work_archive_custody_verified renewal=%s retain_until=%d record=%s receipt=%s recovered=true journal=%s sequence=%d\n",
+					renewedID, head.Record.RenewedReceipt.RetainUntil, recordOutput, receiptOutput, *journalPath, head.Sequence)
+				return nil
+			}
+		}
+	}
 
 	if record, loadErr := workarchive.LoadCustodyRecordFile(
 		*recordPath, manifest, receipt, policy,
 	); loadErr == nil {
-		if record.Challenge.RenewUntil != *renewUntil ||
+		if (journal == nil && record.Challenge.RenewUntil != *renewUntil) ||
+			(journal != nil && record.Challenge.RenewUntil-record.Challenge.IssuedAt != *renewalSeconds) ||
 			record.Challenge.RequestedSamples != uint16(*samples) ||
 			record.Challenge.ExpiresAt-record.Challenge.IssuedAt != *lifetime {
 			return errors.New("durable custody result conflicts with requested challenge parameters")
+		}
+		if journal != nil {
+			entry, _, appendErr := journal.Append(record)
+			if appendErr != nil {
+				return appendErr
+			}
+			journalState.Sequence = entry.Sequence
+			record = entry.Record
+			if _, err := recoverCustodyCycleArtifacts(*artifactDirectory, entry); err != nil {
+				return err
+			}
+			if *rotateEvery != 0 && journalState.Sequence%*rotateEvery == 0 {
+				if _, rotateErr := journal.Rotate(); rotateErr != nil {
+					return rotateErr
+				}
+			}
 		}
 		challengeBytes, err := record.Challenge.CanonicalBytes()
 		if err != nil {
@@ -275,8 +385,9 @@ func runWorkArchiveCustodyChallengeQUIC(arguments []string) error {
 		}
 		renewedID, _ := record.RenewedReceipt.ID()
 		fmt.Printf(
-			"work_archive_custody_verified renewal=%s retain_until=%d record=%s receipt=%s recovered=true\n",
+			"work_archive_custody_verified renewal=%s retain_until=%d record=%s receipt=%s recovered=true journal=%s sequence=%d\n",
 			renewedID, record.RenewedReceipt.RetainUntil, *recordPath, *outReceiptPath,
+			*journalPath, journalState.Sequence,
 		)
 		return nil
 	} else if !errors.Is(loadErr, os.ErrNotExist) {
@@ -284,6 +395,26 @@ func runWorkArchiveCustodyChallengeQUIC(arguments []string) error {
 	}
 
 	now := unixNow()
+	if journal != nil {
+		pending := custodyArtifactExists(*challengePath) || custodyArtifactExists(*recordPath)
+		if !pending && *minimumInterval != 0 &&
+			journalState.CurrentReceipt.StoredAt > ^uint64(0)-*minimumInterval {
+			return errors.New("custody due time overflows")
+		}
+		if !pending && *minimumInterval != 0 &&
+			now < journalState.CurrentReceipt.StoredAt+*minimumInterval {
+			due := journalState.CurrentReceipt.StoredAt + *minimumInterval
+			fmt.Printf(
+				"work_archive_custody_not_due journal=%s sequence=%d due_at=%d now=%d\n",
+				*journalPath, journalState.Sequence+1, due, now,
+			)
+			return nil
+		}
+		if now > ^uint64(0)-*renewalSeconds {
+			return errors.New("custody renewal deadline overflows")
+		}
+		*renewUntil = now + *renewalSeconds
+	}
 	if *lifetime == 0 || *lifetime > *policyFlags.challengeLifetime ||
 		*renewUntil <= now || *renewUntil-now > *policyFlags.renewalTerm {
 		return errors.New("challenge lifetime or requested renewal term exceeds policy")
@@ -295,7 +426,8 @@ func runWorkArchiveCustodyChallengeQUIC(arguments []string) error {
 	if err != nil {
 		return err
 	}
-	if challenge.RenewUntil != *renewUntil ||
+	if (journal == nil && challenge.RenewUntil != *renewUntil) ||
+		(journal != nil && challenge.RenewUntil-challenge.IssuedAt != *renewalSeconds) ||
 		challenge.RequestedSamples != uint16(*samples) ||
 		challenge.ExpiresAt-challenge.IssuedAt != *lifetime {
 		return errors.New("durable custody challenge conflicts with requested parameters")
@@ -337,6 +469,22 @@ func runWorkArchiveCustodyChallengeQUIC(arguments []string) error {
 	if err != nil {
 		return err
 	}
+	if journal != nil {
+		entry, _, err := journal.Append(committed)
+		if err != nil {
+			return err
+		}
+		committed = entry.Record
+		journalState.Sequence = entry.Sequence
+		if _, err := recoverCustodyCycleArtifacts(*artifactDirectory, entry); err != nil {
+			return err
+		}
+		if *rotateEvery != 0 && journalState.Sequence%*rotateEvery == 0 {
+			if _, rotateErr := journal.Rotate(); rotateErr != nil {
+				return rotateErr
+			}
+		}
+	}
 	receiptBytes, err := committed.RenewedReceipt.CanonicalBytes()
 	if err != nil {
 		return err
@@ -346,10 +494,10 @@ func runWorkArchiveCustodyChallengeQUIC(arguments []string) error {
 	}
 	renewedID, _ := committed.RenewedReceipt.ID()
 	fmt.Printf(
-		"work_archive_custody_verified peer_id=%s challenge=%s proof=%s renewal=%s objects=%d bytes=%d retain_until=%d record=%s receipt=%s recovered=false\n",
+		"work_archive_custody_verified peer_id=%s challenge=%s proof=%s renewal=%s objects=%d bytes=%d retain_until=%d record=%s receipt=%s recovered=false journal=%s sequence=%d\n",
 		remoteID, report.ChallengeID, report.ProofID, renewedID, report.Objects,
 		report.ReceivedBytes, committed.RenewedReceipt.RetainUntil,
-		*recordPath, *outReceiptPath,
+		*recordPath, *outReceiptPath, *journalPath, journalState.Sequence,
 	)
 	return nil
 }
@@ -367,7 +515,9 @@ func loadOrCreateCustodyChallenge(
 ) (workarchive.CustodyChallenge, error) {
 	if encoded, err := readRegularArtifact(path, workarchive.MaximumCustodyChallengeBytes); err == nil {
 		challenge, decodeErr := workarchive.DecodeCustodyChallenge(encoded)
-		if decodeErr != nil || challenge.Verify(manifest, receipt, policy, now) != nil {
+		if decodeErr != nil || verifyCustodyChallengeAttempt(
+			challenge, manifest, receipt, policy, now,
+		) != nil {
 			return workarchive.CustodyChallenge{}, errors.Join(workarchive.ErrCustodyChallenge, decodeErr)
 		}
 		return challenge, nil
@@ -390,7 +540,9 @@ func loadOrCreateCustodyChallenge(
 			return workarchive.CustodyChallenge{}, errors.Join(err, loadErr)
 		}
 		result, decodeErr := workarchive.DecodeCustodyChallenge(committed)
-		if decodeErr != nil || result.Verify(manifest, receipt, policy, now) != nil {
+		if decodeErr != nil || verifyCustodyChallengeAttempt(
+			result, manifest, receipt, policy, now,
+		) != nil {
 			return workarchive.CustodyChallenge{}, errors.Join(err, decodeErr)
 		}
 		return result, nil
@@ -400,10 +552,117 @@ func loadOrCreateCustodyChallenge(
 		return workarchive.CustodyChallenge{}, err
 	}
 	result, err := workarchive.DecodeCustodyChallenge(committed)
-	if err != nil || result.Verify(manifest, receipt, policy, now) != nil {
+	if err != nil || verifyCustodyChallengeAttempt(
+		result, manifest, receipt, policy, now,
+	) != nil {
 		return workarchive.CustodyChallenge{}, errors.Join(workarchive.ErrCustodyChallenge, err)
 	}
 	return result, nil
+}
+
+func verifyCustodyChallengeAttempt(
+	challenge workarchive.CustodyChallenge,
+	manifest workarchive.Manifest,
+	receipt workarchive.ReplicaReceipt,
+	policy workarchive.CustodyPolicy,
+	now uint64,
+) error {
+	if err := challenge.Verify(manifest, receipt, policy, now); err == nil {
+		return nil
+	}
+	if now <= challenge.ExpiresAt || now-challenge.ExpiresAt > policy.MaximumProofAge {
+		return workarchive.ErrCustodyChallenge
+	}
+	return challenge.Verify(manifest, receipt, policy, challenge.ExpiresAt)
+}
+
+func custodyCycleArtifactPaths(root string, sequence uint64) (string, string, string) {
+	directory := filepath.Join(root, fmt.Sprintf("cycle-%020d", sequence))
+	return filepath.Join(directory, "challenge.omcc"),
+		filepath.Join(directory, "record.omcr"),
+		filepath.Join(directory, "receipt.omrr")
+}
+
+// A completed slot is authoritative even if the caller died before publishing
+// its output receipt. Restore the exact head artifacts before starting a cycle.
+func recoverCustodyCycleArtifacts(root string, head workarchive.CustodyJournalEntry) (bool, error) {
+	challengePath, recordPath, receiptPath := custodyCycleArtifactPaths(root, head.Sequence)
+	challenge, err := head.Record.Challenge.CanonicalBytes()
+	if err != nil {
+		return false, err
+	}
+	record, err := head.Record.CanonicalBytes()
+	if err != nil {
+		return false, err
+	}
+	receipt, err := head.Record.RenewedReceipt.CanonicalBytes()
+	if err != nil {
+		return false, err
+	}
+	recovered := false
+	for _, artifact := range []struct {
+		path    string
+		encoded []byte
+	}{
+		{challengePath, challenge}, {recordPath, record}, {receiptPath, receipt},
+	} {
+		if _, err := os.Lstat(artifact.path); errors.Is(err, os.ErrNotExist) {
+			recovered = true
+		} else if err != nil {
+			return false, err
+		}
+		if err := publishImmutableArtifact(artifact.path, artifact.encoded); err != nil {
+			return false, err
+		}
+	}
+	return recovered, nil
+}
+
+func custodyArtifactExists(path string) bool {
+	_, err := os.Lstat(path)
+	return err == nil || !errors.Is(err, os.ErrNotExist)
+}
+
+func custodyPathsOverlap(left, right string) bool {
+	left, leftErr := resolveCustodyArtifactPath(left)
+	right, rightErr := resolveCustodyArtifactPath(right)
+	if leftErr != nil || rightErr != nil {
+		return true
+	}
+	contains := func(parent, child string) bool {
+		relative, err := filepath.Rel(parent, child)
+		return err == nil && relative != ".." &&
+			!strings.HasPrefix(relative, ".."+string(filepath.Separator))
+	}
+	return contains(left, right) || contains(right, left)
+}
+
+func resolveCustodyArtifactPath(path string) (string, error) {
+	path, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	var suffix []string
+	for {
+		if _, err := os.Lstat(path); err == nil {
+			resolved, err := filepath.EvalSymlinks(path)
+			if err != nil {
+				return "", err
+			}
+			for index := len(suffix) - 1; index >= 0; index-- {
+				resolved = filepath.Join(resolved, suffix[index])
+			}
+			return resolved, nil
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return "", err
+		}
+		parent := filepath.Dir(path)
+		if parent == path {
+			return "", errors.New("cannot resolve custody artifact path")
+		}
+		suffix = append(suffix, filepath.Base(path))
+		path = parent
+	}
 }
 
 func loadArchiveManifest(path string) (workarchive.Manifest, error) {
@@ -480,6 +739,10 @@ func readRegularArtifact(path string, maximum int) ([]byte, error) {
 		return nil, err
 	}
 	defer file.Close()
+	opened, err := file.Stat()
+	if err != nil || !opened.Mode().IsRegular() || !os.SameFile(info, opened) {
+		return nil, errors.New("artifact changed while opening")
+	}
 	encoded, err := io.ReadAll(io.LimitReader(file, int64(maximum)+1))
 	if err != nil {
 		return nil, err
@@ -495,7 +758,7 @@ func publishImmutableArtifact(path string, encoded []byte) error {
 		return errors.New("invalid immutable artifact")
 	}
 	directory := filepath.Dir(path)
-	if err := os.MkdirAll(directory, 0o755); err != nil {
+	if err := makeCustodyArtifactDirectory(directory); err != nil {
 		return err
 	}
 	temporary, err := os.CreateTemp(directory, ".outcomemesh-work-artifact-*")
@@ -531,8 +794,39 @@ func publishImmutableArtifact(path string, encoded []byte) error {
 		if readErr != nil || !bytes.Equal(current, encoded) {
 			return errors.Join(errors.New("immutable artifact conflict"), readErr)
 		}
-		return nil
+		return syncCustodyArtifactDirectory(directory)
 	}
+	return syncCustodyArtifactDirectory(directory)
+}
+
+func makeCustodyArtifactDirectory(directory string) error {
+	info, err := os.Stat(directory)
+	if err == nil {
+		if !info.IsDir() {
+			return errors.New("custody artifact parent is not a directory")
+		}
+		return syncCustodyArtifactDirectory(filepath.Dir(directory))
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	parent := filepath.Dir(directory)
+	if parent == directory {
+		return err
+	}
+	if err := makeCustodyArtifactDirectory(parent); err != nil {
+		return err
+	}
+	if err := os.Mkdir(directory, 0o755); err != nil && !errors.Is(err, os.ErrExist) {
+		return err
+	}
+	if info, err := os.Stat(directory); err != nil || !info.IsDir() {
+		return errors.Join(errors.New("custody artifact parent is not a directory"), err)
+	}
+	return syncCustodyArtifactDirectory(parent)
+}
+
+func syncCustodyArtifactDirectory(directory string) error {
 	directoryHandle, err := os.Open(directory)
 	if err != nil {
 		return err

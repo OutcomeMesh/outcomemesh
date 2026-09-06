@@ -391,8 +391,22 @@ predecessor receipt, and trusted-auditor policy. Thus a retry replays the first
 signed outcome and a different challenge cannot create a sibling even across a
 process crash. The auditor similarly persists its challenge before dialing and
 its verified response before publishing the renewed receipt. Corrupt,
-conflicting, symlink, and partial records fail closed; automated challenge
-scheduling and evidence-retention policy remain operator responsibilities.
+conflicting, symlink, and partial records fail closed.
+
+Journal mode fixes the manifest, original receipt, and complete custody-policy
+digest in an immutable header. Replay verifies every slot, content ID,
+predecessor, signature, sampled batch, and receipt extension. A permanent file
+lock serializes disk operations across processes and releases on process death;
+the fixed sequence slot commits the first response before network transmission.
+Body segmentation deletes no history and startup repairs an interrupted active
+directory recreation. A retry after challenge expiry is restricted to an
+already committed response that still passes the original proof-age limit.
+The journal is local evidence, not a remote rollback anchor: deleting a complete
+valid suffix or restoring an old complete copy requires an independent retained
+head to detect. Operators must protect the journal and lock inode from external
+mutation and use a filesystem supporting the documented durability primitives.
+External timers, disk-budget enforcement, evidence-retention policy, and
+long-outage reconciliation remain deployment concerns; see `CUSTODY.md`.
 
 With an explicitly non-zero local canonical-retention policy, one synchronous
 schema-4 batch may replace the strict prefix before the selected archive anchor

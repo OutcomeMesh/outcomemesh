@@ -300,7 +300,14 @@ attestor trust set. The server fully replays before import; the client preserves
 an incomplete resumable store and only publishes after materialization plus a
 second full replay. Source restart and network-free client recovery are covered
 by a real process test.
-Automated scheduling, record retention/rotation, broader filesystem-fault
+Custody journal mode fixes the initial receipt and auditor policy, derives the
+current receipt from a gapless chain of immutable slots, and stores complete
+entry bodies by content ID. A permanent kernel lock serializes disk operations
+across processes. Rotation seals body directories without moving decision slots
+or deleting history. One-cycle CLI invocations derive due times from replayed
+receipts and recover incomplete output publication. `CUSTODY.md` documents the
+timer integration, filesystem assumptions, and recovery limits.
+Record retention/compaction, disk budgets, broader filesystem-fault
 soaks, and outbound share publication remain. The libp2p
 adapter carries both the
 versioned chain and separate WorkGraph share sessions under distinct opt-in
