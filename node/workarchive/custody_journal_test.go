@@ -596,6 +596,9 @@ func FuzzDecodeCustodyJournalHeaderNeverPanics(f *testing.F) {
 	}
 	encoded, _ := header.CanonicalBytes()
 	f.Add(encoded)
+	header.Version, header.HistoricalTransferID = CustodyJournalHeaderHistoricalVersion1, types.Hash{1}
+	historical, _ := header.CanonicalBytes()
+	f.Add(historical)
 	f.Add([]byte{0})
 	f.Fuzz(func(t *testing.T, input []byte) { _, _ = DecodeCustodyJournalHeader(input) })
 }

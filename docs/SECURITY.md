@@ -509,7 +509,38 @@ files or changed payloads fail verification. Original response times and live
 proof-age checks are unchanged. No journal is appended, no key is used, no pin
 is promoted, and no old participant is fenced. The package is not a live record
 or journal entry. It must not be manually unpacked into a decision directory as
-a substitute for the still-unimplemented reviewed import/cutover workflow.
+a substitute for the separate historical-only application or future cutover
+workflow.
+
+Explicit historical application writes only a new directory, disjoint from the
+handoff and both backups. All original bundle and package locks span creation.
+The source header must be live v0; it is never copied as a live header. A new
+historical-only v1 header preserves manifest, policy, and initial receipt while
+binding the reviewed transfer ID. Journal payload copying and the single
+private historical append occur only behind that header and the usual ordered
+artifact/journal locks. Public initialization rejects it before repairing any
+child directories; append, rotation, and journal-backed serving also reject it.
+Older v0-only header decoders reject its version. There is no activation flag,
+header downgrade, key rotation, pin promotion, or source retirement operation.
+
+An application marker is published only after independent result replay and
+exact source-plus-overlay verification. The only allowed differences are the
+linked header, the original next entry/slot, and its canonical challenge, record,
+and receipt artifacts. Extra paths, duplicate body locations, and changed earlier
+files are not accepted merely because a replacement checkpoint hashes or replays
+correctly. Completed retries recompute that exact delta; incomplete directories
+are preserved and require a fresh destination. Source-based verification also
+requires the independently retained application ID. A process kill before
+completion leaves no usable live journal, even when a body or slot already
+exists. This is not power-loss certification or a fence against another host.
+
+The historical-only header is an accidental-use guard under the existing
+exclusive-operator filesystem model, not access control against someone who can
+rewrite/copy evidence and ignore independent pins. It does not stop a separately
+running original participant or establish the latest remote decision. Do not
+extract a receipt into an unjournaled service or downgrade the header to evade
+it. Future linked rebaseline and enforceable cutover must establish fresh
+authority separately; original proof age and receipt expiry are unchanged.
 
 With an explicitly non-zero local canonical-retention policy, one synchronous
 schema-4 batch may replace the strict prefix before the selected archive anchor

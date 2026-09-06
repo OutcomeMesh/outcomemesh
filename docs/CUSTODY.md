@@ -575,8 +575,9 @@ not a successful restore or approval to start a service. There is no `--apply`,
 import, challenge replacement, signature generation, pin update, or rebaseline
 operation. Two matching snapshots are still only historical snapshots and may
 both predate later decisions. The offline handoff stage below packages selected
-evidence, but reviewed application, explicitly linked rebaseline, participant
-fencing, and crash-safe cutover remain separate plan items. Process tests verify
+evidence; explicit application below reconstructs a separate historical-only
+journal. Linked rebaseline, participant fencing, and crash-safe active cutover
+remain separate plan items. Process tests verify
 repeatable offline assessment with stale evidence
 while leaving both bundles, the pending challenge, and the auditor head intact.
 
@@ -654,10 +655,93 @@ select historical copies, not necessarily the latest authority decisions.
 Every successful mode prints `historical_only=true`, `automatic_resume=false`,
 and `availability_attested=false`. No mode appends a journal, changes pins,
 imports artifacts, rebaselines, or starts/stops a service; `--apply` is unsupported.
-Do not extract the entry into a live decision directory. Reviewed application,
-linked rebaseline, and enforceable participant fencing remain required before
-any resumed authority. A local handoff file cannot establish that an old
-participant on another host has stopped.
+Do not extract the entry into a live decision directory. The explicit command
+below can reconstruct a historical-only copy, but linked rebaseline and
+enforceable participant fencing remain required before any resumed authority.
+A local handoff file cannot establish that an old participant on another host
+has stopped.
+
+## Apply history to a quarantined reconstruction
+
+`work-archive-custody-apply-history` applies the selected response to a **new
+auditor reconstruction**, not to either original journal. The same independently
+pinned source bundles and reviewed handoff must still be available. All four
+directories (both backups, handoff, and reconstruction) must be disjoint;
+symlink/case aliases are checked as for backup creation. Creation accepts only a
+new destination or an exact completed retry. It needs no private key or network.
+
+Using the trusted `handoff_args` and reviewed transfer ID from the previous
+section:
+
+```sh
+omd work-archive-custody-apply-history --mode create "${handoff_args[@]}" \
+  --package /cold/handoff-001 --transfer-id "$REVIEWED_TRANSFER_ID" \
+  --recovery /cold/auditor-recovery-001
+
+# Retain the returned application id independently as APPLICATION_ID.
+omd work-archive-custody-apply-history --mode verify "${handoff_args[@]}" \
+  --package /cold/handoff-001 --transfer-id "$REVIEWED_TRANSFER_ID" \
+  --recovery /cold/auditor-recovery-001 --expected-id "$APPLICATION_ID"
+```
+
+The result contains `journal/`, `artifacts/`, the exact `historical.omcht`
+handoff envelope, an empty `recovery.lock`, and the final `application.omcap`
+marker. That marker binds the transfer ID and a complete result checkpoint;
+its own domain-separated application ID is the value to retain independently.
+Verification requires all four IDs: both source checkpoints, transfer, and
+application. It does not trust an application checkpoint read from the candidate
+alone. Do not discard the sources or handoff after creating this directory.
+
+The new journal preserves the original manifest, policy, immutable initial
+receipt, committed prefix, and segmented body locations. Its first published
+header is version 1, defined exclusively as historical-only, with the reviewed
+transfer ID appended. No live v0 header is copied. Live open rejects this header
+before initializing or repairing child directories; append, rotation, and
+journal-backed replica-session construction reject it too. v0 canonical bytes
+and policy IDs are unchanged, and older v0-only decoders reject the new version.
+Only checkpoint/evidence replay is supported for this historical journal.
+
+Under the ordinary artifact-then-journal locks, the private constructor adds
+exactly the reviewed next body and slot, then completes that cycle's canonical
+challenge, record, and receipt files. Existing matching files are retained
+byte-for-byte. The original response time, signatures, and renewed receipt are
+not regenerated. A stale proof remains stale; the old initial receipt is not
+replaced with a new baseline. The original auditor and replica are never changed.
+
+Before final publication, the destination is independently replayed and checked
+as the exact original auditor trees plus these named changes. Matching a head
+or containing the old files is insufficient: extra paths, relocated/duplicated
+bodies, and altered earlier artifacts fail, even if a candidate supplies a newly
+computed checkpoint. This exact comparison also makes a completed lost-result
+retry deterministic without deriving authority from candidate metadata.
+
+Creation streams copies under the existing hard byte/path ceilings. Admission
+of the added journal entry uses `--journal-max-bytes` and `--journal-max-paths`
+with the existing defaults. These are journal growth limits, not a filesystem
+quota for all copies or artifacts. A budget/copy/write failure preserves the
+incomplete destination. Raising the budget does not resume it in place: retain
+it and choose another destination. An already complete exact retry may still
+succeed under reduced growth limits, without adding files. Verification accepts
+no growth-limit overrides because it performs no admission.
+
+The final marker is published with fsync and a no-replace link only after the
+full reconstruction verifies. An incomplete directory is never treated as ready
+or repaired by retry. Process-kill tests cover header publication, copied prefix,
+body publication, slot publication, completed artifacts, and both sides of the
+final marker. A killed attempt with a historical header remains forbidden to
+run, even if it lacks the rest of the journal. These tests do not certify power
+loss, disk exhaustion, every filesystem, or another host's state.
+
+Successful output always includes `historical_only=true`,
+`automatic_resume=false`, `participant_fenced=false`, and
+`availability_attested=false`. There is no activate, resume, rebaseline, header
+downgrade, or pin-promotion operation. The format guard prevents accidental live
+use under the existing exclusive-operator filesystem assumptions; it is not an
+access-control boundary against someone who rewrites files or ignores pins.
+Do not downgrade the header or extract its receipt into an unjournaled service.
+The separately running original participant has not been stopped. Enforceable
+old-participant fencing, a linked fresh baseline, and crash-safe active cutover
+remain required and unimplemented.
 
 ## Recovery limits and deployment gates
 
@@ -666,9 +750,9 @@ proof is still within `max-proof-age-seconds`. An unanswered expired challenge
 cannot mint a fresh proof. A stale committed proof also fails. Preserve the
 journals and artifacts on these errors; do not delete a challenge to generate a
 sibling. Read-only reconciliation above can identify historical candidates and
-blockers, and the handoff stage can package one exact response. Applying that
-evidence, participant fencing, and an explicit rebaseline workflow remain
-separate work.
+blockers, the handoff stage can package one exact response, and explicit
+application can reconstruct a historical-only auditor copy. Live participant
+fencing and an explicit linked rebaseline/cutover workflow remain separate work.
 
 Use a local filesystem with working file locks, no-replace hard links, atomic
 directory rename, and fsync semantics. The implementation has lock adapters for

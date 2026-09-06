@@ -225,10 +225,16 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
       Preserve source trees and incomplete attempts; test concurrent exports,
       tampering, and process kills before/after publication. This is offline
       packaging, not journal import or participant fencing.
-    - [ ] Reviewed application of historical evidence and explicit linked
-      rebaseline, including participant fencing and restart/crash recovery.
-      Neither a comparison report nor a handoff package authorizes a new
-      challenge or resumed authority.
+    - [x] Apply one reviewed historical entry to a separate, no-replace auditor
+      reconstruction. Write a transfer-linked historical-only header before
+      copying journal payloads; reject live open, append, rotation, and journal
+      serving. Verify the exact source-plus-entry/artifact delta, preserve
+      incomplete attempts, and test pre/post-commit crashes and live CLI refusal.
+    - [ ] Explicit linked rebaseline and active participant cutover, including
+      enforceable old-participant fencing and restart/crash recovery. Neither
+      a report, handoff package, nor historical reconstruction authorizes a new
+      challenge or resumed authority. A local quarantine header is not a
+      cross-host fence or a freshness attestation.
   - [ ] Filesystem-full, inode-exhaustion, power-loss, and long-running retention
     campaigns before deployment claims.
   - [x] Isolate the 2026-09-06 tie-pair/campaign early-close race with a

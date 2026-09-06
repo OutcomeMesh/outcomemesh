@@ -90,7 +90,9 @@ reconciliation compares pinned auditor/replica backups, distinguishes stale
 responses from current proof-age bounds, and reports conflicts without importing
 records, changing a baseline, or authorizing a restart. A separate reviewed-ID
 handoff command packages one exact historical response and verifies it against
-both source bundles; it does not import the response or start a participant. See
+both source bundles. Explicit application can now reconstruct a separate auditor
+history, with a transfer-linked header that forbids live use. It does not alter
+the original journals, refresh proof age, or fence an old participant. See
 [the custody runbook](docs/CUSTODY.md) for retention rules and remaining
 backup/reconciliation gates. Separate
 archive-object serve/fetch commands replay the source before import, resume into

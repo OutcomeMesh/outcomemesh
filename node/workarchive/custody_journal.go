@@ -21,8 +21,11 @@ import (
 
 const (
 	CustodyJournalHeaderVersion0 uint16 = 0
-	CustodyJournalEntryVersion0  uint16 = 0
-	custodyJournalSlotVersion0   uint16 = 0
+	// Version 1 is exclusively a historical-only recovery header. It cannot
+	// become a live journal by opening it with a newer writer.
+	CustodyJournalHeaderHistoricalVersion1 uint16 = 1
+	CustodyJournalEntryVersion0            uint16 = 0
+	custodyJournalSlotVersion0             uint16 = 0
 
 	MaximumCustodyJournalHeaderBytes = MaximumReplicaReceiptBytes + 128
 	MaximumCustodyJournalEntryBytes  = MaximumReplicaReceiptBytes + MaximumCustodyRecordBytes + 192
@@ -36,6 +39,7 @@ const (
 )
 
 var ErrCustodyJournal = errors.New("invalid WorkGraph archive custody journal")
+var ErrCustodyJournalHistoricalOnly = errors.New("historical-only custody journal cannot run, append, or rotate")
 
 var (
 	custodyJournalHeaderMagic = [8]byte{'O', 'M', 'W', 'A', 'C', 'J', 'H', 'D'}
@@ -56,10 +60,11 @@ const (
 // CustodyJournalHeader fixes the manifest and initial receipt from which every
 // journal state must be replayed. It is immutable after first publication.
 type CustodyJournalHeader struct {
-	Version        uint16
-	ManifestID     types.Hash
-	PolicyID       types.Hash
-	InitialReceipt ReplicaReceipt
+	Version              uint16
+	ManifestID           types.Hash
+	PolicyID             types.Hash
+	InitialReceipt       ReplicaReceipt
+	HistoricalTransferID types.Hash // zero for v0; required for historical-only v1
 }
 
 func (header CustodyJournalHeader) CanonicalBytes() ([]byte, error) {
@@ -76,6 +81,9 @@ func (header CustodyJournalHeader) CanonicalBytes() ([]byte, error) {
 	encoder.Fixed(header.ManifestID[:])
 	encoder.Fixed(header.PolicyID[:])
 	encoder.BytesField(receipt)
+	if header.Version == CustodyJournalHeaderHistoricalVersion1 {
+		encoder.Fixed(header.HistoricalTransferID[:])
+	}
 	encoded := encoder.Bytes()
 	if len(encoded) > MaximumCustodyJournalHeaderBytes {
 		return nil, ErrCustodyJournal
@@ -114,6 +122,13 @@ func DecodeCustodyJournalHeader(input []byte) (CustodyJournalHeader, error) {
 	if err != nil {
 		return CustodyJournalHeader{}, errors.Join(ErrCustodyJournal, err)
 	}
+	if header.Version == CustodyJournalHeaderHistoricalVersion1 {
+		transferID, err := decoder.Fixed(types.HashSize)
+		if err != nil {
+			return CustodyJournalHeader{}, errors.Join(ErrCustodyJournal, err)
+		}
+		copy(header.HistoricalTransferID[:], transferID)
+	}
 	if decoder.Finish() != nil || header.verifyShape() != nil {
 		return CustodyJournalHeader{}, ErrCustodyJournal
 	}
@@ -121,7 +136,8 @@ func DecodeCustodyJournalHeader(input []byte) (CustodyJournalHeader, error) {
 }
 
 func (header CustodyJournalHeader) verifyShape() error {
-	if header.Version != CustodyJournalHeaderVersion0 || header.ManifestID.IsZero() ||
+	if (header.Version != CustodyJournalHeaderVersion0 && header.Version != CustodyJournalHeaderHistoricalVersion1) ||
+		(header.Version == CustodyJournalHeaderVersion0) != header.HistoricalTransferID.IsZero() || header.ManifestID.IsZero() ||
 		header.PolicyID.IsZero() ||
 		header.InitialReceipt.verifySignature() != nil {
 		return ErrCustodyJournal
@@ -437,6 +453,9 @@ func (journal *CustodyJournal) append(
 	if journal == nil {
 		return CustodyJournalEntry{}, false, ErrCustodyJournal
 	}
+	if journal.header.Version != CustodyJournalHeaderVersion0 {
+		return CustodyJournalEntry{}, false, ErrCustodyJournalHistoricalOnly
+	}
 	journal.mu.Lock()
 	defer journal.mu.Unlock()
 	lock, err := acquireCustodyJournalLock(journal.path)
@@ -543,6 +562,9 @@ func (journal *CustodyJournal) rotate(hooks custodyJournalHooks) (bool, error) {
 	if journal == nil {
 		return false, ErrCustodyJournal
 	}
+	if journal.header.Version != CustodyJournalHeaderVersion0 {
+		return false, ErrCustodyJournalHistoricalOnly
+	}
 	journal.mu.Lock()
 	defer journal.mu.Unlock()
 	lock, err := acquireCustodyJournalLock(journal.path)
@@ -602,7 +624,23 @@ func (journal *CustodyJournal) rotate(hooks custodyJournalHooks) (bool, error) {
 }
 
 func initializeCustodyJournal(path string, header CustodyJournalHeader, limits CustodyJournalLimits) error {
+	if header.Version != CustodyJournalHeaderVersion0 {
+		return ErrCustodyJournalHistoricalOnly
+	}
 	if err := requireCustodyJournalDirectory(path); err != nil {
+		return err
+	}
+	// Reject a quarantine header before creating or repairing any child path.
+	// The caller already holds the journal lock.
+	if encoded, err := readRegularArchiveFile(filepath.Join(path, custodyJournalHeaderName), MaximumCustodyJournalHeaderBytes); err == nil {
+		current, err := DecodeCustodyJournalHeader(encoded)
+		if err != nil {
+			return err
+		}
+		if current.Version != CustodyJournalHeaderVersion0 {
+			return ErrCustodyJournalHistoricalOnly
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 	if err := syncDirectory(filepath.Dir(path)); err != nil {

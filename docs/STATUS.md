@@ -516,8 +516,21 @@ Implemented in an isolated, not-yet-activated consensus package:
   block export. Completed retries are exact; incomplete attempts are preserved.
   Unit/decoder tests, concurrent exports, pre/post-commit process kills, and the
   outage CLI process fixture cover this boundary. This is offline packaging,
-  not import, a fresh availability claim, or fencing. Reviewed application,
-  linked rebaseline, and participant cutover remain open plan items.
+  not import, a fresh availability claim, or fencing. Explicit application now
+  reconstructs a new historical-only auditor journal and artifact tree from
+  those exact sources. Its v1 header binds the reviewed transfer before journal
+  payload copying; live open, append, rotation, and journal-backed serving
+  reject it. Checkpoint replay still works, and v0 canonical vectors remain
+  unchanged. The final application ID binds the complete reconstructed inventory.
+  Verification permits exactly the linked header, selected next body/slot, and
+  canonical pending-cycle artifacts as differences from the original auditor;
+  even a rehashed extra file or changed earlier artifact is rejected. Source
+  copies and the initial receipt remain unchanged. Tests cover rotated prefixes,
+  reduced-limit retries, concurrent creation, decoder boundaries, seven process-
+  kill points, and live auditor/replica CLI refusal without modifying recovery
+  evidence. Incomplete attempts remain quarantined and cannot resume in place.
+  Linked rebaseline and enforceable old-participant fencing/cutover remain open;
+  no historical reconstruction can yet become an active participant.
   QUIC follow-up (2026-09-06): the first combined process run failed in
   `TestProcessTiePairQUICReachesIndependentV2ObserversAndRecoversAck` with a
   remote QUIC close, and in the coordinator-journal-before-rename case of

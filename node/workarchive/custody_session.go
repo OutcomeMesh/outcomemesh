@@ -181,6 +181,9 @@ func NewJournalCustodyReplicaSession(
 	if journal == nil {
 		return nil, ErrCustodySession
 	}
+	if journal.header.Version != CustodyJournalHeaderVersion0 {
+		return nil, ErrCustodyJournalHistoricalOnly
+	}
 	head, exists, err := journal.Head()
 	if err != nil {
 		return nil, err

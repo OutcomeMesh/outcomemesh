@@ -349,8 +349,20 @@ files, or abandoned backup checkpoint links. Export requires the reviewed
 envelope ID, holds both bundle locks, and atomically publishes a no-replace
 package; verification recomputes selection from both independently pinned
 sources. Neither the envelope's shape nor its hash alone proves source intent.
-The envelope is not accepted by live record/journal decoders. Application into
-a journal, linked rebaseline, and fencing still need implementation and review.
+The envelope is not accepted by live record/journal decoders. Explicit historical
+application creates a separate auditor reconstruction: v1 headers preserve the
+same manifest, policy, and initial receipt, but add the reviewed transfer ID and
+are historical-only by definition. v0 header bytes and policy IDs are unchanged.
+No live v0 header is copied into the new journal. Public live open, append,
+rotation, and journal-backed serving reject v1, while bounded checkpoint replay
+remains available. The private constructor installs only the selected original
+entry and its canonical artifacts, under artifact-then-journal locks. A final
+application marker binds the transfer and the whole result checkpoint after
+fsync, replay, and exact source-plus-overlay verification. Retrying checks this
+exact delta, not a destination's self-reported checkpoint alone. Old sources,
+keys, pins, receipt timestamps, and peer sessions are untouched. Linked
+rebaseline and enforceable active-participant cutover still need implementation
+and review; local historical-only typing is not a cross-host fence.
 Cross-host cutover, compaction review, broader filesystem-fault
 soaks, and outbound share publication remain. The libp2p
 adapter carries both the

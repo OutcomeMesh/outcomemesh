@@ -15,7 +15,7 @@ import (
 
 // Run within the outage fixture so the assertions after this handoff also prove
 // that neither the live auditor nor the retained source bundles were modified.
-func checkProcessCustodyHistoricalTransfer(t *testing.T, trust []string, aBackup, rBackup, aID, rID string, record workarchive.CustodyRecord) {
+func checkProcessCustodyHistoricalTransfer(t *testing.T, fixture processCustodyFixture, trust []string, aBackup, rBackup, aID, rID string, record workarchive.CustodyRecord) {
 	t.Helper()
 	args := append([]string{"work-archive-custody-transfer", "--auditor-backup", aBackup, "--replica-backup", rBackup,
 		"--auditor-checkpoint-id", aID, "--replica-checkpoint-id", rID}, trust...)
@@ -68,6 +68,9 @@ func checkProcessCustodyHistoricalTransfer(t *testing.T, trust []string, aBackup
 	if !bytes.Equal(want, got) {
 		t.Fatal("handoff changed the original signed response")
 	}
+	t.Run("historical-only-application", func(t *testing.T) {
+		checkProcessCustodyHistoricalApplication(t, fixture, trust, aBackup, rBackup, aID, rID, destination, id, record)
+	})
 	encoded[len(encoded)-1] ^= 1
 	if err := os.WriteFile(filepath.Join(destination, "historical.omcht"), encoded, 0o600); err != nil {
 		t.Fatal(err)

@@ -76,13 +76,14 @@ test-fuzz-smoke:
 	$(GO) test ./node/workarchive -run '^$$' -fuzz '^FuzzDecodeCustodyBackupPinNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/workarchive -run '^$$' -fuzz '^FuzzCustodyReconciliationPendingNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/workarchive -run '^$$' -fuzz '^FuzzDecodeCustodyHistoricalTransferNeverPanics$$' -fuzztime=$(FUZZTIME)
+	$(GO) test ./node/workarchive -run '^$$' -fuzz '^FuzzDecodeCustodyHistoricalApplicationNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/workarchive -run '^$$' -fuzz '^FuzzReadCustodySessionFrameNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./sim/workgraphmodel -run '^$$' -fuzz '^FuzzRunSelfishStrategiesNeverBreakAccounting$$' -fuzztime=$(FUZZTIME)
 
 test-process:
 	$(GO) test -tags=integration ./cmd/omd -run '^TestProcess(QUICRestartSoak|WorkGraphActivationQUICRestart|Archive(ObjectQUICMaterializesAndRecoversAcrossRestart|Custody(QUICSurvivesReplicaRestart|JournalRunsTwoRestartedCycles|(Checkpoint|Backup)RestoresPendingCycle|PinsTrackLatestBackup|ReconciliationKeepsStaleEvidenceReadOnly))|ControlledTieProducerRecoversWaitingState|TiePair(QUICReachesIndependentV2ObserversAndRecoversAck|CompletionWaitsForCoordinatorEOF)|TieCampaign.*)$$' -count=1 -timeout=10m
 	$(GO) test -tags=integration ./node/workchain -run '^TestPebbleProcessCrashAtomicity$$' -count=1 -timeout=2m
-	$(GO) test -tags=integration ./node/workarchive -run '^Test(ArchiveRestoreProcessCrashAtomicity|Custody(Record|Journal|Backup|Pin|Transfer)ProcessCrashAtomicity)$$' -count=1 -timeout=2m
+	$(GO) test -tags=integration ./node/workarchive -run '^Test(ArchiveRestoreProcessCrashAtomicity|Custody(Record|Journal|Backup|Pin|Transfer|Application)ProcessCrashAtomicity)$$' -count=1 -timeout=2m
 
 test-work-rollover-soak:
 	OUTCOMEMESH_WORK_ROLLOVER_SOAK_CYCLES=$(WORKROLLOVERCYCLES) $(GO) test ./cmd/omd -run '^TestMultiNodeWorkRolloverConvergesAcrossClockSkewChurnAndRelayLoss$$' -count=1 -timeout=5m
