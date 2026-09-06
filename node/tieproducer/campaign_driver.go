@@ -213,7 +213,16 @@ func DriveCampaign(ctx context.Context, config CampaignDriverConfig) error {
 					return ctx.Err()
 				}
 				if errors.Is(deliveryErr, context.DeadlineExceeded) {
-					return errors.Join(ErrOutsideSlot, deliveryErr)
+					// A dial/session timeout can expire before the signed slot.
+					// Classify against the campaign clock, not the transport's
+					// nested deadline; neither error authorizes skipping delivery.
+					now, clockErr := config.Clock.Now()
+					if clockErr != nil {
+						return errors.Join(deliveryErr, clockErr)
+					}
+					if now >= slot.EndedAt {
+						return errors.Join(ErrOutsideSlot, deliveryErr)
+					}
 				}
 				return deliveryErr
 			}

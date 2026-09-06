@@ -203,9 +203,10 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
     an expired challenge or discarding the previous evidence chain.
   - [ ] Filesystem-full, inode-exhaustion, power-loss, and long-running retention
     campaigns before deployment claims.
-  - [ ] Investigate the intermittent tie-pair/campaign QUIC close and slot-time
-    failures recorded in the 2026-09-06 process run (`STATUS.md`); successful
-    retries do not close this reliability gate.
+  - [x] Isolate the 2026-09-06 tie-pair/campaign early-close race with a
+    failing-before-fix process regression, add bounded EOF-based host/slot
+    retirement, and distinguish nested transport timeouts from signed-slot
+    expiry without changing pending-delivery safety rules.
 - Admission-deduplicated multi-hop forwarding across the explicit peer graph.
 - Reputation/latency/ASN-ranked peerbook selection with an inventory-free,
   exact-context WorkGraph capability probe.

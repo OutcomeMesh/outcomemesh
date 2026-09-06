@@ -459,14 +459,22 @@ Implemented in an isolated, not-yet-activated consensus package:
   This is logical accounting, not physical free-space reservation. Evidence and
   artifact retention/compaction, ENOSPC/inode-fault campaigns, and long-outage
   reconciliation remain pending.
-  Verification caveat (2026-09-06): the first combined process run failed in
+  QUIC follow-up (2026-09-06): the first combined process run failed in
   `TestProcessTiePairQUICReachesIndependentV2ObserversAndRecoversAck` with a
   remote QUIC close, and in the coordinator-journal-before-rename case of
   `TestProcessTieCampaignStorageFailuresRecoverWithoutFalseAdvance` with a
-  slot-deadline error after a transport close. Both passed in an isolated rerun,
-  and the subsequent complete CLI process run passed. These paths do not use the
-  custody journal; their intermittent transport/timing failures still need
-  diagnosis and are not resolved by the storage-limit change.
+  slot-deadline error after a transport close. Investigation isolated an early
+  host-shutdown race: both observer commands could exit after buffering the
+  final ACK, before the coordinator read it. A new process regression fails
+  against that old behavior in both modes. Receivers now wait for coordinator
+  EOF before shutdown/slot handoff; coordinators half-close only after validating
+  the final ACK and use a bounded terminal drain. Unit coverage checks EOF,
+  trailing bytes, cancellation, deadlines, and post-ACK transport closure.
+  A second issue mislabeled any nested transport timeout as signed-slot expiry;
+  the driver now checks the campaign clock, preserving the pending delivery
+  phase without a skip or local advance. These fixes change no wire encoding,
+  signed slot, sibling ordering, or confirmation-file format. Broader network
+  fault/long-soak and crash-after-confirmation reconciliation gates remain.
   This is fresh retrievability evidence from a trusted replica key, not proof of
   physical storage, non-proxying, independent operation, or consensus finality.
 - an isolated activation router now owns strict v0/v1 block admission. It

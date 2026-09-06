@@ -441,6 +441,11 @@ func serveObserverCampaignSlot(
 				reset(stream)
 				return
 			}
+			if err := awaitTiePairCoordinatorClose(handlerContext, stream); err != nil {
+				reset(stream)
+				reportFatal(err)
+				return
+			}
 			deactivate()
 			_ = stream.Close()
 			completed <- observerCampaignSlotResult{receiptTail: receiptTail, recovered: isRecovery}

@@ -244,6 +244,20 @@ match the already validated completed receipt and returns its original ID. The
 authenticated channel protects the
 exchange endpoints; the receipt signature remains the portable audit evidence.
 
+The final write is not the receiver's shutdown boundary: QUIC stream close can
+return before queued frames reach the coordinator. After validating that final
+acknowledgement, the coordinator half-closes its write side and briefly waits
+for the observer to close. Both observer commands require coordinator EOF
+before returning success, shutting down their host, or moving to the next
+campaign slot. This terminal wait has a five-second read bound, shortened by
+the enclosing context and interrupted by cancellation. It accepts no trailing
+application bytes and adds no fifth message or new wire version. Admission
+still uses the signed slot deadline; this read-only teardown grace cannot admit
+another block. Once the coordinator has validated the final acknowledgement,
+errors while draining the closing stream do not revoke it or trigger redelivery.
+EOF is transport lifecycle coordination, not proof that the coordinator has
+fsynced its own campaign journal; existing lost-ACK/reconciliation rules remain.
+
 The campaign receiver reuses the same protocol and authenticated host across
 all signed plan slots. It installs only the pair binding named by the exact
 numbered checkpoint and independently published checkpoint ID. Local receipt
@@ -255,6 +269,12 @@ receipt but no marker keeps serving that old binding until confirmation instead
 of moving to the next slot. Empty
 expired slots become conservative `NoPair`; any partial sibling state stops the
 campaign and is never converted into a safe-to-continue miss.
+
+A delivery timeout is classified against the campaign clock. A shorter nested
+dial/session deadline does not imply the signed slot has expired. Both failure
+classes preserve `Delivering`; neither permits an automatic skip or local
+advance. If the clock cannot be read, its error is retained with the transport
+error rather than inventing a slot-expiry result.
 
 An observer may also restart cleanly between slots while retaining its transport
 key and direct endpoint. If the coordinator's reused QUIC connection proves

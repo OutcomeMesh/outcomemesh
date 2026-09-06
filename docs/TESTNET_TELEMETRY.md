@@ -484,6 +484,24 @@ signed receipt from disk without remining or resubmitting either block. A real
 process test kills the observer at that exact boundary, restarts it, verifies
 the same receipt tail, and completes the plan.
 
+Successful writes do not by themselves permit the observer to exit: the
+coordinator reads the final acknowledgement, half-closes its write side, and
+waits briefly for observer closure. The observer waits for that EOF before
+ending the exchange or switching slots. This teardown wait is bounded to five
+seconds (or the earlier context deadline), observes cancellation, and changes
+neither message encodings nor admission deadlines. A post-ACK drain error does
+not erase an already validated acknowledgement. Process regressions hold back
+the final ACK read and coordinator EOF separately for one-shot and campaign
+receivers; both commands must remain alive until the latter boundary.
+Upgrade both CLI participants together so the coordinator keeps its host alive
+for this terminal drain as well as the observer.
+
+Nested transport timeouts and actual signed-slot expiry are reported separately.
+After a delivery timeout, the driver checks its campaign clock before adding
+`ErrOutsideSlot`. The durable phase stays `Delivering`, including when the clock
+itself fails; no receipt tail is invented, no slot is skipped, and no local block
+is admitted because of the timeout.
+
 The coordinator bounds publication waiting by the signed slot end. If no
 checkpoint publication arrives, it does not deliver the pair, waits until the
 same slot end plus the receipt-closure grace, then atomically appends that

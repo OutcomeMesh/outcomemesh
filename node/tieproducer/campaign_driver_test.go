@@ -6,6 +6,7 @@ import (
 	"errors"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/outcomemesh/outcomemesh/core/difficulty"
@@ -194,6 +195,71 @@ func TestDriveCampaignNeverSkipsAfterObserverDeliveryBegins(t *testing.T) {
 		status.AcknowledgedCount != 1 || status.SkippedSlots != 0 {
 		t.Fatalf("unsafe skip status=%+v", status)
 	}
+}
+
+func TestDriveCampaignDistinguishesTransportTimeoutFromSlotExpiry(t *testing.T) {
+	clockFailure := errors.New("campaign clock unavailable")
+	for _, test := range []struct {
+		name     string
+		expired  bool
+		clockErr error
+	}{
+		{name: "transport timeout inside slot"},
+		{name: "signed slot expired", expired: true},
+		{name: "clock failed", clockErr: clockFailure},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			plan, binding, keys := campaignPlan(t)
+			planID, _ := plan.ID()
+			campaignConfig := CampaignConfig{Plan: plan, Binding: binding, ExpectedPlanID: planID, StatePath: t.TempDir() + "/campaign.state"}
+			campaign, err := OpenCampaign(campaignConfig)
+			if err != nil {
+				t.Fatal(err)
+			}
+			source := newCampaignDriverSource(t, plan)
+			timeout := &campaignTimeoutFixture{campaignDriverClock: campaignDriverClock{source: source}, clockErr: test.clockErr, after: plan.Slots[0].EndedAt - 1}
+			if test.expired {
+				timeout.after++
+			}
+			err = DriveCampaign(context.Background(), CampaignDriverConfig{
+				Plan: plan, Binding: binding, ExpectedPlanID: planID, CoordinatorPrivateKey: keys.coordinator,
+				Campaign: campaign, Source: source, Artifacts: &memoryCampaignArtifacts{},
+				Publication: &campaignPublicationFixture{}, Deliverer: timeout, Clock: timeout,
+			})
+			if !errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrOutsideSlot) != test.expired ||
+				(test.clockErr != nil && !errors.Is(err, test.clockErr)) {
+				t.Fatalf("timeout classification: %v", err)
+			}
+			reopened, err := OpenCampaign(campaignConfig)
+			if err != nil {
+				t.Fatal(err)
+			}
+			status, err := reopened.Status()
+			if err != nil || status.Phase != CampaignDelivering || status.NextSequence != 1 ||
+				status.AcknowledgedCount != 0 || status.SkippedSlots != 0 || len(source.submissions) != 0 {
+				t.Fatalf("timeout changed durable delivery state: %+v submissions=%d error=%v", status, len(source.submissions), err)
+			}
+		})
+	}
+}
+
+type campaignTimeoutFixture struct {
+	campaignDriverClock
+	delivered atomic.Bool
+	after     uint64
+	clockErr  error
+}
+
+func (fixture *campaignTimeoutFixture) Deliver(context.Context, [ed25519.PublicKeySize]byte, Pair, calibration.TiePairCheckpoint) (types.Hash, error) {
+	fixture.delivered.Store(true)
+	return types.Hash{}, context.DeadlineExceeded
+}
+
+func (fixture *campaignTimeoutFixture) Now() (uint64, error) {
+	if fixture.delivered.Load() {
+		return fixture.after, fixture.clockErr
+	}
+	return fixture.campaignDriverClock.Now()
 }
 
 type memoryCampaignArtifacts struct {

@@ -235,6 +235,10 @@ func runWorkTelemetryTiePairReceiveQUIC(arguments []string) (resultErr error) {
 			fail(stream, err)
 			return
 		}
+		if err := awaitTiePairCoordinatorClose(handlerContext, stream); err != nil {
+			fail(stream, err)
+			return
+		}
 		_ = stream.Close()
 		report(result)
 	})
@@ -384,6 +388,7 @@ func exchangeTiePairQUIC(
 	); err != nil {
 		return tieexchange.Acknowledgement{}, types.Hash{}, err
 	}
+	retireTiePairCoordinatorStream(ctx, stream)
 	return acknowledgement, remoteID, nil
 }
 
