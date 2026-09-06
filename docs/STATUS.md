@@ -1,6 +1,6 @@
 # Implementation status
 
-Updated: 2026-09-01
+Updated: 2026-09-06
 
 This file records evidence against `PLAN.md`. A milestone remains open until all
 of its exit gates pass; implementing most deliverables does not close it.
@@ -529,8 +529,20 @@ Implemented in an isolated, not-yet-activated consensus package:
   reduced-limit retries, concurrent creation, decoder boundaries, seven process-
   kill points, and live auditor/replica CLI refusal without modifying recovery
   evidence. Incomplete attempts remain quarantined and cannot resume in place.
-  Linked rebaseline and enforceable old-participant fencing/cutover remain open;
-  no historical reconstruction can yet become an active participant.
+  Linked rebaseline proposals now require full verification of that pinned
+  reconstruction and a fresh consensus replay of the complete archive. The
+  replica signs a separate, fixed-size proposal, not a usable receipt. It binds
+  the application, previous receipt, new replica/location, and new auditor policy;
+  old/new evidence keys cannot overlap. Review requires independent IDs and the
+  intended assignment, replays the archive again, and checks the signed short
+  review window before and after replay. The CLI defaults to verification;
+  creation is explicit and never overwrites or refreshes an existing proposal.
+  Tests cover full replay/corruption, wrong trust and re-signed wrong bindings,
+  key reuse, cancellation, expiry during replay, canonical byte mutations, and
+  an actual CLI create/verify/refusal workflow with expired historical receipts.
+  Enforceable old-participant fencing and active rebaseline/cutover remain open;
+  neither a proposal nor a historical reconstruction can become a live receipt
+  or participant. A new signature is not a cross-host fence or proof of uptime.
   QUIC follow-up (2026-09-06): the first combined process run failed in
   `TestProcessTiePairQUICReachesIndependentV2ObserversAndRecoversAck` with a
   remote QUIC close, and in the coordinator-journal-before-rename case of

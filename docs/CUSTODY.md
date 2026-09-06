@@ -739,9 +739,101 @@ downgrade, or pin-promotion operation. The format guard prevents accidental live
 use under the existing exclusive-operator filesystem assumptions; it is not an
 access-control boundary against someone who rewrites files or ignores pins.
 Do not downgrade the header or extract its receipt into an unjournaled service.
-The separately running original participant has not been stopped. Enforceable
-old-participant fencing, a linked fresh baseline, and crash-safe active cutover
-remain required and unimplemented.
+The separately running original participant has not been stopped. A fresh
+linked proposal can now be prepared as described below; enforceable
+old-participant fencing and crash-safe active cutover remain unimplemented.
+
+## Propose a linked rebaseline after full replay
+
+`work-archive-custody-rebaseline` prepares or verifies an **inactive proposal**.
+It does not restore service. Creation revalidates the complete historical
+application against the original backups and handoff, then replays every chunk
+and block of a complete archive through consensus execution. A retained sampled
+batch, signed manifest, old receipt, or application marker alone is insufficient.
+The archive must match the original manifest and checkpoint statement exactly.
+Keep the archive and recovery evidence trees immutable throughout verification;
+this command does not lock an externally writable archive or certify continued
+possession afterward. Supply a separate offline verified node for `--data`: the
+existing activation-base loader opens its ledger normally and may update database
+housekeeping files. It is not a read-only database snapshot interface.
+
+The fixed 322-byte v0 proposal binds the independently retained application ID,
+last historical receipt ID, manifest and statement IDs, proposed custody policy
+ID, replica key, opaque location commitment, and three timestamps. The new
+replica signs in `custody-rebaseline-proposal/signature/v0`, not a receipt domain.
+No valid live receipt can be extracted by copying that signature. Neither old
+nor current live parsers accept proposal bytes as a receipt, challenge, or journal
+header. No auditor acceptance, availability bundle, live journal, challenge,
+pin promotion, or service configuration is produced.
+
+All next auditor keys and the next replica key must be disjoint from both old
+evidence roles and from each other. Callers must independently supply the intended
+new public assignment and location; verification never trusts these values just
+because the candidate signed them. Different keys do not prove different owners,
+failure domains, key erasure, or retirement of copied old services. The Go API
+can bind a complete new custody policy; this CLI deliberately keeps the existing
+timing limits and changes only the single trusted auditor identity.
+
+Time is sampled after successful replay. The signed review lifetime is 1–600
+seconds (default 300); the review window is half-open. Review checks local time
+before and after replay, so expiry or clock rollback during expensive work fails.
+The proposed retention deadline must exceed both the review window and previous
+receipt deadline, and fit the new policy's maximum renewal term. Expired proposals
+remain valid historical signed artifacts but fail current review. Clock trust is
+an operator assumption; the signature alone proves neither wall-clock accuracy
+nor that its signer honestly performed replay. Independent verification performs
+the replay itself. There is no `--at` override or automatic timestamp renewal.
+
+Using the trusted `handoff_args` from above (including the exact original custody
+policy), add the archive's independently configured activation base and checkpoint
+trust. Public keys and IDs below must come from operator review, not from values
+extracted from the candidate. The proposal's parent directory must already exist
+and be outside all input and node-data trees.
+
+```sh
+rebaseline_args=(
+  "${handoff_args[@]}"
+  --data /review/verified-node
+  --archive /cold/complete-archive
+  --checkpoint /review/archive-checkpoint.omwc
+  --attestor-public-key "$ARCHIVE_ATTESTOR_A"
+  --attestor-public-key "$ARCHIVE_ATTESTOR_B"
+  --package /cold/handoff-001 --transfer-id "$REVIEWED_TRANSFER_ID"
+  --recovery /cold/auditor-recovery-001 --application-id "$APPLICATION_ID"
+  --next-auditor-public-key "$NEXT_AUDITOR_PUBLIC_KEY"
+  --next-replica-public-key "$NEXT_REPLICA_PUBLIC_KEY"
+  --location-id "$NEXT_LOCATION_ID"
+  --proposal /review/proposals/rebaseline-001.omcrb
+)
+
+omd work-archive-custody-rebaseline --mode create "${rebaseline_args[@]}" \
+  --next-replica-key /keys/next-replica.key \
+  --retain-until "$PROPOSED_RETENTION_UNIX_SECONDS"
+
+# Independently retain/review the returned proposal ID. Verify needs no key.
+omd work-archive-custody-rebaseline "${rebaseline_args[@]}" \
+  --expected-id "$REVIEWED_PROPOSAL_ID"
+```
+
+The default mode is `verify`; a missing independent proposal ID is an error.
+Verification requires all four original evidence IDs, the proposal ID, intended
+assignment, full source trees, and complete replay inputs. It does not infer
+missing trust from a nearby file. Creation publishes one fsynced file through a
+no-replace hard link. Repeating create, even after a lost response, refuses the
+existing path rather than issuing a new timestamp or overwriting evidence.
+Inspect and independently review the retained artifact; use a new explicit path
+for a later proposal. A killed pre-publication temporary file is not a committed
+proposal. This single-file publication creates no durable activation decision.
+
+Successful output includes `proposal_only=true`, `archive_replayed=true`,
+`automatic_resume=false`, `participant_fenced=false`, and
+`availability_attested=false`. The old participants are untouched, and the
+reconstructed journal remains historical-only. Active cutover still needs an
+independently enforced retirement decision covering old/copy/restarted authority
+paths, followed by one durable activation linked to the reviewed proposal.
+Crashes before, between, and after those decisions must not permit two active
+authorities or revive retired keys. No local flag or proposal signature supplies
+that deployment mechanism; activation, resume, and fencing modes are rejected.
 
 ## Recovery limits and deployment gates
 
@@ -751,8 +843,9 @@ cannot mint a fresh proof. A stale committed proof also fails. Preserve the
 journals and artifacts on these errors; do not delete a challenge to generate a
 sibling. Read-only reconciliation above can identify historical candidates and
 blockers, the handoff stage can package one exact response, and explicit
-application can reconstruct a historical-only auditor copy. Live participant
-fencing and an explicit linked rebaseline/cutover workflow remain separate work.
+application can reconstruct a historical-only auditor copy. Full replay can then
+produce an inactive linked rebaseline proposal. Enforceable participant fencing
+and crash-safe active cutover remain separate work.
 
 Use a local filesystem with working file locks, no-replace hard links, atomic
 directory rename, and fsync semantics. The implementation has lock adapters for

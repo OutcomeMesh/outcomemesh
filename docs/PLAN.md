@@ -230,11 +230,19 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
       copying journal payloads; reject live open, append, rotation, and journal
       serving. Verify the exact source-plus-entry/artifact delta, preserve
       incomplete attempts, and test pre/post-commit crashes and live CLI refusal.
-    - [ ] Explicit linked rebaseline and active participant cutover, including
-      enforceable old-participant fencing and restart/crash recovery. Neither
-      a report, handoff package, nor historical reconstruction authorizes a new
-      challenge or resumed authority. A local quarantine header is not a
-      cross-host fence or a freshness attestation.
+    - [x] Linked, short-lived rebaseline proposals following a fresh full archive
+      replay and verification of the pinned historical reconstruction. Bind the
+      previous receipt, new replica/location, and disjoint new auditor policy;
+      sign only in a proposal-specific domain. Require independent review inputs,
+      recheck expiry after replay, and preserve immutable proposal files. No live
+      receipt, challenge, journal writer, or activation is created.
+    - [ ] Active rebaseline/cutover with enforceable old-participant fencing and
+      restart/crash recovery. Neither a report, handoff, reconstruction, nor
+      signed proposal authorizes a new challenge or resumed authority. A local
+      quarantine header and changed keys are not a cross-host fence. Require
+      durable retirement enforcement at every old authority/acceptance path,
+      then one crash-safe activation decision linked to the reviewed proposal;
+      test stale/restarted participants and crashes between those decisions.
   - [ ] Filesystem-full, inode-exhaustion, power-loss, and long-running retention
     campaigns before deployment claims.
   - [x] Isolate the 2026-09-06 tie-pair/campaign early-close race with a
