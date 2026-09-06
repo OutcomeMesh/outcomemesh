@@ -15,6 +15,14 @@ import (
 )
 
 func TestProcessArchiveCustodyCheckpointRestoresPendingCycle(t *testing.T) {
+	testProcessCustodyCopyRestoresPendingCycle(t, false)
+}
+
+func TestProcessArchiveCustodyBackupRestoresPendingCycle(t *testing.T) {
+	testProcessCustodyCopyRestoresPendingCycle(t, true)
+}
+
+func testProcessCustodyCopyRestoresPendingCycle(t *testing.T, managed bool) {
 	fixture := newProcessCustodyFixture(t)
 	journalPath := filepath.Join(fixture.root, "journal")
 	artifactsPath := filepath.Join(fixture.root, "cycles")
@@ -116,8 +124,39 @@ func TestProcessArchiveCustodyCheckpointRestoresPendingCycle(t *testing.T) {
 	}
 	copyRoot := t.TempDir()
 	copyJournal, copyArtifacts := filepath.Join(copyRoot, "journal"), filepath.Join(copyRoot, "cycles")
-	copyProcessCustodyEvidence(t, journalPath, copyJournal)
-	copyProcessCustodyEvidence(t, artifactsPath, copyArtifacts)
+	var verifyBackup func() (string, error)
+	if managed {
+		backupPath := filepath.Join(t.TempDir(), "managed-backup")
+		args := []string{"work-archive-custody-backup", "--backup", backupPath, "--journal", journalPath,
+			"--artifacts", artifactsPath, "--manifest", fixture.manifestPath, "--receipt", fixture.receiptPath,
+			"--auditor-public-key", fixture.auditorPublicKey}
+		for _, wantCreated := range []string{"true", "false"} {
+			output, err := runProcessCommandError(20*time.Second, args...)
+			fields := outputFields(output, "work_archive_custody_backup")
+			if err != nil || fields["id"] != newID || fields["created"] != wantCreated {
+				t.Fatalf("managed backup create/retry: %v\n%s", err, output)
+			}
+		}
+		verifyArgs := []string{"work-archive-custody-verify-backup", "--backup", backupPath,
+			"--manifest", fixture.manifestPath, "--receipt", fixture.receiptPath,
+			"--auditor-public-key", fixture.auditorPublicKey}
+		if output, err := runProcessCommandError(20*time.Second, verifyArgs...); err == nil {
+			t.Fatalf("backup accepted missing independent pin: %s", output)
+		}
+		verifyBackup = func() (string, error) {
+			return runProcessCommandError(20*time.Second, append(verifyArgs, "--expected-id", newID)...)
+		}
+		if output, err := verifyBackup(); err != nil || outputFields(output, "work_archive_custody_backup")["verified"] != "true" {
+			t.Fatalf("managed backup verification: %v\n%s", err, output)
+		}
+		// Restore into a separate non-serving location; never turn the retained
+		// backup bundle itself into a mutable journal.
+		copyProcessCustodyEvidence(t, filepath.Join(backupPath, "journal"), copyJournal)
+		copyProcessCustodyEvidence(t, filepath.Join(backupPath, "artifacts"), copyArtifacts)
+	} else {
+		copyProcessCustodyEvidence(t, journalPath, copyJournal)
+		copyProcessCustodyEvidence(t, artifactsPath, copyArtifacts)
+	}
 	output, err = runCheckpoint(true, copyJournal, copyArtifacts, checkpointPath, "--expected-id", newID)
 	if err != nil || outputFields(output, "work_archive_custody_checkpoint")["verified"] != "true" {
 		t.Fatalf("cold copy verification: %v\n%s", err, output)
@@ -164,6 +203,11 @@ func TestProcessArchiveCustodyCheckpointRestoresPendingCycle(t *testing.T) {
 	}
 	if output, err := runCheckpoint(true, copyJournal, copyArtifacts, checkpointPath, "--expected-id", newID); err == nil {
 		t.Fatalf("advanced copy still matched old inventory: %s", output)
+	}
+	if verifyBackup != nil {
+		if output, err := verifyBackup(); err != nil {
+			t.Fatalf("restore modified retained backup: %v\n%s", err, output)
+		}
 	}
 }
 

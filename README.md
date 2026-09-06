@@ -79,7 +79,9 @@ evidence. Local byte/path growth limits include temporary files and retain
 read/retry access to committed evidence when a cap is lowered. They are not a
 physical disk quota. Paired checkpoints bind the journal and auditor artifacts,
 including pending challenges, for cold-copy verification against an independently
-retained ID. They do not copy data or authorize deletion. See
+retained ID. A managed local-backup command now copies both trees under their
+locks and publishes a completion checkpoint only after fsync and full replay.
+Incomplete targets are preserved, never overwritten or treated as ready. See
 [the custody runbook](docs/CUSTODY.md) for retention rules and remaining
 backup/reconciliation gates. Separate
 archive-object serve/fetch commands replay the source before import, resume into

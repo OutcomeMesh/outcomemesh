@@ -319,8 +319,13 @@ fully replay the journal, and commit to both complete directory inventories.
 An independent checkpoint ID lets an operator reject a rolled-back cold copy,
 including a same-head copy missing an uncommitted signed challenge. Exact-copy
 verification never initializes or repairs evidence. The retention policy is to
-keep all evidence; checkpointing neither copies nor deletes it. Managed backup
-publication, external pin maintenance, compaction review, broader filesystem-fault
+keep all evidence. The separate managed-backup command holds the source locks,
+streams each file into independent inodes, syncs and replays the destination,
+then publishes the checkpoint as the final bundle commit. A no-replace directory
+reservation prevents adopting an existing target; incomplete attempts remain
+incomplete rather than being resumed or removed. Standalone bundle verification
+requires an independent pin and does not need the original sources. External
+pin maintenance, cross-host cutover, compaction review, broader filesystem-fault
 soaks, and outbound share publication remain. The libp2p
 adapter carries both the
 versioned chain and separate WorkGraph share sessions under distinct opt-in

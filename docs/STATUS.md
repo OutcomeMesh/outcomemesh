@@ -469,8 +469,18 @@ Implemented in an isolated, not-yet-activated consensus package:
   check lock ordering, path/byte/depth ceilings, case-insensitive directory
   aliases, and canonical encoding. A process
   restore drill verifies a new-directory cold copy and finishes its pending
-  record offline with unchanged challenge/response bytes. Managed backup
-  publication, external pin maintenance, cross-host cutover, compaction review,
+  record offline with unchanged challenge/response bytes. Managed local backup
+  creation now holds those source locks through copying and verification, writes
+  independent inodes, and fsyncs all data/directories before publishing the final
+  checkpoint. Existing empty, incomplete, conflicting, and aliased targets are
+  never overwritten; identical completed retries reverify against the current
+  source. The bundle verifier requires an independent pin and no original source
+  access. Failure tests cover cancellation, altered copies, layout bounds, and
+  missing completion markers. Process kills bracket the journal copy and final
+  commit, including lost-success-output recovery. The CLI restore drill now also
+  restores from a managed bundle and checks that offline continuation leaves
+  the retained backup unchanged. External pin maintenance, scheduled backups,
+  cross-host cutover, compaction review,
   ENOSPC/inode-fault campaigns, and long-outage reconciliation remain pending.
   QUIC follow-up (2026-09-06): the first combined process run failed in
   `TestProcessTiePairQUICReachesIndependentV2ObserversAndRecoversAck` with a
@@ -736,7 +746,7 @@ No WorkGraph field has entered a version-0 block yet. The v1 store and opt-in
 QUIC session remain isolated from every ordinary v0 chain/CLI path and are
 reachable only through the explicitly marked experimental commands;
 adversarial discovery/eclipse and longer real-QUIC rapid-parent churn soaks,
-topology-derived peer selection, managed custody backups/compaction and
+topology-derived peer selection, custody backup operations/compaction and
 long-outage reconciliation,
 canonical-prune
 disk-exhaustion/long-soak campaigns, production gossip-budget calibration, and

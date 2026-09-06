@@ -156,21 +156,62 @@ func captureCustodyCheckpoint(
 	if journalPath == "" || manifest.Validate() != nil || initial.verifySignature() != nil || policy.validate() != nil {
 		return CustodyCheckpoint{}, ErrCustodyCheckpoint
 	}
-	if artifactsPath != "" {
-		if CustodyEvidencePathsOverlap(journalPath, artifactsPath) {
-			return CustodyCheckpoint{}, fmt.Errorf("%w: journal and artifacts must be separate", ErrCustodyCheckpoint)
-		}
-		lock, err := acquireCustodyEvidenceLock(artifactsPath, custodyArtifactsLockName, createArtifactLock)
-		if err != nil {
-			return CustodyCheckpoint{}, err
-		}
-		defer lock.Close()
-	}
-	lock, err := acquireCustodyEvidenceLock(journalPath, custodyJournalLockName, false)
+	release, err := lockCustodyEvidencePair(journalPath, artifactsPath, createArtifactLock)
 	if err != nil {
 		return CustodyCheckpoint{}, err
 	}
-	defer lock.Close()
+	defer release()
+	return captureCustodyCheckpointLocked(journalPath, artifactsPath, manifest, initial, policy)
+}
+
+func lockCustodyEvidencePair(journalPath, artifactsPath string, createArtifactLock bool) (func(), error) {
+	releaseArtifacts := func() {}
+	if artifactsPath != "" {
+		if CustodyEvidencePathsOverlap(journalPath, artifactsPath) {
+			return nil, fmt.Errorf("%w: journal and artifacts must be separate", ErrCustodyCheckpoint)
+		}
+		lock, err := acquireCustodyEvidenceLock(artifactsPath, custodyArtifactsLockName, createArtifactLock)
+		if err != nil {
+			return nil, err
+		}
+		releaseArtifacts = func() { _ = lock.Close() }
+	}
+	lock, err := acquireCustodyEvidenceLock(journalPath, custodyJournalLockName, false)
+	if err != nil {
+		releaseArtifacts()
+		return nil, err
+	}
+	return func() {
+		_ = lock.Close()
+		releaseArtifacts()
+	}, nil
+}
+
+func captureCustodyCheckpointLocked(
+	journalPath, artifactsPath string, manifest Manifest, initial ReplicaReceipt, policy CustodyPolicy,
+) (CustodyCheckpoint, error) {
+	checkpoint, err := custodyCheckpointStateLocked(journalPath, manifest, initial, policy)
+	if err != nil {
+		return CustodyCheckpoint{}, err
+	}
+	checkpoint.Journal, err = digestCustodyEvidenceTree(journalPath, MaximumCustodyJournalBytes, MaximumCustodyJournalPaths)
+	if err != nil {
+		return CustodyCheckpoint{}, err
+	}
+	if artifactsPath != "" {
+		checkpoint.Artifacts, err = digestCustodyEvidenceTree(artifactsPath, MaximumCustodyJournalBytes, MaximumCustodyJournalPaths)
+		if err != nil {
+			return CustodyCheckpoint{}, err
+		}
+	}
+	return checkpoint, checkpoint.validate()
+}
+
+// The caller holds the source locks until it has also inventoried or copied the
+// evidence. This is only the replayed state, not a complete checkpoint yet.
+func custodyCheckpointStateLocked(
+	journalPath string, manifest Manifest, initial ReplicaReceipt, policy CustodyPolicy,
+) (CustodyCheckpoint, error) {
 	headerBytes, err := readRegularArchiveFile(filepath.Join(journalPath, custodyJournalHeaderName), MaximumCustodyJournalHeaderBytes)
 	if err != nil {
 		return CustodyCheckpoint{}, err
@@ -189,22 +230,11 @@ func captureCustodyCheckpoint(
 	if err != nil {
 		return CustodyCheckpoint{}, err
 	}
-	checkpoint := CustodyCheckpoint{
+	return CustodyCheckpoint{
 		Version:  CustodyCheckpointVersion0,
 		HeaderID: types.DomainHash(custodyCheckpointHeaderDomain, headerBytes),
 		Sequence: state.Sequence, HeadEntryID: state.HeadEntryID, ReceiptID: receiptID,
-	}
-	checkpoint.Journal, err = digestCustodyEvidenceTree(journalPath, MaximumCustodyJournalBytes, MaximumCustodyJournalPaths)
-	if err != nil {
-		return CustodyCheckpoint{}, err
-	}
-	if artifactsPath != "" {
-		checkpoint.Artifacts, err = digestCustodyEvidenceTree(artifactsPath, MaximumCustodyJournalBytes, MaximumCustodyJournalPaths)
-		if err != nil {
-			return CustodyCheckpoint{}, err
-		}
-	}
-	return checkpoint, checkpoint.validate()
+	}, nil
 }
 
 // CustodyEvidencePathsOverlap resolves existing symlink ancestors even when a

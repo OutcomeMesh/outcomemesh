@@ -200,9 +200,13 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
     requirements, including the separate auditor artifact directory. Add paired
     canonical checkpoints, exact-copy verification without repair, whole-cycle
     auditor locking, and a pending-record restore drill. No automatic deletion.
-  - [ ] Managed crash-safe backup publication, independent pin maintenance,
-    cross-host cutover review, and deployment-scale restore drills. A manually
-    verified cold copy does not close these operational gates.
+  - [x] Managed local backup publication under the source locks: independent
+    file copies, fsync and full replay before the final checkpoint marker,
+    no-replace destinations, exact completed retries, preserved incomplete
+    attempts, process-kill tests, and a pending-cycle restore drill.
+  - [ ] Independent pin maintenance, cross-host cutover review, scheduled backup
+    operations, and deployment-scale restore drills. Local bundle publication
+    does not close these operational gates.
   - [ ] Explicit long-outage reconciliation/rebaseline without silently replacing
     an expired challenge or discarding the previous evidence chain.
   - [ ] Filesystem-full, inode-exhaustion, power-loss, and long-running retention

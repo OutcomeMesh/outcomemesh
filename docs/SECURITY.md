@@ -413,7 +413,7 @@ a hard replay path ceiling before path/slot indexes are allocated. All writers
 must use the intended local limits: they are per handle, not a volume quota or
 an immutable protocol rule. Other disk consumers and filesystem metadata remain
 outside these counters. External timers, physical free-space/inode monitoring,
-managed evidence backups, and long-outage reconciliation remain deployment
+scheduled backup/pin operations, and long-outage reconciliation remain deployment
 concerns; see `CUSTODY.md`.
 
 Custody checkpoints bind both the replayed journal and the entire auditor
@@ -425,11 +425,24 @@ ID, rejects substitutions and exact-inventory mismatches, and does not repair
 the candidate. Artifact hashes preserve bytes; they do not validate arbitrary
 pending files as decisions. Root names and file metadata are not authenticated,
 and no protection against a hostile concurrent filesystem writer is claimed.
-The tool does not provide external pin freshness, automatic backups, storage
+Standalone checkpointing does not provide external pin freshness, copying, storage
 independence, or consensus finality. A stale or missing independent pin cannot
 establish the latest state. A later known decision requires reconciliation,
 even when an older backup verifies. Retain all evidence, including partial
 files, and never run two restored copies as concurrent decision authorities.
+
+Managed local backup creation now holds both source locks while copying all
+evidence into independent file/lock inodes. The destination is reserved with a
+no-replace mkdir; no existing directory is adopted. Files and directories are
+synced and the copy is fully replayed before the final checkpoint marker is
+published. Verification requires the independent pin, an existing bundle lock,
+the bounded root layout, and an exact evidence inventory. Failed attempts are
+preserved, not automatically resumed or deleted. Completed retries must also
+match the current locked source. Per-tree byte/path ceilings bound the copy but
+do not reserve physical space or inodes. This is a local point-in-time backup,
+not a scheduler, independent pin service, remote-participant freeze, or safe
+cutover protocol. Restore into a new location and leave the retained bundle
+unchanged; power-loss, physical disk exhaustion, and cross-host campaigns remain.
 
 With an explicitly non-zero local canonical-retention policy, one synchronous
 schema-4 batch may replace the strict prefix before the selected archive anchor

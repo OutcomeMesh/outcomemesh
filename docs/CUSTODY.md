@@ -288,9 +288,102 @@ A successful check establishes integrity at the checkpoint, not that it contains
 the latest possible decision or that a physical backup survived power loss.
 Renewals or artifact writes after capture need a new independent checkpoint and
 backup. The restore drill tests an exact pending-record continuation in a new
-directory without a live replica; managed backup publication, external pin
-maintenance, cross-host cutover, and long-duration filesystem-fault campaigns
-remain deployment work.
+directory without a live replica. The managed local-copy command below removes
+the manual copy window; external pin maintenance, cross-host cutover, and
+long-duration filesystem-fault campaigns remain deployment work.
+
+## Managed local backups
+
+`work-archive-custody-backup` holds the source artifact lock and then its journal
+lock through copying, destination verification, and publication. This keeps the
+evidence pair stable without a separate checkpoint/copy gap. All source locks
+must already exist; backup creation never initializes or repairs source state.
+Pause timers for large copies: competing invocations may hit the normal
+30-second lock-wait limit, and the replica's journal is also unavailable to new
+renewals while its own backup is copied. A local backup does not coordinate the
+other participant or guarantee that no remote decision is newer.
+
+```sh
+omd work-archive-custody-backup \
+  --journal auditor-journal --artifacts auditor-cycles \
+  --manifest manifest.omwm --receipt initial.omrr \
+  --auditor-public-key "$AUDITOR_PUBLIC_KEY" \
+  --backup backups/custody-000001
+```
+
+Use `--replica-only` instead of `--artifacts` for a replica. The destination must
+be outside both source trees, including aliases. Its parent may be created, but
+the destination itself is reserved by a no-replace directory creation. Even an
+existing empty directory is not adopted. The bundle layout is:
+
+```text
+custody-000001/
+  backup.lock
+  journal/             # full journal, including journal.lock and pending files
+  artifacts/           # full auditor tree; omitted for replica-only backups
+  checkpoint.omccp     # published last; commits the complete bundle
+```
+
+Files are streamed into new mode-0600 inodes and directories are created with
+mode 0700. Source hard links are copied independently; the backup does not
+share mutable files or lock inodes with the source. Each file is fsynced,
+directories are synced bottom-up, and the destination is fully replayed and
+checked against the inventory of the bytes copied. Only then is the canonical
+checkpoint published by a no-replace hard link and its parent fsynced. A
+permanent `backup.lock` serializes bundle verification with this final step.
+Never remove this lock to force a retry.
+The checkpoint/tree encodings and IDs are unchanged from standalone capture.
+
+A directory without its final checkpoint is incomplete, even if most or all
+payload files are present. Errors, cancellation, or process death do not clean
+up the attempt or resume copying into it. Preserve it and choose a new target.
+A completed destination is accepted on retry only if its full inventory still
+matches the locked source. If the source advanced, use a new backup name; the
+old backup remains verifiable with its original independent ID. A crash after
+publication but before the success output can therefore be retried without
+overwriting evidence. At most one small abandoned checkpoint temporary file is
+allowed beside the bundle metadata; it is not a completion marker and is not
+deleted by verification.
+
+The same per-tree checkpoint ceilings apply: 1 TiB logical bytes, 1,048,576
+paths, and directory depth three, with an additional small bundle root. There
+is no physical space reservation or volume quota. A pair can need up to twice
+the single-tree allowance plus metadata, and copying sparse files can allocate
+more blocks than their sources used. Provision destination bytes and inodes
+and monitor free space. Copy reads observe cancellation between bounded reads
+and before commit; replay and bounded lock waits can delay cancellation.
+No scheduler, upload, pin service, garbage collector, or retention deletion is
+installed by the command.
+
+Save the printed `id` outside the backup's failure/rollback domain and retain the
+trusted manifest, initial receipt, and policy separately. Verification needs
+that independent ID, not the original source directories:
+
+```sh
+omd work-archive-custody-verify-backup \
+  --backup backups/custody-000001 \
+  --manifest manifest.omwm --receipt initial.omrr \
+  --auditor-public-key "$AUDITOR_PUBLIC_KEY" \
+  --expected-id "$INDEPENDENT_CHECKPOINT_ID"
+```
+
+The verifier derives auditor/replica scope from the pinned checkpoint, checks
+the bounded bundle layout, and replays both evidence inventories without
+initialization or repair. A checkpoint merely read from the bundle is not an
+independent pin. The command does not separately collect private seeds, replica
+object-store data, or external trust configuration. It copies every file placed
+under the evidence roots, so keep keys and unrelated data outside those roots.
+
+Keep the published bundle as a retained backup, not a live journal. For a
+restore drill, verify it, copy its `journal/` and optional `artifacts/` to fresh
+non-serving locations, and use `work-archive-custody-verify-checkpoint` with the
+same independently pinned checkpoint before resuming. Apply all cold-copy
+cutover requirements above, including retiring the old authority and checking
+for later decisions. Process tests kill creation after the journal copy, before
+commit, and after commit; the CLI drill restores a pending record into a separate
+directory, finishes it offline, and verifies that the retained bundle has not
+changed. These tests do not certify power-loss durability, remote filesystems,
+scheduled pin freshness, or a cross-host cutover procedure.
 
 ## Recovery limits and deployment gates
 
@@ -313,5 +406,5 @@ corruption and gaps, but a complete rollback to an earlier valid prefix requires
 an independently retained checkpoint to detect. The paired inventory also covers
 signed intentions that have not reached the head. Two separately copied journals
 are separate decision authorities. Policy migration, evidence deletion,
-managed backup/pin maintenance, cross-host reconciliation, and long
+scheduled backup/pin maintenance, cross-host reconciliation, and long
 filesystem-fault campaigns remain activation gates.
