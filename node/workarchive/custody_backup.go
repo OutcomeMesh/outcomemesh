@@ -189,6 +189,13 @@ func VerifyCustodyBackup(destination string, expectedID types.Hash, manifest Man
 		return CustodyCheckpoint{}, errors.Join(ErrCustodyBackupIncomplete, err)
 	}
 	defer lock.Close()
+	return verifyCustodyBackupLocked(destination, expectedID, manifest, initial, policy)
+}
+
+// The caller holds the existing bundle lock and supplies a nonzero independent
+// checkpoint ID. Keeping this lock outside the verifier lets pin promotion
+// compare two verified immutable bundles without releasing either bundle lock.
+func verifyCustodyBackupLocked(destination string, expectedID types.Hash, manifest Manifest, initial ReplicaReceipt, policy CustodyPolicy) (CustodyCheckpoint, error) {
 	encoded, err := readRegularArchiveFile(filepath.Join(destination, custodyBackupCheckpointName), MaximumCustodyCheckpointBytes)
 	if err != nil {
 		return CustodyCheckpoint{}, errors.Join(ErrCustodyBackupIncomplete, err)

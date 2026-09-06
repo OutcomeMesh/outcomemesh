@@ -324,8 +324,16 @@ streams each file into independent inodes, syncs and replays the destination,
 then publishes the checkpoint as the final bundle commit. A no-replace directory
 reservation prevents adopting an existing target; incomplete attempts remain
 incomplete rather than being resumed or removed. Standalone bundle verification
-requires an independent pin and does not need the original sources. External
-pin maintenance, cross-host cutover, compaction review, broader filesystem-fault
+requires an independent pin and does not need the original sources. An optional
+independently stored pin journal links fixed-width checkpoint records through
+no-replace sequence files under a permanent lock. Updates compare the observed
+pin ID and fully verify both bundles before checking chain ancestry and retained
+bodies, pending files, and auditor bytes. Exact last-update retries do not append;
+latest-pin verification rejects older bundles even at the same custody head.
+The pin store is a local operational authority, not a signed consensus object.
+Its physical independence and freshness still need deployment; an external head
+receipt is necessary to detect rollback of the entire pin store as well.
+Cross-host cutover, compaction review, broader filesystem-fault
 soaks, and outbound share publication remain. The libp2p
 adapter carries both the
 versioned chain and separate WorkGraph share sessions under distinct opt-in

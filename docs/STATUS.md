@@ -479,8 +479,20 @@ Implemented in an isolated, not-yet-activated consensus package:
   missing completion markers. Process kills bracket the journal copy and final
   commit, including lost-success-output recovery. The CLI restore drill now also
   restores from a managed bundle and checks that offline continuation leaves
-  the retained backup unchanged. External pin maintenance, scheduled backups,
-  cross-host cutover, compaction review,
+  the retained backup unchanged. Local backup-pin maintenance now uses bounded,
+  append-only canonical records and an explicit previous-pin expectation.
+  Promotion verifies both retained bundles, proves the earlier head remains in
+  the new chain, and preserves orphan body IDs, pending files, and all auditor
+  paths/bytes. Same-head pending-request updates are supported without allowing
+  a lost request to be promoted. CLI commands initialize/update the journal,
+  inspect its head, and verify only its latest pinned backup. Tests cover exact
+  lost-response retries, concurrent identical and competing updates, divergent
+  chains, missing evidence, malformed journals, capacity, decoder golden/fuzz
+  checks, process kills before/after publication, and a real signed pending
+  request through the CLI. Optional external head-ID verification detects a
+  rolled-back pin store; absent that receipt, the store itself is trusted.
+  Independent storage/access-control deployment and pin freshness, scheduled
+  backups, cross-host cutover, compaction review,
   ENOSPC/inode-fault campaigns, and long-outage reconciliation remain pending.
   QUIC follow-up (2026-09-06): the first combined process run failed in
   `TestProcessTiePairQUICReachesIndependentV2ObserversAndRecoversAck` with a

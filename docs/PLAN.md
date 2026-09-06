@@ -204,9 +204,16 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
     file copies, fsync and full replay before the final checkpoint marker,
     no-replace destinations, exact completed retries, preserved incomplete
     attempts, process-kill tests, and a pending-cycle restore drill.
-  - [ ] Independent pin maintenance, cross-host cutover review, scheduled backup
-    operations, and deployment-scale restore drills. Local bundle publication
-    does not close these operational gates.
+  - [x] Local tooling for independently stored backup pins: bounded append-only
+    pin history, explicit compare-and-append, exact committed retries, full
+    verification of both bundles, and preservation of previously pinned chain,
+    orphan bodies, pending files, and auditor artifacts. Add latest-pin CLI
+    verification, concurrent-update and process-kill tests. No deletion or
+    automatic fallback to an older backup.
+  - [ ] Deploy and maintain the independent pin failure/access-control domain,
+    cross-host cutover review, scheduled backup/pin operations, and deployment-
+    scale restore drills. Local bundle and pin tooling do not establish physical
+    independence, external freshness, or safe participant cutover.
   - [ ] Explicit long-outage reconciliation/rebaseline without silently replacing
     an expired challenge or discarding the previous evidence chain.
   - [ ] Filesystem-full, inode-exhaustion, power-loss, and long-running retention

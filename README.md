@@ -81,7 +81,11 @@ physical disk quota. Paired checkpoints bind the journal and auditor artifacts,
 including pending challenges, for cold-copy verification against an independently
 retained ID. A managed local-backup command now copies both trees under their
 locks and publishes a completion checkpoint only after fsync and full replay.
-Incomplete targets are preserved, never overwritten or treated as ready. See
+Incomplete targets are preserved, never overwritten or treated as ready.
+An append-only backup-pin journal now selects the latest explicitly pinned
+bundle and checks that each update preserves the earlier evidence. Operators
+must place and protect that journal in an independent failure domain; it is not
+a deployed remote pin service or a freshness guarantee. See
 [the custody runbook](docs/CUSTODY.md) for retention rules and remaining
 backup/reconciliation gates. Separate
 archive-object serve/fetch commands replay the source before import, resume into
@@ -127,7 +131,9 @@ the exact first proof and renewed receipt to be replayed. It also imports,
 transfers, materializes, fully replays, locally recovers, and repeats an archive
 object fetch after restarting the pinned source. Custody journal process tests
 cover body/slot/segment crash boundaries, lost-response redelivery, two cycles
-with replica restart, and local restoration of completed artifacts. Raise the
+with replica restart, and local restoration of completed artifacts. Backup-pin
+tests kill the process before and after pin publication and exercise CLI
+selection of a newer backup containing an uncommitted signed request. Raise the
 v0 QUIC soak length with, for example,
 `OUTCOMEMESH_SOAK_CYCLES=25 make test-process` (hard cap: 100 cycles).
 The completed campaign case also runs the read-only coordinator/observer audit

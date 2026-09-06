@@ -444,6 +444,31 @@ not a scheduler, independent pin service, remote-participant freeze, or safe
 cutover protocol. Restore into a new location and leave the retained bundle
 unchanged; power-loss, physical disk exhaustion, and cross-host campaigns remain.
 
+The optional backup-pin journal is a separately managed operational authority.
+Fixed-width records link checkpoint IDs through gapless, no-replace sequence
+slots. A permanent pin lock spans head replay, bundle verification, evidence
+comparison, and append; publishers must supply the previously observed pin ID.
+Two different updates cannot silently overwrite each other. An exact retry of
+the last checkpoint may use its current or immediately preceding pin ID and
+still fully verifies the candidate. Promotion requires the prior pinned bundle:
+same trust/header and scope, prior chain ancestry, all retained body IDs, and
+unchanged old pending/artifact paths and bytes. Rotation can move bodies without
+losing content. This check neither authorizes compaction nor turns arbitrary
+artifact bytes into valid decisions.
+
+Pin records are not signed; authorized storage writes and a genuinely independent
+failure domain are trust assumptions. Path/alias separation rejects overlap with
+the supplied backups, but cannot prove different devices, accounts, hosts, or
+protection from a privileged concurrent filesystem writer. Keep pins outside
+live evidence too. Latest-pin verification holds the pin lock and rejects any
+different checkpoint, including a valid older backup. Rollback of both the pin
+store and backup remains undetectable unless the caller supplies a newer pin ID
+retained in another trusted domain. Missing or damaged pin stores never fall back
+to candidate metadata or silently reinitialize. A completed backup is not the
+current pinned backup until a separate pin append succeeds; newer unpinned local
+or remote decisions still require reconciliation. No scheduling, storage service,
+cleanup, authority fencing, or cutover is installed by these commands.
+
 With an explicitly non-zero local canonical-retention policy, one synchronous
 schema-4 batch may replace the strict prefix before the selected archive anchor
 with validated headers, turn the anchor into a full-state retained floor,

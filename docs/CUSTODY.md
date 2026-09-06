@@ -289,7 +289,8 @@ the latest possible decision or that a physical backup survived power loss.
 Renewals or artifact writes after capture need a new independent checkpoint and
 backup. The restore drill tests an exact pending-record continuation in a new
 directory without a live replica. The managed local-copy command below removes
-the manual copy window; external pin maintenance, cross-host cutover, and
+the manual copy window. The pin journal below adds explicit local maintenance;
+independent storage deployment, pin freshness, cross-host cutover, and
 long-duration filesystem-fault campaigns remain deployment work.
 
 ## Managed local backups
@@ -384,6 +385,115 @@ commit, and after commit; the CLI drill restores a pending record into a separat
 directory, finishes it offline, and verifies that the retained bundle has not
 changed. These tests do not certify power-loss durability, remote filesystems,
 scheduled pin freshness, or a cross-host cutover procedure.
+
+## Maintaining the current backup pin
+
+The optional pin journal remembers which completed bundle was explicitly
+designated current. Put it on independently managed, access-controlled storage,
+outside **all** live evidence and backup trees. The commands reject path/alias
+overlap with the supplied bundles, but cannot establish physical independence
+or check paths to live trees they were not given. No remote service, storage
+account, timer, or upload is provisioned. Keep the trusted manifest, immutable
+initial receipt, and exact policy configuration available separately.
+
+There are two publication steps: create a verified backup, then pin its printed
+checkpoint `id`. A backup that exists but has not been pinned is not current in
+this journal. Never obtain `--checkpoint-id` by simply reading whichever backup
+you want to restore: it must come from the authoritative backup operation.
+Initial pinning is an explicit operator decision:
+
+```sh
+omd work-archive-custody-pin-backup \
+  --pins /independent/custody-pins --initial \
+  --backup backups/custody-000001 \
+  --checkpoint-id "$AUTHORITATIVE_CHECKPOINT_ID" \
+  --manifest manifest.omwm --receipt initial.omrr \
+  --auditor-public-key "$AUDITOR_PUBLIC_KEY"
+```
+
+Retain the printed `pin_id` and `checkpoint_id`. Pin sequence counts backup
+updates, not custody cycles: a new signed challenge changes the checkpoint even
+before a receipt commits. To inspect the current journal head:
+
+```sh
+omd work-archive-custody-pin-head --pins /independent/custody-pins
+```
+
+This replays the pin log only; `verified=false` means the bundle was not checked.
+For a new update, supply the pin ID observed before the operation and the
+previous pinned bundle, both independently known:
+
+```sh
+omd work-archive-custody-pin-backup \
+  --pins /independent/custody-pins \
+  --expected-pin "$PREVIOUS_PIN_ID" \
+  --previous-backup backups/custody-000001 \
+  --backup backups/custody-000002 \
+  --checkpoint-id "$NEW_AUTHORITATIVE_CHECKPOINT_ID" \
+  --manifest manifest.omwm --receipt initial.omrr \
+  --auditor-public-key "$AUDITOR_PUBLIC_KEY"
+```
+
+Both bundles are fully replayed against their checkpoint IDs and the supplied
+trust policy before promotion. The new bundle must extend the same journal,
+retain the earlier committed head and receipt, and keep the same auditor/replica
+scope. Every old body content ID, including orphans, must remain; rotation may
+move bodies between active and sealed directories. Every old journal-pending
+and auditor relative path and file byte, including empty/partial files, must
+remain unchanged. New paths are allowed. Comparing body IDs does not certify
+physical duplicate counts or authorize removing old files: the retain-all rule
+still applies. Even a valid later chain is rejected if previously pinned
+evidence disappeared. If the prior bundle is lost or cannot be verified, stop
+and preserve the remaining evidence; there is no force/rebaseline flag.
+
+A competing update produces a conflict instead of replacing its result.
+An exact retry of the latest checkpoint re-verifies the bundle and returns
+`created=false`; it accepts either the current pin ID or that pin's immediate
+predecessor, so a lost success output is recoverable. The prior bundle is not
+needed for this exact retry. Repeating the initial command is allowed only
+while that first exact pin is still current. Never respond to a conflict by
+blindly taking the newest ID and retrying an older candidate.
+
+Check a candidate against the latest pin before copying it into a new recovery
+directory:
+
+```sh
+omd work-archive-custody-verify-pinned-backup \
+  --pins /independent/custody-pins \
+  --backup backups/custody-000002 \
+  --expected-pin "$LATEST_INDEPENDENT_PIN_ID" \
+  --manifest manifest.omwm --receipt initial.omrr \
+  --auditor-public-key "$AUDITOR_PUBLIC_KEY"
+```
+
+Verification holds the pin lock through full bundle verification. A valid older
+backup fails even if its custody sequence is identical. `--expected-pin` is
+optional for this command only: without it, the current independent pin store
+is the authority. With an exact head ID retained in another trusted domain, it
+also detects rollback of that store. A hash-linked log cannot detect replacement
+of the entire store and its backups by an older valid set on its own. The pins
+are not signed, and neither the log nor a separately retained ID proves that no
+newer unpinned decision exists. Continue to apply all cutover and reconciliation
+requirements above; pin verification does not start a recovered authority.
+
+The journal has a permanent `pins.lock`, `entries/pin-%020d.omcpin` immutable
+sequence files, and a `pending/` directory. Each v0 pin is 260 bytes and binds
+its sequence, previous pin ID, and complete checkpoint. Publication uses a
+mode-0600 temporary file, fsync, no-replace hard link, and directory fsync;
+directories are mode 0700. Replay requires a gapless linked history and bounds
+it to 65,536 pins plus 1,024 pending files of at most 260 bytes each. At capacity
+new updates stop, but exact committed retries and verification remain available
+within those ceilings. Abandoned pending files are retained, not treated as
+commits or garbage-collected. There is no compaction or mutable head file.
+
+Missing, empty, malformed, or partially initialized stores cannot select a
+restore checkpoint. Only explicit initialization can populate a new, absent
+store or finish a fully initialized empty one; an incomplete directory is not
+automatically repaired. Preserve it for diagnosis. A crash after backup
+completion but before pin publication leaves the prior pin current; repeat the
+intended pin operation with its original expectation. Process-kill tests bracket
+pin publication and verify exact retries with released locks. They do not prove
+power-loss durability or independently deployed storage/freshness operations.
 
 ## Recovery limits and deployment gates
 
