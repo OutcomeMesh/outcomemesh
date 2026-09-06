@@ -506,8 +506,18 @@ Implemented in an isolated, not-yet-activated consensus package:
   wrong trust/IDs, and unchanged evidence. A CLI process test repeats an offline
   stale-response assessment and proves it neither appends a record nor replaces
   the request; a focused fuzz target exercises pending-intent classification.
-  Report success is not recovery approval. Historical transfer, linked
-  rebaseline, and participant fencing remain open plan items.
+  Report success is not recovery approval. A separate historical handoff now
+  packages one replica-committed next entry with both exact checkpoint values.
+  The CLI defaults to a read-only plan; export requires that reviewed ID and a
+  disjoint no-replace directory. Verification replays both pinned source bundles
+  and checks the full pending intent/response and prefix again. Source files,
+  original timestamps/signatures, and pins remain unchanged. Unknown/temporary
+  evidence, larger gaps, divergent histories, and missing historical artifacts
+  block export. Completed retries are exact; incomplete attempts are preserved.
+  Unit/decoder tests, concurrent exports, pre/post-commit process kills, and the
+  outage CLI process fixture cover this boundary. This is offline packaging,
+  not import, a fresh availability claim, or fencing. Reviewed application,
+  linked rebaseline, and participant cutover remain open plan items.
   QUIC follow-up (2026-09-06): the first combined process run failed in
   `TestProcessTiePairQUICReachesIndependentV2ObserversAndRecoversAck` with a
   remote QUIC close, and in the coordinator-journal-before-rename case of

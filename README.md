@@ -88,7 +88,9 @@ must place and protect that journal in an independent failure domain; it is not
 a deployed remote pin service or a freshness guarantee. Read-only outage
 reconciliation compares pinned auditor/replica backups, distinguishes stale
 responses from current proof-age bounds, and reports conflicts without importing
-records, changing a baseline, or authorizing a restart. See
+records, changing a baseline, or authorizing a restart. A separate reviewed-ID
+handoff command packages one exact historical response and verifies it against
+both source bundles; it does not import the response or start a participant. See
 [the custody runbook](docs/CUSTODY.md) for retention rules and remaining
 backup/reconciliation gates. Separate
 archive-object serve/fetch commands replay the source before import, resume into

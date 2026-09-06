@@ -341,8 +341,16 @@ historical response validity from assessment-time proof age and receipt expiry.
 Retained orphan/temporary/unknown evidence remains a review blocker. Bounded
 slot/body indexes avoid a segment scan for every cycle; payloads are loaded one
 cycle at a time. Reports authorize no imports, fresh challenges, baseline changes,
-or participant restart. Historical transfer, linked rebaseline, and fencing still
-need separate implementation and review.
+or participant restart. The separate v0 historical handoff envelope binds both
+complete checkpoint values and exactly one original replica-committed journal
+entry, including its signed response. Preparation requires the full matching
+prefix and auditor intent, with no unresolved artifacts, orphan bodies, pending
+files, or abandoned backup checkpoint links. Export requires the reviewed
+envelope ID, holds both bundle locks, and atomically publishes a no-replace
+package; verification recomputes selection from both independently pinned
+sources. Neither the envelope's shape nor its hash alone proves source intent.
+The envelope is not accepted by live record/journal decoders. Application into
+a journal, linked rebaseline, and fencing still need implementation and review.
 Cross-host cutover, compaction review, broader filesystem-fault
 soaks, and outbound share publication remain. The libp2p
 adapter carries both the

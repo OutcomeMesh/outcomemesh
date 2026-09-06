@@ -58,25 +58,51 @@ func InspectCustodyReconciliation(auditorPath, replicaPath string, auditorID, re
 		return CustodyReconciliationReport{}, errors.Join(ErrCustodyReconciliation, err)
 	}
 	defer release()
+	evidence, err := loadCustodyReconciliationEvidenceLocked(auditorPath, replicaPath, auditorID, replicaID, manifest, initial, policy)
+	if err != nil {
+		return CustodyReconciliationReport{}, err
+	}
+	return evidence.inspect(auditorPath, replicaPath, manifest, initial, policy, at)
+}
+
+// Both existing bundle locks must span loading, inspection, and any later
+// evidence export. These indexes do not confer writer or restart authority.
+type custodyReconciliationEvidence struct {
+	auditor, replica CustodyCheckpoint
+	a, r             custodyReconciliationJournal
+}
+
+func loadCustodyReconciliationEvidenceLocked(auditorPath, replicaPath string, auditorID, replicaID types.Hash,
+	manifest Manifest, initial ReplicaReceipt, policy CustodyPolicy,
+) (custodyReconciliationEvidence, error) {
 	auditor, err := verifyCustodyBackupLocked(auditorPath, auditorID, manifest, initial, policy)
 	if err != nil {
-		return CustodyReconciliationReport{}, errors.Join(ErrCustodyReconciliation, err)
+		return custodyReconciliationEvidence{}, errors.Join(ErrCustodyReconciliation, err)
 	}
 	replica, err := verifyCustodyBackupLocked(replicaPath, replicaID, manifest, initial, policy)
 	if err != nil {
-		return CustodyReconciliationReport{}, errors.Join(ErrCustodyReconciliation, err)
+		return custodyReconciliationEvidence{}, errors.Join(ErrCustodyReconciliation, err)
 	}
 	if auditor.Artifacts.ID.IsZero() || !replica.Artifacts.ID.IsZero() || auditor.HeaderID != replica.HeaderID {
-		return CustodyReconciliationReport{}, ErrCustodyReconciliation
+		return custodyReconciliationEvidence{}, ErrCustodyReconciliation
 	}
 	a, err := indexCustodyReconciliationJournal(filepath.Join(auditorPath, custodyBackupJournalName), auditor)
 	if err != nil {
-		return CustodyReconciliationReport{}, err
+		return custodyReconciliationEvidence{}, err
 	}
 	r, err := indexCustodyReconciliationJournal(filepath.Join(replicaPath, custodyBackupJournalName), replica)
 	if err != nil {
-		return CustodyReconciliationReport{}, err
+		return custodyReconciliationEvidence{}, err
 	}
+	return custodyReconciliationEvidence{auditor: auditor, replica: replica, a: a, r: r}, nil
+}
+
+func (evidence custodyReconciliationEvidence) inspect(auditorPath, replicaPath string,
+	manifest Manifest, initial ReplicaReceipt, policy CustodyPolicy, at uint64,
+) (CustodyReconciliationReport, error) {
+	auditor, replica, a, r := evidence.auditor, evidence.replica, evidence.a, evidence.r
+	auditorID, _ := auditor.ID()
+	replicaID, _ := replica.ID()
 	report := CustodyReconciliationReport{
 		AssessedAt: at, AuditorCheckpointID: auditorID, ReplicaCheckpointID: replicaID, HeaderID: auditor.HeaderID,
 		AuditorSequence: auditor.Sequence, ReplicaSequence: replica.Sequence, Relation: "aligned",

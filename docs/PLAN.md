@@ -219,9 +219,16 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
     - [x] Read-only comparison of independently pinned auditor/replica backups:
       exact common prefix, pending intent/response matching, retained-evidence
       blockers, and historical validity separated from proof/receipt freshness.
-    - [ ] Reviewed historical-evidence transfer and explicit linked rebaseline,
-      including participant fencing and restart/crash recovery. A comparison
-      report alone must not authorize a new challenge or resumed authority.
+    - [x] Prepare, explicitly select by ID, export, and verify a bounded
+      historical-response handoff package. Require the exact pinned common
+      prefix, one replica-committed next entry, and matching auditor intent.
+      Preserve source trees and incomplete attempts; test concurrent exports,
+      tampering, and process kills before/after publication. This is offline
+      packaging, not journal import or participant fencing.
+    - [ ] Reviewed application of historical evidence and explicit linked
+      rebaseline, including participant fencing and restart/crash recovery.
+      Neither a comparison report nor a handoff package authorizes a new
+      challenge or resumed authority.
   - [ ] Filesystem-full, inode-exhaustion, power-loss, and long-running retention
     campaigns before deployment claims.
   - [x] Isolate the 2026-09-06 tie-pair/campaign early-close race with a

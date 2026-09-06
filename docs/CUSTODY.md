@@ -574,10 +574,90 @@ Exit zero means inspection completed, including when it found a conflict; it is
 not a successful restore or approval to start a service. There is no `--apply`,
 import, challenge replacement, signature generation, pin update, or rebaseline
 operation. Two matching snapshots are still only historical snapshots and may
-both predate later decisions. Reviewed historical transfer, explicitly linked
-rebaseline, participant fencing, and crash-safe cutover remain separate plan
-items. Process tests verify repeatable offline assessment with stale evidence
+both predate later decisions. The offline handoff stage below packages selected
+evidence, but reviewed application, explicitly linked rebaseline, participant
+fencing, and crash-safe cutover remain separate plan items. Process tests verify
+repeatable offline assessment with stale evidence
 while leaving both bundles, the pending challenge, and the auditor head intact.
+
+## Reviewed historical-response handoff
+
+Use `work-archive-custody-transfer` to prepare a portable **historical-only
+package**, not a working journal. The first format handles one narrowly defined
+case: the replica is exactly one committed cycle ahead, the entire auditor
+prefix matches, and its next retained signed intent identifies that response.
+A matching local response may already exist, including a record from which a
+missing standalone challenge can be recovered without changing any file.
+Missing committed artifacts, conflicting or unknown files, future-cycle
+artifacts, orphan bodies, journal temporaries, and abandoned backup checkpoint
+links block preparation. Keep those files and investigate; do not delete them
+to make this command pass. Larger gaps, unanswered requests, and divergent
+histories need a different recovery decision.
+
+First verify the source choices with their independent pin authorities when
+latest-known state matters. Then prepare without creating a package (Bash/Zsh):
+
+```sh
+handoff_args=(
+  --auditor-backup /cold/auditor-backup
+  --replica-backup /cold/replica-backup
+  --auditor-checkpoint-id "$AUDITOR_CHECKPOINT_ID"
+  --replica-checkpoint-id "$REPLICA_CHECKPOINT_ID"
+  --manifest archive/manifest.omwm
+  --receipt evidence/initial.omrr
+  --auditor-public-key "$AUDITOR_PUBLIC_KEY"
+)
+omd work-archive-custody-transfer --mode plan "${handoff_args[@]}"
+```
+
+Use the same policy flags as the original journals if they differ from the
+defaults. The result identifies the exact two checkpoints, sequence, entry,
+challenge, original response time, and envelope `id`. Review this selection and
+retain its ID independently as `REVIEWED_TRANSFER_ID`; do not automatically pipe
+the plan output into export and treat that as approval. An explicit ID selects
+bytes, but does not cryptographically attest that a human reviewed them.
+
+```sh
+omd work-archive-custody-transfer --mode export "${handoff_args[@]}" \
+  --package /cold/handoff-001 --expected-id "$REVIEWED_TRANSFER_ID"
+
+omd work-archive-custody-transfer --mode verify "${handoff_args[@]}" \
+  --package /cold/handoff-001 --expected-id "$REVIEWED_TRANSFER_ID"
+```
+
+Export rechecks the sources under ordered existing bundle locks before creating
+the destination. It writes `historical.omcht`, a versioned envelope containing
+both complete checkpoints and the original replica journal entry, and an empty
+`transfer.lock`. The envelope has its own magic and domain-separated ID; it is
+neither a standalone custody response nor an appendable journal entry.
+No signatures or timestamps are generated or rewritten. Historical validity
+does not imply present-day availability, and no current clock enters the ID.
+
+The destination must be outside both backups and must not exist, except for an
+exact completed retry. Files are independently written, synced, and published
+with a no-replace link. Failed attempts retain their directory and temporary
+bytes; preserve them and choose another destination. If the process dies after
+commit, verification may accept one byte-identical abandoned temporary link.
+It does not delete that link. Extra or changed files fail verification. Process
+kills test both sides of this commit boundary, not physical power-loss behavior.
+The decoder bounds one envelope by `MaximumCustodyHistoricalTransferBytes`;
+publication may temporarily store two links to those bytes. This is not a global
+quota across handoff directories or a retention cleanup policy.
+
+Verification requires both complete source bundles and all three independently
+retained IDs, even after moving the package to another machine. It recomputes
+the exact selection from source evidence: a valid envelope hash alone cannot
+prove the auditor's pending intent or full prefix. The package does not contain
+the source bundles and is not a replacement for retaining them. Source IDs
+select historical copies, not necessarily the latest authority decisions.
+
+Every successful mode prints `historical_only=true`, `automatic_resume=false`,
+and `availability_attested=false`. No mode appends a journal, changes pins,
+imports artifacts, rebaselines, or starts/stops a service; `--apply` is unsupported.
+Do not extract the entry into a live decision directory. Reviewed application,
+linked rebaseline, and enforceable participant fencing remain required before
+any resumed authority. A local handoff file cannot establish that an old
+participant on another host has stopped.
 
 ## Recovery limits and deployment gates
 
@@ -586,7 +666,8 @@ proof is still within `max-proof-age-seconds`. An unanswered expired challenge
 cannot mint a fresh proof. A stale committed proof also fails. Preserve the
 journals and artifacts on these errors; do not delete a challenge to generate a
 sibling. Read-only reconciliation above can identify historical candidates and
-blockers, but historical transfer and an explicit rebaseline workflow remain
+blockers, and the handoff stage can package one exact response. Applying that
+evidence, participant fencing, and an explicit rebaseline workflow remain
 separate work.
 
 Use a local filesystem with working file locks, no-replace hard links, atomic

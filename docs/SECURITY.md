@@ -489,6 +489,28 @@ cutover, historical import, or a new baseline without later-evidence collection
 and fencing. No files, receipts, challenges, pins, or services are created or
 changed by inspection; existing writable lock handles and fsync are still used.
 
+The historical handoff command writes only a separately named package outside
+both source bundles. Its unsigned envelope preserves the exact next committed
+replica entry and binds both complete checkpoint values. It requires a matching
+auditor prefix and retained intent, including byte equality of any local
+response; absent intent, larger gaps, conflicts, unknown/temp evidence, missing
+historical artifacts, and orphan bodies fail closed. The ID selects exact
+historical evidence, not a signed approval or proof of an operator's review.
+Export requires an explicit reviewed ID and revalidates both source bundles
+under their existing locks before any destination creation. Verification needs
+all three independent IDs and both source bundles; decoding an envelope alone
+cannot verify local intent or reconstruct the whole committed prefix.
+
+Publication uses independent file bytes, file/directory fsync, and a no-replace
+link. Incomplete packages, including partial temporary writes, are retained and
+cannot be resumed in place. A completed exact retry creates no new temp file;
+at most one byte-identical abandoned commit link is accepted. Unknown package
+files or changed payloads fail verification. Original response times and live
+proof-age checks are unchanged. No journal is appended, no key is used, no pin
+is promoted, and no old participant is fenced. The package is not a live record
+or journal entry. It must not be manually unpacked into a decision directory as
+a substitute for the still-unimplemented reviewed import/cutover workflow.
+
 With an explicitly non-zero local canonical-retention policy, one synchronous
 schema-4 batch may replace the strict prefix before the selected archive anchor
 with validated headers, turn the anchor into a full-state retained floor,

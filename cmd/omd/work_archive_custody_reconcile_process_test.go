@@ -104,6 +104,9 @@ func TestProcessArchiveCustodyReconciliationKeepsStaleEvidenceReadOnly(t *testin
 			t.Fatalf("invalid assessment flags accepted: %s", output)
 		}
 	}
+	t.Run("reviewed-historical-handoff", func(t *testing.T) {
+		checkProcessCustodyHistoricalTransfer(t, trust, aBackup, rBackup, aID, rID, record)
+	})
 	if state, err := auditor.State(); err != nil || state.Sequence != 0 {
 		t.Fatalf("read-only assessment advanced auditor: %v", err)
 	}
