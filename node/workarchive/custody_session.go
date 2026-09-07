@@ -505,11 +505,14 @@ func (session *CustodySession) writeResponse(
 // awaitAuditorClose is the transport-level completion acknowledgement. It adds
 // no fifth protocol message: after validating all three response frames, Audit
 // closes its stream and Serve observes EOF before a one-shot host may exit.
+// The final response write already installed a bounded deadline. Do not reset
+// it after that write: a fast auditor may already have closed, and net.Pipe can
+// reject SetDeadline with ErrClosedPipe even though Read would yield valid EOF.
 func (session *CustodySession) awaitAuditorClose(
 	ctx context.Context,
 	stream CustodySessionStream,
 ) error {
-	if err := session.setDeadline(ctx, stream); err != nil {
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 	var unexpected [1]byte
