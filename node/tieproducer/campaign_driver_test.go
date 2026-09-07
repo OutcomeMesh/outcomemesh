@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/ed25519"
 	"errors"
+	"os"
+	"path/filepath"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -19,6 +21,80 @@ import (
 	"github.com/outcomemesh/outcomemesh/node/calibration"
 	"github.com/outcomemesh/outcomemesh/storage"
 )
+
+func TestDriveCampaignVisibleStagingDoesNotMeanPublicationReady(t *testing.T) {
+	plan, binding, keys := campaignPlan(t)
+	planID, _ := plan.ID()
+	directory := t.TempDir()
+	campaignConfig := CampaignConfig{
+		Plan: plan, Binding: binding, ExpectedPlanID: planID,
+		StatePath: filepath.Join(directory, "campaign.state"),
+	}
+	campaign, err := OpenCampaign(campaignConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = campaign.Close() })
+	t.Cleanup(func() { _ = os.Chmod(directory, 0o700) })
+	visible := false
+	campaign.saveState = func(path string, encoded []byte) error {
+		return saveCampaignStateWithCheckpoint(path, encoded, func() error {
+			// Force exactly the window observed by the process fixture: the
+			// next state is readable but the writer has not opened/synced its
+			// directory and therefore has not acknowledged StagePair.
+			status, err := LoadCampaignStatus(campaignConfig)
+			if err != nil || status.Phase != CampaignAwaitingPublication {
+				t.Fatalf("visible staging status=%+v err=%v", status, err)
+			}
+			visible = true
+			if err := os.Chmod(directory, 0o300); err != nil {
+				return err
+			}
+			handle, err := os.Open(directory)
+			if err == nil {
+				_ = handle.Close()
+				t.Skip("filesystem does not enforce owner read removal on directories")
+			}
+			if !errors.Is(err, os.ErrPermission) {
+				t.Fatalf("directory permission probe: %v", err)
+			}
+			return nil
+		})
+	}
+	source := newCampaignDriverSource(t, plan)
+	publication := &campaignPublicationFixture{}
+	deliverer := &campaignDeliveryFixture{}
+	err = DriveCampaign(context.Background(), CampaignDriverConfig{
+		Plan: plan, Binding: binding, ExpectedPlanID: planID,
+		CoordinatorPrivateKey: keys.coordinator, Campaign: campaign, Source: source,
+		Artifacts: &memoryCampaignArtifacts{}, Publication: publication,
+		Deliverer: deliverer, Clock: campaignDriverClock{source: source},
+	})
+	if !visible || !errors.Is(err, os.ErrPermission) {
+		t.Fatalf("visible=%v staging failure=%v", visible, err)
+	}
+	status, statusErr := campaign.Status()
+	if statusErr != nil || status.Phase != CampaignAwaitingPair ||
+		len(publication.calls) != 0 || len(deliverer.calls) != 0 || len(source.submissions) != 0 {
+		t.Fatalf("failed staging advanced status=%+v err=%v publication=%v delivery=%v submissions=%v",
+			status, statusErr, publication.calls, deliverer.calls, source.submissions)
+	}
+	if err := os.Chmod(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := campaign.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := OpenCampaign(campaignConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	status, err = reopened.Status()
+	if err != nil || status.Phase != CampaignAwaitingPublication || status.AcknowledgedCount != 0 {
+		t.Fatalf("recovered staging status=%+v err=%v", status, err)
+	}
+}
 
 func TestDriveCampaignResumesPublicationAndDeliveryAcrossTwoSlots(t *testing.T) {
 	plan, binding, keys := campaignPlan(t)

@@ -642,6 +642,13 @@ func allCampaignReceiptsPresent(tails []types.Hash) bool {
 }
 
 func saveCampaignState(path string, encoded []byte) error {
+	return saveCampaignStateWithCheckpoint(path, encoded, nil)
+}
+
+// Tests can stop after rename but before directory durability. A visible state
+// file is not acknowledgement that the writer has completed its transition.
+// Production writers do not install a checkpoint.
+func saveCampaignStateWithCheckpoint(path string, encoded []byte, checkpoint func() error) error {
 	directory := filepath.Dir(path)
 	if err := os.MkdirAll(directory, 0o755); err != nil {
 		return err
@@ -678,6 +685,11 @@ func saveCampaignState(path string, encoded []byte) error {
 		return err
 	}
 	committed = true
+	if checkpoint != nil {
+		if err := checkpoint(); err != nil {
+			return err
+		}
+	}
 	directoryHandle, err := os.Open(directory)
 	if err != nil {
 		return err

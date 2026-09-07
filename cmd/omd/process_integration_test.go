@@ -1748,6 +1748,16 @@ func TestProcessTieCampaignStorageFailuresRecoverWithoutFalseAdvance(t *testing.
 					return status.Phase == tieproducer.CampaignAwaitingPublication
 				},
 			)
+			// A readable renamed journal can precede StagePair's directory
+			// fsync. Retire that writer and require a recovered startup before
+			// removing permissions, so the fault targets ConfirmPublication,
+			// never the still-finishing StagePair transition.
+			killTieReceiverProcess(t, coordinator)
+			coordinator = startCampaignStorageCoordinator(t, fixture, func(line string) bool {
+				fields := outputFields(line, "work_tie_campaign_started")
+				return fields["next_sequence"] == "1" &&
+					fields["phase"] == strconv.FormatUint(uint64(tieproducer.CampaignAwaitingPublication), 10)
+			})
 			restrictCampaignDirectory(t, fixture.stateDirectory, test.mode)
 			publishProcessCampaignCheckpoint(
 				t, fixture.artifactDirectory, fixture.publicationDirectory,
