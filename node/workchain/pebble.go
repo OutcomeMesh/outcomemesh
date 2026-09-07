@@ -17,28 +17,32 @@ import (
 )
 
 const (
-	workSchemaVersion            uint16 = 4
-	workEffectSchemaVersion      uint16 = 5 // opt-in, atomically installed with the first ticketed prune
-	workBoundSchemaVersion       uint16 = 6 // opt-in storage incarnation, no ticketed effects yet
-	workBoundEffectSchemaVersion uint16 = 7
-	maxNodeMetadataBytes                = 64 << 10
-	maxPersistedStateBytes              = 256 << 20
-	maxStateDeltaBytes                  = 256 << 20
-	maxCanonicalFloorBytes              = 512
-	DefaultMaxHistoryBytes       uint64 = 64 << 30
-	DefaultForkRetention         uint64 = 4_096
-	DefaultCheckpointEvery       uint64 = 2_048
-	DefaultCheckpointKeep        uint32 = 4
-	DefaultCanonicalRetention    uint64 = 0
+	workSchemaVersion               uint16 = 4
+	workEffectSchemaVersion         uint16 = 5 // opt-in, atomically installed with the first ticketed prune
+	workBoundSchemaVersion          uint16 = 6 // opt-in storage incarnation, no ticketed effects yet
+	workBoundEffectSchemaVersion    uint16 = 7
+	workPositionSchemaVersion       uint16 = 8 // opt-in independent per-batch position pins
+	workPositionEffectSchemaVersion uint16 = 9
+	maxNodeMetadataBytes                   = 64 << 10
+	maxPersistedStateBytes                 = 256 << 20
+	maxStateDeltaBytes                     = 256 << 20
+	maxCanonicalFloorBytes                 = 512
+	DefaultMaxHistoryBytes          uint64 = 64 << 30
+	DefaultForkRetention            uint64 = 4_096
+	DefaultCheckpointEvery          uint64 = 2_048
+	DefaultCheckpointKeep           uint32 = 4
+	DefaultCanonicalRetention       uint64 = 0
 )
 
 var (
-	workKeySchema    = []byte{0x01, 0x01}
-	workKeyConfig    = []byte{0x01, 0x02}
-	workKeyTip       = []byte{0x01, 0x03}
-	workKeyHistory   = []byte{0x01, 0x04}
-	workKeyFloor     = []byte{0x01, 0x05}
-	workKeyStorageID = []byte{0x01, 0x06}
+	workKeySchema       = []byte{0x01, 0x01}
+	workKeyConfig       = []byte{0x01, 0x02}
+	workKeyTip          = []byte{0x01, 0x03}
+	workKeyHistory      = []byte{0x01, 0x04}
+	workKeyFloor        = []byte{0x01, 0x05}
+	workKeyStorageID    = []byte{0x01, 0x06}
+	workKeyPositionPair = []byte{0x01, 0x07}
+	workKeyPosition     = []byte{0x01, 0x08}
 )
 
 const (
@@ -94,6 +98,8 @@ type workPersistence struct {
 	uncertain        bool
 	storageID        types.Hash
 	initializeCommit func(*pebble.Batch) error
+	pins             *storagePositionPins
+	position         StoragePosition
 }
 
 // Open creates or reopens the isolated version-1 Pebble coordinator. All
@@ -105,12 +111,18 @@ func Open(path string, base Base, parameters workblock.Parameters) (*Store, erro
 
 // OpenWithPolicy opens the isolated store with explicit local history and fork
 // retention policy. The policy is not a consensus input and may change across
-// restarts. Bound-incarnation databases require OpenBoundWithPolicy instead.
+// restarts. Bound-incarnation databases require OpenBoundWithPolicy; independently
+// position-pinned databases require OpenPositionPinnedWithPolicy.
 func OpenWithPolicy(path string, base Base, parameters workblock.Parameters, policy Policy) (*Store, error) {
 	return openWithPolicy(path, base, parameters, policy, types.Hash{}, false, nil)
 }
 
 func openWithPolicy(path string, base Base, parameters workblock.Parameters, policy Policy, storageID types.Hash, existingOnly bool, initializeCommit func(*pebble.Batch) error) (*Store, error) {
+	return openWithPositionPins(path, base, parameters, policy, storageID, existingOnly, initializeCommit, nil)
+}
+
+// The caller owns pins.lock until a successful return transfers it to Store.
+func openWithPositionPins(path string, base Base, parameters workblock.Parameters, policy Policy, storageID types.Hash, existingOnly bool, initializeCommit func(*pebble.Batch) error, pins *storagePositionPins) (*Store, error) {
 	if policy.MaxHistoryBytes == 0 {
 		return nil, storage.ErrHistoryLimit
 	}
@@ -123,7 +135,7 @@ func openWithPolicy(path string, base Base, parameters workblock.Parameters, pol
 		return nil, err
 	}
 	persistence := &workPersistence{
-		db: db, policy: policy, checkpoints: make(map[types.Hash]struct{}), storageID: storageID, initializeCommit: initializeCommit,
+		db: db, policy: policy, checkpoints: make(map[types.Hash]struct{}), storageID: storageID, initializeCommit: initializeCommit, pins: pins,
 	}
 	if err := persistence.initializeOrLoad(store, base, !existingOnly); err != nil {
 		_ = db.Close()
@@ -163,10 +175,15 @@ func (persistence *workPersistence) initializeOrLoad(store *Store, base Base, al
 	}
 	version := binary.BigEndian.Uint16(schema)
 	if version != workSchemaVersion && version != workEffectSchemaVersion &&
-		version != workBoundSchemaVersion && version != workBoundEffectSchemaVersion {
+		version != workBoundSchemaVersion && version != workBoundEffectSchemaVersion &&
+		version != workPositionSchemaVersion && version != workPositionEffectSchemaVersion {
 		return storage.ErrCorrupt
 	}
-	bound := version == workBoundSchemaVersion || version == workBoundEffectSchemaVersion
+	pinned := version == workPositionSchemaVersion || version == workPositionEffectSchemaVersion
+	if pinned != (persistence.pins != nil) {
+		return ErrStoragePosition
+	}
+	bound := version == workBoundSchemaVersion || version == workBoundEffectSchemaVersion || pinned
 	if bound != !persistence.storageID.IsZero() {
 		return ErrStorageBinding
 	}
@@ -181,7 +198,10 @@ func (persistence *workPersistence) initializeOrLoad(store *Store, base Base, al
 	} else if !errors.Is(idErr, pebble.ErrNotFound) {
 		return errors.Join(storage.ErrCorrupt, idErr)
 	}
-	persistence.effectSchema = version == workEffectSchemaVersion || version == workBoundEffectSchemaVersion
+	if err := persistence.loadPosition(pinned); err != nil {
+		return err
+	}
+	persistence.effectSchema = version == workEffectSchemaVersion || version == workBoundEffectSchemaVersion || version == workPositionEffectSchemaVersion
 	storedConfig, err := persistence.get(workKeyConfig)
 	if err != nil {
 		return err
@@ -208,6 +228,16 @@ func (persistence *workPersistence) initialize(base *chainNode, config types.Has
 	if !persistence.storageID.IsZero() {
 		binary.BigEndian.PutUint16(schema[:], workBoundSchemaVersion)
 		if err := batch.Set(workKeyStorageID, persistence.storageID[:], nil); err != nil {
+			return err
+		}
+	}
+	if persistence.pins != nil {
+		binary.BigEndian.PutUint16(schema[:], workPositionSchemaVersion)
+		persistence.position = persistence.pins.initial
+		if err := batch.Set(workKeyPositionPair, persistence.pins.pairID[:], nil); err != nil {
+			return err
+		}
+		if err := batch.Set(workKeyPosition, encodeStoragePosition(persistence.position), nil); err != nil {
 			return err
 		}
 	}
@@ -296,7 +326,7 @@ func (persistence *workPersistence) commitNode(parent, node *chainNode, canonica
 			return err
 		}
 	}
-	if err := batch.Commit(pebble.Sync); err != nil {
+	if err := persistence.commitBatch(batch, nil, nil); err != nil {
 		return err
 	}
 	persistence.historyBytes = nextHistory
@@ -353,7 +383,7 @@ func (persistence *workPersistence) pruneNodes(nodes map[types.Hash]*chainNode, 
 			return 0, err
 		}
 	}
-	if err := batch.Commit(pebble.Sync); err != nil {
+	if err := persistence.commitBatch(batch, nil, nil); err != nil {
 		return 0, err
 	}
 	persistence.historyBytes = nextHistory
@@ -496,6 +526,9 @@ func (persistence *workPersistence) pruneCanonicalPrefix(
 		if !persistence.storageID.IsZero() {
 			binary.BigEndian.PutUint16(schema[:], workBoundEffectSchemaVersion)
 		}
+		if persistence.pins != nil {
+			binary.BigEndian.PutUint16(schema[:], workPositionEffectSchemaVersion)
+		}
 		if err := batch.Set(workKeySchema, schema[:], nil); err != nil {
 			return 0, 0, err
 		}
@@ -514,42 +547,51 @@ func (persistence *workPersistence) pruneCanonicalPrefix(
 			return 0, 0, err
 		}
 	}
-	if authorize != nil {
-		verifiedAt, err := authorize()
-		if err != nil {
-			return 0, 0, err
+	prepare := func() error {
+		if authorize != nil {
+			verifiedAt, err := authorize()
+			if err != nil {
+				return err
+			}
+			if verifiedAt < boundary.VerifiedAt || verifiedAt >= boundary.RetainUntil {
+				return ErrCanonicalPrune
+			}
+			boundary.VerifiedAt = verifiedAt
+			updatedFloor, err := encodeCanonicalFloor(*boundary)
+			if err != nil || len(updatedFloor) != len(floorBytes) {
+				return ErrCanonicalPrune
+			}
+			// Only a fixed-width timestamp changes. Logical-byte accounting above
+			// remains exact; none of the prepared deletions is visible yet.
+			if err := batch.Set(workKeyFloor, updatedFloor, nil); err != nil {
+				return err
+			}
 		}
-		if verifiedAt < boundary.VerifiedAt || verifiedAt >= boundary.RetainUntil {
-			return 0, 0, ErrCanonicalPrune
+		if effect != nil {
+			effect.VerifiedAt = boundary.VerifiedAt
+			encoded, err := effect.CanonicalBytes()
+			if err != nil || len(encoded) != effectSize {
+				return ErrCanonicalPrune
+			}
+			if err := batch.Set(workPruneEffectKey(effect.Operation.TicketID), encoded, nil); err != nil {
+				return err
+			}
 		}
-		boundary.VerifiedAt = verifiedAt
-		updatedFloor, err := encodeCanonicalFloor(*boundary)
-		if err != nil || len(updatedFloor) != len(floorBytes) {
-			return 0, 0, ErrCanonicalPrune
-		}
-		// Only a fixed-width timestamp changes. Logical-byte accounting above
-		// remains exact; none of the prepared deletions is visible yet.
-		if err := batch.Set(workKeyFloor, updatedFloor, nil); err != nil {
-			return 0, 0, err
-		}
-	}
-	if effect != nil {
-		effect.VerifiedAt = boundary.VerifiedAt
-		encoded, err := effect.CanonicalBytes()
-		if err != nil || len(encoded) != effectSize {
-			return 0, 0, ErrCanonicalPrune
-		}
-		if err := batch.Set(workPruneEffectKey(effect.Operation.TicketID), encoded, nil); err != nil {
-			return 0, 0, err
-		}
+		return nil
 	}
 	commit := persistence.pruneCommitHook
 	if commit == nil {
 		commit = func(batch *pebble.Batch) error { return batch.Commit(pebble.Sync) }
 	}
-	if err := commit(batch); err != nil {
-		persistence.uncertain = true
-		return 0, 0, errors.Join(ErrUncertain, err)
+	pruneCommit := func(batch *pebble.Batch) error {
+		if err := commit(batch); err != nil {
+			persistence.uncertain = true
+			return errors.Join(ErrUncertain, err)
+		}
+		return nil
+	}
+	if err := persistence.commitBatch(batch, prepare, pruneCommit); err != nil {
+		return 0, 0, err
 	}
 	if effect != nil {
 		persistence.effectSchema = true
@@ -690,7 +732,7 @@ func (persistence *workPersistence) rotateCheckpoint(
 			return CheckpointReport{}, err
 		}
 	}
-	if err := batch.Commit(pebble.Sync); err != nil {
+	if err := persistence.commitBatch(batch, nil, nil); err != nil {
 		return CheckpointReport{}, err
 	}
 	persistence.historyBytes = nextHistory
@@ -1455,7 +1497,13 @@ func checkedHistoryBytes(values ...uint64) (uint64, error) {
 	return result, nil
 }
 
-func (persistence *workPersistence) close() error { return persistence.db.Close() }
+func (persistence *workPersistence) close() error {
+	err := persistence.db.Close()
+	if persistence.pins != nil {
+		err = errors.Join(err, persistence.pins.lock.Close())
+	}
+	return err
+}
 
 func equalTimestamps(left, right []uint64) bool {
 	if len(left) != len(right) {

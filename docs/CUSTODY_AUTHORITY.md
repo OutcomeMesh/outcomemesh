@@ -327,10 +327,94 @@ an uncertain executor outcome merely because its effect is missing.
 
 This mode is a trusted library only, not installed in the activation/forest or CLI
 runtime. Operators must not silently switch those raw open paths or reuse an ID
-to restore lost storage. Physical/copy fencing, independently retained database
-positions, safe no-effect disposition, all-replica authority and live transport
-remain open. Process tests cover initialization on both sides of commit, four
-bound effect boundaries, and the 71 independent executor-stage crash boundaries.
+to restore lost storage. The separate position-pinned mode below adds a local
+database rollback gate; it is not retrofitted to this incarnation-only mode.
+Physical/copy fencing, safe no-effect disposition, all-replica authority and live
+transport remain open. Process tests cover initialization on both sides of commit,
+four bound effect boundaries, and the 71 independent executor-stage crash boundaries.
+
+### Independently retained WorkChain database positions
+
+`CreatePositionPinnedWithPolicy(databasePath, pinsPath, base, parameters, policy,
+storageID)` creates two **new**, disjoint trusted-owner roots. The external storage
+ID must already have been selected and retained as above. A fresh random pair ID
+binds the journal identity to the database; it is not a physical-device identity.
+`OpenPositionPinnedWithPolicy` requires both existing roots and the expected ID.
+It acquires the journal's lifetime native lock before Pebble's lock. No migration,
+fresh-pin attachment, missing-root reconstruction or journal reset is supplied.
+The ready record is published only after synchronous database initialization;
+an interrupted pair without ready cannot be opened in position-pinned mode.
+
+Local schema 8 stores the incarnation at `01 06`, pair ID at `01 07`, and position
+at `01 08` in the initial batch. The position is a big-endian uint64 sequence and
+32-byte commit ID. Sequence zero derives from the pair's exact identity; later
+commit IDs are fresh `crypto/rand` tokens. They identify logical batches, **not**
+state content, consensus work, backup freshness or physical storage. The first
+ticketed prune atomically selects schema 9. Raw schema 4/5 and incarnation-only
+schema 6/7 retain their formats and do not acquire this guarantee. Their open
+APIs refuse schema 8/9; the position-pinned API refuses the older modes. Request,
+effect, block and consensus encodings are unchanged. The fixed pair/position
+metadata is outside logical history accounting; journal filesystem costs are
+separate as well.
+
+Every actual block commit, stale-fork prune, replay-checkpoint rotation and
+canonical-prefix prune follows this order under the chain lock:
+
+1. Publish and sync the exact previous/next position intent in the independent
+   journal. Never choose a successor from an unpinned database image.
+2. Perform final authorization, if needed, **after** that I/O, then synchronously
+   commit the position in the same Pebble batch as all logical changes. A failed
+   final authorization still leaves an unresolved intent; it is not discarded.
+3. Publish and sync independent confirmation for that same position before
+   returning success or updating the usable in-memory chain state.
+
+No-op maintenance and historical exact prune retries do not create positions.
+Once publication/commit is uncertain, the live handle is poisoned; close/reopen
+is required. Reopen verifies the complete bounded journal and normal full chain
+recovery. It does not publish a missing confirmation or execute a batch:
+
+| Retained journal | Database position | Result |
+| --- | --- | --- |
+| Confirmed C, no intent | Exactly C | Usable chain |
+| Confirmed C, pending P | Exactly C | Gated, unresolved outcome |
+| Confirmed C, pending P | Exactly P | Gated, explicit confirmation available |
+| Either | Anything else | Refuse the database |
+
+`StorageProtection()` returns detached local diagnostics even for a recovered
+pending handle. Normal chain reads, commits and executor preflight are gated.
+`ResumeStorageConfirmation()` works only when the fully recovered database
+already contains P. It flushes that existing state, then independently confirms
+P; it does not rerun a prune, create a new batch, change its result or sign
+authority completion. If the database is still C, absence cannot distinguish
+"never committed" from "committed and rolled back": the gap remains unresolved.
+Neither this API nor prune recovery implements a safe no-effect disposition.
+
+The journal contains exact `identity`/`ready` records, an empty permanent
+`positions.lock`, `intents/`, `confirmed/` and bounded `pending/` directories.
+Transition names are 20-digit sequences. Version-0 `OMWP` intent/confirmation
+records carry a domain-separated identity context and checksum, with exact
+150/110-byte encodings. These checksums are corruption checks, not signatures.
+Files are completely written and synced before no-replace link publication and
+directory sync. Reopen stabilizes already visible tail records before allowing
+new work. Incomplete staging files are never interpreted as published records.
+All records are bounded by 256 bytes, staging leftovers by 128 files, and journal
+history by 65,536 transitions. Nothing is compacted, reset or deleted to bypass
+that ceiling. Full replay is O(n); live checks verify permanent inodes, identity
+and the exact retained tail under the immutable trusted-owner history contract.
+This intentionally bounded research journal is not a production-scalable WAL.
+
+Database-only snapshot rollback is detected **only if the independently retained
+journal survives**. A current database copy carries the same position and can
+open with that journal after the original owner closes. Copying both roots also
+copies their pair binding and allows independent owners of the copies; rolling
+back both roots can hide history. Privileged edits and incorrect durability
+barriers are outside this local guarantee. Store pins in a genuinely independent
+failure/access-control domain; a second directory alone does not establish that.
+Physical fencing, safe no-effect disposition, power-loss/full-filesystem
+validation, all-replica current authority and live runtime integration remain
+deployment gates. The tests cover 56 injected mutation faults, 14 initialization
+faults, eight explicit-resume errors, all four mutation paths, old/current copies,
+journal damage, bounds, executor recovery and 79 process-death boundaries.
 
 ## Implemented reference kernel
 

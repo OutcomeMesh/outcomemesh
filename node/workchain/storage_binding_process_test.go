@@ -90,6 +90,11 @@ func TestBoundStorageProcessCrashAtomicity(t *testing.T) {
 
 func killBoundStorageProcess(t *testing.T, command *exec.Cmd, marker string) {
 	t.Helper()
+	killBoundStorageProcessWithCheck(t, command, marker, nil)
+}
+
+func killBoundStorageProcessWithCheck(t *testing.T, command *exec.Cmd, marker string, check func()) {
+	t.Helper()
 	var output bytes.Buffer
 	command.Stdout, command.Stderr = &output, &output
 	if err := command.Start(); err != nil {
@@ -113,6 +118,9 @@ func killBoundStorageProcess(t *testing.T, command *exec.Cmd, marker string) {
 			t.Fatalf("bound helper missed boundary\n%s", output.String())
 		case <-ticker.C:
 			if _, err := os.Stat(marker); err == nil {
+				if check != nil {
+					check()
+				}
 				if err := command.Process.Kill(); err != nil {
 					_ = command.Process.Kill()
 					<-done

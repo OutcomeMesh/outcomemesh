@@ -521,6 +521,31 @@ physical-device identity, fencing token, monotonic database position or backup
 freshness assertion. No-effect recovery and production runtime integration remain
 open; historical Succeeded evidence is not live authority or current storage proof.
 
+The separate opt-in schema-8/9 WorkChain mode retains an independent per-batch
+position journal. Every logical mutation publishes a synced exact intent, commits
+its fresh opaque position in the same Pebble batch, then confirms independently
+before success. Final prune authorization follows intent I/O. New disjoint roots
+have a random pair binding and two lifetime locks; raw/incarnation-only open APIs
+cannot reopen this mode. Recovery verifies both the bounded journal and complete
+database state. Database-only rollback or an unexplained extension is refused
+when the independent journal remains intact. One exact unconfirmed successor
+gates ordinary operations: explicit resume can only flush and confirm an already
+present batch. A database still at the prior position stays unresolved, including
+after authorization denial. Missing effects are never permission to repeat work,
+discard the intent or sign completion. Executor preflight/recovery respect this
+gate; historical Succeeded results remain historical evidence.
+
+The commit token does not hash database content and is not a physical identity,
+hardware monotonic counter or authenticated storage attestation. Current database
+copies retain their positions; a copied pair can have independent owners, and
+shared rollback can hide history. Journal checksums are not signatures. Full
+history is verified at reopen; live checks rely on trusted-owner immutability of
+earlier entries and verify the retained tail and permanent root inodes. Independent
+deployment and correct file/directory sync semantics remain external assumptions.
+The local journal has a hard 65,536-transition/128-staging-file ceiling with no
+reset or garbage collection. It is library groundwork, not a production WAL,
+power-loss validation, safe no-effect disposition or all-replica authorization.
+
 Availability files now use no-replace publication. Exact retries verify and
 fsync the existing regular inode; conflicting bundles, damaged files, and
 symlinks are rejected without replacing the path. A failure after publication

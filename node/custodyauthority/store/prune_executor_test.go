@@ -27,6 +27,7 @@ type pruneFixture struct {
 	coordinator                                      *Coordinator
 	chainPath, executorPath, authorityPath, pinsPath string
 	executorPinsPath                                 string
+	chainPositionPinsPath                            string
 	base                                             workchain.Base
 	parameters                                       workblock.Parameters
 	policy                                           workchain.Policy
@@ -57,12 +58,19 @@ func newPruneFixture(t testing.TB) *pruneFixture {
 }
 
 func newPruneFixtureWithStorageID(t testing.TB, storageID types.Hash) *pruneFixture {
+	return newPruneFixtureWithStoragePositions(t, storageID, false)
+}
+
+func newPruneFixtureWithStoragePositions(t testing.TB, storageID types.Hash, positions bool) *pruneFixture {
 	t.Helper()
 	f := &pruneFixture{}
 	f.base, f.parameters, f.policy = pruneChainConfig()
 	f.chainPath = filepath.Join(t.TempDir(), "chain")
 	var err error
-	if storageID.IsZero() {
+	if positions {
+		f.chainPositionPinsPath = filepath.Join(t.TempDir(), "database-position-pins")
+		f.chain, err = workchain.CreatePositionPinnedWithPolicy(f.chainPath, f.chainPositionPinsPath, f.base, f.parameters, f.policy, storageID)
+	} else if storageID.IsZero() {
 		f.chain, err = workchain.OpenWithPolicy(f.chainPath, f.base, f.parameters, f.policy)
 	} else {
 		f.chain, err = workchain.CreateBoundWithPolicy(f.chainPath, f.base, f.parameters, f.policy, storageID)
@@ -167,7 +175,9 @@ func (f *pruneFixture) reopen(t testing.TB) {
 		t.Fatal(err)
 	}
 	f.coordinator = testOpenCoordinator(t, f.authorityPath, f.pinsPath)
-	if f.request.StorageID.IsZero() {
+	if f.chainPositionPinsPath != "" {
+		f.chain, err = workchain.OpenPositionPinnedWithPolicy(f.chainPath, f.chainPositionPinsPath, f.base, f.parameters, f.policy, f.request.StorageID)
+	} else if f.request.StorageID.IsZero() {
 		f.chain, err = workchain.OpenWithPolicy(f.chainPath, f.base, f.parameters, f.policy)
 	} else {
 		f.chain, err = workchain.OpenBoundWithPolicy(f.chainPath, f.base, f.parameters, f.policy, f.request.StorageID)

@@ -683,6 +683,29 @@ Implemented in an isolated, not-yet-activated consensus package:
   binaries built for Linux and Windows; execution was verified on macOS only.
   This is local library groundwork, not physical storage identity, independent
   database-position recovery or live CLI integration.
+  Database-position follow-up (2026-09-07): an additional opt-in WorkChain mode
+  now retains an exact independent intent and confirmation for every logical
+  batch. Fresh position tokens share the actual block/prune/checkpoint batch;
+  schema 8/9 and a random pair binding prevent silent raw-mode downgrade or
+  mismatched-root recovery. Initialization requires two new disjoint roots,
+  and the independent lock precedes Pebble ownership. Final authorization runs
+  after intent I/O. A recovered one-intent gap gates ordinary operations; explicit
+  resume only flushes/confirms an already present batch. The prior position stays
+  unresolved, even after authorization denial or rollback of an actually committed
+  prune. Database-only rollback and unexplained extensions are rejected. Current
+  copies and independently running copied pairs remain an explicit limitation.
+  This closes the local independent database-position implementation gate, not
+  physical/copy fencing, shared-rollback detection, safe no-effect disposition,
+  production-scalable retention, power-loss validation or live runtime integration.
+  Targeted validation passed: 56 injected mutation faults, 14 initialization
+  faults, eight resume errors, all four mutation paths, bounds/corruption/copy
+  tests, executor recovery, and 79 process-death boundaries. The 79 process cases
+  and resume-error regressions also passed with race detection. Canonical position
+  records completed 100,000 fuzz inputs; repository-wide tests, race detection
+  and vet passed. WorkChain and executor integration binaries built for Linux and
+  Windows; execution was verified on macOS only.
+  The complete process gate passed, including 100 WorkChain crash cases and all
+  342 authority/executor cases, alongside the existing QUIC/archive restart gates.
   Process-gate observation (2026-09-07): the first combined run stopped at
   `TestProcessTieCampaignStorageFailuresRecoverWithoutFalseAdvance/observer_confirmation_after_link`
   because the expected confirmation marker was absent. Five isolated repetitions

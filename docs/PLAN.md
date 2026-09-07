@@ -321,7 +321,18 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
             requests behind independent stage pins. Cover copied-old-image
             recovery, malformed/downgraded metadata and 77 new process boundaries.
             This is not physical identity, copy fencing or rollback detection.
-          - [ ] Physical chain-storage identity and independently pinned recovery,
+          - [x] Optional independently retained WorkChain database positions:
+            create two new disjoint roots, bind their identity and retain both
+            lifetime locks. Publish an exact intent before every logical batch,
+            store a fresh position in that same batch, then independently confirm
+            before success. Cover block commits, fork pruning, replay checkpoints
+            and canonical pruning; keep the final authorization after intent I/O.
+            Reopen only an exact confirmed position or its one pending successor.
+            Explicit recovery may confirm an already present batch, never execute
+            missing work or clear an unresolved intent. Reject database-only
+            rollback and unexplained extensions. Cover 79 process-kill boundaries;
+            copied pairs/shared rollback and physical deployment remain external.
+          - [ ] Physical chain-storage identity and protected pin deployment,
             safe no-effect disposition, current-authority admission/
             completion transport, and live audit/serve/prune runtime adapters
             (including all required replica assignments, not just one guard).

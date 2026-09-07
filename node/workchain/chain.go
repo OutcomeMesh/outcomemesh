@@ -764,6 +764,9 @@ func (store *Store) openErrorLocked() error {
 	if store.persistence != nil && store.persistence.uncertain {
 		return ErrUncertain
 	}
+	if store.persistence != nil && store.persistence.pins != nil && store.persistence.pins.pending != nil {
+		return ErrStoragePinPending
+	}
 	return nil
 }
 
