@@ -25,42 +25,47 @@ import (
 )
 
 const (
-	SessionProtocol        protocol.ID = "/outcomemesh/session/0"
-	WorkGraphProtocol      protocol.ID = "/outcomemesh/workgraph/1"
-	VersionedChainProtocol protocol.ID = "/outcomemesh/chain/1"
-	ChainNotifyProtocol    protocol.ID = "/outcomemesh/chain-notify/1"
-	TiePairProtocol        protocol.ID = "/outcomemesh/tie-pair/2"
-	ArchiveObjectProtocol  protocol.ID = "/outcomemesh/workarchive/1"
-	ArchiveCustodyProtocol protocol.ID = "/outcomemesh/workarchive-custody/1"
-	maxListenAddresses                 = 8
-	maxAddressBytes                    = 256
+	SessionProtocol         protocol.ID = "/outcomemesh/session/0"
+	WorkGraphProtocol       protocol.ID = "/outcomemesh/workgraph/1"
+	VersionedChainProtocol  protocol.ID = "/outcomemesh/chain/1"
+	ChainNotifyProtocol     protocol.ID = "/outcomemesh/chain-notify/1"
+	TiePairProtocol         protocol.ID = "/outcomemesh/tie-pair/2"
+	ArchiveObjectProtocol   protocol.ID = "/outcomemesh/workarchive/1"
+	ArchiveCustodyProtocol  protocol.ID = "/outcomemesh/workarchive-custody/1"
+	PruneCompletionProtocol protocol.ID = "/outcomemesh/prune-completion/0"
+	maxListenAddresses                  = 8
+	maxAddressBytes                     = 256
 	// MaxConnectionLimit and MaxStreamsPerPeerLimit are hard implementation
 	// bounds. Callers may choose lower operational limits, but cannot silently
 	// expand the resource-manager scopes past these values.
-	MaxConnectionLimit                           = 1_024
-	MaxStreamsPerPeerLimit                       = 32
-	MaxWorkStreamsPerPeerLimit                   = 4
-	MaxWorkStreamsPerMinuteLimit                 = 60
-	MaxWorkStreamsGlobalPerMinuteLimit           = 4_096
-	MaxVersionedChainStreamsLimit                = 64
-	MaxVersionedChainStreamsPerPeerLimit         = 2
-	MaxVersionedChainStreamsPerMinuteLimit       = 30
-	MaxVersionedChainStreamsGlobalPerMinuteLimit = 1_024
-	MaxTiePairStreamsLimit                       = 16
-	MaxTiePairStreamsPerPeerLimit                = 1
-	MaxTiePairStreamsPerMinuteLimit              = 4
-	MaxTiePairStreamsGlobalPerMinuteLimit        = 128
-	MaxArchiveObjectStreamsLimit                 = 16
-	MaxArchiveObjectStreamsPerPeerLimit          = 2
-	MaxArchiveObjectStreamsPerMinuteLimit        = 4
-	MaxArchiveObjectStreamsGlobalPerMinuteLimit  = 128
-	MaximumArchiveObjectPeers                    = 64
-	MaxArchiveCustodyStreamsLimit                = 8
-	MaxArchiveCustodyStreamsPerPeerLimit         = 1
-	MaxArchiveCustodyStreamsPerMinuteLimit       = 2
-	MaxArchiveCustodyStreamsGlobalPerMinuteLimit = 64
-	MaximumArchiveCustodyAuditors                = 64
-	MaxFileDescriptorLimit                       = 4_096
+	MaxConnectionLimit                            = 1_024
+	MaxStreamsPerPeerLimit                        = 32
+	MaxWorkStreamsPerPeerLimit                    = 4
+	MaxWorkStreamsPerMinuteLimit                  = 60
+	MaxWorkStreamsGlobalPerMinuteLimit            = 4_096
+	MaxVersionedChainStreamsLimit                 = 64
+	MaxVersionedChainStreamsPerPeerLimit          = 2
+	MaxVersionedChainStreamsPerMinuteLimit        = 30
+	MaxVersionedChainStreamsGlobalPerMinuteLimit  = 1_024
+	MaxTiePairStreamsLimit                        = 16
+	MaxTiePairStreamsPerPeerLimit                 = 1
+	MaxTiePairStreamsPerMinuteLimit               = 4
+	MaxTiePairStreamsGlobalPerMinuteLimit         = 128
+	MaxArchiveObjectStreamsLimit                  = 16
+	MaxArchiveObjectStreamsPerPeerLimit           = 2
+	MaxArchiveObjectStreamsPerMinuteLimit         = 4
+	MaxArchiveObjectStreamsGlobalPerMinuteLimit   = 128
+	MaximumArchiveObjectPeers                     = 64
+	MaxArchiveCustodyStreamsLimit                 = 8
+	MaxArchiveCustodyStreamsPerPeerLimit          = 1
+	MaxArchiveCustodyStreamsPerMinuteLimit        = 2
+	MaxArchiveCustodyStreamsGlobalPerMinuteLimit  = 64
+	MaximumArchiveCustodyAuditors                 = 64
+	MaxPruneCompletionStreamsLimit                = 8
+	MaxPruneCompletionStreamsPerPeerLimit         = 1
+	MaxPruneCompletionStreamsPerMinuteLimit       = 60
+	MaxPruneCompletionStreamsGlobalPerMinuteLimit = 256
+	MaxFileDescriptorLimit                        = 4_096
 )
 
 var (
@@ -95,9 +100,15 @@ type Config struct {
 	MaxArchiveCustodyStreamsPerPeer         int
 	MaxArchiveCustodyStreamsPerMinute       int
 	MaxArchiveCustodyStreamsGlobalPerMinute int
-	MemoryBytes                             int64
-	MaxFileDescriptors                      int
-	GracePeriod                             time.Duration
+
+	MaxPruneCompletionStreams                int
+	MaxPruneCompletionStreamsPerPeer         int
+	MaxPruneCompletionStreamsPerMinute       int
+	MaxPruneCompletionStreamsGlobalPerMinute int
+
+	MemoryBytes        int64
+	MaxFileDescriptors int
+	GracePeriod        time.Duration
 }
 
 func DefaultConfig() Config {
@@ -124,9 +135,15 @@ func DefaultConfig() Config {
 		MaxArchiveCustodyStreamsPerPeer:         1,
 		MaxArchiveCustodyStreamsPerMinute:       1,
 		MaxArchiveCustodyStreamsGlobalPerMinute: 8,
-		MemoryBytes:                             64 << 20,
-		MaxFileDescriptors:                      128,
-		GracePeriod:                             30 * time.Second,
+
+		MaxPruneCompletionStreams:                2,
+		MaxPruneCompletionStreamsPerPeer:         1,
+		MaxPruneCompletionStreamsPerMinute:       8,
+		MaxPruneCompletionStreamsGlobalPerMinute: 32,
+
+		MemoryBytes:        64 << 20,
+		MaxFileDescriptors: 128,
+		GracePeriod:        30 * time.Second,
 	}
 }
 
@@ -166,6 +183,13 @@ type Host struct {
 	archiveCustodyPeerCounts                map[types.Hash]int
 	maxArchiveCustodyStreamsPerMinute       int
 	maxGlobalArchiveCustodyStreamsPerMinute int
+
+	pruneCompletionMu                        sync.Mutex
+	pruneCompletionWindowStart               time.Time
+	pruneCompletionGlobalCount               int
+	pruneCompletionPeerCounts                map[types.Hash]int
+	maxPruneCompletionStreamsPerMinute       int
+	maxGlobalPruneCompletionStreamsPerMinute int
 }
 
 func New(ctx context.Context, privateKey ed25519.PrivateKey, config Config, handler Handler) (*Host, error) {
@@ -227,6 +251,10 @@ func New(ctx context.Context, privateKey ed25519.PrivateKey, config Config, hand
 		archiveCustodyPeerCounts:                make(map[types.Hash]int),
 		maxArchiveCustodyStreamsPerMinute:       config.MaxArchiveCustodyStreamsPerMinute,
 		maxGlobalArchiveCustodyStreamsPerMinute: config.MaxArchiveCustodyStreamsGlobalPerMinute,
+
+		pruneCompletionPeerCounts:                make(map[types.Hash]int),
+		maxPruneCompletionStreamsPerMinute:       config.MaxPruneCompletionStreamsPerMinute,
+		maxGlobalPruneCompletionStreamsPerMinute: config.MaxPruneCompletionStreamsGlobalPerMinute,
 	}
 	result.setHandler(SessionProtocol, handler)
 	return result, nil
@@ -730,6 +758,12 @@ func validateConfig(ctx context.Context, privateKey ed25519.PrivateKey, config C
 		config.MaxArchiveCustodyStreamsPerMinute > MaxArchiveCustodyStreamsPerMinuteLimit ||
 		config.MaxArchiveCustodyStreamsGlobalPerMinute < config.MaxArchiveCustodyStreamsPerMinute ||
 		config.MaxArchiveCustodyStreamsGlobalPerMinute > MaxArchiveCustodyStreamsGlobalPerMinuteLimit ||
+		config.MaxPruneCompletionStreams <= 0 || config.MaxPruneCompletionStreams > MaxPruneCompletionStreamsLimit ||
+		config.MaxPruneCompletionStreamsPerPeer <= 0 || config.MaxPruneCompletionStreamsPerPeer > MaxPruneCompletionStreamsPerPeerLimit ||
+		config.MaxPruneCompletionStreams < config.MaxPruneCompletionStreamsPerPeer ||
+		config.MaxPruneCompletionStreamsPerMinute <= 0 || config.MaxPruneCompletionStreamsPerMinute > MaxPruneCompletionStreamsPerMinuteLimit ||
+		config.MaxPruneCompletionStreamsGlobalPerMinute < config.MaxPruneCompletionStreamsPerMinute ||
+		config.MaxPruneCompletionStreamsGlobalPerMinute > MaxPruneCompletionStreamsGlobalPerMinuteLimit ||
 		config.MemoryBytes < 16<<20 || config.MemoryBytes > 2<<30 ||
 		config.MaxFileDescriptors < config.MaxConnections || config.MaxFileDescriptors > MaxFileDescriptorLimit ||
 		config.GracePeriod < 0 {
@@ -755,10 +789,11 @@ func newResourceManager(config Config) (network.ResourceManager, error) {
 	peerStreams := config.MaxStreamsPerPeer + config.MaxWorkStreamsPerPeer +
 		2*config.MaxVersionedChainStreamsPerPeer + config.MaxTiePairStreamsPerPeer +
 		config.MaxArchiveObjectStreamsPerPeer + config.MaxArchiveCustodyStreamsPerPeer +
+		config.MaxPruneCompletionStreamsPerPeer +
 		internalStreamsPerPeer
 	totalStreams := config.MaxConnections*(config.MaxStreamsPerPeer+config.MaxWorkStreamsPerPeer+internalStreamsPerPeer) +
 		2*config.MaxVersionedChainStreams + config.MaxTiePairStreams +
-		config.MaxArchiveObjectStreams + config.MaxArchiveCustodyStreams
+		config.MaxArchiveObjectStreams + config.MaxArchiveCustodyStreams + config.MaxPruneCompletionStreams
 	system := rcmgr.ResourceLimits{
 		Streams:         rcmgr.LimitVal(totalStreams),
 		StreamsInbound:  rcmgr.LimitVal(totalStreams),
@@ -815,6 +850,12 @@ func newResourceManager(config Config) (network.ResourceManager, error) {
 		StreamsOutbound: rcmgr.LimitVal(config.MaxArchiveCustodyStreamsPerPeer),
 		Memory:          rcmgr.LimitVal64(config.MemoryBytes / 2),
 	}
+	pruneCompletionPerPeer := rcmgr.ResourceLimits{
+		Streams:         rcmgr.LimitVal(config.MaxPruneCompletionStreamsPerPeer),
+		StreamsInbound:  rcmgr.LimitVal(config.MaxPruneCompletionStreamsPerPeer),
+		StreamsOutbound: rcmgr.LimitVal(config.MaxPruneCompletionStreamsPerPeer),
+		Memory:          64 << 10,
+	}
 	partial := rcmgr.PartialLimitConfig{
 		System:      system,
 		Transient:   system,
@@ -862,15 +903,22 @@ func newResourceManager(config Config) (network.ResourceManager, error) {
 				StreamsOutbound: rcmgr.LimitVal(config.MaxArchiveCustodyStreams),
 				Memory:          rcmgr.LimitVal64(config.MemoryBytes / 2),
 			},
+			PruneCompletionProtocol: {
+				Streams:         rcmgr.LimitVal(config.MaxPruneCompletionStreams),
+				StreamsInbound:  rcmgr.LimitVal(config.MaxPruneCompletionStreams),
+				StreamsOutbound: rcmgr.LimitVal(config.MaxPruneCompletionStreams),
+				Memory:          512 << 10,
+			},
 		},
 		ProtocolPeer: map[protocol.ID]rcmgr.ResourceLimits{
-			SessionProtocol:        applicationPerPeer,
-			WorkGraphProtocol:      workGraphPerPeer,
-			VersionedChainProtocol: versionedChainPerPeer,
-			ChainNotifyProtocol:    versionedChainPerPeer,
-			TiePairProtocol:        tiePairPerPeer,
-			ArchiveObjectProtocol:  archiveObjectPerPeer,
-			ArchiveCustodyProtocol: archiveCustodyPerPeer,
+			SessionProtocol:         applicationPerPeer,
+			WorkGraphProtocol:       workGraphPerPeer,
+			VersionedChainProtocol:  versionedChainPerPeer,
+			ChainNotifyProtocol:     versionedChainPerPeer,
+			TiePairProtocol:         tiePairPerPeer,
+			ArchiveObjectProtocol:   archiveObjectPerPeer,
+			ArchiveCustodyProtocol:  archiveCustodyPerPeer,
+			PruneCompletionProtocol: pruneCompletionPerPeer,
 		},
 		Conn: rcmgr.ResourceLimits{
 			Conns: 1, ConnsInbound: 1, ConnsOutbound: 1, FD: 1, Memory: 4 << 20,

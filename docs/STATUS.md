@@ -753,6 +753,65 @@ Implemented in an isolated, not-yet-activated consensus package:
   alongside the existing QUIC/archive suites. The independent authority drain
   model completed another 100,000 fuzz inputs; the final completion unit suite,
   including missing-evidence/root checks, also passed under race detection.
+  Completion-only QUIC follow-up (2026-09-07): an opt-in protocol now carries one
+  externally co-signed Complete to the original colocated pinned executor and
+  coordinator. Both transport identities are independently selected; neither an
+  advertised endpoint nor the request supplies its own trust pin. The concrete
+  server waits for a fixed 424-byte request and EOF before calling the terminal
+  outcome adapter. Its 74-byte reply follows independent authority confirmation
+  and binds the exact entry to a fresh random exchange nonce. Lost/partial replies,
+  cancellation and disconnects never imply non-commit or allow effect replay.
+  Default-disabled handlers have separate bounded rate, stream and memory scopes.
+  There is no remote admission/execution, signing, stale-head refresh, automatic
+  retry/failover, durable client outbox or installed live acceptance path. Physical
+  and copied-owner fencing, unknown Started outcomes and all-replica authority
+  remain open. The request/reply codecs have fixed canonical vectors and completed
+  100,000 fuzz inputs. Real loopback QUIC tests cover peer pins, disabled protocol,
+  budgets, EOF/trailing data, wrong commands/outcomes, caller cancellation and
+  lost-response retry. Twelve separate-server-process kill boundaries passed with
+  race detection; explicit restart preserves both network identity pins and the
+  exact signed command. Linux/Windows integration binaries built; execution was
+  verified on macOS only.
+  The first process-test harness reached its 3-minute suite timeout while waiting
+  for a client reply after server death. The explicit restart drill now closes
+  the old client host and recreates it under the same identity before retry,
+  instead of accumulating dead-connection waits. All 12 cases passed with race
+  detection in 35.696 seconds. This is not validation of automatic reconnect or
+  failover; neither is implemented by the completion client.
+  The first whole-repository normal test run also failed the existing
+  `TestJournalCustodySessionCommitsBeforeSendAndRecoversExpiredChallenge` with
+  `io: read/write on closed pipe`; the race-enabled run passed, as did 20 isolated
+  repetitions. A deterministic stream gate then reproduced the failure in both
+  fresh and recovered journal responses: the auditor fully validates/closes
+  before the replica returns from its final successful Write, and the replica's
+  subsequent SetDeadline fails on the closed pipe before it can observe EOF.
+  Custody completion now keeps the deadline already installed for that last frame
+  and reads actual EOF without resetting or extending it. Both deterministic
+  regressions and the original case passed 20 repetitions with race detection;
+  separate negative tests preserve deadline, trailing-data and local-close
+  rejection. No generic closed-pipe error becomes a completion acknowledgement.
+  A repeated full process run then failed the existing coordinator journal
+  `after_rename` case: recovery found AwaitingPublication, not Delivering. The
+  fixture observed the StagePair file after rename but could remove directory
+  read permission before that same writer opened the directory for fsync. A
+  deterministic post-rename checkpoint reproduced this earlier failure boundary
+  in 20 race-enabled repetitions: the file is readable, StagePair still fails,
+  and publication/delivery are never called. The process fixture now kills and
+  drains that writer, then requires a recovered AwaitingPublication startup
+  before changing permissions. The injected error therefore belongs to the next
+  ConfirmPublication write. Expected phases, zero ACKs, unchanged local tips and
+  recovery checks remain strict; no production error is ignored or retried.
+  Both coordinator permission cases then passed ten process repetitions each
+  with race detection (183.729 seconds) alongside the full process gate.
+  Final validation: whole-repository `go test ./... -count=1` and
+  `go test -race ./... -count=1` passed after the custody deadline fix. Following
+  the additional campaign checkpoint/fixture change, both affected packages
+  passed again normally and with race detection, and `go vet ./...` passed.
+  The final `make test-process` passed all four suites: command processes
+  (62.678 seconds), 100 WorkChain crash cases (27.109 seconds), archive crash
+  recovery (17.462 seconds), and 466 authority/executor crash cases, including
+  the 12 new QUIC cases (205.584 seconds). These are local logical crash and
+  permission-fault checks, not physical power-loss or production readiness proof.
   Process-gate observation (2026-09-07): the first combined run stopped at
   `TestProcessTieCampaignStorageFailuresRecoverWithoutFalseAdvance/observer_confirmation_after_link`
   because the expected confirmation marker was absent. Five isolated repetitions

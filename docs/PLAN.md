@@ -357,8 +357,30 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
               them. Cover 42 publication faults and 70 process kills, including
               interrupted retries. This is a local adapter, not authority
               transport, copy fencing or enforcement at all acceptance paths.
+            - [x] Opt-in completion-only QUIC delivery to the original colocated
+              executor/coordinator: pin both transport peers, accept one bounded
+              externally co-signed Complete plus EOF, and reply only after exact
+              terminal validation and independent authority confirmation. Bind
+              replies to a fresh exchange nonce and entry ID; lost replies never
+              imply non-commit. Isolate rate/concurrency budgets, reject trailing
+              requests and exercise 12 server-process kill/restart boundaries.
+              This does not remotely admit/execute work, add durable client
+              intent, install daemon handlers or fence remote/copied consumers.
   - [ ] Filesystem-full, inode-exhaustion, power-loss, and long-running retention
     campaigns before deployment claims.
+  - [x] Isolate the 2026-09-07 custody response-close race: force a verified
+    auditor close before the replica's last successful Write returns. Reuse the
+    final frame's already installed deadline instead of resetting it on a closed
+    pipe; still require actual EOF and retain timeout/non-EOF rejection. Cover
+    fresh and recovered journal responses with deterministic failing-before-fix
+    regressions and repeated race-enabled runs. No completion message or evidence
+    format changes, timeout extension or generic closed-pipe acceptance.
+  - [x] Isolate the intermittent 2026-09-07 process failure in the campaign
+    coordinator's post-rename journal case. Reproduce the visible-but-not-yet-
+    acknowledged StagePair window with a deterministic writer checkpoint, and
+    require a killed/drained old writer plus recovered AwaitingPublication
+    startup before permission faults target ConfirmPublication. Preserve exact
+    recovered phases, no premature delivery/advance and normal recovery checks.
   - [x] Isolate the intermittent 2026-09-07 process failure in the campaign
     observer's post-link confirmation case. A reproduced failure's peer logs
     show observer exit before connection: the fixture wrote a watched final

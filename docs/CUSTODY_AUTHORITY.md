@@ -9,6 +9,10 @@ explicit local completion adapter binds externally signed completion to retained
 terminal evidence. Network authority, integration into existing live acceptance
 paths, and active rebaseline are not installed.
 
+An opt-in, completion-only QUIC endpoint now delivers an already co-signed
+command to that original colocated executor/coordinator. It does not distribute
+execution authority or install a default daemon service; see its scope below.
+
 Local retirement serializes upgraded participants using the named journal
 roots. It does not invalidate a previously extracted Ed25519 key, a copied
 unretired journal, an old binary, or a receipt already delivered elsewhere.
@@ -404,6 +408,79 @@ effects. A deployment must route the real consumer through the concrete adapter,
 fence copied/remote owners and cover all required assignments. The method does
 not supply cross-host admission/completion transport, physical pin independence,
 global non-execution proof or a resolution for unknown Started outcomes.
+
+### Opt-in completion-only QUIC delivery
+
+`/outcomemesh/prune-completion/0` is a separate, disabled-by-default protocol.
+`Host.SetPruneCompletionHandler` requires one independently configured client
+transport identity, checked before its own rate budget is consumed.
+`Host.CompletePrune` requires the expected server identity; neither an advertised
+address nor a request field can supply that trust pin. QUIC authenticates both
+endpoints. Control/authority signatures remain separate from transport identity.
+No existing daemon or audit/serve/prune path installs this handler automatically.
+
+The concrete `store.NewPruneCompletionServer` retains references to the original
+pinned executor and its local coordinator. It takes an explicit client peer pin
+and timeout. The host supplies the **authenticated** peer ID to `Serve`, which
+checks it again before reading a request. A generic host handler is not an outcome
+verifier; deployments must compose this concrete adapter, not forward arbitrary
+commands directly to the low-level coordinator. Executor/coordinator lifetime
+ownership must cover every active handler. They are not moved to separate hosts
+or replaced with remote snapshots by this protocol.
+
+Exactly one 424-byte request carries `OMCPCREQ`, uint16 version zero, a nonzero
+32-byte exchange nonce, and the unchanged 382-byte co-signed Complete entry.
+Other command kinds, versions, signatures, truncation and trailing bytes fail.
+The sender must close its write side; the server consumes EOF **before** calling
+the local completion adapter. An unclosed or concatenated request cannot write
+an authority intent. Fixed frame sizes bound reads and allocation without a
+peer-controlled length or unbounded history response.
+
+Only the existing `PruneExecutor.Complete` can change authority. It requires the
+independently confirmed terminal outcome and exact entry binding, retains the
+authority intent, commits its decision and independently confirms it. Only then
+does the server emit a 74-byte `OMCPCACK`/version-zero reply containing the exact
+nonce and entry ID, followed by write-side EOF. The client checks all of these,
+including EOF, before returning success. Canonical request/reply fixtures are
+frozen by `TestCompletionCanonicalFrames`. No receipt, authority command, effect,
+executor-stage or consensus format changes.
+
+Each exchange uses a fresh cryptographic random nonce, including retries of the
+same entry. The reply is an authenticated-channel acknowledgement, **not** a
+portable signed proof, current phase snapshot, reusable grant or durable client
+record. Complete/partial response loss, mismatched nonce/entry, trailing response,
+timeout and caller cancellation never establish non-commit. Exchange I/O failures
+return `ErrUnconfirmed`; preserve the exact signed entry and resolve it explicitly.
+There are no error frames asserting a no-effect outcome. A confirmed historical
+retry can acknowledge the same entry after retirement, without reopening work.
+
+The client does not sign, refresh stale heads, discover another authority,
+automatically retry, or durably retain its intent/acknowledgement. That independent
+client retention and recovery remains a separate gate. Request timeouts are
+100 ms–2 minutes, default 15 seconds, cover dial/exchange, and interrupt blocked
+I/O when cancelled. A server that already made a durable authority decision still
+finishes confirmation even if its client disappears. Timeouts do not revoke
+pending tickets or resolve unknown Started effects.
+
+Independent host limits default to two concurrent completion streams globally,
+one per peer, eight requests per peer/minute and 32 globally/minute. Hard maxima
+are 8/1/60/256 respectively. Protocol memory scopes are 512 KiB globally and
+64 KiB per peer; node-wide connection/memory limits still apply. Completion and
+custody/object/tie traffic have separate protocol budgets. These are bounded
+research defaults, not calibrated production admission or filesystem latency
+guarantees.
+
+Tests use actual loopback QUIC for identity rejection, disabled negotiation,
+resource scopes, EOF-before-mutation, wrong outcomes/consumers, incomplete work,
+lost/partial replies, caller cancellation and exact retry after reopen/retirement.
+Twelve separate-server-process kills bracket request validation, authority intent,
+decision, confirmation and both sides of the response. The restart drill explicitly
+closes the dead client connection and recreates both network endpoints with the
+same independent identities; it does not test automatic failover or stale-connection
+recovery. Existing local publication-fault suites cover the underlying journal
+boundaries. Physical/shared rollback, copy fencing, cross-host admission/execution,
+all-replica enforcement, durable client outbox and default runtime integration
+remain open. This endpoint alone cannot authorize active rebaseline.
 
 ### Storage-incarnation-bound prune requests
 

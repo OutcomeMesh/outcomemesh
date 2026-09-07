@@ -541,6 +541,24 @@ audit/serve/prune path or network service is switched to this adapter by its
 existence. Copy fencing, all-replica coverage, remote transport and independent
 deployment remain required; local completion is not distributed exactly-once.
 
+The opt-in `/outcomemesh/prune-completion/0` protocol only delivers an already
+co-signed completion to the original colocated pinned executor/coordinator.
+It authenticates independently pinned transport peers, keeps a separate bounded
+rate/concurrency/memory scope and remains disabled until explicitly installed.
+Its concrete server waits for one fixed-size request and EOF before any authority
+write. Only the terminal-outcome adapter may complete the ticket; a transport
+allowlist alone does not verify effects or replace either control signature.
+
+The response follows independent authority confirmation and binds the exact entry
+to a fresh exchange nonce. It is not a signed portable proof, current-authority
+snapshot or durable client receipt. Lost/partial/invalid replies, cancellation and
+disconnection remain unresolved, never a no-effect disposition or permission to
+reuse a ticket. A confirmed decision is not discarded when its reply is lost.
+No remote admission/execution/signing/retirement, stale-head refresh, automatic
+retry/failover, durable client outbox or default daemon handler is supplied. The
+live audit/serve/prune paths still require current-authority integration across
+every required assignment; copied and independently running owners remain unfenced.
+
 The opt-in storage-incarnation mode adds a narrower local guarantee. A fresh
 caller-selected ID is atomically bound to a new schema-6 WorkChain database;
 reopen needs the independently retained ID and never initializes missing data.

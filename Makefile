@@ -88,6 +88,7 @@ test-fuzz-smoke:
 	$(GO) test ./node/custodyauthority/store -run '^$$' -fuzz '^FuzzDecodePruneRequest$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyauthority/store -run '^$$' -fuzz '^FuzzPrunePinTransitions$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyauthority/store -run '^$$' -fuzz '^FuzzDecodePruneCancellation$$' -fuzztime=$(FUZZTIME)
+	$(GO) test ./node/custodyauthority/completionwire -run '^$$' -fuzz '^FuzzCompletionFrames$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/workarchive -run '^$$' -fuzz '^FuzzReadCustodySessionFrameNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./sim/workgraphmodel -run '^$$' -fuzz '^FuzzRunSelfishStrategiesNeverBreakAccounting$$' -fuzztime=$(FUZZTIME)
 
@@ -95,7 +96,7 @@ test-process:
 	$(GO) test -tags=integration ./cmd/omd -run '^TestProcess(QUICRestartSoak|WorkGraphActivationQUICRestart|Archive(ObjectQUICMaterializesAndRecoversAcrossRestart|Custody(QUICSurvivesReplicaRestart|JournalRunsTwoRestartedCycles|(Checkpoint|Backup)RestoresPendingCycle|PinsTrackLatestBackup|ReconciliationKeepsStaleEvidenceReadOnly|RebaselineProposesWithoutCutover))|ControlledTieProducerRecoversWaitingState|TiePair(QUICReachesIndependentV2ObserversAndRecoversAck|CompletionWaitsForCoordinatorEOF)|TieCampaign.*)$$' -count=1 -timeout=10m
 	$(GO) test -tags=integration ./node/workchain -run '^Test(Pebble|BoundStorage|PositionStorage)ProcessCrashAtomicity$$' -count=1 -timeout=3m
 	$(GO) test -tags=integration ./node/workarchive -run '^Test(ArchiveRestoreProcessCrashAtomicity|AvailabilityPruneProcessCrashAtomicity|Custody(Record|Journal|Backup|Pin|Transfer|Application|Retirement)ProcessCrashAtomicity)$$' -count=1 -timeout=2m
-	$(GO) test -tags=integration ./node/custodyauthority/store -run '^Test(Authority(Store|Coordinator)|PruneExecutor|PinnedPrune|StorageBoundPrune|PruneCancellation|PruneCompletion)ProcessCrashAtomicity$$' -count=1 -timeout=5m
+	$(GO) test -tags=integration ./node/custodyauthority/store -run '^Test(Authority(Store|Coordinator)|PruneExecutor|PinnedPrune|StorageBoundPrune|PruneCancellation|PruneCompletion(QUIC)?)ProcessCrashAtomicity$$' -count=1 -timeout=5m
 
 test-work-rollover-soak:
 	OUTCOMEMESH_WORK_ROLLOVER_SOAK_CYCLES=$(WORKROLLOVERCYCLES) $(GO) test ./cmd/omd -run '^TestMultiNodeWorkRolloverConvergesAcrossClockSkewChurnAndRelayLoss$$' -count=1 -timeout=5m
