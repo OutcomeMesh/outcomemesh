@@ -366,6 +366,14 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
               requests and exercise 12 server-process kill/restart boundaries.
               This does not remotely admit/execute work, add durable client
               intent, install daemon handlers or fence remote/copied consumers.
+            - [x] One-command completion client outbox: retain the exact co-signed
+              entry and both transport identity pins before any send, require an
+              independently retained intent ID on reopen, and persist a checked
+              channel acknowledgement before client success. Open is non-sending;
+              explicit retries retain the same command and use a fresh exchange.
+              Cover lost replies, seven local publication faults, 41 client-process
+              kills and exact recovery. No signing, head refresh, automatic
+              failover, cross-host execution or portable/current-authority proof.
   - [ ] Filesystem-full, inode-exhaustion, power-loss, and long-running retention
     campaigns before deployment claims.
   - [x] Isolate the 2026-09-07 custody response-close race: force a verified

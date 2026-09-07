@@ -554,10 +554,25 @@ to a fresh exchange nonce. It is not a signed portable proof, current-authority
 snapshot or durable client receipt. Lost/partial/invalid replies, cancellation and
 disconnection remain unresolved, never a no-effect disposition or permission to
 reuse a ticket. A confirmed decision is not discarded when its reply is lost.
-No remote admission/execution/signing/retirement, stale-head refresh, automatic
-retry/failover, durable client outbox or default daemon handler is supplied. The
-live audit/serve/prune paths still require current-authority integration across
-every required assignment; copied and independently running owners remain unfenced.
+The low-level exchange supplies no remote admission/execution/signing/retirement,
+stale-head refresh, automatic retry/failover, durable client outbox or daemon
+handler. The live audit/serve/prune paths still require current-authority
+integration across every required assignment; copied and independently running
+owners remain unfenced.
+
+The separate opt-in `CompletionOutbox` wraps that low-level client with one
+immutable, externally ID-pinned command and both transport identity pins. It
+retains the intent before sending and returns success only after a checked
+QUIC response is locally published and synced. Open never sends, staging files
+never become confirmations, and only an explicit exact retry can resolve a
+missing reply. A retained local acknowledgement can be returned offline; this
+is historical delivery, not evidence of current authority or another permission.
+No arbitrary response callback, reset/drop API or automatic retry is exposed.
+Failed local publication poisons the writer until exact reopen. The checksummed
+receipt is not signed proof and cannot defend against a malicious journal owner,
+copied roots, or shared rollback. Losing only an ACK may make the client retry
+the original command; it cannot authorize a new effect. Physical separation,
+all-assignment live enforcement and safe runtime wiring remain deployment gates.
 
 The opt-in storage-incarnation mode adds a narrower local guarantee. A fresh
 caller-selected ID is atomically bound to a new schema-6 WorkChain database;

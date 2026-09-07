@@ -812,6 +812,49 @@ Implemented in an isolated, not-yet-activated consensus package:
   recovery (17.462 seconds), and 466 authority/executor crash cases, including
   the 12 new QUIC cases (205.584 seconds). These are local logical crash and
   permission-fault checks, not physical power-loss or production readiness proof.
+  Completion client outbox follow-up (2026-09-07): one immutable 456-byte intent
+  retains the exact co-signed command and both independent transport pins before
+  sending. Create/Open require an externally retained intent ID; open only
+  validates/re-syncs local evidence and never contacts the server. Explicit
+  Deliver uses the concrete pinned QUIC client, with no signing, head refresh,
+  automatic retry/failover or effect callback. A verified response is retained in
+  a 148-byte local checksummed receipt before success. Local write failures poison
+  the owner; lost responses remain unresolved and exact network retries reuse the
+  server decision. A durable local receipt returns offline historical delivery,
+  not a live-authority assertion. Seven publication-fault cases, initial bootstrap
+  failures, malformed/replaced files, peer/assignment binding, concurrent callers,
+  cancellation and lost/partial real-QUIC replies are covered. Forty-one separate
+  client-process crash cases passed with race detection in 27.060 seconds,
+  including interrupted historical retries and a server still confirming after
+  client death. The two canonical records completed 100,000 fuzz executions.
+  Linux/Windows amd64 integration test binaries built with CGO disabled; runtime
+  tests were executed on macOS only. The expanded outbox suite also passed with
+  race detection after correcting the foreign-actor negative fixture to replace
+  the original actor key before signing; that fixture must itself be canonical
+  before the outbox's assignment-member rejection can be tested.
+  The first whole-repository normal/race runs used the earlier fixture and
+  reported the actor subcase failure. A further real-QUIC regression removes just the
+  local ACK after successful delivery: reopen reports unresolved, an explicit
+  retry uses a fresh nonce and the original entry, and neither the authority
+  decision nor the retained executor effect is repeated.
+  Final whole-repository normal and race-enabled tests passed (store package
+  315.370 and 359.819 seconds respectively), and `go vet ./...` passed. The server
+  pin regression was then strengthened to use an otherwise acceptable command
+  and working concrete endpoint; it requires ErrUnexpectedPeer before any server
+  handler or authority change and passed with race detection.
+  One combined process-gate attempt ended at 301.112 seconds against the existing
+  5-minute authority/executor suite limit while full normal/race suites were also
+  running. The retained stack showed Pebble reopen waiting on flush/fsync. No
+  orphan crash helper remained. The timeout and assertions were left unchanged;
+  the process gate was rerun separately after those other suites finished.
+  That complete five-suite run passed: command processes 65.997 seconds,
+  100 WorkChain crash cases 28.952 seconds, archive recovery 17.076 seconds,
+  466 authority/executor crash cases 200.085 seconds, and the 41 new outbox crash
+  cases 20.336 seconds. The dedicated run met the same limits; it does not prove
+  bounded filesystem latency under arbitrary concurrent load or physical failures.
+  Protected root ownership, physical storage, copied/shared rollback, independent
+  server retention, all-replica live enforcement and daemon integration remain
+  separate gates. The client journal has no queue, reset or completion-signing API.
   Process-gate observation (2026-09-07): the first combined run stopped at
   `TestProcessTieCampaignStorageFailuresRecoverWithoutFalseAdvance/observer_confirmation_after_link`
   because the expected confirmation marker was absent. Five isolated repetitions

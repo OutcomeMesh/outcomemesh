@@ -12,6 +12,8 @@ paths, and active rebaseline are not installed.
 An opt-in, completion-only QUIC endpoint now delivers an already co-signed
 command to that original colocated executor/coordinator. It does not distribute
 execution authority or install a default daemon service; see its scope below.
+A separate one-command client outbox can retain that delivery and its checked
+channel acknowledgement across local process crashes. Neither is a live grant.
 
 Local retirement serializes upgraded participants using the named journal
 roots. It does not invalidate a previously extracted Ed25519 key, a copied
@@ -454,9 +456,10 @@ return `ErrUnconfirmed`; preserve the exact signed entry and resolve it explicit
 There are no error frames asserting a no-effect outcome. A confirmed historical
 retry can acknowledge the same entry after retirement, without reopening work.
 
-The client does not sign, refresh stale heads, discover another authority,
-automatically retry, or durably retain its intent/acknowledgement. That independent
-client retention and recovery remains a separate gate. Request timeouts are
+The low-level `Host.CompletePrune` client does not sign, refresh stale heads,
+discover another authority, automatically retry, or durably retain its
+intent/acknowledgement. That independent client retention is provided only by
+the explicit outbox below. Request timeouts are
 100 ms–2 minutes, default 15 seconds, cover dial/exchange, and interrupt blocked
 I/O when cancelled. A server that already made a durable authority decision still
 finishes confirmation even if its client disappears. Timeouts do not revoke
@@ -479,8 +482,72 @@ closes the dead client connection and recreates both network endpoints with the
 same independent identities; it does not test automatic failover or stale-connection
 recovery. Existing local publication-fault suites cover the underlying journal
 boundaries. Physical/shared rollback, copy fencing, cross-host admission/execution,
-all-replica enforcement, durable client outbox and default runtime integration
-remain open. This endpoint alone cannot authorize active rebaseline.
+all-replica enforcement and default runtime integration remain open. This endpoint
+alone cannot authorize active rebaseline.
+
+### One-command completion client outbox
+
+`store.CompletionOutbox` adds local delivery durability around the concrete
+identity-pinned QUIC client. It owns one immutable `CompletionIntent`: the exact
+already co-signed Complete plus independently selected client/server transport
+IDs. Its ID commits all three and must be retained outside the journal before
+creation/reopen. No private key is stored in this journal; the caller retains
+the transport identity separately. The pinned assignment must match the command
+and authority key, and the consumer must have declared prune rights. These static
+checks do not verify an actual terminal effect or current head; the server's concrete executor
+adapter remains responsible for those decisions.
+
+`CreateCompletionOutbox` initializes only a new root, syncing the assignment and
+456-byte intent before its final initialization marker. It does not dial.
+`OpenCompletionOutbox` requires that external intent ID, validates existing files
+and re-establishes their durability. It creates no files, submits no command and
+does not promote staging files. A missing/partial root is an error, never an
+invitation to recreate or change the signed command.
+
+`Deliver` accepts a concrete `*libp2ptransport.Host`, checks its identity against
+the retained client pin, and makes at most one exchange to the retained server
+pin at an explicitly supplied address. The address can change for an explicitly
+requested retry but cannot change the server identity. There is no automatic
+retry, discovery, failover, signing, head refresh or arbitrary success callback.
+Every network retry sends the exact same entry with a fresh wire nonce. The
+lifetime process lock and in-process mutex cover the network call and receipt
+publication; concurrent calls cannot replace the command or duplicate a locally
+completed exchange. Close waits for that owner to drain.
+
+After a complete nonce/entry-bound reply and EOF, the outbox publishes a 148-byte
+checksummed local receipt using a synced staging file, no-replace hard link and
+directory fsync. Only then can Deliver return success. Caller cancellation after
+the checked reply does not discard it; the local write still finishes. A local
+write/sync error returns no ACK and poisons the writer until close/reopen. A
+visible exact final receipt is re-synced on reopen; a staging file alone never
+becomes a confirmation. Temporary leftovers are bounded at 128 files of at most
+148 bytes. Exhaustion refuses another send before contacting the server.
+
+`Snapshot().Acknowledgement == nil` means **unresolved**, not unsent or remotely
+uncommitted. Missing/partial replies, cancellation before a verified reply and
+client death cannot clear the intent or authorize effect replay. Explicit retry
+uses the original server's retained decision. A durable local ACK is historical:
+later Deliver returns that same ACK without contacting the server, including
+while it is offline. It does not claim the assignment is still active.
+
+The receipt is an unsigned local observation, not a portable proof or execution
+permission. Its checksum detects corruption, not a malicious journal writer.
+Intent pinning catches replacement with a different command or peer binding;
+it does not detect a copied whole journal, shared rollback, or lost ACK history.
+ACK-only rollback may return the client to unresolved and require an exact
+network retry. Independently retained server decisions, protected root ownership,
+physical storage and copy fencing remain necessary external assumptions.
+Timeouts bound dial/exchange, not filesystem fsync or time waiting for the mutex.
+There is no queue, deletion/reset API, multi-operation scheduler or daemon wiring.
+
+Tests cover fixed canonical intent/receipt vectors, bounded decoding, wrong
+assignment/authority/consumer/peer bindings, malformed and replaced files,
+concurrent delivery/close, caller cancellation and lost/partial QUIC replies.
+Seven local receipt-publication faults recover only unresolved or exact delivered
+state. Forty-one separate-client-process kills cover initialization, initial and
+historical sends, in-flight server confirmation and every local receipt boundary.
+Neither this journal nor those logical process tests close the live acceptance,
+cross-host admission, independent deployment or physical power-loss gates.
 
 ### Storage-incarnation-bound prune requests
 
