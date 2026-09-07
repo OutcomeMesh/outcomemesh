@@ -347,6 +347,16 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
               21 publication-fault boundaries, 14 resume errors and 42 process
               kills. This does not resolve Started outcomes, fence copied
               executors or supply completion transport.
+            - [x] Explicit local outcome-bound completion: accept an externally
+              consumer-signed, authority-co-signed Complete only for the pinned
+              executor's independently confirmed effect or pre-start cancellation.
+              Hold executor/coordinator guards through the retained authority
+              intent, decision and confirmation; exact retry resumes only that
+              entry or reads its historical decision. Reject unknown Started
+              work, wrong evidence and stale heads without signing or refreshing
+              them. Cover 42 publication faults and 70 process kills, including
+              interrupted retries. This is a local adapter, not authority
+              transport, copy fencing or enforcement at all acceptance paths.
   - [ ] Filesystem-full, inode-exhaustion, power-loss, and long-running retention
     campaigns before deployment claims.
   - [x] Isolate the intermittent 2026-09-07 process failure in the campaign

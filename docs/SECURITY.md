@@ -525,6 +525,22 @@ branches and records following cancellation are rejected. Older binaries reject
 the new terminal filename; no fallback, history repair or operation reuse is
 permitted. Unknown Started outcomes can still block retirement indefinitely.
 
+`PruneExecutor.Complete` adds a separate local completion boundary for independently
+confirmed `Succeeded`/`Cancelled` executors. It accepts only an externally signed
+Complete matching the exact assignment, consumer, ticket and retained outcome ID,
+and holds executor/coordinator guards until the authority decision is independently
+confirmed. It never signs, executes, queries database absence or updates a stale
+signed head. Raw, Started and unconfirmed executors cannot complete through it;
+even an existing chain effect first needs explicit executor recovery/confirmation.
+An interrupted exact entry may be retried, never replaced by a different pending
+command. Historical completion does not refresh authority or permit another effect.
+
+This remains a trusted opt-in adapter. The low-level signed-command coordinator
+can still be called directly and is not an external-effect verifier. No live
+audit/serve/prune path or network service is switched to this adapter by its
+existence. Copy fencing, all-replica coverage, remote transport and independent
+deployment remain required; local completion is not distributed exactly-once.
+
 The opt-in storage-incarnation mode adds a narrower local guarantee. A fresh
 caller-selected ID is atomically bound to a new schema-6 WorkChain database;
 reopen needs the independently retained ID and never initializes missing data.

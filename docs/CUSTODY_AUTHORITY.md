@@ -4,9 +4,10 @@ Status: bounded reference admission/drain machine in `node/custodyauthority`,
 local durable history and an independently retained intent/pin coordinator in
 `node/custodyauthority/store` are implemented. WorkChain also has a trusted local
 ticketed-prune result primitive, now used by an optional one-assignment local
-executor journal, optional independent stage pins and coordinator guard. Network
-authority, integration into existing live acceptance paths, and active rebaseline
-are not installed.
+executor journal, optional independent stage pins and coordinator guard. An
+explicit local completion adapter binds externally signed completion to retained
+terminal evidence. Network authority, integration into existing live acceptance
+paths, and active rebaseline are not installed.
 
 Local retirement serializes upgraded participants using the named journal
 roots. It does not invalidate a previously extracted Ed25519 key, a copied
@@ -344,6 +345,65 @@ The new branch has 21 publication-fault boundaries and 14 explicit-resume errors
 resume paths. Tests separately sign completion and show that retirement cannot
 proceed just because local cancellation succeeded. These are local process/fault
 checks, not physical power-loss or global non-execution certification.
+
+### Explicit local completion from retained terminal evidence
+
+`PruneExecutor.Complete(ctx, coordinator, entry)` submits a **separate**, already
+consumer-signed and authority-co-signed `Complete` entry. It checks the executor's
+own retained state under its mutex, not a caller-supplied snapshot or generic
+callback result. Independent stage pins are mandatory. The eligible states are
+confirmed `Succeeded` and confirmed `Cancelled`; raw journals, `Prepared`,
+`Admitted`, unresolved `Started`, uncertain handles and pending executor
+transitions cannot use this adapter. Even an actual chain effect must first be
+recovered into the executor and independently confirmed before completion.
+
+The command must bind the exact assignment, consumer control key, admission
+ticket and retained effect/cancellation ID. Both signatures and the configured
+authority key are checked. The coordinator separately checks its own exact
+signed compare-and-append head and ticket history. A valid signature over another
+outcome is refused before any authority intent is retained. No key, signer,
+database handle, effect callback or reusable current-state snapshot is accepted.
+The method neither constructs a new command nor refreshes an outdated signature.
+
+Lock order is executor then coordinator. Both guards remain held through the
+existing authority publication protocol: exact intent, durable decision, then
+independent confirmation before success. The executor and authority roots must
+be disjoint. No fourth executor record, new terminal stage, new envelope or wire
+format is introduced; the authority's retained Complete entry is the completion
+decision. The original executor outcome remains immutable historical evidence.
+
+Open still submits and confirms nothing. After a failed publication, close/reopen
+and explicitly retry the **same entry**: it either resumes that retained attempt
+or reads its already confirmed historical decision. A different pending attempt,
+including Stop, blocks completion and must be resolved separately. If Stop wins
+the signed head, completion needs a separately re-signed entry at the new head;
+the existing pending ticket may drain while Stopping. A conflicting old Complete
+cannot be replaced or repaired, even with a fresh signature. Exact historical
+retries remain lookups after retirement and never reopen the ticket or execute
+another effect.
+
+Caller cancellation before publication returns no decision. A retained intent
+is never discarded; cancellation after the durable authority decision does not
+abandon its independent confirmation. I/O uncertainty returns no Commit and
+requires successful reopen before retry. `Commit.Appended=false` means the
+authority entry already existed, not that the local effect did not occur.
+
+Tests cover both terminal branches in all three pinned executor/storage modes,
+closed-database completion, exact binding/signature rejection, unknown and
+unconfirmed outcomes, stopping/head conflicts, concurrent retries, held guards,
+missing terminal records/pins, disjoint roots, caller cancellation and actual
+injected directory-sync failures. There are 42
+publication-fault cases and 70 process-kill cases: both initial completion and
+retry of a previously retained intent. Reopen twice stays non-submitting; final
+retry, retirement and historical lookup leave chain accounting and executor
+evidence unchanged.
+
+This adapter is **not installed in any live acceptance path**. The lower-level
+coordinator still stores trusted signed commands and does not prove their external
+effects. A deployment must route the real consumer through the concrete adapter,
+fence copied/remote owners and cover all required assignments. The method does
+not supply cross-host admission/completion transport, physical pin independence,
+global non-execution proof or a resolution for unknown Started outcomes.
 
 ### Storage-incarnation-bound prune requests
 

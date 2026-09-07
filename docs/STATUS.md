@@ -727,6 +727,32 @@ Implemented in an isolated, not-yet-activated consensus package:
   gate with 100 WorkChain and 384 authority/executor crash cases plus the existing
   QUIC/archive suites. Executor integration binaries built for Linux and Windows;
   process execution was verified on macOS only.
+  Outcome-bound completion follow-up (2026-09-07): `PruneExecutor.Complete` now
+  submits a separately supplied consumer-signed, authority-co-signed completion
+  only after the executor's exact effect or pre-start cancellation is independently
+  confirmed. Assignment, consumer, ticket and outcome IDs must match retained
+  evidence. Executor/coordinator guards cover authority intent, decision and
+  independent confirmation. Raw or unresolved Started work cannot use this path;
+  a pending executor transition must be explicitly resolved first. No database
+  access, effect execution, key custody, new envelope or executor stage is added.
+  Exact completion retry resumes its retained entry or returns historical evidence,
+  including after retirement. A competing retained Stop blocks completion, and an
+  outdated signed head requires a separately re-signed command, never automatic
+  refresh. The lower-level coordinator remains a trusted signed-command store;
+  this opt-in local adapter does not install remote authority or any live
+  audit/serve/prune acceptance path, fence copies or resolve unknown Started work.
+  Targeted validation passed: both terminal branches and all three pinned storage
+  modes, 42 publication-fault cases, wrong bindings/signatures, raw/unconfirmed
+  refusal, concurrent retries, held guards, stopping conflicts, caller cancellation,
+  missing terminal records/pins, disjoint-root checks and directory-sync errors.
+  All 70 new process-kill cases passed with race
+  detection, including interrupted completion retries. Executor integration
+  binaries built for Linux and Windows; process execution was verified on macOS
+  only. Repository-wide tests, race detection and vet passed. The complete process
+  gate passed with 454 authority/executor crash cases and 100 WorkChain cases,
+  alongside the existing QUIC/archive suites. The independent authority drain
+  model completed another 100,000 fuzz inputs; the final completion unit suite,
+  including missing-evidence/root checks, also passed under race detection.
   Process-gate observation (2026-09-07): the first combined run stopped at
   `TestProcessTieCampaignStorageFailuresRecoverWithoutFalseAdvance/observer_confirmation_after_link`
   because the expected confirmation marker was absent. Five isolated repetitions

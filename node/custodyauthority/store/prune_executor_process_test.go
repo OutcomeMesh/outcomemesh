@@ -133,14 +133,21 @@ func TestPruneExecutorProcessCrashAtomicity(t *testing.T) {
 
 func killPruneExecutorChild(t *testing.T, f *pruneFixture, stage string, initializing bool) {
 	t.Helper()
+	killPruneExecutorChildWithCompletion(t, f, stage, initializing, custodyauthority.Entry{})
+}
+
+func killPruneExecutorChildWithCompletion(t *testing.T, f *pruneFixture, stage string, initializing bool, completion custodyauthority.Entry) {
+	t.Helper()
 	marker := filepath.Join(t.TempDir(), "reached")
 	request, _ := f.request.CanonicalBytes()
 	admission, _ := f.admission.CanonicalBytes()
+	complete, _ := completion.CanonicalBytes()
 	command := exec.Command(os.Args[0], "-test.run=^TestPruneExecutorCrashHelper$", "-test.count=1")
 	command.Env = append(os.Environ(), "OUTCOMEMESH_PRUNE_STAGE="+stage, "OUTCOMEMESH_PRUNE_EXECUTOR="+f.executorPath,
 		"OUTCOMEMESH_PRUNE_EXECUTOR_PINS="+f.executorPinsPath,
 		"OUTCOMEMESH_PRUNE_AUTHORITY="+f.authorityPath, "OUTCOMEMESH_PRUNE_PINS="+f.pinsPath, "OUTCOMEMESH_PRUNE_CHAIN="+f.chainPath,
-		"OUTCOMEMESH_PRUNE_REQUEST="+hex.EncodeToString(request), "OUTCOMEMESH_PRUNE_ADMISSION="+hex.EncodeToString(admission), "OUTCOMEMESH_PRUNE_MARKER="+marker)
+		"OUTCOMEMESH_PRUNE_REQUEST="+hex.EncodeToString(request), "OUTCOMEMESH_PRUNE_ADMISSION="+hex.EncodeToString(admission),
+		"OUTCOMEMESH_PRUNE_COMPLETION="+hex.EncodeToString(complete), "OUTCOMEMESH_PRUNE_MARKER="+marker)
 	var output bytes.Buffer
 	command.Stdout, command.Stderr = &output, &output
 	if err := command.Start(); err != nil {
@@ -228,7 +235,7 @@ func TestPruneExecutorCrashHelper(t *testing.T) {
 	}
 	path, marker := os.Getenv("OUTCOMEMESH_PRUNE_EXECUTOR"), os.Getenv("OUTCOMEMESH_PRUNE_MARKER")
 	pinPath := os.Getenv("OUTCOMEMESH_PRUNE_EXECUTOR_PINS")
-	boundaryStage := strings.TrimPrefix(stage, "resume/")
+	boundaryStage := strings.TrimPrefix(strings.TrimPrefix(stage, "resume/"), "complete/")
 	hooks := storeHooks{at: func(at string) error {
 		if at == boundaryStage {
 			writeTestFile(t, marker, []byte(stage))
@@ -268,6 +275,20 @@ func TestPruneExecutorCrashHelper(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer coordinator.Close()
+	if strings.HasPrefix(stage, "complete/") {
+		encoded, err := hex.DecodeString(os.Getenv("OUTCOMEMESH_PRUNE_COMPLETION"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		entry, err := custodyauthority.DecodeEntry(encoded)
+		if err != nil {
+			t.Fatal(err)
+		}
+		setCoordinatorHooks(coordinator, hooks)
+		_, err = executor.Complete(t.Context(), coordinator, entry)
+		writeTestFile(t, marker+".ack", nil)
+		t.Fatal("completion returned before kill", err)
+	}
 	if strings.Contains(stage, "cancel-") {
 		if strings.HasPrefix(stage, "resume/") {
 			err = executor.ResumePinnedTransition(t.Context())

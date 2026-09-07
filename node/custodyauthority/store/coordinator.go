@@ -179,6 +179,12 @@ func (coordinator *Coordinator) Append(ctx context.Context, entry custodyauthori
 	}
 	coordinator.mu.Lock()
 	defer coordinator.mu.Unlock()
+	return coordinator.append(ctx, entry)
+}
+
+// append requires the coordinator mutex. Concrete local consumers can hold
+// their own lifetime guard across the entire ordered completion publication.
+func (coordinator *Coordinator) append(ctx context.Context, entry custodyauthority.Entry) (Commit, error) {
 	current, err := coordinator.snapshot()
 	if err != nil {
 		return Commit{}, err
