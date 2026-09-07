@@ -33,6 +33,7 @@ const (
 	ArchiveObjectProtocol   protocol.ID = "/outcomemesh/workarchive/1"
 	ArchiveCustodyProtocol  protocol.ID = "/outcomemesh/workarchive-custody/1"
 	PruneCompletionProtocol protocol.ID = "/outcomemesh/prune-completion/0"
+	PruneAdmissionProtocol  protocol.ID = "/outcomemesh/prune-admission/0"
 	maxListenAddresses                  = 8
 	maxAddressBytes                     = 256
 	// MaxConnectionLimit and MaxStreamsPerPeerLimit are hard implementation
@@ -65,6 +66,10 @@ const (
 	MaxPruneCompletionStreamsPerPeerLimit         = 1
 	MaxPruneCompletionStreamsPerMinuteLimit       = 60
 	MaxPruneCompletionStreamsGlobalPerMinuteLimit = 256
+	MaxPruneAdmissionStreamsLimit                 = 8
+	MaxPruneAdmissionStreamsPerPeerLimit          = 1
+	MaxPruneAdmissionStreamsPerMinuteLimit        = 60
+	MaxPruneAdmissionStreamsGlobalPerMinuteLimit  = 256
 	MaxFileDescriptorLimit                        = 4_096
 )
 
@@ -105,6 +110,10 @@ type Config struct {
 	MaxPruneCompletionStreamsPerPeer         int
 	MaxPruneCompletionStreamsPerMinute       int
 	MaxPruneCompletionStreamsGlobalPerMinute int
+	MaxPruneAdmissionStreams                 int
+	MaxPruneAdmissionStreamsPerPeer          int
+	MaxPruneAdmissionStreamsPerMinute        int
+	MaxPruneAdmissionStreamsGlobalPerMinute  int
 
 	MemoryBytes        int64
 	MaxFileDescriptors int
@@ -140,6 +149,10 @@ func DefaultConfig() Config {
 		MaxPruneCompletionStreamsPerPeer:         1,
 		MaxPruneCompletionStreamsPerMinute:       8,
 		MaxPruneCompletionStreamsGlobalPerMinute: 32,
+		MaxPruneAdmissionStreams:                 2,
+		MaxPruneAdmissionStreamsPerPeer:          1,
+		MaxPruneAdmissionStreamsPerMinute:        8,
+		MaxPruneAdmissionStreamsGlobalPerMinute:  32,
 
 		MemoryBytes:        64 << 20,
 		MaxFileDescriptors: 128,
@@ -190,6 +203,12 @@ type Host struct {
 	pruneCompletionPeerCounts                map[types.Hash]int
 	maxPruneCompletionStreamsPerMinute       int
 	maxGlobalPruneCompletionStreamsPerMinute int
+	pruneAdmissionMu                         sync.Mutex
+	pruneAdmissionWindowStart                time.Time
+	pruneAdmissionGlobalCount                int
+	pruneAdmissionPeerCounts                 map[types.Hash]int
+	maxPruneAdmissionStreamsPerMinute        int
+	maxGlobalPruneAdmissionStreamsPerMinute  int
 }
 
 func New(ctx context.Context, privateKey ed25519.PrivateKey, config Config, handler Handler) (*Host, error) {
@@ -255,6 +274,9 @@ func New(ctx context.Context, privateKey ed25519.PrivateKey, config Config, hand
 		pruneCompletionPeerCounts:                make(map[types.Hash]int),
 		maxPruneCompletionStreamsPerMinute:       config.MaxPruneCompletionStreamsPerMinute,
 		maxGlobalPruneCompletionStreamsPerMinute: config.MaxPruneCompletionStreamsGlobalPerMinute,
+		pruneAdmissionPeerCounts:                 make(map[types.Hash]int),
+		maxPruneAdmissionStreamsPerMinute:        config.MaxPruneAdmissionStreamsPerMinute,
+		maxGlobalPruneAdmissionStreamsPerMinute:  config.MaxPruneAdmissionStreamsGlobalPerMinute,
 	}
 	result.setHandler(SessionProtocol, handler)
 	return result, nil
@@ -764,6 +786,12 @@ func validateConfig(ctx context.Context, privateKey ed25519.PrivateKey, config C
 		config.MaxPruneCompletionStreamsPerMinute <= 0 || config.MaxPruneCompletionStreamsPerMinute > MaxPruneCompletionStreamsPerMinuteLimit ||
 		config.MaxPruneCompletionStreamsGlobalPerMinute < config.MaxPruneCompletionStreamsPerMinute ||
 		config.MaxPruneCompletionStreamsGlobalPerMinute > MaxPruneCompletionStreamsGlobalPerMinuteLimit ||
+		config.MaxPruneAdmissionStreams <= 0 || config.MaxPruneAdmissionStreams > MaxPruneAdmissionStreamsLimit ||
+		config.MaxPruneAdmissionStreamsPerPeer <= 0 || config.MaxPruneAdmissionStreamsPerPeer > MaxPruneAdmissionStreamsPerPeerLimit ||
+		config.MaxPruneAdmissionStreams < config.MaxPruneAdmissionStreamsPerPeer ||
+		config.MaxPruneAdmissionStreamsPerMinute <= 0 || config.MaxPruneAdmissionStreamsPerMinute > MaxPruneAdmissionStreamsPerMinuteLimit ||
+		config.MaxPruneAdmissionStreamsGlobalPerMinute < config.MaxPruneAdmissionStreamsPerMinute ||
+		config.MaxPruneAdmissionStreamsGlobalPerMinute > MaxPruneAdmissionStreamsGlobalPerMinuteLimit ||
 		config.MemoryBytes < 16<<20 || config.MemoryBytes > 2<<30 ||
 		config.MaxFileDescriptors < config.MaxConnections || config.MaxFileDescriptors > MaxFileDescriptorLimit ||
 		config.GracePeriod < 0 {
@@ -789,11 +817,11 @@ func newResourceManager(config Config) (network.ResourceManager, error) {
 	peerStreams := config.MaxStreamsPerPeer + config.MaxWorkStreamsPerPeer +
 		2*config.MaxVersionedChainStreamsPerPeer + config.MaxTiePairStreamsPerPeer +
 		config.MaxArchiveObjectStreamsPerPeer + config.MaxArchiveCustodyStreamsPerPeer +
-		config.MaxPruneCompletionStreamsPerPeer +
+		config.MaxPruneCompletionStreamsPerPeer + config.MaxPruneAdmissionStreamsPerPeer +
 		internalStreamsPerPeer
 	totalStreams := config.MaxConnections*(config.MaxStreamsPerPeer+config.MaxWorkStreamsPerPeer+internalStreamsPerPeer) +
 		2*config.MaxVersionedChainStreams + config.MaxTiePairStreams +
-		config.MaxArchiveObjectStreams + config.MaxArchiveCustodyStreams + config.MaxPruneCompletionStreams
+		config.MaxArchiveObjectStreams + config.MaxArchiveCustodyStreams + config.MaxPruneCompletionStreams + config.MaxPruneAdmissionStreams
 	system := rcmgr.ResourceLimits{
 		Streams:         rcmgr.LimitVal(totalStreams),
 		StreamsInbound:  rcmgr.LimitVal(totalStreams),
@@ -856,6 +884,12 @@ func newResourceManager(config Config) (network.ResourceManager, error) {
 		StreamsOutbound: rcmgr.LimitVal(config.MaxPruneCompletionStreamsPerPeer),
 		Memory:          64 << 10,
 	}
+	pruneAdmissionPerPeer := rcmgr.ResourceLimits{
+		Streams:         rcmgr.LimitVal(config.MaxPruneAdmissionStreamsPerPeer),
+		StreamsInbound:  rcmgr.LimitVal(config.MaxPruneAdmissionStreamsPerPeer),
+		StreamsOutbound: rcmgr.LimitVal(config.MaxPruneAdmissionStreamsPerPeer),
+		Memory:          64 << 10,
+	}
 	partial := rcmgr.PartialLimitConfig{
 		System:      system,
 		Transient:   system,
@@ -909,6 +943,12 @@ func newResourceManager(config Config) (network.ResourceManager, error) {
 				StreamsOutbound: rcmgr.LimitVal(config.MaxPruneCompletionStreams),
 				Memory:          512 << 10,
 			},
+			PruneAdmissionProtocol: {
+				Streams:         rcmgr.LimitVal(config.MaxPruneAdmissionStreams),
+				StreamsInbound:  rcmgr.LimitVal(config.MaxPruneAdmissionStreams),
+				StreamsOutbound: rcmgr.LimitVal(config.MaxPruneAdmissionStreams),
+				Memory:          512 << 10,
+			},
 		},
 		ProtocolPeer: map[protocol.ID]rcmgr.ResourceLimits{
 			SessionProtocol:         applicationPerPeer,
@@ -919,6 +959,7 @@ func newResourceManager(config Config) (network.ResourceManager, error) {
 			ArchiveObjectProtocol:   archiveObjectPerPeer,
 			ArchiveCustodyProtocol:  archiveCustodyPerPeer,
 			PruneCompletionProtocol: pruneCompletionPerPeer,
+			PruneAdmissionProtocol:  pruneAdmissionPerPeer,
 		},
 		Conn: rcmgr.ResourceLimits{
 			Conns: 1, ConnsInbound: 1, ConnsOutbound: 1, FD: 1, Memory: 4 << 20,

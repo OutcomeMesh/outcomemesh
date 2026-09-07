@@ -574,6 +574,29 @@ copied roots, or shared rollback. Losing only an ACK may make the client retry
 the original command; it cannot authorize a new effect. Physical separation,
 all-assignment live enforcement and safe runtime wiring remain deployment gates.
 
+The separate opt-in `/outcomemesh/prune-admission/0` protocol permits only an
+externally co-signed prune Admit for the original executor's already retained
+request. `PruneExecutor.Admit` validates that binding before authority mutation,
+then holds executor/coordinator ownership across both independent confirmations:
+authority admission first, executor admission binding second. A reply cannot
+escape after only the authority step. Partial success leaves the ticket pending
+and the exact command unresolved; it does not cancel, complete or run an effect.
+Only the exact retained admission transition may resume through this API, never
+a start, result, cancellation or unrelated authority attempt.
+
+Fixed request/reply formats are distinct from completion, and actual request EOF
+is mandatory before mutation. Peer identity pinning, both command signatures,
+fresh nonce binding and independent rate/concurrency/memory budgets remain
+required. Admission traffic cannot spend completion's budget. Historical ACKs
+remain historical after Stop/Complete/Retire; Execute must still acquire the
+original coordinator's live pending-ticket guard. No generic remote execution
+grant, cached-state fallback, remote request creation or effect callback exists.
+The low-level client does not retain intent/receipt or automatically retry; a
+durable admission client journal is still needed before managed runtime wiring.
+No live audit/serve/prune path is installed by these opt-in library APIs. Physical
+root separation, copied/shared rollback, signing-key ownership, fencing and
+all-required-assignment enforcement remain external/open gates.
+
 The opt-in storage-incarnation mode adds a narrower local guarantee. A fresh
 caller-selected ID is atomically bound to a new schema-6 WorkChain database;
 reopen needs the independently retained ID and never initializes missing data.

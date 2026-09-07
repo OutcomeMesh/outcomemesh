@@ -32,13 +32,18 @@ func (coordinator *Coordinator) WithOperation(ctx context.Context, binding Opera
 	if coordinator == nil {
 		return ErrClosed
 	}
+	coordinator.mu.Lock()
+	defer coordinator.mu.Unlock()
+	return coordinator.withOperation(ctx, binding, action)
+}
+
+// withOperation requires the coordinator mutex, including through action.
+func (coordinator *Coordinator) withOperation(ctx context.Context, binding OperationBinding, action func() error) error {
 	if ctx == nil || action == nil || binding.AssignmentID.IsZero() || binding.TicketID.IsZero() ||
 		binding.OperationID.IsZero() || binding.ConsumerPublicKey == [32]byte{} ||
 		(binding.Purpose != custodyauthority.Audit && binding.Purpose != custodyauthority.Serve && binding.Purpose != custodyauthority.Prune) {
 		return custodyauthority.ErrOperation
 	}
-	coordinator.mu.Lock()
-	defer coordinator.mu.Unlock()
 	if err := ctx.Err(); err != nil {
 		return err
 	}

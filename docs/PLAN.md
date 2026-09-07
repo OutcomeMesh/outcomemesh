@@ -374,8 +374,28 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
               Cover lost replies, seven local publication faults, 41 client-process
               kills and exact recovery. No signing, head refresh, automatic
               failover, cross-host execution or portable/current-authority proof.
+            - [x] Opt-in admission-only QUIC to the original colocated pinned
+              executor/coordinator: validate an externally co-signed prune Admit
+              against the retained request before writing, then hold both owners
+              through authority confirmation and executor-binding confirmation
+              before replying. Resume only the exact authority/admission attempt;
+              never resume a start/result/cancellation or choose a new head.
+              Keep fixed frames, fresh nonces, peer pins and independent budgets.
+              Cover 42 initial publication faults, 14 interrupted executor resumes,
+              45 server-process kills, lost replies and Stop/cancellation races.
+              Historical ACKs cannot bypass Execute's live pending-ticket guard.
+              This neither remotely executes nor installs live acceptance paths.
+            - [ ] Admission client intent/receipt durability and explicit runtime
+              ownership: retain the exact signed command and endpoint pins before
+              sending, recover without signing/refreshed heads or implicit sends,
+              and never treat a retained admission ACK as a live execution grant.
   - [ ] Filesystem-full, inode-exhaustion, power-loss, and long-running retention
     campaigns before deployment claims.
+  - [x] Isolate the 2026-09-07 custody sibling-rejection deadline race: force the
+    rejecting replica to close before the auditor's final challenge Write returns.
+    Preserve ErrCustodySession alongside deadline-setup errors, as already done
+    for read/write errors; do not continue I/O or treat closed-pipe as success.
+    Cover fresh/durably recovered responses and unchanged retained evidence.
   - [x] Isolate the 2026-09-07 custody response-close race: force a verified
     auditor close before the replica's last successful Write returns. Reuse the
     final frame's already installed deadline instead of resetting it on a closed

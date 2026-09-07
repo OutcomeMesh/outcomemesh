@@ -855,6 +855,61 @@ Implemented in an isolated, not-yet-activated consensus package:
   Protected root ownership, physical storage, copied/shared rollback, independent
   server retention, all-replica live enforcement and daemon integration remain
   separate gates. The client journal has no queue, reset or completion-signing API.
+  Admission transport follow-up (2026-09-07): `PruneExecutor.Admit` now accepts
+  one externally co-signed prune admission for an already retained pinned request,
+  and holds executor/coordinator ownership until both the authority decision and
+  executor binding are independently confirmed. Exact retry resumes only that
+  authority/admission attempt. It cannot sign, refresh a head, replace the request,
+  resume another transition, execute work or close a ticket. Historical admission
+  remains observable after completion/retirement, but cannot bypass Execute's
+  current pending-ticket guard. Existing journal formats are unchanged.
+  The disabled-by-default `/outcomemesh/prune-admission/0` QUIC protocol exposes
+  this ordered adapter with independently pinned peers, distinct fixed 424/74-byte
+  frames, strict request/reply EOF and fresh exchange nonces. It has separate
+  rate/concurrency/memory limits, including a check that exhausted admission
+  traffic cannot spend completion's rate budget. There is no live handler wiring
+  or durable admission client journal yet; the completion outbox rejects Admit.
+  Tests cover all 42 initial publication faults, 14 interrupted executor resumes,
+  cancellation at retained-intent boundaries, wrong signed bindings, concurrent
+  retries/Stop, lost/partial replies and the QUIC-admit / locally guarded effect /
+  QUIC-complete lifecycle. The expanded targeted race run passed (store 45.609
+  seconds, transport 2.392 seconds, wire 2.186 seconds). All 45 separate-server-
+  process crash cases passed with race detection in 34.329 seconds: two
+  non-submitting opens followed by exact QUIC retry retain both confirmations
+  without executing a chain effect. The new decoder completed 100,000 fuzz
+  executions, `go vet ./...` passed, and Linux/Windows amd64 integration binaries
+  compiled with CGO disabled. These were macOS runtime tests, not physical
+  power-loss, copy-fencing or production deployment evidence.
+  Whole-repository validation then found an existing archive rejection race:
+  normal tests passed the authority store (471.108 seconds), but
+  `TestCustodySessionRejectsReorderedAndTruncatedFrames` observed bare
+  `io.ErrClosedPipe` instead of ErrCustodySession on the sibling-renewal rejection.
+  The parallel whole-repository race run passed (store 511.567 seconds). A new
+  deterministic test holds the auditor's final challenge Write until the replica
+  rejects the sibling and closes. Both fresh and durably recovered sessions fail
+  before the fix, proving that the next SetDeadline, not response decoding, loses
+  the session error classification. A direct deadline-error test fails as well.
+  The fix joins ErrCustodySession with the underlying deadline-setup error, just
+  as frame Read/Write already do. Context cancellation remains recognizable; no
+  I/O continues after a failed deadline, no closed pipe becomes success, and the
+  original retained renewal is unchanged. Timeout and EOF rules are unchanged.
+  The new deterministic regressions, original reordered/truncated-frame test and
+  strict completion-EOF regressions passed 20 race-enabled repetitions (32.263
+  seconds). The complete affected archive package then passed with race detection
+  (241.736 seconds); vet and final Linux/Windows amd64 integration compilation
+  also passed. The classification fix is isolated in commit `c55caea`.
+  The final whole-repository normal run passed (authority store 267.829 seconds,
+  archive 146.258 seconds). The earlier full race run plus the complete affected
+  archive rerun cover the final production changes; no acceptance assertions or
+  timeouts were relaxed to obtain these results.
+  The final process gate ran separately with `make test-process
+  GO=.tools/go/bin/go` (no system `go` was on this session's PATH). All six suites
+  passed: command processes 65.596 seconds, 100 WorkChain crash cases 28.227
+  seconds, archive recovery 16.114 seconds, 466 authority/executor crash cases
+  204.191 seconds, 41 completion-outbox crash cases 22.152 seconds, and 45 new
+  admission-server crash cases 28.470 seconds. Admission client durability,
+  managed ownership, all-assignment live enforcement and physical/copy-fencing
+  guarantees remain open; these results do not promote the project to production.
   Process-gate observation (2026-09-07): the first combined run stopped at
   `TestProcessTieCampaignStorageFailuresRecoverWithoutFalseAdvance/observer_confirmation_after_link`
   because the expected confirmation marker was absent. Five isolated repetitions

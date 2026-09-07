@@ -183,6 +183,11 @@ func (executor *PruneExecutor) ResumePinnedTransition(ctx context.Context) error
 	}
 	executor.mu.Lock()
 	defer executor.mu.Unlock()
+	return executor.resumePinnedTransition(ctx)
+}
+
+// resumePinnedTransition requires the executor mutex.
+func (executor *PruneExecutor) resumePinnedTransition(ctx context.Context) error {
 	if err := executor.check(); err != nil {
 		return err
 	}

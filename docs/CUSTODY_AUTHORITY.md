@@ -549,6 +549,89 @@ historical sends, in-flight server confirmation and every local receipt boundary
 Neither this journal nor those logical process tests close the live acceptance,
 cross-host admission, independent deployment or physical power-loss gates.
 
+### Admission-only QUIC and ordered executor binding
+
+`PruneExecutor.Admit` joins local authority admission and executor binding for
+one already retained, independently pinned request. The command remains externally
+consumer-signed and authority-co-signed; its `OperationID` must be the exact
+request ID. Assignment, purpose, consumer and authority must match before any
+authority write. Raw executors are refused. No request upload, signing key,
+new-head selection, chain handle or execution callback is accepted.
+
+The executor mutex is acquired before the coordinator mutex, and both stay held
+through the entire ordered publication:
+
+1. Retain the exact authority intent.
+2. Publish the authority's admission decision.
+3. Independently confirm that authority position.
+4. Retain the exact executor admission-transition intent.
+5. Publish the executor's admission record.
+6. Independently confirm that executor position, then return.
+
+The existing record formats are unchanged. `Commit.Appended` describes only the
+authority decision: a false value can accompany a newly finished executor
+binding. Stop, Complete, Retire, Execute and Close cannot split the two locked
+owners during this call. A Stop already committed before a retry can still let
+the previously admitted ticket drain. It cannot admit a new operation.
+
+A failure after the authority decision but before executor confirmation returns
+no success. The authority ticket remains pending; there is no automatic rollback,
+cancellation, completion or effect. Uncertain storage owners require close/reopen.
+Open validates existing evidence without advancing either journal. An explicit
+retry of the same signed entry may resume the coordinator's exact pending attempt
+and the executor's exact admission intent, including a record already visible
+but not confirmed. Another authority attempt or a pending start/result/cancellation
+must be resolved separately. Missing confirmed evidence is not repaired.
+
+When no executor admission intent exists, first binding still requires the
+ticket to be currently pending. An existing exact admission intent may instead
+be retained as historical evidence after the ticket closes; subsequent Execute
+still takes the current coordinator guard. An exact previously confirmed admission
+can return historical success after completion or retirement without reopening
+the ticket or changing the executor. This is explicitly not a reusable permission.
+
+The optional `/outcomemesh/prune-admission/0` protocol delivers this single command
+to the original colocated executor/coordinator. It is disabled until a caller
+installs `PruneAdmissionServer` with an independently pinned client identity.
+`Host.AdmitPrune` pins the server identity. Neither transport identity substitutes
+for either command signature. A 424-byte request contains `OMCPAREQ`, big-endian
+uint16 version zero, a fresh 32-byte nonce and the exact 382-byte prune Admit.
+The 74-byte response contains `OMCPAACK`, the same version, nonce and entry ID.
+Completion frames, non-prune purposes and other command kinds are rejected.
+Strict bounded decoding and actual request EOF precede any mutation; response
+nonce, entry ID and EOF are mandatory before client success. That response follows
+both independent confirmations, not just authority acceptance.
+
+Admission has its own stream/rate budgets, separate from completion and custody:
+defaults are 2 concurrent streams, 1 per peer, 8 per peer per minute and 32 globally
+per minute; hard maxima are 8/1/60/256. Protocol memory is capped at 512 KiB and
+protocol-peer memory at 64 KiB. Unauthorized peers are rejected before consuming
+the rate budget. These research limits are not production capacity calibration.
+The bounded exchange timeout is 100 ms–2 minutes, default 15 seconds, covering
+dial/network I/O, not mutex wait or filesystem latency. Cancellation interrupts
+I/O but cannot undo already retained decisions.
+
+The low-level client has no durable intent/receipt, retries, failover, discovery
+or signing. Callers must independently retain the exact command and peer pins
+before using it. Lost/partial replies and disconnects remain unresolved, never
+permission to choose a replacement operation. Every explicit exchange uses a
+fresh nonce. ACKs are unsigned authenticated-channel observations, not portable
+proofs, current-state grants or evidence that a remote executor may start.
+The completion outbox does not accept admission entries; an admission client
+journal and runtime ownership wiring remain separate work.
+
+Tests cover 42 initial publication boundaries and 14 interrupted executor-resume
+boundaries, canonical vectors and protocol separation, wrong bindings, cancellation,
+concurrent exact retries, Stop serialization, missing/trailing EOF and lost/partial
+QUIC replies. Forty-five separate-server-process kills cover all publication
+boundaries plus request/confirmed/replied checkpoints. Each recovery opens twice
+without submitting, then explicitly retries over QUIC and checks both confirmed
+journals without a chain effect. A complete QUIC-admit / locally guarded effect /
+QUIC-complete test covers the lifecycle; a historical admission ACK with a closed
+ticket still cannot start the executor. None of this fences copied owners, proves
+physical pin independence, enforces all replica assignments or installs live
+audit/serve/prune handlers.
+
 ### Storage-incarnation-bound prune requests
 
 An opt-in local database mode now distinguishes independently initialized
