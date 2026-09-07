@@ -1,5 +1,6 @@
 // Package store persists the custody authority reference machine. It is a local,
-// single-writer history, not a network authority or a consumer execution permit.
+// single-writer history with an optional trusted local prune executor, not a
+// network authority. Its records/snapshots are not portable execution grants.
 package store
 
 import (

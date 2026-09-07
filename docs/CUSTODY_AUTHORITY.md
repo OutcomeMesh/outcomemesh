@@ -3,8 +3,9 @@
 Status: bounded reference admission/drain machine in `node/custodyauthority`,
 local durable history and an independently retained intent/pin coordinator in
 `node/custodyauthority/store` are implemented. WorkChain also has a trusted local
-ticketed-prune result primitive. Network authority, consumer enforcement and
-active rebaseline are not installed.
+ticketed-prune result primitive, now used by an optional one-assignment local
+executor journal and coordinator guard. Network authority, integration into the
+existing live acceptance paths, and active rebaseline are not installed.
 
 Local retirement serializes upgraded participants using the named journal
 roots. It does not invalidate a previously extracted Ed25519 key, a copied
@@ -101,6 +102,97 @@ last effect has drained. Finding a result does not authorize another effect;
 not finding one does not authorize a retry or a no-effect completion. Auditing,
 serving and authority completion transport remain separate runtime gates.
 
+### Implemented local prune executor journal
+
+`store.PruneExecutor` composes a concrete `workchain.Store` with the private local
+`Coordinator`; it does not accept a generic effect callback or remote snapshot
+as a substitute. This is one trusted, one-assignment library operation, not an
+installed archive command. The caller must still perform full archive/replica
+verification and provide the bounded final live-time authorization check. One
+assignment's pending ticket is not authorization for every replica in a quorum.
+
+`PruneRequest` commits the assignment, consumer control key and exact requested
+floor, without a ticket. `CreatePruneExecutor` retains it in a new protected root;
+the caller requests admission only after that succeeds. Its ID becomes the
+signed admission's `OperationID`, avoiding a circular ticket preimage. Assignment
+validation checks the consumer's prune role, base, manifest, statement, activation
+height and ancestry count. The bounded `OMCPREQS` version-0 envelope has a 1 KiB
+limit and domain `OMESH/custody-prune/request/id/v0`; the 377-byte golden request
+has ID `5d1c7f0b6cf71484eee050f5e072b938f0fdb81bebe3a8f68b83ddf5505508ac`.
+
+```text
+prune-executor/
+  prune.lock                     permanent process-ownership inode
+  assignment.omcaa               exact independently selected assignment
+  request.omcpr                  exact independently pinned request
+  ready.omcpx                    42-byte OMCPINIT/version/request-ID marker
+  records/01-admission.omcae     exact co-signed admission, 382 bytes
+  records/02-started.omcps       74-byte OMCPSTRT/version/request-ID/ticket-ID
+  records/03-result.omcpfx       exact bounded WorkChain prune effect
+  pending/entry-<decimal>        at most 128 crash/failed temporary records
+```
+
+The three record names must form an exact prefix. Dependencies, bindings,
+signatures, types, sizes and the final initialization marker are checked on open.
+Required files/directories/locks are never recreated. Existing or partial roots
+cannot be reinitialized. Accepted records and namespaces are re-synced before
+returning a handle; temporary records are retained but never promoted. Each new
+record uses file sync, no-replace hard-link publication and records-directory
+sync before the in-memory stage changes or a successful result escapes. Required
+I/O failure poisons the writer until close/reopen. Live control/record inode
+replacement is rejected. Logical limits do not guarantee filesystem capacity.
+
+| Retained stage | Permitted next action |
+| --- | --- |
+| `Prepared` | Bind the exact admission only after confirming that ticket is currently pending in the local coordinator |
+| `Admitted` | Check chain network/activation/base, then persist `Started` under the current pending-ticket guard before calling atomic pruning |
+| `Started` | Explicit `Recover` may inspect the concrete chain's existing result; `Execute` never reruns this stage |
+| `Succeeded` | Return detached original evidence without effect execution, time refresh or authority completion |
+
+`Coordinator.WithOperation` verifies the exact assignment/ticket/consumer/
+operation/purpose against its private confirmed state. An unconfirmed retained
+authority attempt, unknown/completed ticket, foreign assignment or retired phase
+blocks the action. `Stopping` still allows previously admitted work to drain.
+The coordinator mutex remains held until the synchronous action returns; stop,
+completion and retirement cannot cross it. No permission object escapes. Callbacks
+must not re-enter guarded objects or spawn effects that outlive the call.
+
+Lock order is executor, coordinator, WorkChain. Binding/execution check that the
+executor and both authority roots are disjoint. All directories must be selected
+as separate owner-controlled roots before creation; those checks do not establish
+physical failure domains. `Execute` keeps the authority guard through the durable
+start, concrete atomic effect, and durable result publication. Cancellation before
+start publication preserves `Admitted`; cancellation or error after a retained
+start leaves unresolved work. Once the effect succeeds, result publication finishes
+despite caller cancellation. The successful result is still not a signed `Complete`.
+
+Open never contacts authority or WorkChain, submits an admission, starts work, or
+invents a terminal record. Explicit recovery accepts only the already persisted
+effect with the exact assignment/ticket/request and a matching chain-local
+network/activation/base. It does not call pruning or the final authorization
+callback. A missing result, unavailable chain, mismatched record or uncertain
+chain writer cannot become success. Even a known callback error before deletion
+does not fabricate a durable no-effect disposition. Such tickets can block
+retirement indefinitely until a separately reviewed recovery mechanism exists.
+
+This journal does **not** yet have an independently retained stage/head history
+or physical database anti-rollback pin. Its request ID authenticates the request,
+not the newest journal prefix. A valid-prefix rollback or replacement of owner-
+controlled storage is outside this local guarantee, including a recreated empty
+WorkChain. Do not use missing records as evidence of no prior execution, recreate
+an executor as recovery, or reuse its ticket against another database. The same
+intact WorkChain retains ticket deduplication even if a caller has lost its reply;
+that is not distributed exactly-once execution.
+
+Tests exercise concrete chain deletion, 16 concurrent callers, signed request
+binding, missing/unconfirmed/completed authority, cancellation, stop/result races,
+malformed files, required sync failure, lock replacement and bounded leftovers.
+Another 26 process kills cover initialization; all seven admission/start/result
+publication boundaries; and the points immediately before/after the chain effect.
+Positive outcomes recover to the original result and may be separately completed;
+unresolved starts stay pending and block retirement. These do not certify physical
+power loss, partitions, multi-assignment quorum coverage or live CLI enforcement.
+
 ## Implemented reference kernel
 
 The version-0 kernel operates on one independently pinned immutable assignment.
@@ -160,8 +252,9 @@ The kernel stays deliberately in-memory. `ValidateNext` followed by `Apply` is
 not an external transaction, and a signed `Entry` is not a live grant. The
 separate store described below owns that serialization and durability boundary.
 A current-authority transport and per-consumer durable operation protocol must
-still hold admission through the last acceptance effect. No existing custody
-session, journal, pruning command or receipt parser consumes these entries yet.
+still cover every live acceptance effect. The optional local executor above
+guards one concrete prune; existing custody sessions, archive journals, pruning
+commands and receipt parsers are not integrated with authority entries yet.
 
 ### Canonical reference vectors
 
@@ -382,8 +475,9 @@ This closes the local retained-attempt/pin implementation gate, not deployment
 or live acceptance. The operator must independently protect and back up the
 journal; shared rollback of both roots can still agree, and copied roots/keys or
 an equivocating signer are not fenced. No remote acknowledgement verification,
-current-authority transport, consumer effect journal, operational CLI service,
-lease, successor activation or automatic cross-host failover is installed.
+current-authority transport, independent consumer stage/storage rollback pins,
+operational CLI service, lease, successor activation or automatic cross-host
+failover is installed.
 Audit/serve/prune integration must use the complete protocol without falling
 back to a raw store, cached snapshot or historical signature as a live permit.
 

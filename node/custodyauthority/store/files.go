@@ -85,6 +85,10 @@ func inspectNamedLayout(path string, lock *os.File, lockFileName string, kinds m
 }
 
 func inspectPending(path string) (int, error) {
+	return inspectSizedPending(path, custodyauthority.MaximumEntryBytes)
+}
+
+func inspectSizedPending(path string, maximum int) (int, error) {
 	names, err := boundedNames(filepath.Join(path, pendingName), MaximumPendingFiles)
 	if err != nil {
 		return 0, err
@@ -95,7 +99,7 @@ func inspectPending(path string) (int, error) {
 			return 0, ErrStore
 		}
 		info, err := os.Lstat(filepath.Join(path, pendingName, name))
-		if err != nil || !info.Mode().IsRegular() || info.Size() > custodyauthority.MaximumEntryBytes {
+		if err != nil || !info.Mode().IsRegular() || info.Size() > int64(maximum) {
 			return 0, errors.Join(ErrStore, err)
 		}
 	}

@@ -282,6 +282,17 @@ fixed count and logical-byte budget, and uncertain canonical commits require
 close/reopen before further chain access. This API trusts its caller to establish
 authority and retain an independent intent; it is not connected to live archive
 commands and cannot distinguish a new/rolled-back database from missing work.
+An optional one-request `store.PruneExecutor` now retains request, signed
+admission, durable start and concrete chain result. The request's canonical ID
+is the admission operation ID. `Coordinator.WithOperation` checks its private
+confirmed pending ticket and holds the coordinator guard through synchronous
+execution/result retention; stop/completion/retirement serialize against it.
+Lock order is executor -> coordinator -> WorkChain. A retained start never reruns;
+explicit recovery only looks up the exact existing chain effect, and an unresolved
+outcome remains pending. No completion is signed automatically. Consumer stage/
+storage rollback pins, safe no-effect disposition, all-replica authority coverage,
+transport and live archive-policy integration remain open. This local library
+does not change any existing CLI or custody-session behavior.
 Receipt v1 can extend one exact
 predecessor only after a fresh signed random-sample challenge: sample IDs are
 deterministically derived from the nonce, manifest, and predecessor receipt;

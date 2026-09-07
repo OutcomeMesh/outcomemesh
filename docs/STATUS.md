@@ -628,6 +628,25 @@ Implemented in an isolated, not-yet-activated consensus package:
   The primitive is not a live grant, consumer intent journal, completion service
   or anti-rollback storage identity. Current-authority transport and all live
   audit/serve/prune adapters remain open; existing CLI behavior is unchanged.
+  Local executor follow-up (2026-09-07): an optional `PruneExecutor` now retains
+  the exact request, binds its ID into a current signed admission, records start
+  before calling the concrete atomic WorkChain primitive, and retains the result
+  only after that effect drains. The private coordinator guards its confirmed
+  pending ticket through execution/result publication; uncertain authority,
+  completed tickets and foreign bindings cannot start work. Exact completed
+  retries return evidence only. Started recovery never executes missing work:
+  it accepts only an existing exact chain result, otherwise the ticket remains
+  pending and retirement is blocked. No completion is signed automatically.
+  Tests cover concurrent execution, cancellation, malformed records, sync failure,
+  stop/result races and 26 more process kills. New request codecs have a canonical
+  fixture and fuzz target. This is one-assignment local groundwork, not a complete
+  consumer protocol: independent stage/database pins, no-effect recovery, all-
+  replica authority coverage, networking and live CLI integration remain open.
+  Validation: repository-wide tests, race detection and vet passed, as did the
+  complete process gate (200 authority-store/coordinator/executor kill cases).
+  The new 26-case executor process suite also passed with race detection; the
+  request decoder completed 100,000 fuzz inputs. Integration test binaries build
+  for Linux and Windows; process execution was verified on macOS, not those hosts.
   QUIC follow-up (2026-09-06): the first combined process run failed in
   `TestProcessTiePairQUICReachesIndependentV2ObserversAndRecoversAck` with a
   remote QUIC close, and in the coordinator-journal-before-rename case of

@@ -18,6 +18,30 @@ const (
 
 var ErrPruneTicketConflict = errors.New("canonical prune ticket already binds a different request")
 
+// CanonicalBytes exposes the existing bounded local floor format for retained
+// maintenance requests. This is historical metadata, not a custody permit.
+func (floor CanonicalFloor) CanonicalBytes() ([]byte, error) { return encodeCanonicalFloor(floor) }
+
+func DecodeCanonicalFloor(input []byte) (CanonicalFloor, error) { return decodeCanonicalFloor(input) }
+
+// VerifyContext checks the immutable chain-local part of an external assignment.
+// WorkChain does not know the external genesis trust pin or authority membership.
+func (store *Store) VerifyContext(networkID uint32, activationHeight uint64, baseID types.Hash) error {
+	if store == nil {
+		return ErrConfiguration
+	}
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+	if err := store.openErrorLocked(); err != nil {
+		return err
+	}
+	if store.persistence == nil || store.parameters.NetworkID != networkID ||
+		store.parameters.ActivationHeight != activationHeight || store.baseID != baseID {
+		return ErrConfiguration
+	}
+	return nil
+}
+
 // CanonicalPruneOperation binds an exact requested floor (including its initial
 // time) to an independently admitted ticket. The caller must durably retain this
 // request and enforce current authority; these unsigned fields confer no grant.

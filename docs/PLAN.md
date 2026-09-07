@@ -295,9 +295,19 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
             their bytes, reject inconsistent recovery and poison uncertain
             canonical commits. Cover concurrent retries and four process-death
             boundaries. This trusted primitive is not live authority enforcement.
-          - [ ] Consumer-owned durable request/start/terminal state, independently
-            pinned storage recovery, current-authority admission/completion
-            transport, and effect-specific audit/serve/prune runtime adapters.
+          - [x] Bounded one-assignment local prune executor: retain the exact
+            request before admission, bind its ID into the signed operation,
+            and hold the private coordinator's pending-ticket guard through
+            durable start, concrete WorkChain pruning and durable result. Never
+            rerun a retained start; resolve only a matching existing chain effect.
+            Keep unknown outcomes pending, require separate signed completion,
+            and cover 26 process-death boundaries plus local stop/result races.
+            This is a trusted library, not live archive-policy enforcement or
+            protection against journal/database rollback.
+          - [ ] Independently pinned consumer-journal and physical storage
+            recovery, safe no-effect disposition, current-authority admission/
+            completion transport, and live audit/serve/prune runtime adapters
+            (including all required replica assignments, not just one guard).
             Do not infer a safe retry from absence in a replaced/rolled-back
             database, or sign completion from a generic callback return alone.
   - [ ] Filesystem-full, inode-exhaustion, power-loss, and long-running retention

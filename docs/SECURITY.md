@@ -436,7 +436,7 @@ or protection against shared rollback of both roots. Its unsigned local pin
 envelopes and diagnostic snapshots are not execution permits or remote freshness
 proofs. Callers must not turn an exact retry into duplicate consumer execution.
 Process-kill tests are not physical power-loss or multi-host partition evidence.
-There is still no transport, durable consumer-execution adapter or runtime grant.
+There is still no authority transport or installed live acceptance integration.
 All old runtime acceptance paths remain under their existing policies until
 explicitly integrated. No authority entry is accepted as a replica receipt,
 challenge, availability bundle or rebaseline proposal.
@@ -451,14 +451,41 @@ schema-4-only binaries fail closed. Results count toward byte and fixed-count
 limits; there is no automatic recycling. An uncertain canonical commit poisons
 public chain access until successful reopen; no successful result escapes first.
 
-The runtime still needs an independently retained consumer intent, admission
-verification, storage identity/pins, and completion only after its last effect
-drains. An effect lookup is local evidence, not a remote permission or a durable
-consumer terminal decision. In particular, absent results in a freshly created,
-replaced or rolled-back database cannot justify retry or no-effect completion.
+Live runtime integration still needs consumer intent retention, admission
+verification, independent storage identity/pins, and completion only after its
+last effect drains. An effect lookup is local evidence, not a remote permission
+or a durable consumer terminal decision. In particular, absent results in a
+freshly created, replaced or rolled-back database cannot justify retry or no-effect
+completion.
 The new primitive is not used by the live archive CLI or raw custody sessions.
 Canonical record recovery checks shape/accounting and local floor/ancestry
 consistency, not historical external availability or trusted-owner tampering.
+
+The optional local `PruneExecutor` now retains a request before admission, binds
+its canonical ID to the signed prune operation, syncs a start before the concrete
+chain call, and syncs its matching result after the effect. `WithOperation` checks
+the private coordinator's fully confirmed pending ticket and holds its mutex
+through the action; no remote/caller-supplied snapshot grants access. Unknown,
+completed, foreign or unconfirmed authority cannot start work. A signed admission
+alone is insufficient. Lock order is executor -> coordinator -> WorkChain, and
+callbacks must be synchronous, bounded and non-reentrant.
+
+A retained start is not automatically retried. Recovery only inspects an already
+committed exact chain result; absence/error never fabricates success or no-effect
+completion. Cancellation after a successful effect cannot abandon result retention.
+The executor never signs completion, releases a ticket by time, or treats process
+death as drain evidence. Missing-result starts may block retirement indefinitely.
+Historical result retrieval after retirement remains distinct from live acceptance.
+
+These guarantees require intact owner-controlled journal and chain storage. The
+request pin is not an independent pin of the latest stage; valid-prefix rollback,
+copied/replaced databases and same-inode hostile edits remain outside the local
+guarantee. Do not recreate journals as recovery or reuse tickets on another chain
+database. A one-assignment guard also does not establish the required custody
+quorum across every replica assignment. Physical storage identity/pins, durable
+no-effect disposition, network authorization and all live acceptance-path adapters
+remain deployment gates. Full archive verification/freshness remains the trusted
+caller's obligation; the helper must not be exposed as a public policy bypass.
 
 Availability files now use no-replace publication. Exact retries verify and
 fsync the existing regular inode; conflicting bundles, damaged files, and
