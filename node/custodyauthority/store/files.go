@@ -52,14 +52,19 @@ func boundedNames(path string, limit int) ([]string, error) {
 }
 
 func inspectLayout(path string, lock *os.File) (map[string]os.FileInfo, error) {
-	names, err := boundedNames(path, 5)
+	return inspectNamedLayout(path, lock, lockName, map[string]bool{
+		assignmentName: false, readyName: false, lockName: false, entriesName: true, pendingName: true, "": true,
+	})
+}
+
+func inspectNamedLayout(path string, lock *os.File, lockFileName string, kinds map[string]bool) (map[string]os.FileInfo, error) {
+	names, err := boundedNames(path, len(kinds)-1)
 	if err != nil {
 		return nil, err
 	}
-	if len(names) != 5 {
+	if len(names) != len(kinds)-1 {
 		return nil, ErrStore
 	}
-	kinds := map[string]bool{assignmentName: false, readyName: false, lockName: false, entriesName: true, pendingName: true, "": true}
 	identity := make(map[string]os.FileInfo, len(kinds))
 	for _, name := range append(names, "") {
 		isDir, ok := kinds[name]
@@ -73,7 +78,7 @@ func inspectLayout(path string, lock *os.File) (map[string]os.FileInfo, error) {
 		identity[name] = info
 	}
 	opened, err := lock.Stat()
-	if err != nil || !os.SameFile(opened, identity[lockName]) || opened.Size() != 0 {
+	if err != nil || !os.SameFile(opened, identity[lockFileName]) || opened.Size() != 0 {
 		return nil, errors.Join(ErrStore, err)
 	}
 	return identity, nil
@@ -167,11 +172,15 @@ func syncDirectory(path string) error {
 }
 
 func openLock(path string, create bool) (_ *os.File, err error) {
+	return openNamedLock(path, lockName, create)
+}
+
+func openNamedLock(path, name string, create bool) (_ *os.File, err error) {
 	root, err := os.Lstat(path)
 	if err != nil || !root.IsDir() {
 		return nil, errors.Join(ErrStore, err)
 	}
-	lockPath := filepath.Join(path, lockName)
+	lockPath := filepath.Join(path, name)
 	flags := os.O_RDWR
 	var before os.FileInfo
 	if create {

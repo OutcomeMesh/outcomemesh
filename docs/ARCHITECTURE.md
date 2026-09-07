@@ -262,10 +262,16 @@ immutable entry publication, file/directory sync and state application. Bootstra
 and exact pinned replay are separate APIs; one uncertain append can be recovered
 only from the independently retained old pin and exact attempted entry. Partial
 initialization is never repaired, failed writers are poisoned, and old retries
-report current state without issuing another admission. Current-authority
-transport, single-execution consumer recovery, independent pin/intent deployment
-and connection to live acceptance paths remain separate gates; there is no
-active rebaseline.
+report current state without issuing another admission. An optional coordinator
+now privately owns the authority writer and a separately configured intent/pin
+journal. It syncs the exact intent before submitting the entry and syncs the
+confirmation only after verifying the local durable result. Reopening derives
+the expected position from that independent journal, not the authority head;
+one retained ambiguous attempt can be explicitly resumed without repairing lost
+confirmed history. The journal uses a distinct role marker, and overlapping or
+aliased roots are refused. Current-authority transport, single-execution consumer
+recovery, independent pin/intent deployment and connection to live acceptance
+paths remain separate gates; there is no active rebaseline.
 Receipt v1 can extend one exact
 predecessor only after a fresh signed random-sample challenge: sample IDs are
 deterministically derived from the nonce, manifest, and predecessor receipt;

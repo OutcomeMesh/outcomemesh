@@ -412,8 +412,29 @@ This local adapter assumes stable owner-controlled paths and working kernel
 locks, hard links and file/directory fsync. It does not protect against hostile
 same-inode edits, copied roots/keys, an equivocating signer, unsupported/shared
 filesystem semantics or simultaneous rollback of the root and its pins. Caller
-pins and uncertain attempts need independent durable retention before restart;
-the store does not install that service or infer a current pin from its own head.
+pins and uncertain attempts need independent durable retention before restart.
+The optional local `Coordinator` now supplies a distinct intent/pin journal:
+it syncs one exact signed intent before an authority mutation and advances its
+confirmed pin only after checking the local store's durable result and syncing
+the confirmation. The journal is locked before the authority, both locks last
+until close, and neither underlying writer is exposed. Root overlap and known
+directory aliases, including case aliases, are refused before initialization.
+
+Open replays the retained journal first and uses its confirmed position plus at
+most one exact attempted entry to select authority recovery. It never submits
+or confirms work merely on open, derives a pin from the authority's own head,
+attaches fresh pins to an already used authority, or reconstructs missing
+confirmed history. A prepared intent survives cancellation and cannot be
+replaced by another command. Explicit resume only settles that intent; it never
+asserts that a consumer's real effect has completed. Required I/O errors poison
+the coordinator and expose no successful result. A bad acknowledgement identity
+or position cannot advance a pin; this adapter currently accepts results only
+from its private local store, not from an untrusted remote transport.
+
+The coordinator is not an independent storage deployment, authorization service
+or protection against shared rollback of both roots. Its unsigned local pin
+envelopes and diagnostic snapshots are not execution permits or remote freshness
+proofs. Callers must not turn an exact retry into duplicate consumer execution.
 Process-kill tests are not physical power-loss or multi-host partition evidence.
 There is still no transport, durable consumer-execution adapter or runtime grant.
 All old runtime acceptance paths remain under their existing policies until

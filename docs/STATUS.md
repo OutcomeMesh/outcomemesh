@@ -597,10 +597,22 @@ Implemented in an isolated, not-yet-activated consensus package:
   concurrency, cancellation and persistence errors. Forty-five real child-process
   kills cover every admission/drain transition and initialization, including
   cross-process lock exclusion and continuation to the original retirement.
-  Independent pin/intent storage, power-loss campaigns, current-authority
-  transport and durable consumer effects remain open. Runtime acceptance paths
-  are not connected yet; reference entries and durable history results are not
-  live permissions or activation evidence.
+  An optional local `Coordinator` now adds the retained intent/pin journal. It
+  syncs an admissible exact signed attempt before touching authority history,
+  verifies the local durable result, then syncs independent confirmation before
+  returning it. Reopen obtains its expected head from that retained journal,
+  exposes at most one pending attempt without submitting it, and requires exact
+  explicit resume. Confirmed missing history is never silently reconstructed.
+  Separate role markers, disjoint root/ancestor identity checks and lifetime
+  journal-before-authority locks prevent cooperating writers from bypassing the
+  ordering. Unit tests cover malformed results/pins, cancellation, aliases,
+  concurrent requests and exhausted admission capacity. Another 129 child-process
+  kills cover intent, authority and confirmation publication for every transition
+  plus initialization; all recover to the original retirement without duplicate
+  admission or automatic submission on open. Independent storage deployment,
+  power-loss campaigns, current-authority transport and durable consumer effects
+  remain open. Runtime acceptance paths are not connected yet; reference entries
+  and durable history results are not live permissions or activation evidence.
   QUIC follow-up (2026-09-06): the first combined process run failed in
   `TestProcessTiePairQUICReachesIndependentV2ObserversAndRecoversAck` with a
   remote QUIC close, and in the coordinator-journal-before-rename case of

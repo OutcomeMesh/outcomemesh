@@ -1,9 +1,9 @@
 # Custody acceptance and cross-host cutover boundary
 
-Status: bounded reference admission/drain machine in `node/custodyauthority`
-and a separate local durable adapter in `node/custodyauthority/store` are
-implemented. Network authority, consumer enforcement and active rebaseline
-are not installed.
+Status: bounded reference admission/drain machine in `node/custodyauthority`,
+local durable history and an independently retained intent/pin coordinator in
+`node/custodyauthority/store` are implemented. Network authority, consumer
+enforcement and active rebaseline are not installed.
 
 Local retirement serializes upgraded participants using the named journal
 roots. It does not invalidate a previously extracted Ed25519 key, a copied
@@ -206,11 +206,115 @@ with working kernel locks, hard links and file/directory fsync. Same-inode hosti
 edits and unsupported/shared filesystems are outside this adapter's guarantee;
 unsupported locking or required sync errors fail closed. Runtime tests currently
 exercise macOS, not every platform build. Pins and pending attempts must be kept
-independently of the authority root; this API does not deploy that failure domain
-or persist the caller's intent for it. A rolled-back pin and root can still agree,
+independently of the authority root. The raw `Store` API does not persist them;
+the optional coordinator below supplies their separate journal, not its physical
+failure domain. A rolled-back pin and root can still agree,
 and a copied root/key can still fork. No automatic selection of the latest remote
 authority, high-availability replication, backup service, lease or fencing token
 is installed by this store.
+
+## Implemented retained intent and pin coordinator
+
+`CreateCoordinator` attaches a new intent journal only to an existing initialized
+sequence-zero authority under the independently trusted assignment ID. It cannot
+derive a new bootstrap pin from an already used authority or replace an existing
+or incomplete journal. Missing authority storage remains an error. Readiness is
+published only after the authority's exact initial position has been verified
+under its process lock. This is an optional local library, not a running daemon.
+
+```text
+intent-journal/
+  intent.lock                     permanent ownership inode, acquired first
+  assignment.omcaa                exact canonical assignment
+  ready.omcai                     distinct intent-journal readiness marker
+  intents/0000000000000001.omcae   exact co-signed attempted entry
+  confirmed/0000000000000001.omcap independently retained confirmed position
+  pending/entry-<decimal>         bounded temporary evidence, never promoted
+```
+
+The journal is not an authority store: its readiness magic is `OMCAINTS`, followed
+by two zero version bytes and the assignment ID (42 bytes). A confirmation is
+`OMCACONF`, two zero version bytes, assignment ID, big-endian uint64 sequence and
+entry/head ID (82 bytes). Confirmation bytes must exactly match the corresponding
+fully replayed signed intent. These local envelopes are unsigned operational
+records, not consensus objects, network proofs, receipts or execution permits.
+
+The coordinator owns both writers privately and serializes calls under one
+mutex. Lock acquisition is always journal then authority; ordinary close releases
+authority then journal. Root equality, containment, symlinks and known ancestor
+aliases are rejected before creating files, including case-insensitive aliases.
+Both roots remain protected against a second cooperating process for the entire
+handle lifetime. Separate paths do not prove separate hardware or access control.
+
+Each coordinated append has three durable decisions:
+
+1. Validate the command against confirmed retained history and persist its exact
+   co-signed bytes as the next immutable intent. Sync file and intent directory
+   before attempting any authority mutation. There is at most one unconfirmed
+   intent, and another command cannot replace or bypass it.
+2. Submit that exact entry through the already pinned local authority store.
+   Check the successful result's assignment, entry ID and exact next position.
+   This result comes from the local synchronous store, not an untrusted remote
+   acknowledgement supplied through a transport interface.
+3. Publish and sync the independent confirmation before updating its in-memory
+   confirmed state and returning success. A required I/O failure returns no
+   result and makes the coordinator unusable until close and full replay.
+
+Cancellation before intent publication leaves no retained request. Afterwards,
+the intent survives cancellation and must be resolved exactly: cancellation is
+not an abort record, permission to choose a sibling, or terminal completion.
+If cancellation prevents the authority append, the healthy handle can expose
+the pending intent and later resume it. Once the authority returns its durable
+decision, confirmation publication is no longer cancelled by the caller. Storage
+failure still prevents a successful result.
+
+`OpenCoordinator` replays the independently configured journal first, verifies
+contiguous intents and confirmations, then selects the authority's expected pin
+from that journal. Confirmed history is fully replayed; an optional final intent
+is validated but not applied to the confirmed reference state. Both retained
+files and directories are re-synced before they are used for authority recovery.
+There is no query that installs the authority's own head as its expected pin.
+
+| Retained journal | Authority history | Allowed recovery |
+| --- | --- | --- |
+| Confirmed through `n`, no pending intent | Exactly `n` | Open without writing history; accept a new valid request or an exact historical retry |
+| Confirmed through `n`, exact intent `n+1` | Exactly `n` | Expose the pending intent; explicit resume can submit only that entry and confirm its result |
+| Confirmed through `n`, exact intent `n+1` | That exact `n+1` | Expose the still-unconfirmed attempt; explicit resume performs exact lookup and confirms the durable result |
+| Confirmed through `n+1` | Exactly `n+1` | Open at the confirmed pin; a lost-response retry is lookup, not another admission |
+| Any confirmed prefix | Shorter, forked, corrupted or unexplained longer history | Fail closed; never reconstruct confirmed missing decisions from intent bytes |
+
+Opening does **not** submit an intent or publish a confirmation. `Snapshot`
+returns detached `Confirmed`, `Pending` and observed `Authority` fields so a
+caller can distinguish these states. `Resume` acts only on the retained attempt;
+retrying `Append` with exactly that entry has the same effect. There is no abort,
+force-complete, abandonment timeout, reset or alternate-attempt selection. After
+confirmation, exact historical retries return current local state; they do not
+permit a consumer to repeat its previously executed effect.
+
+Each of `intents/` and `confirmed/` is bounded by the assignment's maximum
+`2 * MaximumOperations + 2` history length. Intent files are 382 bytes and pins
+82 bytes; confirmed records are never compacted away. Temporary evidence has a
+separate 128-file, 382-byte-per-file cap. Reaching that cap can block completion
+of confirmation as well as a new intent. No cleanup or history repair is
+inferred from a need to restore availability.
+
+Tests cover invalid commands/results before pin advancement, cancellation on
+both sides of publication, malformed and substituted journal files, retained
+intent identity, exact historical retries, full drain capacity, inode replacement,
+root aliases and simultaneous writers. In addition to the raw store's 45 kill
+cases, `make test-process` runs 129 coordinator kills: seven boundaries for each
+of intent/authority/confirmation across six transitions, plus three initialization
+boundaries. Reopening twice never submits or confirms work; explicit recovery
+continues to the original terminal retirement after every append crash.
+
+This closes the local retained-attempt/pin implementation gate, not deployment
+or live acceptance. The operator must independently protect and back up the
+journal; shared rollback of both roots can still agree, and copied roots/keys or
+an equivocating signer are not fenced. No remote acknowledgement verification,
+current-authority transport, consumer effect journal, operational CLI service,
+lease, successor activation or automatic cross-host failover is installed.
+Audit/serve/prune integration must use the complete protocol without falling
+back to a raw store, cached snapshot or historical signature as a live permit.
 
 ## Required deployment ordering
 

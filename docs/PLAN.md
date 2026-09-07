@@ -274,12 +274,15 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
           process-kill boundaries. Never bootstrap an empty authority on missing
           history. Independent pin/intent deployment and physical power-loss
           campaigns remain external gates; results are not live permissions.
-        - [ ] Retained authority positions and append intents: persist the exact
+        - [x] Local retained authority positions and append intents: persist the exact
           attempted entry before issuing it, advance independent pins only after
           a verified durable result, and recover ambiguous outcomes without
-          inferring the expected head from the authority root. Implement and
-          test the coordinator before enabling unattended writable restarts;
-          deploying its independent failure/access-control domain is separate.
+          inferring the expected head from the authority root. Keep at most one
+          pending intent, never repair confirmed missing history, and require
+          explicit resume after non-submitting open. Cover cancellation, root
+          aliases, malformed pins, concurrency and 129 coordinator process kills.
+          Independent failure/access-control deployment and a managed runtime
+          service remain separate; local results are not consumer permissions.
         - [ ] Current-authority transport and durable consumer operations: no
           stale-snapshot fallback, no duplicate effect on retry/restart, and no
           completion before the final effect has drained. Enforce at every
