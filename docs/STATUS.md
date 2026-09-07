@@ -584,9 +584,23 @@ Implemented in an isolated, not-yet-activated consensus package:
   does not block draining. Exact independent sequence/head pins reject valid
   but incomplete replay. Tests cover detached state, wrong keys/roles/bindings,
   replay/duplicates, capacity limits, concurrent compare-and-append, golden
-  encodings, decoder fuzzing and a separate small transition model. This is not
-  a durable or network service: runtime acceptance paths are not connected yet,
-  and signed reference entries are not live permissions or activation evidence.
+  encodings, decoder fuzzing and a separate small transition model.
+  The separate `node/custodyauthority/store` now supplies local durable history:
+  a lifetime process lock serializes validation, immutable file publication,
+  directory sync and state application. Bootstrap refuses existing/partial
+  roots; open performs exact independently pinned replay without repairing
+  missing data. Required I/O failures poison the handle. Lost-response recovery
+  allows only the prior pin or its one-entry extension by the exact retained
+  attempt; old retries report current state without another admission. Bounded
+  crash temporaries are retained, never promoted or automatically discarded.
+  Unit tests cover malformed/substituted paths, independent pins, same-head
+  concurrency, cancellation and persistence errors. Forty-five real child-process
+  kills cover every admission/drain transition and initialization, including
+  cross-process lock exclusion and continuation to the original retirement.
+  Independent pin/intent storage, power-loss campaigns, current-authority
+  transport and durable consumer effects remain open. Runtime acceptance paths
+  are not connected yet; reference entries and durable history results are not
+  live permissions or activation evidence.
   QUIC follow-up (2026-09-06): the first combined process run failed in
   `TestProcessTiePairQUICReachesIndependentV2ObserversAndRecoversAck` with a
   remote QUIC close, and in the coordinator-journal-before-rename case of

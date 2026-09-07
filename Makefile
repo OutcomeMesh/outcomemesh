@@ -90,6 +90,7 @@ test-process:
 	$(GO) test -tags=integration ./cmd/omd -run '^TestProcess(QUICRestartSoak|WorkGraphActivationQUICRestart|Archive(ObjectQUICMaterializesAndRecoversAcrossRestart|Custody(QUICSurvivesReplicaRestart|JournalRunsTwoRestartedCycles|(Checkpoint|Backup)RestoresPendingCycle|PinsTrackLatestBackup|ReconciliationKeepsStaleEvidenceReadOnly|RebaselineProposesWithoutCutover))|ControlledTieProducerRecoversWaitingState|TiePair(QUICReachesIndependentV2ObserversAndRecoversAck|CompletionWaitsForCoordinatorEOF)|TieCampaign.*)$$' -count=1 -timeout=10m
 	$(GO) test -tags=integration ./node/workchain -run '^TestPebbleProcessCrashAtomicity$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./node/workarchive -run '^Test(ArchiveRestoreProcessCrashAtomicity|AvailabilityPruneProcessCrashAtomicity|Custody(Record|Journal|Backup|Pin|Transfer|Application|Retirement)ProcessCrashAtomicity)$$' -count=1 -timeout=2m
+	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestAuthorityStoreProcessCrashAtomicity$$' -count=1 -timeout=2m
 
 test-work-rollover-soak:
 	OUTCOMEMESH_WORK_ROLLOVER_SOAK_CYCLES=$(WORKROLLOVERCYCLES) $(GO) test ./cmd/omd -run '^TestMultiNodeWorkRolloverConvergesAcrossClockSkewChurnAndRelayLoss$$' -count=1 -timeout=5m

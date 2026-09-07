@@ -266,9 +266,20 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
           completed IDs and drain capacity; require exact pinned replay. Cover
           role/shape/binding rejection, concurrent admission, canonical vectors,
           codec fuzzing and an independent small state-machine model.
-        - [ ] Durable authority history: serialize validation/publication/apply,
-          fsync before grants, replay against independent pins, and test each
-          crash boundary. Never bootstrap an empty authority on missing history.
+        - [x] Local durable authority history: serialize validation/publication/
+          apply under a lifetime process lock, sync immutable entries before
+          returning results, and replay against independent exact pins. Recover
+          only the prior pin or one exact uncertain attempt; retain pending work,
+          reject altered/partial history and poison failed writers. Cover 45
+          process-kill boundaries. Never bootstrap an empty authority on missing
+          history. Independent pin/intent deployment and physical power-loss
+          campaigns remain external gates; results are not live permissions.
+        - [ ] Retained authority positions and append intents: persist the exact
+          attempted entry before issuing it, advance independent pins only after
+          a verified durable result, and recover ambiguous outcomes without
+          inferring the expected head from the authority root. Implement and
+          test the coordinator before enabling unattended writable restarts;
+          deploying its independent failure/access-control domain is separate.
         - [ ] Current-authority transport and durable consumer operations: no
           stale-snapshot fallback, no duplicate effect on retry/restart, and no
           completion before the final effect has drained. Enforce at every

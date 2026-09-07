@@ -391,15 +391,34 @@ does not add force-complete, leases or an operator reset exception.
 
 The format assumes trusted consumer behavior and one durably ordered authority.
 Signatures cannot prove a consumer waited for its last effect or prevent an
-authority from signing forks. The current implementation has neither durable
-history nor transport and does not issue runtime grants. Its `NewState` must
-never be used to recover lost history; replay requires independent assignment
-and exact sequence/head pins, which establish that selected history, not that
-it is the latest remote history. A separate serialized durable adapter must
-commit before any grant escapes; `ValidateNext`/`Apply` alone are not that
-transaction. All old runtime acceptance paths remain under their existing
-policies until explicitly integrated. No authority entry is accepted as a
-replica receipt, challenge, availability bundle or rebaseline proposal.
+authority from signing forks. Its `NewState` must never be used to recover lost
+history; replay requires independent assignment and exact sequence/head pins,
+which establish that selected history, not that it is the latest remote history.
+`ValidateNext`/`Apply` alone are not a persistence transaction.
+
+The separate `node/custodyauthority/store` now serializes local history under a
+lifetime kernel lock. Entry content is synced before no-replace publication;
+the entries directory is synced before state apply and successful return. A
+required write/sync failure exposes no result and poisons the handle until full
+pinned recovery. `Open` never initializes missing data, accepts an unpinned
+suffix or resets pending work. `Recover` permits only an independently retained
+pre-attempt pin or its extension by exactly one retained co-signed attempt. Old
+exact retries return current local state, not a fresh execution permission.
+Unknown/partial/symlinked history is refused; bounded temporary evidence is
+retained without promotion or automatic repair. A full temporary-evidence budget
+can block drain writes; it is not an excuse to discard outstanding work.
+
+This local adapter assumes stable owner-controlled paths and working kernel
+locks, hard links and file/directory fsync. It does not protect against hostile
+same-inode edits, copied roots/keys, an equivocating signer, unsupported/shared
+filesystem semantics or simultaneous rollback of the root and its pins. Caller
+pins and uncertain attempts need independent durable retention before restart;
+the store does not install that service or infer a current pin from its own head.
+Process-kill tests are not physical power-loss or multi-host partition evidence.
+There is still no transport, durable consumer-execution adapter or runtime grant.
+All old runtime acceptance paths remain under their existing policies until
+explicitly integrated. No authority entry is accepted as a replica receipt,
+challenge, availability bundle or rebaseline proposal.
 
 Availability files now use no-replace publication. Exact retries verify and
 fsync the existing regular inode; conflicting bundles, damaged files, and

@@ -256,9 +256,16 @@ An isolated `node/custodyauthority` reference machine now specifies admission,
 stop, explicit consumer completion and terminal retirement under one pinned
 assignment. It retains pending work through replay and never treats elapsed
 time as completion. The kernel does not import storage, transport or wall time;
-it is operational policy, not part of deterministic consensus. Durable history,
-current-authority transport, single-execution consumer recovery and connection
-to live acceptance paths remain separate gates; there is no active rebaseline.
+it is operational policy, not part of deterministic consensus. Its separate
+`node/custodyauthority/store` adapter owns a permanent process lock and serializes
+immutable entry publication, file/directory sync and state application. Bootstrap
+and exact pinned replay are separate APIs; one uncertain append can be recovered
+only from the independently retained old pin and exact attempted entry. Partial
+initialization is never repaired, failed writers are poisoned, and old retries
+report current state without issuing another admission. Current-authority
+transport, single-execution consumer recovery, independent pin/intent deployment
+and connection to live acceptance paths remain separate gates; there is no
+active rebaseline.
 Receipt v1 can extend one exact
 predecessor only after a fresh signed random-sample challenge: sample IDs are
 deterministically derived from the nonce, manifest, and predecessor receipt;

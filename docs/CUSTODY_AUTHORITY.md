@@ -1,8 +1,9 @@
 # Custody acceptance and cross-host cutover boundary
 
-Status: bounded reference admission/drain machine implemented in
-`node/custodyauthority`; durable authority, network enforcement and active
-rebaseline are not installed.
+Status: bounded reference admission/drain machine in `node/custodyauthority`
+and a separate local durable adapter in `node/custodyauthority/store` are
+implemented. Network authority, consumer enforcement and active rebaseline
+are not installed.
 
 Local retirement serializes upgraded participants using the named journal
 roots. It does not invalidate a previously extracted Ed25519 key, a copied
@@ -84,15 +85,12 @@ pin. Replaying an outstanding ticket leaves it outstanding; no snapshot import
 exists. A historical pin still cannot prove there is no later remote stop.
 `NewState` is bootstrap only, never a fallback when history is missing.
 
-The kernel is deliberately in-memory. `ValidateNext` followed by `Apply` is not
-an external transaction, and a signed `Entry` is not a live grant. The durable
-adapter must serialize validation, history publication and state application,
-fsync accepted history before any grant can escape, and recover only by full
-pinned replay. Then a current-authority transport and per-consumer durable
-operation protocol must hold admission through the last acceptance effect.
-No existing custody session, journal, pruning command or receipt parser consumes
-these entries yet. Reference tests exercise local state/replay and concurrency;
-they are not cross-host partition, durable-store or process-crash certification.
+The kernel stays deliberately in-memory. `ValidateNext` followed by `Apply` is
+not an external transaction, and a signed `Entry` is not a live grant. The
+separate store described below owns that serialization and durability boundary.
+A current-authority transport and per-consumer durable operation protocol must
+still hold admission through the last acceptance effect. No existing custody
+session, journal, pruning command or receipt parser consumes these entries yet.
 
 ### Canonical reference vectors
 
@@ -113,6 +111,106 @@ The signature domains are `OMESH/custody-authority/command/signature/v0` and
 `OMESH/custody-authority/entry/signature/v0`; assignment and entry IDs have
 separate `/id/v0` domains. Existing receipt, challenge and proposal signatures
 and formats are unchanged.
+
+## Implemented local durable history
+
+`node/custodyauthority/store` wraps the unchanged reference machine without
+introducing filesystem, transport or clock dependencies into the kernel. The
+adapter accepts already co-signed entries; it neither holds signing keys nor
+exposes a network service. Its private state cannot be mutated around storage.
+
+```text
+authority/
+  authority.lock                  permanent, empty kernel-lock inode
+  assignment.omcaa                 exact canonical assignment
+  ready.omcas                      final version-0 initialization envelope
+  entries/0000000000000001.omcae    immutable, contiguous entry files
+  pending/entry-<decimal>          bounded uncommitted/crash leftovers
+```
+
+`Create` is explicit bootstrap of a new root under an existing parent. It
+requires an independent assignment pin and refuses any existing root, including
+an empty or partially initialized one. The 42-byte readiness envelope is
+`OMCASTOR`, two zero version bytes, and the assignment ID. Its dependencies are
+synced before it is published; readiness is not an authority entry or a permit.
+Failed initialization remains inspectable. No missing marker, lock, directory
+or assignment is automatically recreated by `Open` or `Recover`.
+
+A successful handle owns the permanent kernel lock until `Close`; another
+process or handle receives `ErrBusy`. An internal mutex covers the entire
+validation/publication/apply decision, including exact retries and snapshots.
+Closing or killing the process releases ownership without unlinking the lock.
+Detecting replacement of a retained root/control inode poisons the old handle.
+
+Each new append proceeds in this order:
+
+1. Check the exact predecessor, signatures, roles, phase and operation limits
+   under the serialization guard. Rejection publishes no history.
+2. Write a fresh bounded temporary file and sync its contents.
+3. Recheck cancellation, then hard-link it to the next immutable sequence name
+   without replacing anything. No mutable head file needs a second commit.
+4. Sync the entries directory, apply the already validated transition, and only
+   then return a successful durable result. Cleanup of this attempt's temporary
+   link is best-effort and cannot undo the committed record.
+
+Cancellation before publication leaves the previous history current; after
+publication the durability decision is no longer cancellable. A write,
+publication or required-sync failure returns no result and poisons the handle,
+even if the entry is visible on disk or already applied in memory. Snapshot and
+append then fail with `ErrUncertain` until the handle is closed and history is
+recovered. A failed cleanup can leave only the already committed temporary link;
+it does not change the operation's outcome.
+
+`Open` requires independently retained assignment and **exact** sequence/head
+pins. It scans bounded canonical history, replays every transition, and rejects
+shorter prefixes, forks, gaps, unexpected files and extensions beyond the pin.
+It re-syncs accepted files and directories before returning a handle, so a
+previous failed sync cannot be mistaken for durability just because bytes can
+be read. Empty history is valid only for an initialized store pinned to the
+assignment's sequence-zero position; missing history is never bootstrap.
+
+`Recover` resolves one lost/uncertain append using an independently retained
+pre-attempt position **and the exact co-signed attempted entry**. It accepts
+only the pinned prefix or its one-entry extension by that candidate. It first
+replays the old pin and validates that the attempt was admissible there. It
+never publishes the attempt, chooses a different head, accepts a longer suffix,
+or closes unresolved work. The caller can then retry `Append` exactly.
+
+An exact previously committed entry returns `Appended=false` with its original
+ID and a detached snapshot of the **current local state**, including later stop,
+completion or retirement. Different bytes at that sequence are rejected. A
+freshly signed reuse of an operation is still rejected by the reference kernel.
+This resolves history identity, not consumer execution: neither a commit result,
+an old admission nor a snapshot is a reusable permission to perform an effect.
+
+The maximum history remains `2 * MaximumOperations + 2` entries (at most 131,074
+files of 382 bytes). Pending files are separately capped at 128, each at most
+382 bytes; partial or fully signed temporaries are retained but never promoted.
+Exhausting that evidence budget blocks new writes, including drain writes, until
+an explicitly reviewed recovery/maintenance procedure is available. No automatic
+cleanup, compaction, reset, successor activation or missing-history fallback is
+implemented. Logical bounds do not guarantee free inodes, physical space or
+filesystem latency.
+
+Unit tests cover exact replay/retries, retained pending operations, initialization
+failure, malformed and substituted files, symlinks, replaced ownership inodes,
+bounded leftovers, cancellation, I/O-failure poisoning and concurrent same-head
+writers. `make test-process` adds 45 actual child-process kills: seven append
+boundaries for each of six admission/drain transitions, plus three initialization
+boundaries. Tests also check live cross-process exclusion and replay through the
+original terminal retirement after every crash. These are local process-death
+checks, not power-loss, hostile-filesystem or cross-host partition certification.
+
+Deployment must provide owner-controlled stable paths and a local filesystem
+with working kernel locks, hard links and file/directory fsync. Same-inode hostile
+edits and unsupported/shared filesystems are outside this adapter's guarantee;
+unsupported locking or required sync errors fail closed. Runtime tests currently
+exercise macOS, not every platform build. Pins and pending attempts must be kept
+independently of the authority root; this API does not deploy that failure domain
+or persist the caller's intent for it. A rolled-back pin and root can still agree,
+and a copied root/key can still fork. No automatic selection of the latest remote
+authority, high-availability replication, backup service, lease or fencing token
+is installed by this store.
 
 ## Required deployment ordering
 
