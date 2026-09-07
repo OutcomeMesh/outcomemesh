@@ -668,7 +668,28 @@ Implemented in an isolated, not-yet-activated consensus package:
   because the expected confirmation marker was absent. Five isolated repetitions
   passed. The failing assertion now includes both peers' output/errors, and the
   timeout helper waits for process exit and output drain before exposing buffers.
-  This improves diagnosis, not the still-unestablished cause; keep the issue open.
+  At that point the cause was unestablished, so passing retries did not close it.
+  Publication follow-up (2026-09-07): repeating the case under concurrent store
+  crash-test load reproduced it. The newly retained peer logs showed observer
+  `ErrCampaignState` before any connection, followed by coordinator dial timeout:
+  it never reached the intended confirmation boundary. The fixture used direct
+  `os.WriteFile` on the watched `.published` path, exposing an empty file between
+  creation and writing. A deterministic split-create/write test reproduces that
+  rejection in both readers. Fixtures now use `PublishCampaignCheckpoint`:
+  validate independently supplied plan/checkpoint pins and signed context, sync
+  and no-replace-publish the complete checkpoint, then do the same for the marker.
+  The separate `work-telemetry-tie-campaign-publish` operator command exposes this
+  protocol without private keys, chain execution or automatic coordinator approval.
+  Tests inspect visibility at all ten file boundaries, interrupt and retry each,
+  reject invalid pins before writes, preserve malformed/conflicting existing files,
+  and exercise 16 concurrent exact publishers plus a conflicting link winner.
+  Fifteen post-link process repetitions passed alongside 142 race-enabled pinned
+  executor crash cases; five further post-link repetitions passed with race
+  detection. Repository-wide tests/race/vet and the complete process gate passed,
+  including all 271 authority/executor crash cases. Integration test binaries
+  built for Linux and Windows; execution was verified on macOS only. This closes
+  the reproduced publication race, not arbitrary future transport failures,
+  independent-review enforcement or power-loss safety.
   QUIC follow-up (2026-09-06): the first combined process run failed in
   `TestProcessTiePairQUICReachesIndependentV2ObserversAndRecoversAck` with a
   remote QUIC close, and in the coordinator-journal-before-rename case of

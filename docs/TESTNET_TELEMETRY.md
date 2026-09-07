@@ -434,9 +434,48 @@ For sequence `N`, the driver prints `work_tie_campaign_pair_ready` and waits
 for `externally-published-pairs/%010d.published` containing exactly the printed
 lowercase checkpoint ID plus a newline. The independently operated publisher
 must distribute the matching numbered `.omtcp` file before atomically exposing
-that confirmation file. A crash or transient observer failure is recovered by
-rerunning the same command; durable observers return their existing receipt,
-while already recorded observers are not contacted again. The
+that confirmation file. Do not write, copy, or truncate a watched final
+`.published` path directly: even a 65-byte `os.WriteFile` exposes an empty file
+between creation and writing, which both readers correctly reject as malformed.
+
+After independent review, the publisher can use the explicit local command:
+
+```sh
+mkdir -p externally-published-pairs
+.tools/go/bin/go run ./cmd/omd work-telemetry-tie-campaign-publish \
+  --data publisher-network-config \
+  --plan tie-plan.omtp --plan-id <independently-approved-plan-id> \
+  --coordinator-public-key <trusted-plan-coordinator-public-key> \
+  --observer-public-key <trusted-plan-observer-public-key> \
+  --sequence 1 --input pair-artifacts/0000000001.omtcp \
+  --checkpoint-id <independently-approved-checkpoint-id> \
+  --published externally-published-pairs
+```
+
+`--data` supplies trusted genesis and WorkGraph activation configuration only;
+the command does not open or advance a chain, mine, sign, or contact observers.
+It requires the plan ID, checkpoint ID and sequence explicitly, and verifies the
+public keys, network binding, plan and checkpoint signatures before writing.
+It cannot establish that a human has independently reviewed those pins. Do not
+wire it to automatically approve every coordinator output.
+
+The existing publication directory must be under a trusted publisher's control,
+separate from the input artifact directory. The Go API
+`tieproducer.PublishCampaignCheckpoint` implements the same file protocol:
+stage and sync the complete checkpoint in that directory, link its numbered
+name without replacement and sync the directory; then perform those same steps
+for the marker. Exact retries verify existing bytes and sync the file and
+directory again. Conflicts and malformed files stop publication without replacing
+them. A post-link error can leave a valid visible file; retry the same approved
+IDs, not a newly selected checkpoint. The command publishes one local directory,
+not an atomic multi-observer distribution, access-control setup, anti-rollback
+service, or guarantee against storage/power failure. Provision and durably retain
+the directory itself separately; directory-owner tampering remains out of scope.
+
+A crash or transient observer failure is recovered by rerunning the coordinator
+command (and the receiver command if that process stopped); durable observers
+return their existing receipt, while already recorded observers are not contacted
+again. The
 `work_tie_campaign_started` line includes the recovered phase, next sequence,
 and durable `acknowledged` count. A real process test kills a version-2
 coordinator at `acknowledged=1`, then proves its replacement contacts only the

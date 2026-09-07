@@ -321,11 +321,17 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
             database, or sign completion from a generic callback return alone.
   - [ ] Filesystem-full, inode-exhaustion, power-loss, and long-running retention
     campaigns before deployment claims.
-  - [ ] Isolate the intermittent 2026-09-07 process failure in the campaign
-    observer's post-link confirmation case. One combined run found no marker;
-    five isolated repetitions passed. Preserve both peers' logs and distinguish
-    failure before confirmation from failure after its publication. The cause
-    is not established; a passing retry is not a root-cause fix.
+  - [x] Isolate the intermittent 2026-09-07 process failure in the campaign
+    observer's post-link confirmation case. A reproduced failure's peer logs
+    show observer exit before connection: the fixture wrote a watched final
+    publication marker directly, exposing its empty create/write interval.
+    Preserve strict malformed-file rejection. Use the explicit, pin-checked
+    external publisher with checkpoint-first staged/synced no-replace links;
+    cover reader visibility, all ten file boundaries, exact retries and conflicts.
+    The deterministic direct-write reproducer and 15 process repetitions under
+    concurrent store crash-test load distinguish this cause from confirmation
+    loss. External review, directory ownership and physical storage remain
+    separate deployment obligations.
   - [x] Isolate the 2026-09-06 tie-pair/campaign early-close race with a
     failing-before-fix process regression, add bounded EOF-based host/slot
     retirement, and distinguish nested transport timeouts from signed-slot

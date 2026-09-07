@@ -180,16 +180,27 @@ func campaignSequenceName(sequence uint64) string {
 }
 
 func writeImmutableCampaignFile(path string, encoded []byte, maximum int) error {
+	return writeImmutableCampaignFileWithCheckpoint(path, encoded, maximum, nil)
+}
+
+// The per-call checkpoint permits deterministic interruption at file visibility
+// and durability boundaries. Production writers do not install a callback.
+func writeImmutableCampaignFileWithCheckpoint(
+	path string, encoded []byte, maximum int, checkpoint func(string) error,
+) error {
 	if path == "" || len(encoded) == 0 || len(encoded) > maximum {
 		return ErrCampaignState
 	}
-	if current, err := readBoundedCampaignFile(path, maximum); err == nil {
-		if bytes.Equal(current, encoded) {
-			return syncCampaignDirectory(filepath.Dir(path))
-		}
-		return ErrCampaignState
+	if err := syncExistingCampaignFile(path, encoded, maximum); err == nil {
+		return nil
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
+	}
+	check := func(stage string) error {
+		if checkpoint != nil {
+			return checkpoint(stage)
+		}
+		return nil
 	}
 	directory := filepath.Dir(path)
 	if err := os.MkdirAll(directory, 0o755); err != nil {
@@ -207,6 +218,9 @@ func writeImmutableCampaignFile(path string, encoded []byte, maximum int) error 
 	if err := temporary.Chmod(0o600); err != nil {
 		return err
 	}
+	if err := check("created"); err != nil {
+		return err
+	}
 	written, err := temporary.Write(encoded)
 	if err != nil {
 		return err
@@ -214,7 +228,13 @@ func writeImmutableCampaignFile(path string, encoded []byte, maximum int) error 
 	if written != len(encoded) {
 		return io.ErrShortWrite
 	}
+	if err := check("written"); err != nil {
+		return err
+	}
 	if err := temporary.Sync(); err != nil {
+		return err
+	}
+	if err := check("synced"); err != nil {
 		return err
 	}
 	if err := temporary.Close(); err != nil {
@@ -222,15 +242,42 @@ func writeImmutableCampaignFile(path string, encoded []byte, maximum int) error 
 	}
 	if err := os.Link(temporaryPath, path); err != nil {
 		if errors.Is(err, os.ErrExist) {
-			current, readErr := readBoundedCampaignFile(path, maximum)
-			if readErr == nil && bytes.Equal(current, encoded) {
-				return syncCampaignDirectory(directory)
-			}
-			return errors.Join(ErrCampaignState, readErr)
+			return syncExistingCampaignFile(path, encoded, maximum)
 		}
 		return err
 	}
-	return syncCampaignDirectory(directory)
+	if err := check("linked"); err != nil {
+		return err
+	}
+	if err := syncCampaignDirectory(directory); err != nil {
+		return err
+	}
+	return check("directory-synced")
+}
+
+func syncExistingCampaignFile(path string, encoded []byte, maximum int) error {
+	// Sync requires a writable handle on supported Windows filesystems as well.
+	file, err := os.OpenFile(path, os.O_RDWR, 0)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	current, err := io.ReadAll(io.LimitReader(file, int64(maximum)+1))
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(current, encoded) {
+		return ErrCampaignState
+	}
+	// A prior attempt may have returned after linking, or the file may have
+	// been staged by another publisher. A retry confirms both durability steps.
+	if err := file.Sync(); err != nil {
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	return syncCampaignDirectory(filepath.Dir(path))
 }
 
 func syncCampaignDirectory(directory string) error {

@@ -770,8 +770,20 @@ connected to persistent multi-base recovery or the public chain session.
 
 Controlled-tie campaign state is operational evidence, not consensus state,
 but continuing from different observer tips would invalidate the calibration.
-For that reason only a slot with no begun delivery may be skipped: coordinator
-publication must remain unconfirmed, every observer waits through the same
+Checkpoint publication is a separate, explicit approval step. The local publisher
+API and `work-telemetry-tie-campaign-publish` command require an independently
+chosen checkpoint ID as well as the trusted plan binding; deriving an ID from an
+unreviewed artifact is not independent approval. Complete checkpoint and marker
+files are synced and linked without replacement, in that order, with a directory
+sync after each. Exact retries recheck and sync existing bytes; a post-link error
+may already be visible. Final paths are never truncated to publish an update.
+Readers still reject an empty or malformed final marker rather than retrying it:
+the 2026-09-07 process failure was traced to a test publisher exposing that empty
+create/write interval, not a lost confirmation. This assumes trusted-owner local
+directories and does not provide multi-directory atomic distribution, symlink
+fencing, independent access control, shared-rollback or physical-media protection.
+To prevent observer divergence, only a slot with no begun delivery may be skipped:
+coordinator publication must remain unconfirmed, every observer waits through the same
 receipt-closure grace, and the skipped sequence is fsynced before the next slot.
 Once delivery begins, a missing ACK is treated as possibly admitted forever.
 An observer that has persisted exactly one sibling also stops forever instead

@@ -634,10 +634,9 @@ func TestProcessTieCampaignReceiverRecoversAckAfterKillBeforeConfirmation(t *tes
 	if err := os.MkdirAll(publicationDirectory, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(publicationDirectory+"/0000000001.omtcp", checkpoint.CanonicalBytes(), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(publicationDirectory+"/0000000001.published", []byte(checkpointID.String()+"\n"), 0o600); err != nil {
+	if err := tieproducer.PublishCampaignCheckpoint(
+		publicationDirectory, plan, plan.Binding(), planID, checkpoint, checkpointID,
+	); err != nil {
 		t.Fatal(err)
 	}
 	coordinatorTransportID := processTransportPeerID(t, coordinatorTransportKeyPath)
@@ -843,11 +842,8 @@ func TestProcessTieCampaignSkipsExpiredZeroDeliveryAndContinuesNextSlot(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(publicationDirectory+"/0000000002.omtcp", checkpointBytes, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(
-		publicationDirectory+"/0000000002.published", []byte(checkpointID.String()+"\n"), 0o600,
+	if err := tieproducer.PublishCampaignCheckpoint(
+		publicationDirectory, plan, plan.Binding(), planID, checkpoint, checkpointID,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -1974,10 +1970,9 @@ func TestProcessTieCampaignPartialSiblingCrashRemainsFailClosed(t *testing.T) {
 	if err := os.MkdirAll(publicationDirectory, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(publicationDirectory+"/0000000001.omtcp", checkpoint.CanonicalBytes(), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(publicationDirectory+"/0000000001.published", []byte(checkpointID.String()+"\n"), 0o600); err != nil {
+	if err := tieproducer.PublishCampaignCheckpoint(
+		publicationDirectory, plan, plan.Binding(), planID, checkpoint, checkpointID,
+	); err != nil {
 		t.Fatal(err)
 	}
 	coordinatorTransportID := processTransportPeerID(t, coordinatorTransportKeyPath)
@@ -2564,11 +2559,8 @@ func publishProcessCampaignCheckpoint(
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(publicationDirectory+"/"+name+".omtcp", checkpointBytes, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(
-		publicationDirectory+"/"+name+".published", []byte(checkpointID.String()+"\n"), 0o600,
+	if err := tieproducer.PublishCampaignCheckpoint(
+		publicationDirectory, plan, binding, planID, checkpoint, checkpointID,
 	); err != nil {
 		t.Fatal(err)
 	}

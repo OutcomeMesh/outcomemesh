@@ -115,6 +115,52 @@ func TestPortableTiePairSeparatesMiningFromObserverAdmission(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Run("external-campaign-publication", func(t *testing.T) {
+		publicationDirectory := t.TempDir()
+		publish := append([]string{"work-telemetry-tie-campaign-publish"}, common...)
+		publish = append(publish,
+			"--observer-public-key", bytesToLowerHex(observer.Public().(ed25519.PublicKey)),
+			"--input", checkpointPath, "--checkpoint-id", checkpointID.String(),
+			"--published", publicationDirectory,
+		)
+		// All rejected variants must leave the independently operated output empty.
+		for _, override := range [][]string{
+			{"--checkpoint-id", ""},
+			{"--checkpoint-id", types.Hash{}.String()},
+			{"--checkpoint-id", types.DomainHash("test/omd/wrong-publication-pin").String()},
+			{"--sequence", "2"},
+			{"--plan-id", types.DomainHash("test/omd/wrong-publication-plan").String()},
+			{"--coordinator-public-key", bytesToLowerHex(observer.Public().(ed25519.PublicKey))},
+			{"--published", root},
+			{"--published", filepath.Join(publicationDirectory, "absent")},
+			{"unexpected-argument"},
+		} {
+			arguments := append(append([]string(nil), publish...), override...)
+			if err := run(arguments); err == nil {
+				t.Fatalf("invalid publication accepted: %v", override)
+			}
+			entries, err := os.ReadDir(publicationDirectory)
+			if err != nil || len(entries) != 0 {
+				t.Fatalf("invalid publication wrote files: %v %v", entries, err)
+			}
+		}
+		for attempt := 0; attempt < 2; attempt++ {
+			if err := run(publish); err != nil {
+				t.Fatalf("publication attempt %d: %v", attempt, err)
+			}
+		}
+		files, err := tieproducer.NewFileObserverCampaign(publicationDirectory, t.TempDir(), plan, plan.Binding(), planID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		loaded, id, err := files.LoadPublishedCheckpoint(1)
+		if err != nil || loaded != checkpoint || id != checkpointID {
+			t.Fatalf("published checkpoint=%+v id=%s err=%v", loaded, id, err)
+		}
+		if tip := workTip(t, data); tip != baseTip {
+			t.Fatal("external publication changed the chain tip")
+		}
+	})
 	receiptPath := filepath.Join(root, "tie-receipts.omtr")
 	pendingPath := filepath.Join(root, "tie-receipts.pending")
 	admit := append(append([]string(nil), common...),

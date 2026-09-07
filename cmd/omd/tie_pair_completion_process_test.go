@@ -7,12 +7,12 @@ import (
 	"context"
 	"crypto/ed25519"
 	"io"
-	"os"
 	"testing"
 	"time"
 
 	"github.com/outcomemesh/outcomemesh/node/calibration"
 	"github.com/outcomemesh/outcomemesh/node/tieexchange"
+	"github.com/outcomemesh/outcomemesh/node/tieproducer"
 	libp2ptransport "github.com/outcomemesh/outcomemesh/node/transport/libp2p"
 )
 
@@ -55,10 +55,9 @@ func TestProcessTiePairCompletionWaitsForCoordinatorEOF(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if err := os.WriteFile(fixture.publicationDirectory+"/0000000001.omtcp", checkpoint.CanonicalBytes(), 0o600); err != nil {
-					t.Fatal(err)
-				}
-				if err := os.WriteFile(fixture.publicationDirectory+"/0000000001.published", []byte(id.String()+"\n"), 0o600); err != nil {
+				if err := tieproducer.PublishCampaignCheckpoint(
+					fixture.publicationDirectory, fixture.plan, fixture.binding, fixture.planID, checkpoint, id,
+				); err != nil {
 					t.Fatal(err)
 				}
 				receiver, peerIDText, address = startCampaignStorageObserver(t, fixture, "")
