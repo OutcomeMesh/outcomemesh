@@ -11,6 +11,16 @@ import (
 )
 
 func TestPinnedPruneProcessCrashAtomicity(t *testing.T) {
+	runPinnedPruneProcessCrashAtomicity(t, newPinnedPruneFixture)
+}
+
+func TestStorageBoundPruneProcessCrashAtomicity(t *testing.T) {
+	runPinnedPruneProcessCrashAtomicity(t, func(t testing.TB) *pruneFixture {
+		return newPruneFixtureWithStorageID(t, testHash(91))
+	})
+}
+
+func runPinnedPruneProcessCrashAtomicity(t *testing.T, fixture func(testing.TB) *pruneFixture) {
 	stages := append(pinnedPrunePublicationStages(), "prune-before-effect", "prune-after-effect")
 	for _, prefix := range []string{"prune", "pins"} {
 		for _, stage := range []string{"before-ready", "ready-file-synced", "ready-directory-synced"} {
@@ -19,7 +29,7 @@ func TestPinnedPruneProcessCrashAtomicity(t *testing.T) {
 	}
 	for _, stage := range stages {
 		t.Run(stage, func(t *testing.T) {
-			f := newPinnedPruneFixture(t)
+			f := fixture(t)
 			initializing := strings.Contains(stage, "ready")
 			if !initializing {
 				f.admit(t, !strings.Contains(stage, "admission-"))

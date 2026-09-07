@@ -49,7 +49,10 @@ func (store *Store) VerifyContext(networkID uint32, activationHeight uint64, bas
 type CanonicalPruneOperation struct {
 	AssignmentID types.Hash
 	TicketID     types.Hash
-	Boundary     CanonicalFloor
+	// StorageID is zero only for legacy unbound databases. Nonzero is a pinned
+	// local incarnation, not a hardware identity or a database rollback counter.
+	StorageID types.Hash
+	Boundary  CanonicalFloor
 }
 
 // CanonicalPruneEffect records the original completed effect, not the current
@@ -74,7 +77,8 @@ type CanonicalPruneCommit struct {
 // This is a trusted local primitive, not an authority-enforcing acceptance path.
 // authorize must obey PruneCanonicalPrefixAuthorized's lifetime/locking rules.
 // Recovery must first inspect CanonicalPruneEffect; absence in a new or rolled-
-// back database is not permission to retry. No store identity/pin is supplied here.
+// back database is not permission to retry. A nonzero StorageID must match the
+// bound database; a legacy zero ID is never accepted as a wildcard.
 func (store *Store) PruneCanonicalPrefixOnce(
 	operation CanonicalPruneOperation, authorize func() (uint64, error),
 ) (CanonicalPruneCommit, error) {
@@ -89,6 +93,9 @@ func (store *Store) PruneCanonicalPrefixOnce(
 	}
 	if store.persistence == nil || operation.Boundary.BaseID != store.baseID {
 		return CanonicalPruneCommit{}, ErrCanonicalPrune
+	}
+	if operation.StorageID != store.persistence.storageID {
+		return CanonicalPruneCommit{}, ErrStorageBinding
 	}
 	existing, found, err := store.persistence.pruneEffect(operation.TicketID)
 	if err != nil {
@@ -141,7 +148,7 @@ func equalPruneOperation(left, right CanonicalPruneOperation) bool {
 	l, le := encodeCanonicalFloor(left.Boundary)
 	r, re := encodeCanonicalFloor(right.Boundary)
 	return le == nil && re == nil && left.AssignmentID == right.AssignmentID &&
-		left.TicketID == right.TicketID && bytes.Equal(l, r)
+		left.TicketID == right.TicketID && left.StorageID == right.StorageID && bytes.Equal(l, r)
 }
 
 func (effect CanonicalPruneEffect) validate() error {
@@ -167,9 +174,16 @@ func (effect CanonicalPruneEffect) CanonicalBytes() ([]byte, error) {
 	}
 	e := codec.NewEncoder(MaximumCanonicalPruneEffectBytes)
 	e.Fixed([]byte("OMWCPREF"))
-	e.U16(0)
+	version := uint16(0)
+	if !effect.Operation.StorageID.IsZero() {
+		version = 1
+	}
+	e.U16(version)
 	e.Fixed(effect.Operation.AssignmentID[:])
 	e.Fixed(effect.Operation.TicketID[:])
+	if version == 1 {
+		e.Fixed(effect.Operation.StorageID[:])
+	}
 	e.BytesField(floor)
 	e.U64(effect.VerifiedAt)
 	e.Fixed(effect.Report.PreviousFloorID[:])
@@ -189,7 +203,11 @@ func (effect CanonicalPruneEffect) ID() (types.Hash, error) {
 	if err != nil {
 		return types.Hash{}, err
 	}
-	return types.DomainHash("OMESH/workgraph/canonical-prune-effect/id/v0", encoded), nil
+	domain := "OMESH/workgraph/canonical-prune-effect/id/v0"
+	if !effect.Operation.StorageID.IsZero() {
+		domain = "OMESH/workgraph/canonical-prune-effect/id/v1"
+	}
+	return types.DomainHash(domain, encoded), nil
 }
 
 func DecodeCanonicalPruneEffect(input []byte) (CanonicalPruneEffect, error) {
@@ -202,7 +220,7 @@ func DecodeCanonicalPruneEffect(input []byte) (CanonicalPruneEffect, error) {
 		return CanonicalPruneEffect{}, storage.ErrCorrupt
 	}
 	version, err := d.U16()
-	if err != nil || version != 0 {
+	if err != nil || version > 1 {
 		return CanonicalPruneEffect{}, storage.ErrCorrupt
 	}
 	var result CanonicalPruneEffect
@@ -212,6 +230,16 @@ func DecodeCanonicalPruneEffect(input []byte) (CanonicalPruneEffect, error) {
 			return CanonicalPruneEffect{}, storage.ErrCorrupt
 		}
 		copy(destination[:], value)
+	}
+	if version == 1 {
+		value, err := d.Fixed(types.HashSize)
+		if err != nil {
+			return CanonicalPruneEffect{}, storage.ErrCorrupt
+		}
+		copy(result.Operation.StorageID[:], value)
+		if result.Operation.StorageID.IsZero() {
+			return CanonicalPruneEffect{}, storage.ErrCorrupt
+		}
 	}
 	floorBytes, err := d.BytesField(maxCanonicalFloorBytes)
 	if err != nil {
@@ -258,7 +286,7 @@ func (persistence *workPersistence) pruneEffect(ticketID types.Hash) (CanonicalP
 	}
 	defer closer.Close()
 	effect, err := DecodeCanonicalPruneEffect(value)
-	if err != nil || effect.Operation.TicketID != ticketID || !persistence.effectSchema {
+	if err != nil || effect.Operation.TicketID != ticketID || !persistence.effectSchema || effect.Operation.StorageID != persistence.storageID {
 		return CanonicalPruneEffect{}, false, storage.ErrCorrupt
 	}
 	return effect, true, nil
@@ -293,7 +321,7 @@ func (persistence *workPersistence) verifyPruneEffects(store *Store) error {
 			return storage.ErrCorrupt
 		}
 		effect, err := DecodeCanonicalPruneEffect(it.Value())
-		if err != nil || !bytes.Equal(it.Key()[1:], effect.Operation.TicketID[:]) {
+		if err != nil || !bytes.Equal(it.Key()[1:], effect.Operation.TicketID[:]) || effect.Operation.StorageID != persistence.storageID {
 			return storage.ErrCorrupt
 		}
 		b := effect.Operation.Boundary

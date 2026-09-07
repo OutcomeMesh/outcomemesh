@@ -48,8 +48,9 @@ type PruneExecution struct {
 // PruneExecutor owns one bounded operation journal and its lifetime process
 // lock. Use an independent protected root and request pin; never recreate a lost
 // journal or replace/roll back its chain database as recovery. The optional pinned
-// constructor retains independent stage history; neither mode provides physical
-// storage identity, shared-rollback protection or networking.
+// constructor retains independent stage history and accepts storage-incarnation
+// requests. Neither mode provides physical identity, shared-rollback protection
+// or networking.
 type PruneExecutor struct {
 	mu         sync.Mutex
 	path       string
@@ -92,6 +93,9 @@ func createPruneExecutor(path string, assignment custodyauthority.Assignment, re
 func createPruneExecutorBound(path string, assignment custodyauthority.Assignment, request PruneRequest, expectedID, binding types.Hash, hooks storeHooks) (_ *PruneExecutor, err error) {
 	if err := validatePruneRequest(assignment, request, expectedID); err != nil {
 		return nil, err
+	}
+	if !request.StorageID.IsZero() && binding.IsZero() {
+		return nil, ErrPruneRequest // storage-bound requests require independent stage pins
 	}
 	path, err = storePath(path)
 	if err != nil {
@@ -212,6 +216,9 @@ func loadPruneExecutor(path string, lock *os.File, assignment custodyauthority.A
 	}
 	if err := validatePruneRequest(assignment, request, expectedID); err != nil {
 		return nil, err
+	}
+	if !request.StorageID.IsZero() && binding.IsZero() {
+		return nil, ErrPruneRequest
 	}
 	expectedReady := pruneBoundReadyBytes(expectedID, binding)
 	ready, err := readRegular(filepath.Join(path, pruneReadyName), len(expectedReady))
@@ -437,6 +444,9 @@ func (executor *PruneExecutor) Execute(ctx context.Context, coordinator *Coordin
 	if err := chain.VerifyContext(executor.assignment.NetworkID, executor.assignment.ActivationHeight, executor.assignment.BaseID); err != nil {
 		return workchain.CanonicalPruneCommit{}, err
 	}
+	if err := chain.VerifyStorageID(executor.request.StorageID); err != nil {
+		return workchain.CanonicalPruneCommit{}, err
+	}
 	binding, err := pruneAdmissionBinding(executor.assignment, executor.request, *executor.admission)
 	if err != nil {
 		return workchain.CanonicalPruneCommit{}, err
@@ -458,6 +468,7 @@ func (executor *PruneExecutor) Execute(ctx context.Context, coordinator *Coordin
 		}
 		commit, err := chain.PruneCanonicalPrefixOnce(workchain.CanonicalPruneOperation{
 			AssignmentID: executor.request.AssignmentID, TicketID: binding.TicketID, Boundary: executor.request.Boundary,
+			StorageID: executor.request.StorageID,
 		}, func() (uint64, error) {
 			if err := ctx.Err(); err != nil {
 				return 0, err
@@ -508,6 +519,9 @@ func (executor *PruneExecutor) Recover(ctx context.Context, chain *workchain.Sto
 		return workchain.CanonicalPruneCommit{}, ErrPruneStage
 	}
 	if err := chain.VerifyContext(executor.assignment.NetworkID, executor.assignment.ActivationHeight, executor.assignment.BaseID); err != nil {
+		return workchain.CanonicalPruneCommit{}, err
+	}
+	if err := chain.VerifyStorageID(executor.request.StorageID); err != nil {
 		return workchain.CanonicalPruneCommit{}, err
 	}
 	ticket, _ := executor.admission.ID()

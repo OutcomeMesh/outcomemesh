@@ -20,10 +20,12 @@ var (
 
 // PruneRequest is retained BEFORE requesting authority admission. Its ID is
 // the admission's OperationID; the later ticket is not part of this preimage.
-// It binds a logical chain context, not a physical database identity/rollback pin.
+// StorageID optionally binds a local database incarnation. It is not a physical
+// database identity or rollback pin, and must be selected before admission.
 type PruneRequest struct {
 	AssignmentID      types.Hash
 	ConsumerPublicKey [32]byte
+	StorageID         types.Hash
 	Boundary          workchain.CanonicalFloor
 }
 
@@ -37,9 +39,16 @@ func (request PruneRequest) CanonicalBytes() ([]byte, error) {
 	}
 	e := codec.NewEncoder(MaximumPruneRequestBytes)
 	e.Fixed([]byte("OMCPREQS"))
-	e.U16(0)
+	version := uint16(0)
+	if !request.StorageID.IsZero() {
+		version = 1
+	}
+	e.U16(version)
 	e.Fixed(request.AssignmentID[:])
 	e.Fixed(request.ConsumerPublicKey[:])
+	if version == 1 {
+		e.Fixed(request.StorageID[:])
+	}
 	e.BytesField(floor)
 	if e.Len() > MaximumPruneRequestBytes {
 		return nil, ErrPruneRequest
@@ -52,7 +61,11 @@ func (request PruneRequest) ID() (types.Hash, error) {
 	if err != nil {
 		return types.Hash{}, err
 	}
-	return types.DomainHash("OMESH/custody-prune/request/id/v0", encoded), nil
+	domain := "OMESH/custody-prune/request/id/v0"
+	if !request.StorageID.IsZero() {
+		domain = "OMESH/custody-prune/request/id/v1"
+	}
+	return types.DomainHash(domain, encoded), nil
 }
 
 func DecodePruneRequest(input []byte) (PruneRequest, error) {
@@ -65,7 +78,7 @@ func DecodePruneRequest(input []byte) (PruneRequest, error) {
 		return PruneRequest{}, ErrPruneRequest
 	}
 	version, err := d.U16()
-	if err != nil || version != 0 {
+	if err != nil || version > 1 {
 		return PruneRequest{}, ErrPruneRequest
 	}
 	var request PruneRequest
@@ -75,6 +88,16 @@ func DecodePruneRequest(input []byte) (PruneRequest, error) {
 			return PruneRequest{}, ErrPruneRequest
 		}
 		copy(destination, value)
+	}
+	if version == 1 {
+		value, err := d.Fixed(types.HashSize)
+		if err != nil {
+			return PruneRequest{}, ErrPruneRequest
+		}
+		copy(request.StorageID[:], value)
+		if request.StorageID.IsZero() {
+			return PruneRequest{}, ErrPruneRequest
+		}
 	}
 	floor, err := d.BytesField(MaximumPruneRequestBytes)
 	if err != nil {
@@ -129,7 +152,8 @@ func pruneAdmissionBinding(assignment custodyauthority.Assignment, request Prune
 
 func pruneEffectMatches(request PruneRequest, admission custodyauthority.Entry, effect workchain.CanonicalPruneEffect) bool {
 	ticket, err := admission.ID()
-	if err != nil || effect.Operation.AssignmentID != request.AssignmentID || effect.Operation.TicketID != ticket {
+	if err != nil || effect.Operation.AssignmentID != request.AssignmentID || effect.Operation.TicketID != ticket ||
+		effect.Operation.StorageID != request.StorageID {
 		return false
 	}
 	if _, err := effect.ID(); err != nil {

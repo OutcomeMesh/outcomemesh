@@ -663,6 +663,9 @@ func (store *Store) pruneCanonicalPrefix(
 func (store *Store) pruneCanonicalPrefixLocked(
 	boundary CanonicalFloor, authorize func() (uint64, error), effect *CanonicalPruneEffect,
 ) (CanonicalPruneReport, error) {
+	if store.persistence != nil && !store.persistence.storageID.IsZero() && effect == nil {
+		return CanonicalPruneReport{}, ErrStorageBinding
+	}
 	if store.persistence == nil || store.persistence.policy.CanonicalRetention == 0 ||
 		boundary.BaseID != store.baseID || boundary.Anchor.ID == store.floor.Anchor.ID {
 		return CanonicalPruneReport{}, ErrCanonicalPrune

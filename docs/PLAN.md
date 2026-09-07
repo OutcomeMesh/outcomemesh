@@ -313,6 +313,14 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
             explicit resume without chain execution or completion. Cover 71
             process-kill boundaries and keep unresolved starts pending. Independent
             physical/access-control deployment and shared rollback remain external.
+          - [x] Opt-in logical storage-incarnation binding: initialize a new
+            database under an independently selected ID; require that pin on
+            reopen, retain it in a versioned request before admission and in the
+            atomic result. Reject another incarnation before start and preserve
+            strict no-effect ambiguity. Keep old formats unchanged and bound
+            requests behind independent stage pins. Cover copied-old-image
+            recovery, malformed/downgraded metadata and 77 new process boundaries.
+            This is not physical identity, copy fencing or rollback detection.
           - [ ] Physical chain-storage identity and independently pinned recovery,
             safe no-effect disposition, current-authority admission/
             completion transport, and live audit/serve/prune runtime adapters

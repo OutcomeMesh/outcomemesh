@@ -419,6 +419,12 @@ func FuzzCanonicalPruneEffect(f *testing.F) {
 		f.Fatal(err)
 	}
 	f.Add(encoded)
+	effect.Operation.StorageID = testStorageID()
+	bound, err := effect.CanonicalBytes()
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Add(bound)
 	legacy, _ := encodeCanonicalFloor(boundary)
 	f.Add(legacy)
 	boundary.PruneTicketID = effect.Operation.TicketID

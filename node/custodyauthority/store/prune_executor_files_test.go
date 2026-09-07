@@ -89,6 +89,12 @@ func FuzzDecodePruneRequest(f *testing.F) {
 		f.Fatal(err)
 	}
 	f.Add(encoded)
+	r.StorageID = testHash(91)
+	bound, err := r.CanonicalBytes()
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Add(bound)
 	f.Add([]byte{})
 	f.Fuzz(func(t *testing.T, input []byte) {
 		request, err := DecodePruneRequest(input)

@@ -53,12 +53,20 @@ func pruneChainConfig() (workchain.Base, workblock.Parameters, workchain.Policy)
 }
 
 func newPruneFixture(t testing.TB) *pruneFixture {
+	return newPruneFixtureWithStorageID(t, types.Hash{})
+}
+
+func newPruneFixtureWithStorageID(t testing.TB, storageID types.Hash) *pruneFixture {
 	t.Helper()
 	f := &pruneFixture{}
 	f.base, f.parameters, f.policy = pruneChainConfig()
 	f.chainPath = filepath.Join(t.TempDir(), "chain")
 	var err error
-	f.chain, err = workchain.OpenWithPolicy(f.chainPath, f.base, f.parameters, f.policy)
+	if storageID.IsZero() {
+		f.chain, err = workchain.OpenWithPolicy(f.chainPath, f.base, f.parameters, f.policy)
+	} else {
+		f.chain, err = workchain.CreateBoundWithPolicy(f.chainPath, f.base, f.parameters, f.policy, storageID)
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +109,7 @@ func newPruneFixture(t testing.TB) *pruneFixture {
 		t.Fatal(err)
 	}
 	a := testAssignment()
-	f.request = PruneRequest{AssignmentID: testAssignmentID(t), ConsumerPublicKey: testPublic(4), Boundary: workchain.CanonicalFloor{
+	f.request = PruneRequest{AssignmentID: testAssignmentID(t), ConsumerPublicKey: testPublic(4), StorageID: storageID, Boundary: workchain.CanonicalFloor{
 		Pruned: true, BaseID: a.BaseID, Anchor: anchor, AncestryNodes: count, AncestryRoot: root, StatementID: a.StatementID,
 		ManifestID: a.ManifestID, AvailabilityID: testHash(60), VerifiedAt: 100, RetainUntil: 1000}}
 	f.id, err = f.request.ID()
@@ -109,7 +117,12 @@ func newPruneFixture(t testing.TB) *pruneFixture {
 		t.Fatal(err)
 	}
 	f.executorPath = filepath.Join(t.TempDir(), "executor")
-	f.executor, err = CreatePruneExecutor(f.executorPath, a, f.request, f.id)
+	if storageID.IsZero() {
+		f.executor, err = CreatePruneExecutor(f.executorPath, a, f.request, f.id)
+	} else {
+		f.executorPinsPath = filepath.Join(t.TempDir(), "independent-pins")
+		f.executor, err = CreatePinnedPruneExecutor(f.executorPath, f.executorPinsPath, a, f.request, f.id)
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +167,11 @@ func (f *pruneFixture) reopen(t testing.TB) {
 		t.Fatal(err)
 	}
 	f.coordinator = testOpenCoordinator(t, f.authorityPath, f.pinsPath)
-	f.chain, err = workchain.OpenWithPolicy(f.chainPath, f.base, f.parameters, f.policy)
+	if f.request.StorageID.IsZero() {
+		f.chain, err = workchain.OpenWithPolicy(f.chainPath, f.base, f.parameters, f.policy)
+	} else {
+		f.chain, err = workchain.OpenBoundWithPolicy(f.chainPath, f.base, f.parameters, f.policy, f.request.StorageID)
+	}
 	if err != nil {
 		t.Fatal(err)
 	}

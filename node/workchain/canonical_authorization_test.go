@@ -3,6 +3,7 @@ package workchain
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -11,13 +12,23 @@ import (
 )
 
 func canonicalAuthorizationFixture(t testing.TB) (*Store, string, Base, workblock.Parameters, Policy, CanonicalFloor) {
+	return canonicalAuthorizationFixtureWithStorageID(t, types.Hash{})
+}
+
+func canonicalAuthorizationFixtureWithStorageID(t testing.TB, storageID types.Hash) (*Store, string, Base, workblock.Parameters, Policy, CanonicalFloor) {
 	t.Helper()
 	parameters := testParameters()
 	base := testBase(t, parameters)
-	path := t.TempDir()
+	path := filepath.Join(t.TempDir(), "chain")
 	policy := DefaultPolicy()
 	policy.CanonicalRetention = 1
-	store, err := OpenWithPolicy(path, base, parameters, policy)
+	var store *Store
+	var err error
+	if storageID.IsZero() {
+		store, err = OpenWithPolicy(path, base, parameters, policy)
+	} else {
+		store, err = CreateBoundWithPolicy(path, base, parameters, policy, storageID)
+	}
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -277,6 +277,61 @@ cover the three publications of every transition, both initialization sequences,
 and the before/after-effect points. This is local crash evidence, not power-loss
 or shared-storage rollback certification.
 
+### Storage-incarnation-bound prune requests
+
+An opt-in local database mode now distinguishes independently initialized
+incarnations of the same logical chain. This is an intermediate gate: it does
+**not** prove physical storage identity or detect a copied/rolled-back database
+that retains the same ID.
+
+`workchain.CreateBoundWithPolicy` accepts a caller-selected, fresh random nonzero
+32-byte storage ID and creates only a new directory. Retain that ID independently
+before admitting work; never derive a replacement pin from a recovered database.
+The ID at metadata key `01 06`, schema 6, base state, configuration, initial tip and
+accounting are committed in the same synchronous initialization batch. Existing
+and incomplete roots cannot be recreated. `OpenBoundWithPolicy` requires the
+expected ID and existing database, refuses legacy/missing/mismatched identity,
+and cannot initialize an empty image. Raw `Open`/`OpenWithPolicy` refuse bound
+schemas; no automatic migration or loss-recovery reattachment is supplied.
+
+Set `PruneRequest.StorageID` before computing the request ID and requesting
+admission. A nonzero ID selects `OMCPREQS` version 1: insert 32 storage-ID bytes
+after the consumer key and before the floor field, under domain
+`OMESH/custody-prune/request/id/v1`. The 409-byte request fixture has ID
+`200f79ab68e679511d7732e45db5a642c660ec47ec146e8c5011583deceaba70`.
+These requests require the independent stage-pin constructor; raw executors
+refuse them. The signed operation ID and both retained request copies therefore
+bind the incarnation before any start. Zero remains the unchanged version-0
+unbound format, never a wildcard for bound storage.
+
+Execution checks context and incarnation before retaining a start. WorkChain
+checks it again under its own prune lock, before result lookup, authorization or
+deletion. Bound databases refuse legacy unticketed pruning. A bound result uses
+`OMWCPREF` version 1 with the storage ID after the ticket, and domain
+`OMESH/workgraph/canonical-prune-effect/id/v1`. Its 522-byte fixture has ID
+`4ee4404d3f5ce8106b8ab018585db43f0550c22d677b1f49d74ba26b4211c103`.
+The first bound result atomically enables schema 7 with the deletion, floor and
+accounting. Replay rejects missing or wrong-incarnation effects and schema
+downgrade. Existing schema 4/5 databases and all version-0 bytes/IDs are unchanged;
+new result bytes count toward the existing 1 KiB/result, 65,536-result and history
+bounds. The fixed storage-ID metadata, like configuration metadata, is outside
+the logical history byte count.
+
+`Recover` checks the request's incarnation before looking up a Started result;
+the result itself must contain that same ID. Absence in an old copy stays unknown,
+never triggers deletion, and never authorizes completion. A retained Succeeded
+result can still be read without any database handle: it is historical evidence,
+not a fresh claim about the currently supplied database. Unit tests explicitly
+show that copying a database preserves its ID and that an old copy cannot resolve
+an uncertain executor outcome merely because its effect is missing.
+
+This mode is a trusted library only, not installed in the activation/forest or CLI
+runtime. Operators must not silently switch those raw open paths or reuse an ID
+to restore lost storage. Physical/copy fencing, independently retained database
+positions, safe no-effect disposition, all-replica authority and live transport
+remain open. Process tests cover initialization on both sides of commit, four
+bound effect boundaries, and the 71 independent executor-stage crash boundaries.
+
 ## Implemented reference kernel
 
 The version-0 kernel operates on one independently pinned immutable assignment.

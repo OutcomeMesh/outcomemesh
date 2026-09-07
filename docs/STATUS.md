@@ -663,6 +663,26 @@ Implemented in an isolated, not-yet-activated consensus package:
   all 271 authority/executor kill cases. Transition fuzzing completed 100,000
   inputs; integration test binaries built for Linux and Windows, with execution
   verified on macOS only. The first process run's separate failure is retained below.
+  Storage-incarnation follow-up (2026-09-07): a new opt-in WorkChain mode binds
+  a fresh caller-selected ID to database initialization, requires the independent
+  pin on reopen, and refuses missing/legacy identity or raw-mode downgrade.
+  Version-1 prune requests retain that ID before admission, require independent
+  stage pins and carry it into the atomic version-1 effect. Another incarnation
+  is rejected before start and under the chain prune lock; bound stores refuse
+  unticketed pruning. Schema 6/7 separates these databases from unchanged raw
+  schema 4/5; version-0 request/effect bytes and IDs remain unchanged. Both new
+  formats have canonical fixtures and fuzz coverage. Recovery from an old copy
+  with the same ID remains unresolved when its effect is missing: no re-execution,
+  no fabricated no-effect disposition and no automatic completion. Copy retention
+  is explicitly tested as a limitation, not advertised as physical/copy fencing.
+  All 77 new process boundaries passed with race detection: two initialization,
+  four atomic effect and 71 executor/pin publication cases. Each updated codec
+  completed 100,000 fuzz inputs. Repository-wide tests, race detection and vet
+  passed; the complete process gate now includes 342 authority/executor crash
+  cases and the six new WorkChain cases. WorkChain and executor integration
+  binaries built for Linux and Windows; execution was verified on macOS only.
+  This is local library groundwork, not physical storage identity, independent
+  database-position recovery or live CLI integration.
   Process-gate observation (2026-09-07): the first combined run stopped at
   `TestProcessTieCampaignStorageFailuresRecoverWithoutFalseAdvance/observer_confirmation_after_link`
   because the expected confirmation marker was absent. Five isolated repetitions

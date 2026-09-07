@@ -17,25 +17,28 @@ import (
 )
 
 const (
-	workSchemaVersion         uint16 = 4
-	workEffectSchemaVersion   uint16 = 5 // opt-in, atomically installed with the first ticketed prune
-	maxNodeMetadataBytes             = 64 << 10
-	maxPersistedStateBytes           = 256 << 20
-	maxStateDeltaBytes               = 256 << 20
-	maxCanonicalFloorBytes           = 512
-	DefaultMaxHistoryBytes    uint64 = 64 << 30
-	DefaultForkRetention      uint64 = 4_096
-	DefaultCheckpointEvery    uint64 = 2_048
-	DefaultCheckpointKeep     uint32 = 4
-	DefaultCanonicalRetention uint64 = 0
+	workSchemaVersion            uint16 = 4
+	workEffectSchemaVersion      uint16 = 5 // opt-in, atomically installed with the first ticketed prune
+	workBoundSchemaVersion       uint16 = 6 // opt-in storage incarnation, no ticketed effects yet
+	workBoundEffectSchemaVersion uint16 = 7
+	maxNodeMetadataBytes                = 64 << 10
+	maxPersistedStateBytes              = 256 << 20
+	maxStateDeltaBytes                  = 256 << 20
+	maxCanonicalFloorBytes              = 512
+	DefaultMaxHistoryBytes       uint64 = 64 << 30
+	DefaultForkRetention         uint64 = 4_096
+	DefaultCheckpointEvery       uint64 = 2_048
+	DefaultCheckpointKeep        uint32 = 4
+	DefaultCanonicalRetention    uint64 = 0
 )
 
 var (
-	workKeySchema  = []byte{0x01, 0x01}
-	workKeyConfig  = []byte{0x01, 0x02}
-	workKeyTip     = []byte{0x01, 0x03}
-	workKeyHistory = []byte{0x01, 0x04}
-	workKeyFloor   = []byte{0x01, 0x05}
+	workKeySchema    = []byte{0x01, 0x01}
+	workKeyConfig    = []byte{0x01, 0x02}
+	workKeyTip       = []byte{0x01, 0x03}
+	workKeyHistory   = []byte{0x01, 0x04}
+	workKeyFloor     = []byte{0x01, 0x05}
+	workKeyStorageID = []byte{0x01, 0x06}
 )
 
 const (
@@ -79,16 +82,18 @@ func DefaultPolicy() Policy {
 }
 
 type workPersistence struct {
-	db              *pebble.DB
-	policy          Policy
-	historyBytes    uint64
-	checkpoints     map[types.Hash]struct{}
-	commitHook      func() error
-	afterCommitHook func()
-	pruneCommitHook func(*pebble.Batch) error
-	effectSchema    bool
-	pruneEffects    uint32
-	uncertain       bool
+	db               *pebble.DB
+	policy           Policy
+	historyBytes     uint64
+	checkpoints      map[types.Hash]struct{}
+	commitHook       func() error
+	afterCommitHook  func()
+	pruneCommitHook  func(*pebble.Batch) error
+	effectSchema     bool
+	pruneEffects     uint32
+	uncertain        bool
+	storageID        types.Hash
+	initializeCommit func(*pebble.Batch) error
 }
 
 // Open creates or reopens the isolated version-1 Pebble coordinator. All
@@ -100,8 +105,12 @@ func Open(path string, base Base, parameters workblock.Parameters) (*Store, erro
 
 // OpenWithPolicy opens the isolated store with explicit local history and fork
 // retention policy. The policy is not a consensus input and may change across
-// restarts.
+// restarts. Bound-incarnation databases require OpenBoundWithPolicy instead.
 func OpenWithPolicy(path string, base Base, parameters workblock.Parameters, policy Policy) (*Store, error) {
+	return openWithPolicy(path, base, parameters, policy, types.Hash{}, false, nil)
+}
+
+func openWithPolicy(path string, base Base, parameters workblock.Parameters, policy Policy, storageID types.Hash, existingOnly bool, initializeCommit func(*pebble.Batch) error) (*Store, error) {
 	if policy.MaxHistoryBytes == 0 {
 		return nil, storage.ErrHistoryLimit
 	}
@@ -109,14 +118,14 @@ func OpenWithPolicy(path string, base Base, parameters workblock.Parameters, pol
 	if err != nil {
 		return nil, err
 	}
-	db, err := pebble.Open(path, &pebble.Options{FormatMajorVersion: pebble.FormatNewest})
+	db, err := pebble.Open(path, &pebble.Options{FormatMajorVersion: pebble.FormatNewest, ErrorIfNotExists: existingOnly})
 	if err != nil {
 		return nil, err
 	}
 	persistence := &workPersistence{
-		db: db, policy: policy, checkpoints: make(map[types.Hash]struct{}),
+		db: db, policy: policy, checkpoints: make(map[types.Hash]struct{}), storageID: storageID, initializeCommit: initializeCommit,
 	}
-	if err := persistence.initializeOrLoad(store, base); err != nil {
+	if err := persistence.initializeOrLoad(store, base, !existingOnly); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
@@ -124,10 +133,13 @@ func OpenWithPolicy(path string, base Base, parameters workblock.Parameters, pol
 	return store, nil
 }
 
-func (persistence *workPersistence) initializeOrLoad(store *Store, base Base) error {
+func (persistence *workPersistence) initializeOrLoad(store *Store, base Base, allowInitialize bool) error {
 	configured := workConfigHash(base, store.parameters)
 	schema, err := persistence.get(workKeySchema)
 	if errors.Is(err, pebble.ErrNotFound) {
+		if !allowInitialize {
+			return errors.Join(ErrStorageBinding, storage.ErrCorrupt)
+		}
 		// Missing metadata in a used database is corruption, not bootstrap.
 		// In particular, never hide retained effect history behind a fresh base.
 		iterator, iterErr := persistence.db.NewIter(nil)
@@ -146,11 +158,30 @@ func (persistence *workPersistence) initializeOrLoad(store *Store, base Base) er
 	if err != nil {
 		return err
 	}
-	if len(schema) != 2 || (binary.BigEndian.Uint16(schema) != workSchemaVersion &&
-		binary.BigEndian.Uint16(schema) != workEffectSchemaVersion) {
+	if len(schema) != 2 {
 		return storage.ErrCorrupt
 	}
-	persistence.effectSchema = binary.BigEndian.Uint16(schema) == workEffectSchemaVersion
+	version := binary.BigEndian.Uint16(schema)
+	if version != workSchemaVersion && version != workEffectSchemaVersion &&
+		version != workBoundSchemaVersion && version != workBoundEffectSchemaVersion {
+		return storage.ErrCorrupt
+	}
+	bound := version == workBoundSchemaVersion || version == workBoundEffectSchemaVersion
+	if bound != !persistence.storageID.IsZero() {
+		return ErrStorageBinding
+	}
+	storedID, idErr := persistence.get(workKeyStorageID)
+	if bound {
+		if idErr != nil || len(storedID) != types.HashSize {
+			return errors.Join(ErrStorageBinding, storage.ErrCorrupt, idErr)
+		}
+		if !bytes.Equal(storedID, persistence.storageID[:]) {
+			return ErrStorageBinding
+		}
+	} else if !errors.Is(idErr, pebble.ErrNotFound) {
+		return errors.Join(storage.ErrCorrupt, idErr)
+	}
+	persistence.effectSchema = version == workEffectSchemaVersion || version == workBoundEffectSchemaVersion
 	storedConfig, err := persistence.get(workKeyConfig)
 	if err != nil {
 		return err
@@ -174,6 +205,12 @@ func (persistence *workPersistence) initialize(base *chainNode, config types.Has
 	defer batch.Close()
 	var schema [2]byte
 	binary.BigEndian.PutUint16(schema[:], workSchemaVersion)
+	if !persistence.storageID.IsZero() {
+		binary.BigEndian.PutUint16(schema[:], workBoundSchemaVersion)
+		if err := batch.Set(workKeyStorageID, persistence.storageID[:], nil); err != nil {
+			return err
+		}
+	}
 	baseNodeKey := workNodeKey(base.tip.ID)
 	baseStateKey := workStateKey(base.tip.ID)
 	historyBytes, err := checkedHistoryBytes(
@@ -195,7 +232,11 @@ func (persistence *workPersistence) initialize(base *chainNode, config types.Has
 			return err
 		}
 	}
-	if err := batch.Commit(pebble.Sync); err != nil {
+	commit := persistence.initializeCommit
+	if commit == nil {
+		commit = func(batch *pebble.Batch) error { return batch.Commit(pebble.Sync) }
+	}
+	if err := commit(batch); err != nil {
 		return err
 	}
 	persistence.historyBytes = historyBytes
@@ -452,6 +493,9 @@ func (persistence *workPersistence) pruneCanonicalPrefix(
 		}
 		var schema [2]byte
 		binary.BigEndian.PutUint16(schema[:], workEffectSchemaVersion)
+		if !persistence.storageID.IsZero() {
+			binary.BigEndian.PutUint16(schema[:], workBoundEffectSchemaVersion)
+		}
 		if err := batch.Set(workKeySchema, schema[:], nil); err != nil {
 			return 0, 0, err
 		}
@@ -1343,7 +1387,8 @@ func (persistence *workPersistence) historyUsage(
 			effectCount++
 			effect, decodeErr := DecodeCanonicalPruneEffect(iterator.Value())
 			if !persistence.effectSchema || !floor.Pruned || decodeErr != nil ||
-				effect.Operation.TicketID != id || effect.Operation.Boundary.BaseID != baseID {
+				effect.Operation.TicketID != id || effect.Operation.Boundary.BaseID != baseID ||
+				effect.Operation.StorageID != persistence.storageID {
 				return 0, nil, nil, storage.ErrCorrupt
 			}
 		default:

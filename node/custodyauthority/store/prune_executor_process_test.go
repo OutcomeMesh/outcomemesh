@@ -268,7 +268,12 @@ func TestPruneExecutorCrashHelper(t *testing.T) {
 	}
 	defer coordinator.Close()
 	base, parameters, policy := pruneChainConfig()
-	chain, err := workchain.OpenWithPolicy(os.Getenv("OUTCOMEMESH_PRUNE_CHAIN"), base, parameters, policy)
+	var chain *workchain.Store
+	if request.StorageID.IsZero() {
+		chain, err = workchain.OpenWithPolicy(os.Getenv("OUTCOMEMESH_PRUNE_CHAIN"), base, parameters, policy)
+	} else {
+		chain, err = workchain.OpenBoundWithPolicy(os.Getenv("OUTCOMEMESH_PRUNE_CHAIN"), base, parameters, policy, request.StorageID)
+	}
 	if err != nil {
 		t.Fatal(err)
 	}

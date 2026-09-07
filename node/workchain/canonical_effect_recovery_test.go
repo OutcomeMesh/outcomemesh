@@ -70,7 +70,7 @@ func TestCanonicalPruneEffectRejectsCorruptRecovery(t *testing.T) {
 			case "schema-downgrade":
 				put(workKeySchema, []byte{0, byte(workSchemaVersion)})
 			case "unknown-schema":
-				put(workKeySchema, []byte{0, 6})
+				put(workKeySchema, []byte{0xff, 0xff})
 			case "missing-schema":
 				remove(workKeySchema)
 			case "floor-untagged", "floor-wrong-ticket", "floor-wrong-time", "floor-wrong-evidence":

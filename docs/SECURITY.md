@@ -505,6 +505,22 @@ no-effect disposition, network authorization and all live acceptance-path adapte
 remain deployment gates. Full archive verification/freshness remains the trusted
 caller's obligation; the helper must not be exposed as a public policy bypass.
 
+The opt-in storage-incarnation mode adds a narrower local guarantee. A fresh
+caller-selected ID is atomically bound to a new schema-6 WorkChain database;
+reopen needs the independently retained ID and never initializes missing data.
+Bound requests require independent executor stage pins, commit that ID before
+authority admission, and check it before start and under the actual prune lock.
+The result retains the ID in the same deletion batch (schema 7); wrong-ID or
+unbound effects cannot replay in that database. Legacy unbound pruning is refused
+on bound handles. Existing raw schema 4/5 and version-0 evidence stay unchanged.
+An ID copied with the database is still the same logical incarnation; reusing it
+to initialize lost/replacement storage defeats this distinction. Tests explicitly
+preserve an old copy, show its ID still matches, and verify that missing results
+leave Started work pending without re-execution or completion. This is not a
+physical-device identity, fencing token, monotonic database position or backup
+freshness assertion. No-effect recovery and production runtime integration remain
+open; historical Succeeded evidence is not live authority or current storage proof.
+
 Availability files now use no-replace publication. Exact retries verify and
 fsync the existing regular inode; conflicting bundles, damaged files, and
 symlinks are rejected without replacing the path. A failure after publication
