@@ -501,9 +501,29 @@ identity or fencing of copied roots. Independently protected storage/access-cont
 deployment is still required. Do not recreate journals as recovery or reuse tickets
 on another chain database. A one-assignment guard does not establish the custody
 quorum across every replica assignment. Physical storage identity/pins, durable
-no-effect disposition, network authorization and all live acceptance-path adapters
-remain deployment gates. Full archive verification/freshness remains the trusted
-caller's obligation; the helper must not be exposed as a public policy bypass.
+no-effect disposition for Started work, network authorization and all live
+acceptance-path adapters remain deployment gates. Full archive verification/freshness
+remains the trusted caller's obligation; the helper must not be exposed as a public
+policy bypass.
+
+An independently pinned executor can now explicitly cancel **before any start
+intent** under its current pending-ticket guard. Independent intent, a distinct
+terminal cancellation record and confirmation make that local branch irreversible;
+raw journals cannot use it. It accepts no database handle, inspects no absence and
+cannot cancel Started/Succeeded work. Unconfirmed start intent is also ineligible,
+even if the primary still appears Admitted. Resume can finish an existing exact
+cancellation, never replace a start with one or execute cancelled work. A separate
+consumer-signed completion and authority decision are still required to close the
+ticket. The retained cancellation ID is not itself a completion or a reusable grant.
+
+The 138-byte version-0 cancellation binds assignment/request/ticket/pair but is
+unsigned. Its decoder proves shape only, not that this decision was made or that
+another copied executor never acted. Correctly retained independent pins detect
+primary-only rollback; shared rollback, copied roots/keys, hostile owner edits and
+unfenced remote consumers remain outside the guarantee. Mixed start/cancellation
+branches and records following cancellation are rejected. Older binaries reject
+the new terminal filename; no fallback, history repair or operation reuse is
+permitted. Unknown Started outcomes can still block retirement indefinitely.
 
 The opt-in storage-incarnation mode adds a narrower local guarantee. A fresh
 caller-selected ID is atomically bound to a new schema-6 WorkChain database;

@@ -20,6 +20,7 @@ const (
 	PruneAdmitted
 	PruneStarted
 	PruneSucceeded
+	PruneCancelled // terminal alternative to Started, never follows a start
 )
 
 const (
@@ -35,11 +36,12 @@ var pruneRecordNames = [...]string{"01-admission.omcae", "02-started.omcps", "03
 // current availability assertion. A Started operation may have no effect, a
 // committed effect, or an outcome that cannot yet be resolved.
 type PruneExecution struct {
-	RequestID types.Hash
-	Request   PruneRequest
-	Stage     PruneStage
-	Admission *custodyauthority.Entry
-	Effect    *workchain.CanonicalPruneEffect
+	RequestID    types.Hash
+	Request      PruneRequest
+	Stage        PruneStage
+	Admission    *custodyauthority.Entry
+	Effect       *workchain.CanonicalPruneEffect
+	Cancellation *PruneCancellation
 	// Protection is nil for raw version-0 journals. With independent pins, Stage
 	// may be one exact unconfirmed transition ahead of Protection.Confirmed.
 	Protection *PruneProtection
@@ -52,19 +54,20 @@ type PruneExecution struct {
 // requests. Neither mode provides physical identity, shared-rollback protection
 // or networking.
 type PruneExecutor struct {
-	mu         sync.Mutex
-	path       string
-	lock       *os.File
-	identity   map[string]os.FileInfo
-	assignment custodyauthority.Assignment
-	request    PruneRequest
-	id         types.Hash
-	stage      PruneStage
-	admission  *custodyauthority.Entry
-	effect     *workchain.CanonicalPruneEffect
-	failed     bool
-	hooks      storeHooks
-	pins       *prunePinJournal
+	mu           sync.Mutex
+	path         string
+	lock         *os.File
+	identity     map[string]os.FileInfo
+	assignment   custodyauthority.Assignment
+	request      PruneRequest
+	id           types.Hash
+	stage        PruneStage
+	admission    *custodyauthority.Entry
+	effect       *workchain.CanonicalPruneEffect
+	cancellation *PruneCancellation
+	failed       bool
+	hooks        storeHooks
+	pins         *prunePinJournal
 }
 
 func pruneReadyBytes(id types.Hash) []byte { return append([]byte("OMCPINIT\x00\x00"), id[:]...) }
@@ -234,9 +237,6 @@ func loadPruneExecutor(path string, lock *os.File, assignment custodyauthority.A
 	}
 	executor := &PruneExecutor{path: path, lock: lock, identity: identity, assignment: assignment, request: request, id: expectedID, stage: PrunePrepared, hooks: hooks}
 	for index, name := range names {
-		if name != pruneRecordNames[index] {
-			return nil, ErrPruneStage
-		}
 		key := filepath.Join(pruneRecordsName, name)
 		encoded, err := readRegular(filepath.Join(path, key), workchain.MaximumCanonicalPruneEffectBytes)
 		if err != nil {
@@ -244,6 +244,12 @@ func loadPruneExecutor(path string, lock *os.File, assignment custodyauthority.A
 		}
 		next, err := advancePruneExecution(assignment, executor.execution(), encoded)
 		if err != nil {
+			return nil, err
+		}
+		if name != pruneRecordName(index, next.Stage) {
+			return nil, ErrPruneStage
+		}
+		if err := checkCancellationBinding(next, binding); err != nil {
 			return nil, err
 		}
 		executor.installExecution(next)
@@ -288,11 +294,11 @@ func (executor *PruneExecutor) check() error {
 		}
 	}
 	names, err := boundedNames(filepath.Join(executor.path, pruneRecordsName), len(pruneRecordNames))
-	if err != nil || len(names) != int(executor.stage-PrunePrepared) {
+	if err != nil || len(names) != pruneRecordCount(executor.stage) {
 		return executor.poison(errors.Join(ErrPruneStage, err))
 	}
 	for index, name := range names {
-		if name != pruneRecordNames[index] {
+		if name != pruneRecordName(index, executor.stage) {
 			return executor.poison(ErrPruneStage)
 		}
 	}
@@ -316,11 +322,12 @@ func (executor *PruneExecutor) operationCheck() error {
 
 // execution is an internal view, only used while the executor is locked.
 func (executor *PruneExecutor) execution() PruneExecution {
-	return PruneExecution{RequestID: executor.id, Request: executor.request, Stage: executor.stage, Admission: executor.admission, Effect: executor.effect}
+	return PruneExecution{RequestID: executor.id, Request: executor.request, Stage: executor.stage, Admission: executor.admission, Effect: executor.effect, Cancellation: executor.cancellation}
 }
 
 func (executor *PruneExecutor) installExecution(next PruneExecution) {
 	executor.stage, executor.admission, executor.effect = next.Stage, next.Admission, next.Effect
+	executor.cancellation = next.Cancellation
 }
 func (executor *PruneExecutor) poison(err error) error {
 	executor.failed = true
@@ -347,6 +354,10 @@ func (executor *PruneExecutor) Snapshot() (PruneExecution, error) {
 		encoded, _ := executor.effect.CanonicalBytes()
 		effect, _ := workchain.DecodeCanonicalPruneEffect(encoded)
 		result.Effect = &effect
+	}
+	if executor.cancellation != nil {
+		cancellation := *executor.cancellation
+		result.Cancellation = &cancellation
 	}
 	if executor.pins != nil {
 		protection := executor.pins.protection()
@@ -435,6 +446,9 @@ func (executor *PruneExecutor) Execute(ctx context.Context, coordinator *Coordin
 	if executor.stage == PruneSucceeded {
 		return executor.retainedResult(), nil
 	}
+	if executor.stage == PruneCancelled {
+		return workchain.CanonicalPruneCommit{}, ErrPruneCancelled
+	}
 	if executor.stage == PruneStarted {
 		return workchain.CanonicalPruneCommit{}, ErrPruneOutcome
 	}
@@ -515,6 +529,9 @@ func (executor *PruneExecutor) Recover(ctx context.Context, chain *workchain.Sto
 	if executor.stage == PruneSucceeded {
 		return executor.retainedResult(), nil
 	}
+	if executor.stage == PruneCancelled {
+		return workchain.CanonicalPruneCommit{}, ErrPruneCancelled
+	}
 	if executor.stage != PruneStarted {
 		return workchain.CanonicalPruneCommit{}, ErrPruneStage
 	}
@@ -578,8 +595,19 @@ func (executor *PruneExecutor) publish(ctx context.Context, index int, encoded [
 }
 
 func (executor *PruneExecutor) publishRecord(ctx context.Context, index int, encoded []byte, prefix string) error {
-	if int(executor.stage-PrunePrepared) != index || len(encoded) > workchain.MaximumCanonicalPruneEffectBytes {
+	if pruneRecordCount(executor.stage) != index || len(encoded) > workchain.MaximumCanonicalPruneEffectBytes {
 		return ErrPruneStage
+	}
+	next, err := advancePruneExecution(executor.assignment, executor.execution(), encoded)
+	if err != nil {
+		return err
+	}
+	var binding types.Hash
+	if executor.pins != nil {
+		binding = executor.pins.binding
+	}
+	if err := checkCancellationBinding(next, binding); err != nil {
+		return err
 	}
 	count, err := inspectSizedPending(executor.path, workchain.MaximumCanonicalPruneEffectBytes)
 	if err != nil {
@@ -608,7 +636,7 @@ func (executor *PruneExecutor) publishRecord(ctx context.Context, index int, enc
 	if err := executor.check(); err != nil {
 		return err
 	}
-	key := filepath.Join(pruneRecordsName, pruneRecordNames[index])
+	key := filepath.Join(pruneRecordsName, pruneRecordName(index, next.Stage))
 	destination := filepath.Join(executor.path, key)
 	if err := os.Link(file.Name(), destination); err != nil {
 		return executor.poison(err)

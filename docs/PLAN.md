@@ -338,6 +338,15 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
             (including all required replica assignments, not just one guard).
             Do not infer a safe retry from absence in a replaced/rolled-back
             database, or sign completion from a generic callback return alone.
+            - [x] Pinned local cancellation before any retained start: persist an
+              irreversible terminal branch under the executor and pending-ticket
+              guard, independently confirm it, and return a request/ticket/pair-
+              bound cancellation record. Never inspect database absence, cancel
+              a retained or uncertain start, complete authority automatically or
+              reuse a cancelled operation. Test cancellation/execution races,
+              21 publication-fault boundaries, 14 resume errors and 42 process
+              kills. This does not resolve Started outcomes, fence copied
+              executors or supply completion transport.
   - [ ] Filesystem-full, inode-exhaustion, power-loss, and long-running retention
     campaigns before deployment claims.
   - [x] Isolate the intermittent 2026-09-07 process failure in the campaign

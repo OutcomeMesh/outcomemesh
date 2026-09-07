@@ -528,6 +528,8 @@ func FuzzPrunePinTransitions(f *testing.F) {
 		f.Fatal(err)
 	}
 	f.Add(a, b, c)
+	cancellation, _ := (PruneCancellation{AssignmentID: r.AssignmentID, RequestID: id, TicketID: ticket, BindingID: testHash(91)}).CanonicalBytes()
+	f.Add(a, cancellation, []byte{})
 	f.Add([]byte{}, []byte{}, []byte{})
 	f.Fuzz(func(t *testing.T, first, second, third []byte) {
 		current := PruneExecution{RequestID: id, Request: r, Stage: PrunePrepared}
@@ -547,6 +549,8 @@ func FuzzPrunePinTransitions(f *testing.F) {
 				canonical = pruneStartedBytes(id, retainedTicket)
 			case PruneSucceeded:
 				canonical, err = next.Effect.CanonicalBytes()
+			case PruneCancelled:
+				canonical, err = next.Cancellation.CanonicalBytes()
 			}
 			if err != nil || !bytes.Equal(canonical, encoded) {
 				t.Fatal("noncanonical transition accepted", err)

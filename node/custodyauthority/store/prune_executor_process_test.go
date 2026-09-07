@@ -228,8 +228,9 @@ func TestPruneExecutorCrashHelper(t *testing.T) {
 	}
 	path, marker := os.Getenv("OUTCOMEMESH_PRUNE_EXECUTOR"), os.Getenv("OUTCOMEMESH_PRUNE_MARKER")
 	pinPath := os.Getenv("OUTCOMEMESH_PRUNE_EXECUTOR_PINS")
+	boundaryStage := strings.TrimPrefix(stage, "resume/")
 	hooks := storeHooks{at: func(at string) error {
-		if at == stage {
+		if at == boundaryStage {
 			writeTestFile(t, marker, []byte(stage))
 			select {}
 		}
@@ -267,6 +268,15 @@ func TestPruneExecutorCrashHelper(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer coordinator.Close()
+	if strings.Contains(stage, "cancel-") {
+		if strings.HasPrefix(stage, "resume/") {
+			err = executor.ResumePinnedTransition(t.Context())
+		} else {
+			_, err = executor.CancelBeforeStart(t.Context(), coordinator)
+		}
+		writeTestFile(t, marker+".ack", nil)
+		t.Fatal("cancellation returned before kill", err)
+	}
 	base, parameters, policy := pruneChainConfig()
 	var chain *workchain.Store
 	if request.StorageID.IsZero() {

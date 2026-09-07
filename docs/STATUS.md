@@ -706,6 +706,27 @@ Implemented in an isolated, not-yet-activated consensus package:
   Windows; execution was verified on macOS only.
   The complete process gate passed, including 100 WorkChain crash cases and all
   342 authority/executor cases, alongside the existing QUIC/archive restart gates.
+  Pre-start cancellation follow-up (2026-09-07): an independently pinned executor
+  can now choose an irreversible cancellation branch while Admitted, before any
+  retained start intent. It holds the current pending-ticket guard through the
+  independent intent, primary record and confirmation. No WorkChain handle or
+  database absence is consulted. A retained or uncertain start cannot be cancelled;
+  explicit resume only finishes the exact branch already chosen. The new 138-byte
+  envelope binds assignment, request, ticket and executor pair; old execution
+  formats and hashes are unchanged. Older readers reject the new terminal filename.
+  The authority ticket stays pending until a separate consumer-signed completion
+  receives an authority decision. Cancellation bytes alone prove neither durable
+  publication nor global non-execution; copied roots, shared rollback, unfenced
+  consumers, unknown Started outcomes and live completion transport remain open.
+  Validation passed: execution/cancellation races, held guards, stopping drain,
+  authority and start-intent refusal, rollback/mixed-history rejection, 21 injected
+  publication faults, 14 resume errors, directory-sync and caller-cancellation
+  cases. All 42 new process-kill cases passed with race detection. The cancellation
+  codec and updated transition state machine each completed 100,000 fuzz inputs.
+  Repository-wide tests, race detection and vet passed, as did the complete process
+  gate with 100 WorkChain and 384 authority/executor crash cases plus the existing
+  QUIC/archive suites. Executor integration binaries built for Linux and Windows;
+  process execution was verified on macOS only.
   Process-gate observation (2026-09-07): the first combined run stopped at
   `TestProcessTieCampaignStorageFailuresRecoverWithoutFalseAdvance/observer_confirmation_after_link`
   because the expected confirmation marker was absent. Five isolated repetitions

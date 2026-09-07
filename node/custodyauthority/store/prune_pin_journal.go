@@ -177,15 +177,18 @@ func loadPrunePinJournal(path string, lock *os.File, assignment custodyauthority
 		state:    PruneExecution{RequestID: id, Request: request, Stage: PrunePrepared},
 		position: PrunePosition{Stage: PrunePrepared, HeadID: id}, hooks: hooks}
 	for index, name := range intents {
-		if name != pruneRecordNames[index] {
-			return nil, ErrPrunePin
-		}
 		encoded, err := pins.readRetained(filepath.Join(intentsName, name))
 		if err != nil {
 			return nil, err
 		}
 		next, err := advancePruneExecution(assignment, pins.state, encoded)
 		if err != nil {
+			return nil, err
+		}
+		if name != pruneRecordName(index, next.Stage) {
+			return nil, ErrPrunePin
+		}
+		if err := checkCancellationBinding(next, binding); err != nil {
 			return nil, err
 		}
 		position := nextPrunePosition(pins.position, encoded)
@@ -268,7 +271,15 @@ func (pins *prunePinJournal) check() error {
 			return pins.poison(errors.Join(ErrPrunePin, err))
 		}
 		for index, name := range actual {
-			if name != names[index] {
+			expected := names[index]
+			if directory == intentsName {
+				stage := pins.state.Stage
+				if pins.pending != nil {
+					stage = pins.next.Stage
+				}
+				expected = pruneRecordName(index, stage)
+			}
+			if name != expected {
 				return pins.poison(ErrPrunePin)
 			}
 		}
@@ -348,9 +359,12 @@ func (pins *prunePinJournal) prepare(ctx context.Context, encoded []byte) error 
 	if err != nil {
 		return err
 	}
-	index := int(pins.position.Stage - PrunePrepared)
-	prefix := []string{"pins-admission-intent", "pins-start-intent", "pins-result-intent"}[index]
-	if err := pins.publish(ctx, intentsName, pruneRecordNames[index], encoded, prefix); err != nil {
+	if err := checkCancellationBinding(next, pins.binding); err != nil {
+		return err
+	}
+	index := pruneRecordCount(pins.position.Stage)
+	prefix := "pins-" + pruneTransitionLabel(index, next.Stage) + "-intent"
+	if err := pins.publish(ctx, intentsName, pruneRecordName(index, next.Stage), encoded, prefix); err != nil {
 		return err
 	}
 	pins.pending, pins.next = append([]byte(nil), encoded...), next
@@ -371,8 +385,8 @@ func (pins *prunePinJournal) confirm(executor *PruneExecutor) error {
 	if executor.stage != position.Stage {
 		return pins.poison(ErrPrunePin)
 	}
-	index := int(pins.position.Stage - PrunePrepared)
-	prefix := []string{"pins-admission-confirm", "pins-start-confirm", "pins-result-confirm"}[index]
+	index := pruneRecordCount(pins.position.Stage)
+	prefix := "pins-" + pruneTransitionLabel(index, pins.next.Stage) + "-confirm"
 	// Only a verified durable local publication advances a confirmed pin. Finish
 	// this publication even if the caller cancels after that primary result.
 	if err := pins.publish(context.Background(), confirmedName, prunePinConfirmNames[index], pruneConfirmationBytes(pins.state.RequestID, position), prefix); err != nil {

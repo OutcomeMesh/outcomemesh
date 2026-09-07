@@ -53,6 +53,14 @@ func advancePruneExecution(assignment custodyauthority.Assignment, current Prune
 		if current.Admission == nil {
 			return PruneExecution{}, ErrPruneStage
 		}
+		if bytes.HasPrefix(encoded, pruneCancellationMagic) {
+			cancellation, err := DecodePruneCancellation(encoded)
+			if err != nil || !cancellationMatches(current, cancellation) {
+				return PruneExecution{}, ErrPruneStage
+			}
+			next.Stage, next.Cancellation = PruneCancelled, &cancellation
+			return next, nil
+		}
 		ticket, err := current.Admission.ID()
 		if err != nil || !bytes.Equal(encoded, pruneStartedBytes(current.RequestID, ticket)) {
 			return PruneExecution{}, ErrPruneStage
@@ -75,6 +83,9 @@ func advancePruneExecution(assignment custodyauthority.Assignment, current Prune
 
 func nextPrunePosition(previous PrunePosition, encoded []byte) PrunePosition {
 	stage := previous.Stage + 1
+	if previous.Stage == PruneAdmitted && bytes.HasPrefix(encoded, pruneCancellationMagic) {
+		stage = PruneCancelled
+	}
 	return PrunePosition{Stage: stage, HeadID: types.DomainHash("OMESH/custody-prune/position/id/v0", previous.HeadID[:], []byte{byte(stage)}, encoded)}
 }
 
@@ -164,6 +175,8 @@ func OpenPinnedPruneExecutor(path, pinPath string, assignment custodyauthority.A
 // Resuming a start leaves Started, even if no effect has occurred: Execute cannot
 // retry it. Resuming a result retains evidence already obtained before its intent
 // was written. Absence of a chain result is never used to invent a disposition.
+// Resuming a cancellation only finishes the exact pre-start terminal choice;
+// an existing start intent can never be replaced by cancellation.
 func (executor *PruneExecutor) ResumePinnedTransition(ctx context.Context) error {
 	if executor == nil {
 		return ErrClosed
@@ -184,8 +197,8 @@ func (executor *PruneExecutor) ResumePinnedTransition(ctx context.Context) error
 		return ErrNoAttempt
 	}
 	if executor.stage == pins.position.Stage {
-		index := int(executor.stage - PrunePrepared)
-		prefix := []string{"prune-admission", "prune-start", "prune-result"}[index]
+		index := pruneRecordCount(executor.stage)
+		prefix := "prune-" + pruneTransitionLabel(index, pins.next.Stage)
 		if err := executor.publishRecord(ctx, index, pins.pending, prefix); err != nil {
 			return err
 		}
@@ -211,20 +224,20 @@ func (pins *prunePinJournal) verifyExecutor(executor *PruneExecutor) error {
 	if err := pins.check(); err != nil {
 		return err
 	}
-	if executor.id != pins.state.RequestID || executor.stage < pins.position.Stage || executor.stage > pins.position.Stage+1 ||
-		(executor.stage > pins.position.Stage && pins.pending == nil) {
+	if executor.id != pins.state.RequestID || (executor.stage != pins.state.Stage &&
+		(pins.pending == nil || executor.stage != pins.next.Stage)) {
 		return ErrPrunePin
 	}
 	// A confirmed missing record is never reconstructed from intent bytes. Only
 	// an UNCONFIRMED exact next transition may be absent or present at open.
-	for index := 0; index < int(executor.stage-PrunePrepared); index++ {
+	for index := 0; index < pruneRecordCount(executor.stage); index++ {
 		var expected []byte
 		if index < len(pins.records) {
 			expected = pins.records[index]
 		} else {
 			expected = pins.pending
 		}
-		actual, err := readRegular(filepath.Join(executor.path, pruneRecordsName, pruneRecordNames[index]), workchain.MaximumCanonicalPruneEffectBytes)
+		actual, err := readRegular(filepath.Join(executor.path, pruneRecordsName, pruneRecordName(index, executor.stage)), workchain.MaximumCanonicalPruneEffectBytes)
 		if err != nil || !bytes.Equal(expected, actual) {
 			return errors.Join(ErrPrunePin, err)
 		}

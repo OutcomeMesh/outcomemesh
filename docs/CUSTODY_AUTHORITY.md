@@ -133,7 +133,9 @@ prune-executor/
   pending/entry-<decimal>        at most 128 crash/failed temporary records
 ```
 
-The three record names must form an exact prefix. Dependencies, bindings,
+For the execution branch, the three record names must form an exact prefix;
+the pinned cancellation branch below uses a distinct terminal second record.
+Dependencies, bindings,
 signatures, types, sizes and the final initialization marker are checked on open.
 Required files/directories/locks are never recreated. Existing or partial roots
 cannot be reinitialized. Accepted records and namespaces are re-synced before
@@ -146,9 +148,10 @@ replacement is rejected. Logical limits do not guarantee filesystem capacity.
 | Retained stage | Permitted next action |
 | --- | --- |
 | `Prepared` | Bind the exact admission only after confirming that ticket is currently pending in the local coordinator |
-| `Admitted` | Check chain network/activation/base, then persist `Started` under the current pending-ticket guard before calling atomic pruning |
+| `Admitted` | Check chain network/activation/base, then persist `Started` under the current pending-ticket guard before calling atomic pruning; independently pinned executors may instead explicitly cancel before any start intent |
 | `Started` | Explicit `Recover` may inspect the concrete chain's existing result; `Execute` never reruns this stage |
 | `Succeeded` | Return detached original evidence without effect execution, time refresh or authority completion |
+| `Cancelled` (pinned only) | Return retained pre-start cancellation evidence; never execute or invent a positive prune result |
 
 `Coordinator.WithOperation` verifies the exact assignment/ticket/consumer/
 operation/purpose against its private confirmed state. An unconfirmed retained
@@ -162,7 +165,7 @@ Lock order is executor, coordinator, WorkChain. Binding/execution check that the
 executor and both authority roots are disjoint. All directories must be selected
 as separate owner-controlled roots before creation; those checks do not establish
 physical failure domains. `Execute` keeps the authority guard through the durable
-start, concrete atomic effect, and durable result publication. Cancellation before
+start, concrete atomic effect, and durable result publication. Context cancellation before
 start publication preserves `Admitted`; cancellation or error after a retained
 start leaves unresolved work. Once the effect succeeds, result publication finishes
 despite caller cancellation. The successful result is still not a signed `Complete`.
@@ -257,7 +260,7 @@ the current guard. Resuming a start leaves `Started`, which cannot execute again
 Resuming a result retains the exact outcome already obtained before its intent
 was written, not a result fabricated from absence in another database.
 
-Cancellation before intent publication may leave only an unpromoted temporary
+Context cancellation before intent publication may leave only an unpromoted temporary
 file. Once an intent exists it cannot be abandoned or replaced; even cancellation
 before primary start publication requires explicit resume and may leave an
 unresolved start indefinitely. Confirmation after durable primary publication
@@ -266,9 +269,10 @@ finishes despite caller cancellation. A missing chain effect remains unknown.
 Independent pins detect rollback of the primary's confirmed prefix while the pin
 root remains intact. Rolling both roots back together can still agree. Operators
 must independently retain/protect the configured pin root; the library does not
-prove storage/access-control failure domains. Physical chain identity, chain
-rollback/replacement detection, no-effect dispositions, multi-replica authority,
-transport and live runtime integration remain open. No signing key is retained.
+prove storage/access-control failure domains. Separate modes below add pre-start
+cancellation and local WorkChain position pins; they do not establish physical
+identity, resolve unknown Started effects, fence copies, or install multi-replica
+authority, transport and live runtime integration. No signing key is retained.
 
 Tests cover 63 transition publication failures, stage-exact reopen, cancellation,
 independent directory-sync failures, prefix rollback, missing/altered pins, wrong
@@ -276,6 +280,70 @@ pairs, raw-mode downgrade, ownership and resource bounds. Another 71 process kil
 cover the three publications of every transition, both initialization sequences,
 and the before/after-effect points. This is local crash evidence, not power-loss
 or shared-storage rollback certification.
+
+### Explicit cancellation before any start
+
+`PruneExecutor.CancelBeforeStart(ctx, coordinator)` adds one narrow terminal
+decision: an independently pinned `Admitted` executor may irrevocably choose
+`Cancelled` **instead of** ever recording `Started`. It requires a currently
+pending exact ticket in the private local coordinator and holds the same executor
+and authority locks through independent intent, primary record and confirmation.
+`Stopping` allows this admitted work to drain. Unknown/completed/retired tickets,
+unconfirmed authority, missing stage pins and any pending executor transition
+are refused. Raw executors cannot use or reopen this branch.
+
+This API takes no database handle and never queries chain state or absence.
+`Started` and `Succeeded` cannot transition to cancellation. In particular, a
+retained **start intent** blocks cancellation even when the primary still says
+`Admitted`: resuming that intent produces `Started`, not `Cancelled`. Expiry,
+context cancellation, a known authorization error, process death and a missing
+chain effect cannot turn an already-started operation into a no-effect outcome.
+The existing unresolved-start rule remains unchanged.
+
+The version-0 `OMCPCNCL` envelope is exactly 138 bytes: eight magic bytes, a
+big-endian uint16 zero version, then 32-byte assignment, request, admission-ticket
+and executor-pair-binding IDs. Every ID must be nonzero; replay checks all four
+against the retained request/admission and independent pair. Its identity domain
+is `OMESH/custody-prune/cancellation/id/v0`; the golden fixture is
+`de61c6a6e5adc1af6e6dc172e71599c6023c4a9d12470c44756fd54ccd3277c3`.
+This is an unsigned retained **decision**, not an independently verifiable proof
+of global non-execution. Decoding or hashing these bytes does not establish that
+the decision was ever durably made by the executor.
+
+The independent intent is `intents/02-cancelled.omcpc`; the matching primary file
+is `records/02-cancelled.omcpc`. Neither may coexist with `02-started.omcps`, and no
+third record may follow cancellation. Confirmation remains `confirmed/02.omcpp`
+but binds terminal stage 5 and the exact cancellation head. Stages 1–4, old
+execution record names, request/effect bytes and position hashes are unchanged.
+Older binaries reject the new second-record name instead of reopening a cancelled
+operation as executable. No automatic migration or fresh pin attachment is added.
+
+Open only checks the retained branch; it never chooses or confirms cancellation.
+One unconfirmed cancellation intent requires `ResumePinnedTransition`, which can
+only publish/confirm those exact retained bytes. After an intent exists, a caller
+cannot change its mind and execute. Confirmation finishes despite caller context
+cancellation after primary publication; I/O uncertainty still poisons the handle.
+Snapshots expose detached `Cancellation` and independent `Protection` fields;
+normal operations stay gated until confirmation. A confirmed retry returns the
+original cancellation without needing a current coordinator. `Execute` and
+positive-effect `Recover` return `ErrPruneCancelled` without touching WorkChain.
+
+The ticket stays pending at the authority until a **separate** consumer-signed
+`Complete` using the retained cancellation ID receives an authority decision.
+Cancellation neither signs that command nor releases, re-admits or reuses the
+operation. The deployment must trust and fence the actual consumer that makes
+this acknowledgement; copied executor roots, shared rollback and remote old
+consumers are not covered. Unknown Started effects, physical fencing, current
+authority/completion transport and all live acceptance-path adapters remain open.
+
+Tests cover execution/cancellation races, stopping drain, held guards, absent or
+unconfirmed authority, start-intent refusal, mixed/rolled-back histories, wrong
+pairs, raw-mode rejection, interrupted directory sync and caller cancellation.
+The new branch has 21 publication-fault boundaries and 14 explicit-resume errors;
+42 process-kill cases cover cancellation and both absent/present primary-record
+resume paths. Tests separately sign completion and show that retirement cannot
+proceed just because local cancellation succeeded. These are local process/fault
+checks, not physical power-loss or global non-execution certification.
 
 ### Storage-incarnation-bound prune requests
 
