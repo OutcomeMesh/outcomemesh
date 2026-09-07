@@ -138,6 +138,7 @@ func killPruneExecutorChild(t *testing.T, f *pruneFixture, stage string, initial
 	admission, _ := f.admission.CanonicalBytes()
 	command := exec.Command(os.Args[0], "-test.run=^TestPruneExecutorCrashHelper$", "-test.count=1")
 	command.Env = append(os.Environ(), "OUTCOMEMESH_PRUNE_STAGE="+stage, "OUTCOMEMESH_PRUNE_EXECUTOR="+f.executorPath,
+		"OUTCOMEMESH_PRUNE_EXECUTOR_PINS="+f.executorPinsPath,
 		"OUTCOMEMESH_PRUNE_AUTHORITY="+f.authorityPath, "OUTCOMEMESH_PRUNE_PINS="+f.pinsPath, "OUTCOMEMESH_PRUNE_CHAIN="+f.chainPath,
 		"OUTCOMEMESH_PRUNE_REQUEST="+hex.EncodeToString(request), "OUTCOMEMESH_PRUNE_ADMISSION="+hex.EncodeToString(admission), "OUTCOMEMESH_PRUNE_MARKER="+marker)
 	var output bytes.Buffer
@@ -180,6 +181,14 @@ func killPruneExecutorChild(t *testing.T, f *pruneFixture, stage string, initial
 			t.Fatal("live authority owner lost", err)
 		}
 	}
+	if f.executorPinsPath != "" {
+		if opened, err := OpenPinnedPruneExecutor(f.executorPath, f.executorPinsPath, testAssignment(), f.id); !errors.Is(err, ErrBusy) {
+			if opened != nil {
+				_ = opened.Close()
+			}
+			t.Fatal("live process lost independent pin ownership", err)
+		}
+	}
 	before, err := os.Lstat(filepath.Join(f.executorPath, pruneLockName))
 	if err != nil {
 		t.Fatal(err)
@@ -218,6 +227,7 @@ func TestPruneExecutorCrashHelper(t *testing.T) {
 		t.Fatal(err)
 	}
 	path, marker := os.Getenv("OUTCOMEMESH_PRUNE_EXECUTOR"), os.Getenv("OUTCOMEMESH_PRUNE_MARKER")
+	pinPath := os.Getenv("OUTCOMEMESH_PRUNE_EXECUTOR_PINS")
 	hooks := storeHooks{at: func(at string) error {
 		if at == stage {
 			writeTestFile(t, marker, []byte(stage))
@@ -226,19 +236,32 @@ func TestPruneExecutorCrashHelper(t *testing.T) {
 		return nil
 	}}
 	if strings.Contains(stage, "ready") {
-		created, err := createPruneExecutor(path, testAssignment(), request, id, hooks)
+		var created *PruneExecutor
+		if pinPath == "" {
+			created, err = createPruneExecutor(path, testAssignment(), request, id, hooks)
+		} else {
+			created, err = createPinnedPruneExecutor(path, pinPath, testAssignment(), request, id, hooks, hooks)
+		}
 		if created != nil {
 			_ = created.Close()
 		}
 		writeTestFile(t, marker+".ack", nil)
 		t.Fatal("initialization returned before kill", err)
 	}
-	executor, err := OpenPruneExecutor(path, testAssignment(), id)
+	var executor *PruneExecutor
+	if pinPath == "" {
+		executor, err = OpenPruneExecutor(path, testAssignment(), id)
+	} else {
+		executor, err = OpenPinnedPruneExecutor(path, pinPath, testAssignment(), id)
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer executor.Close()
 	executor.hooks = hooks
+	if executor.pins != nil {
+		executor.pins.hooks = hooks
+	}
 	coordinator, err := OpenCoordinator(os.Getenv("OUTCOMEMESH_PRUNE_AUTHORITY"), os.Getenv("OUTCOMEMESH_PRUNE_PINS"), testAssignment(), testAssignmentID(t))
 	if err != nil {
 		t.Fatal(err)
@@ -250,7 +273,7 @@ func TestPruneExecutorCrashHelper(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer chain.Close()
-	if strings.HasPrefix(stage, "prune-admission-") {
+	if strings.Contains(stage, "admission-") {
 		encoded, err := hex.DecodeString(os.Getenv("OUTCOMEMESH_PRUNE_ADMISSION"))
 		if err != nil {
 			t.Fatal(err)

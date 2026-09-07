@@ -647,6 +647,28 @@ Implemented in an isolated, not-yet-activated consensus package:
   The new 26-case executor process suite also passed with race detection; the
   request decoder completed 100,000 fuzz inputs. Integration test binaries build
   for Linux and Windows; process execution was verified on macOS, not those hosts.
+  Independent stage-pin follow-up (2026-09-07): the opt-in pinned constructor now
+  initializes two bound roots and orders exact transition intent, executor record,
+  then confirmation. The chain effect waits for an independently confirmed start;
+  its result pin stays inside the coordinator guard. Pinned open rejects rollback
+  of confirmed primary records, unexplained extensions and raw-mode downgrade.
+  One exact unconfirmed transition requires explicit resume without chain execution
+  or ticket completion; missing effects remain unresolved. Tests cover 63 staged
+  publication failures, 71 additional process kills, cancellation, sync failures,
+  mismatched roots, bounded leftovers and canonical transition fuzzing. This closes
+  the local consumer-stage pin implementation gate, not shared-rollback protection,
+  physical chain-storage recovery, no-effect disposition or live network integration.
+  Validation: repository-wide tests/race/vet passed. The 71 new process-kill cases
+  also passed under race detection, and the repeated complete process gate passed
+  all 271 authority/executor kill cases. Transition fuzzing completed 100,000
+  inputs; integration test binaries built for Linux and Windows, with execution
+  verified on macOS only. The first process run's separate failure is retained below.
+  Process-gate observation (2026-09-07): the first combined run stopped at
+  `TestProcessTieCampaignStorageFailuresRecoverWithoutFalseAdvance/observer_confirmation_after_link`
+  because the expected confirmation marker was absent. Five isolated repetitions
+  passed. The failing assertion now includes both peers' output/errors, and the
+  timeout helper waits for process exit and output drain before exposing buffers.
+  This improves diagnosis, not the still-unestablished cause; keep the issue open.
   QUIC follow-up (2026-09-06): the first combined process run failed in
   `TestProcessTiePairQUICReachesIndependentV2ObserversAndRecoversAck` with a
   remote QUIC close, and in the coordinator-journal-before-rename case of

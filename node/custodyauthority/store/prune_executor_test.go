@@ -26,6 +26,7 @@ type pruneFixture struct {
 	executor                                         *PruneExecutor
 	coordinator                                      *Coordinator
 	chainPath, executorPath, authorityPath, pinsPath string
+	executorPinsPath                                 string
 	base                                             workchain.Base
 	parameters                                       workblock.Parameters
 	policy                                           workchain.Policy
@@ -144,7 +145,11 @@ func (f *pruneFixture) reopen(t testing.TB) {
 	_ = f.coordinator.Close()
 	_ = f.chain.Close()
 	var err error
-	f.executor, err = OpenPruneExecutor(f.executorPath, testAssignment(), f.id)
+	if f.executorPinsPath == "" {
+		f.executor, err = OpenPruneExecutor(f.executorPath, testAssignment(), f.id)
+	} else {
+		f.executor, err = OpenPinnedPruneExecutor(f.executorPath, f.executorPinsPath, testAssignment(), f.id)
+	}
 	if err != nil {
 		t.Fatal(err)
 	}

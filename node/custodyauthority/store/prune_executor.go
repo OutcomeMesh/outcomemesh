@@ -40,12 +40,16 @@ type PruneExecution struct {
 	Stage     PruneStage
 	Admission *custodyauthority.Entry
 	Effect    *workchain.CanonicalPruneEffect
+	// Protection is nil for raw version-0 journals. With independent pins, Stage
+	// may be one exact unconfirmed transition ahead of Protection.Confirmed.
+	Protection *PruneProtection
 }
 
 // PruneExecutor owns one bounded operation journal and its lifetime process
 // lock. Use an independent protected root and request pin; never recreate a lost
-// journal or replace/roll back its chain database as recovery. This local adapter
-// does not provide physical storage identity, anti-rollback pins or networking.
+// journal or replace/roll back its chain database as recovery. The optional pinned
+// constructor retains independent stage history; neither mode provides physical
+// storage identity, shared-rollback protection or networking.
 type PruneExecutor struct {
 	mu         sync.Mutex
 	path       string
@@ -59,20 +63,33 @@ type PruneExecutor struct {
 	effect     *workchain.CanonicalPruneEffect
 	failed     bool
 	hooks      storeHooks
+	pins       *prunePinJournal
 }
 
 func pruneReadyBytes(id types.Hash) []byte { return append([]byte("OMCPINIT\x00\x00"), id[:]...) }
+func pruneBoundReadyBytes(id, binding types.Hash) []byte {
+	if binding.IsZero() {
+		return pruneReadyBytes(id)
+	}
+	return append(append([]byte("OMCPINIT\x00\x01"), id[:]...), binding[:]...)
+}
 func pruneStartedBytes(id, ticket types.Hash) []byte {
 	return append(append([]byte("OMCPSTRT\x00\x00"), id[:]...), ticket[:]...)
 }
 
 // CreatePruneExecutor retains a new exact request before admission/execution.
-// It refuses every existing root, including partial initialization.
+// It refuses every existing root, including partial initialization. This raw
+// version-0 mode has no independent stage pins; use CreatePinnedPruneExecutor for
+// the opt-in two-root protocol. Existing roots cannot be upgraded by attaching pins.
 func CreatePruneExecutor(path string, assignment custodyauthority.Assignment, request PruneRequest, expectedID types.Hash) (*PruneExecutor, error) {
 	return createPruneExecutor(path, assignment, request, expectedID, storeHooks{})
 }
 
 func createPruneExecutor(path string, assignment custodyauthority.Assignment, request PruneRequest, expectedID types.Hash, hooks storeHooks) (_ *PruneExecutor, err error) {
+	return createPruneExecutorBound(path, assignment, request, expectedID, types.Hash{}, hooks)
+}
+
+func createPruneExecutorBound(path string, assignment custodyauthority.Assignment, request PruneRequest, expectedID, binding types.Hash, hooks storeHooks) (_ *PruneExecutor, err error) {
 	if err := validatePruneRequest(assignment, request, expectedID); err != nil {
 		return nil, err
 	}
@@ -119,7 +136,7 @@ func createPruneExecutor(path string, assignment custodyauthority.Assignment, re
 	if err := hooks.reach("prune-before-ready"); err != nil {
 		return nil, err
 	}
-	if err := writeExclusive(filepath.Join(path, pruneReadyName), pruneReadyBytes(expectedID)); err != nil {
+	if err := writeExclusive(filepath.Join(path, pruneReadyName), pruneBoundReadyBytes(expectedID, binding)); err != nil {
 		return nil, err
 	}
 	if err := hooks.reach("prune-ready-file-synced"); err != nil {
@@ -131,12 +148,17 @@ func createPruneExecutor(path string, assignment custodyauthority.Assignment, re
 	if err := hooks.reach("prune-ready-directory-synced"); err != nil {
 		return nil, err
 	}
-	return loadPruneExecutor(path, lock, assignment, expectedID, hooks)
+	return loadPruneExecutor(path, lock, assignment, expectedID, binding, hooks)
 }
 
 // OpenPruneExecutor only verifies/re-syncs retained records. It does not query
 // authority or chain state, bind an admission, start work or fabricate a result.
+// It refuses pinned version-1 roots: use OpenPinnedPruneExecutor for those.
 func OpenPruneExecutor(path string, assignment custodyauthority.Assignment, expectedID types.Hash) (_ *PruneExecutor, err error) {
+	return openPruneExecutorBound(path, assignment, expectedID, types.Hash{}, storeHooks{})
+}
+
+func openPruneExecutorBound(path string, assignment custodyauthority.Assignment, expectedID, binding types.Hash, hooks storeHooks) (_ *PruneExecutor, err error) {
 	if expectedID.IsZero() {
 		return nil, ErrPruneRequest
 	}
@@ -156,7 +178,7 @@ func OpenPruneExecutor(path string, assignment custodyauthority.Assignment, expe
 			err = errors.Join(err, lock.Close())
 		}
 	}()
-	return loadPruneExecutor(path, lock, assignment, expectedID, storeHooks{})
+	return loadPruneExecutor(path, lock, assignment, expectedID, binding, hooks)
 }
 
 func pruneLayout(path string, lock *os.File) (map[string]os.FileInfo, error) {
@@ -165,7 +187,7 @@ func pruneLayout(path string, lock *os.File) (map[string]os.FileInfo, error) {
 	})
 }
 
-func loadPruneExecutor(path string, lock *os.File, assignment custodyauthority.Assignment, expectedID types.Hash, hooks storeHooks) (*PruneExecutor, error) {
+func loadPruneExecutor(path string, lock *os.File, assignment custodyauthority.Assignment, expectedID, binding types.Hash, hooks storeHooks) (*PruneExecutor, error) {
 	identity, err := pruneLayout(path, lock)
 	if err != nil {
 		return nil, err
@@ -191,8 +213,9 @@ func loadPruneExecutor(path string, lock *os.File, assignment custodyauthority.A
 	if err := validatePruneRequest(assignment, request, expectedID); err != nil {
 		return nil, err
 	}
-	ready, err := readRegular(filepath.Join(path, pruneReadyName), 42)
-	if err != nil || !bytes.Equal(ready, pruneReadyBytes(expectedID)) {
+	expectedReady := pruneBoundReadyBytes(expectedID, binding)
+	ready, err := readRegular(filepath.Join(path, pruneReadyName), len(expectedReady))
+	if err != nil || !bytes.Equal(ready, expectedReady) {
 		return nil, errors.Join(ErrPruneRequest, err)
 	}
 	if _, err := inspectSizedPending(path, workchain.MaximumCanonicalPruneEffectBytes); err != nil {
@@ -212,29 +235,11 @@ func loadPruneExecutor(path string, lock *os.File, assignment custodyauthority.A
 		if err != nil {
 			return nil, err
 		}
-		switch index {
-		case 0:
-			admission, err := custodyauthority.DecodeEntry(encoded)
-			if err != nil {
-				return nil, err
-			}
-			if _, err := pruneAdmissionBinding(assignment, request, admission); err != nil {
-				return nil, err
-			}
-			executor.admission = &admission
-		case 1:
-			ticket, _ := executor.admission.ID()
-			if !bytes.Equal(encoded, pruneStartedBytes(expectedID, ticket)) {
-				return nil, ErrPruneStage
-			}
-		case 2:
-			effect, err := workchain.DecodeCanonicalPruneEffect(encoded)
-			if err != nil || !pruneEffectMatches(request, *executor.admission, effect) {
-				return nil, errors.Join(ErrPruneOutcome, err)
-			}
-			executor.effect = &effect
+		next, err := advancePruneExecution(assignment, executor.execution(), encoded)
+		if err != nil {
+			return nil, err
 		}
-		executor.stage++
+		executor.installExecution(next)
 		info, err := os.Lstat(filepath.Join(path, key))
 		if err != nil {
 			return nil, err
@@ -284,7 +289,31 @@ func (executor *PruneExecutor) check() error {
 			return executor.poison(ErrPruneStage)
 		}
 	}
+	if executor.pins != nil {
+		if err := executor.pins.verifyExecutor(executor); err != nil {
+			return executor.poison(err)
+		}
+	}
 	return nil
+}
+
+func (executor *PruneExecutor) operationCheck() error {
+	if err := executor.check(); err != nil {
+		return err
+	}
+	if executor.pins != nil && executor.pins.pending != nil {
+		return ErrPrunePinPending
+	}
+	return nil
+}
+
+// execution is an internal view, only used while the executor is locked.
+func (executor *PruneExecutor) execution() PruneExecution {
+	return PruneExecution{RequestID: executor.id, Request: executor.request, Stage: executor.stage, Admission: executor.admission, Effect: executor.effect}
+}
+
+func (executor *PruneExecutor) installExecution(next PruneExecution) {
+	executor.stage, executor.admission, executor.effect = next.Stage, next.Admission, next.Effect
 }
 func (executor *PruneExecutor) poison(err error) error {
 	executor.failed = true
@@ -312,6 +341,10 @@ func (executor *PruneExecutor) Snapshot() (PruneExecution, error) {
 		effect, _ := workchain.DecodeCanonicalPruneEffect(encoded)
 		result.Effect = &effect
 	}
+	if executor.pins != nil {
+		protection := executor.pins.protection()
+		result.Protection = &protection
+	}
 	return result, nil
 }
 
@@ -323,7 +356,7 @@ func (executor *PruneExecutor) BindAdmission(ctx context.Context, coordinator *C
 	}
 	executor.mu.Lock()
 	defer executor.mu.Unlock()
-	if err := executor.check(); err != nil {
+	if err := executor.operationCheck(); err != nil {
 		return err
 	}
 	if ctx == nil {
@@ -362,6 +395,11 @@ func (executor *PruneExecutor) checkAuthorityRoots(coordinator *Coordinator) err
 		if _, _, err := coordinatorPaths(executor.path, path); err != nil {
 			return err
 		}
+		if executor.pins != nil {
+			if _, _, err := coordinatorPaths(executor.pins.path, path); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
@@ -378,7 +416,7 @@ func (executor *PruneExecutor) Execute(ctx context.Context, coordinator *Coordin
 	}
 	executor.mu.Lock()
 	defer executor.mu.Unlock()
-	if err := executor.check(); err != nil {
+	if err := executor.operationCheck(); err != nil {
 		return workchain.CanonicalPruneCommit{}, err
 	}
 	if ctx == nil || authorize == nil {
@@ -454,7 +492,7 @@ func (executor *PruneExecutor) Recover(ctx context.Context, chain *workchain.Sto
 	}
 	executor.mu.Lock()
 	defer executor.mu.Unlock()
-	if err := executor.check(); err != nil {
+	if err := executor.operationCheck(); err != nil {
 		return workchain.CanonicalPruneCommit{}, err
 	}
 	if ctx == nil {
@@ -505,10 +543,27 @@ func (executor *PruneExecutor) applied(prefix string) error {
 	if err := executor.hooks.reach(prefix + "-after-apply"); err != nil {
 		return executor.poison(err)
 	}
+	if executor.pins != nil {
+		if err := executor.pins.confirm(executor); err != nil {
+			return executor.poison(err)
+		}
+	}
 	return nil
 }
 
 func (executor *PruneExecutor) publish(ctx context.Context, index int, encoded []byte, prefix string) error {
+	if executor.pins != nil {
+		if err := executor.pins.prepare(ctx, encoded); err != nil {
+			if executor.pins.failed {
+				return executor.poison(err)
+			}
+			return err
+		}
+	}
+	return executor.publishRecord(ctx, index, encoded, prefix)
+}
+
+func (executor *PruneExecutor) publishRecord(ctx context.Context, index int, encoded []byte, prefix string) error {
 	if int(executor.stage-PrunePrepared) != index || len(encoded) > workchain.MaximumCanonicalPruneEffectBytes {
 		return ErrPruneStage
 	}
@@ -579,5 +634,9 @@ func (executor *PruneExecutor) Close() error {
 	}
 	err := executor.lock.Close()
 	executor.lock = nil
+	if executor.pins != nil {
+		err = errors.Join(err, executor.pins.lock.Close())
+		executor.pins = nil
+	}
 	return err
 }

@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/ed25519"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -1713,6 +1714,22 @@ func assertCampaignStorageComplete(
 	}
 }
 
+func TestProcessTieCampaignReceiverTimeoutDrainsLogs(t *testing.T) {
+	fixture := newCampaignStorageProcessFixture(t, "receiver-timeout", "20260839")
+	observer, _, _ := startCampaignStorageObserver(t, fixture, "")
+	if _, err := waitTieReceiverProcessError(observer, time.Nanosecond); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatal("receiver did not time out", err)
+	}
+	if observer.command.ProcessState == nil {
+		t.Fatal("timeout returned before process exit")
+	}
+	select {
+	case <-observer.stdoutDone:
+	default:
+		t.Fatal("timeout returned before captured output drained")
+	}
+}
+
 func TestProcessTieCampaignStorageFailuresRecoverWithoutFalseAdvance(t *testing.T) {
 	for _, test := range []struct {
 		name          string
@@ -1803,7 +1820,8 @@ func TestProcessTieCampaignStorageFailuresRecoverWithoutFalseAdvance(t *testing.
 			markerPath := fixture.confirmationDirectory + "/0000000001.confirmed"
 			_, markerErr := os.Stat(markerPath)
 			if test.markerCommitted && markerErr != nil {
-				t.Fatalf("post-link failure lost confirmation marker: %v", markerErr)
+				t.Fatalf("post-link failure lost confirmation marker: %v\ncoordinator_err=%v\ncoordinator=%s\ncoordinator_stderr=%s\nobserver_err=%v\nobserver=%s\nobserver_stderr=%s",
+					markerErr, coordinatorErr, coordinatorOutput, coordinator.stderr.String(), observerErr, observerOutput, observer.stderr.String())
 			}
 			if !test.markerCommitted && !os.IsNotExist(markerErr) {
 				t.Fatalf("pre-link failure created confirmation marker: %v", markerErr)
@@ -2477,6 +2495,8 @@ func waitTieReceiverProcessError(
 		return receiver.stdout.String(), err
 	case <-time.After(timeout):
 		_ = receiver.command.Process.Kill()
+		<-done
+		<-receiver.stdoutDone
 		return receiver.stdout.String(), context.DeadlineExceeded
 	}
 }

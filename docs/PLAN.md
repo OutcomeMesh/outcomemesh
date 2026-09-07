@@ -304,14 +304,28 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
             and cover 26 process-death boundaries plus local stop/result races.
             This is a trusted library, not live archive-policy enforcement or
             protection against journal/database rollback.
-          - [ ] Independently pinned consumer-journal and physical storage
-            recovery, safe no-effect disposition, current-authority admission/
+          - [x] Optional independently retained local consumer-stage journal:
+            write each exact transition intent before the executor record, then
+            confirm its durable publication. Bind two new disjoint roots, refuse
+            raw reopening or fresh-pin attachment, and retain both lifetime locks.
+            Open only the exact confirmed prefix or one known unconfirmed next
+            transition; never reconstruct confirmed missing history. Require
+            explicit resume without chain execution or completion. Cover 71
+            process-kill boundaries and keep unresolved starts pending. Independent
+            physical/access-control deployment and shared rollback remain external.
+          - [ ] Physical chain-storage identity and independently pinned recovery,
+            safe no-effect disposition, current-authority admission/
             completion transport, and live audit/serve/prune runtime adapters
             (including all required replica assignments, not just one guard).
             Do not infer a safe retry from absence in a replaced/rolled-back
             database, or sign completion from a generic callback return alone.
   - [ ] Filesystem-full, inode-exhaustion, power-loss, and long-running retention
     campaigns before deployment claims.
+  - [ ] Isolate the intermittent 2026-09-07 process failure in the campaign
+    observer's post-link confirmation case. One combined run found no marker;
+    five isolated repetitions passed. Preserve both peers' logs and distinguish
+    failure before confirmation from failure after its publication. The cause
+    is not established; a passing retry is not a root-cause fix.
   - [x] Isolate the 2026-09-06 tie-pair/campaign early-close race with a
     failing-before-fix process regression, add bounded EOF-based host/slot
     retirement, and distinguish nested transport timeouts from signed-slot

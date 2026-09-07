@@ -4,8 +4,9 @@ Status: bounded reference admission/drain machine in `node/custodyauthority`,
 local durable history and an independently retained intent/pin coordinator in
 `node/custodyauthority/store` are implemented. WorkChain also has a trusted local
 ticketed-prune result primitive, now used by an optional one-assignment local
-executor journal and coordinator guard. Network authority, integration into the
-existing live acceptance paths, and active rebaseline are not installed.
+executor journal, optional independent stage pins and coordinator guard. Network
+authority, integration into existing live acceptance paths, and active rebaseline
+are not installed.
 
 Local retirement serializes upgraded participants using the named journal
 roots. It does not invalidate a previously extracted Ed25519 key, a copied
@@ -175,8 +176,9 @@ chain writer cannot become success. Even a known callback error before deletion
 does not fabricate a durable no-effect disposition. Such tickets can block
 retirement indefinitely until a separately reviewed recovery mechanism exists.
 
-This journal does **not** yet have an independently retained stage/head history
-or physical database anti-rollback pin. Its request ID authenticates the request,
+The raw version-0 journal does **not** have independently retained stage/head
+history; the opt-in two-root mode below adds it. Neither mode has a physical
+database anti-rollback pin. The raw mode's request ID authenticates the request,
 not the newest journal prefix. A valid-prefix rollback or replacement of owner-
 controlled storage is outside this local guarantee, including a recreated empty
 WorkChain. Do not use missing records as evidence of no prior execution, recreate
@@ -192,6 +194,88 @@ publication boundaries; and the points immediately before/after the chain effect
 Positive outcomes recover to the original result and may be separately completed;
 unresolved starts stay pending and block retirement. These do not certify physical
 power loss, partitions, multi-assignment quorum coverage or live CLI enforcement.
+
+### Independently retained prune stage intents and pins
+
+`CreatePinnedPruneExecutor` creates two NEW disjoint roots. The independent pin
+journal is locked first and keeps that lifetime lock through executor creation,
+use and close. Existing roots (even a raw `Prepared` executor), overlapping paths
+and known aliases are refused before initialization. Fresh pins cannot be attached
+to prior work, and partial initialization is never repaired or reset.
+
+The primary `ready.omcpx` uses `OMCPINIT` version 1: request ID plus a nonzero
+random 32-byte pair binding, 74 bytes total. The pin journal's 74-byte `OMCPINSJ`
+version-0 ready marker binds that same request and pair, and is published only
+after the primary is initialized. Raw `OpenPruneExecutor` rejects the version-1
+marker, including when pins are missing: the opt-in mode has no silent downgrade.
+The binding prevents accidental pairing, not copied-root or physical-disk identity.
+
+```text
+independent-prune-pins/
+  prune-pins.lock                 permanent ownership inode
+  assignment.omcaa               independently selected exact assignment
+  request.omcpr                  independently pinned exact request
+  ready.omcpp                    OMCPINSJ/version/request-ID/pair-binding
+  intents/01-admission.omcae      exact attempted executor records
+  intents/02-started.omcps
+  intents/03-result.omcpfx
+  confirmed/01.omcpp             exact position after admission publication
+  confirmed/02.omcpp             exact position after start publication
+  confirmed/03.omcpp             exact position after result publication
+  pending/entry-<decimal>         at most 128 bounded leftover temporary files
+```
+
+Each transition follows: independent intent sync, executor record sync,
+independent confirmation sync. A transition is acknowledged only after the last
+step. During `Execute`, the start is independently confirmed before WorkChain is
+called, and the coordinator guard remains held through final result confirmation.
+The pin journal keeps at most three intents and three confirmations, with at most
+one intent beyond the confirmed prefix. Publication uses file sync, no-replace
+hard links and directory sync. Required I/O errors poison the writer and require
+close/reopen; accepted records are re-synced before selecting the primary history.
+
+A `PrunePosition` has stage and head ID. `Prepared` starts at the request ID;
+each next head hashes the prior head, one-byte next stage and exact record under
+`OMESH/custody-prune/position/id/v0`. The 75-byte `OMCPPOSN` version-0 confirmation
+binds request, stage and head. These unsigned local envelopes are not remote
+acknowledgements, signed completions or execution grants.
+
+`OpenPinnedPruneExecutor` reads the independent journal first. It accepts only:
+
+| Independent state | Permitted primary history | Explicit recovery |
+| --- | --- | --- |
+| Confirmed through stage S, no pending intent | Exactly S, with every retained record identical | No transition to resume |
+| Confirmed S, exact next intent T | Exactly S or exactly S plus T | `ResumePinnedTransition` retains/confirms T only |
+| Confirmed history missing, altered, or unexplained longer primary history | None | Fail closed; never reconstruct confirmed missing records |
+
+Open never publishes or confirms transitions. Diagnostics separate observed
+`Stage`, confirmed position and pending position. Any pending pin blocks ordinary
+bind/execute/effect-recovery calls, including historical retries, until explicitly
+resumed. Resume never calls WorkChain, obtains authority or signs completion.
+Resuming an admission retains historical evidence; later execution still needs
+the current guard. Resuming a start leaves `Started`, which cannot execute again.
+Resuming a result retains the exact outcome already obtained before its intent
+was written, not a result fabricated from absence in another database.
+
+Cancellation before intent publication may leave only an unpromoted temporary
+file. Once an intent exists it cannot be abandoned or replaced; even cancellation
+before primary start publication requires explicit resume and may leave an
+unresolved start indefinitely. Confirmation after durable primary publication
+finishes despite caller cancellation. A missing chain effect remains unknown.
+
+Independent pins detect rollback of the primary's confirmed prefix while the pin
+root remains intact. Rolling both roots back together can still agree. Operators
+must independently retain/protect the configured pin root; the library does not
+prove storage/access-control failure domains. Physical chain identity, chain
+rollback/replacement detection, no-effect dispositions, multi-replica authority,
+transport and live runtime integration remain open. No signing key is retained.
+
+Tests cover 63 transition publication failures, stage-exact reopen, cancellation,
+independent directory-sync failures, prefix rollback, missing/altered pins, wrong
+pairs, raw-mode downgrade, ownership and resource bounds. Another 71 process kills
+cover the three publications of every transition, both initialization sequences,
+and the before/after-effect points. This is local crash evidence, not power-loss
+or shared-storage rollback certification.
 
 ## Implemented reference kernel
 
@@ -475,7 +559,7 @@ This closes the local retained-attempt/pin implementation gate, not deployment
 or live acceptance. The operator must independently protect and back up the
 journal; shared rollback of both roots can still agree, and copied roots/keys or
 an equivocating signer are not fenced. No remote acknowledgement verification,
-current-authority transport, independent consumer stage/storage rollback pins,
+current-authority transport, physical chain-storage identity/rollback pins,
 operational CLI service, lease, successor activation or automatic cross-host
 failover is installed.
 Audit/serve/prune integration must use the complete protocol without falling

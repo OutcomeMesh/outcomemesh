@@ -289,10 +289,14 @@ confirmed pending ticket and holds the coordinator guard through synchronous
 execution/result retention; stop/completion/retirement serialize against it.
 Lock order is executor -> coordinator -> WorkChain. A retained start never reruns;
 explicit recovery only looks up the exact existing chain effect, and an unresolved
-outcome remains pending. No completion is signed automatically. Consumer stage/
-storage rollback pins, safe no-effect disposition, all-replica authority coverage,
-transport and live archive-policy integration remain open. This local library
-does not change any existing CLI or custody-session behavior.
+outcome remains pending. No completion is signed automatically. An opt-in pinned
+constructor now holds an independent stage journal: exact intent -> executor
+record -> confirmed position, including confirmation of start before the chain
+call. Version-1 roots reject raw-mode reopening. Recovery accepts only the exact
+confirmed prefix or one retained next transition; explicit resume never executes
+the chain. Shared rollback, physical chain-storage pins, safe no-effect disposition,
+all-replica authority coverage, transport and live archive-policy integration remain
+open. This local library does not change any existing CLI or custody-session behavior.
 Receipt v1 can extend one exact
 predecessor only after a fresh signed random-sample challenge: sample IDs are
 deterministically derived from the nonce, manifest, and predecessor receipt;

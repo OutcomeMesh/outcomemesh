@@ -477,11 +477,29 @@ The executor never signs completion, releases a ticket by time, or treats proces
 death as drain evidence. Missing-result starts may block retirement indefinitely.
 Historical result retrieval after retirement remains distinct from live acceptance.
 
-These guarantees require intact owner-controlled journal and chain storage. The
-request pin is not an independent pin of the latest stage; valid-prefix rollback,
-copied/replaced databases and same-inode hostile edits remain outside the local
-guarantee. Do not recreate journals as recovery or reuse tickets on another chain
-database. A one-assignment guard also does not establish the required custody
+These guarantees require owner-controlled journal and chain storage. In raw mode,
+the request pin is not an independent pin of the latest stage. The optional pinned
+constructor now writes each exact transition intent to a separate journal before
+primary publication and confirms its durable result afterwards. During execution,
+the start pin is confirmed before the chain call; the current-authority guard
+remains held through the final result pin. A pinned root requires its matching
+independent journal; raw-mode reopening, fresh-pin attachment and partial-root
+recreation are refused.
+
+Pinned open accepts only the confirmed exact prefix or its one known next intent.
+It never publishes/confirms, reconstructs missing confirmed history or chooses a
+head from the primary. Pending pins block ordinary calls until explicit resume;
+resume only retains/confirms that record, never executes pruning or signs ticket
+completion. Even an intent for a never-executed start is irrevocable and can keep
+the ticket pending indefinitely. A retained result intent comes from the prior
+concrete effect, not from absence in a replacement chain.
+
+Independent primary-prefix rollback detection depends on the pin root remaining
+intact. Shared rollback, copied/replaced chain databases and same-inode hostile
+edits remain outside the guarantee. A random pair binding is not physical storage
+identity or fencing of copied roots. Independently protected storage/access-control
+deployment is still required. Do not recreate journals as recovery or reuse tickets
+on another chain database. A one-assignment guard does not establish the custody
 quorum across every replica assignment. Physical storage identity/pins, durable
 no-effect disposition, network authorization and all live acceptance-path adapters
 remain deployment gates. Full archive verification/freshness remains the trusted
