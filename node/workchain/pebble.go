@@ -18,6 +18,7 @@ import (
 
 const (
 	workSchemaVersion         uint16 = 4
+	workEffectSchemaVersion   uint16 = 5 // opt-in, atomically installed with the first ticketed prune
 	maxNodeMetadataBytes             = 64 << 10
 	maxPersistedStateBytes           = 256 << 20
 	maxStateDeltaBytes               = 256 << 20
@@ -43,11 +44,13 @@ const (
 	workStatePrefix          byte = 0x12
 	workDeltaPrefix          byte = 0x13
 	workArchivedHeaderPrefix byte = 0x14
+	workPruneEffectPrefix    byte = 0x15
 )
 
 type Policy struct {
 	// MaxHistoryBytes counts immutable logical node, block, checkpoint, and
-	// resource-delta key/value bytes. Pebble WAL/LSM overhead is separate.
+	// resource-delta and retained prune-result key/value bytes. Pebble WAL/LSM
+	// overhead is separate. Results are never garbage-collected by maintenance.
 	MaxHistoryBytes uint64
 	// ForkRetention is the number of heights behind the selected tip within
 	// which every side branch is retained. Zero disables side-fork pruning.
@@ -82,6 +85,10 @@ type workPersistence struct {
 	checkpoints     map[types.Hash]struct{}
 	commitHook      func() error
 	afterCommitHook func()
+	pruneCommitHook func(*pebble.Batch) error
+	effectSchema    bool
+	pruneEffects    uint32
+	uncertain       bool
 }
 
 // Open creates or reopens the isolated version-1 Pebble coordinator. All
@@ -121,14 +128,29 @@ func (persistence *workPersistence) initializeOrLoad(store *Store, base Base) er
 	configured := workConfigHash(base, store.parameters)
 	schema, err := persistence.get(workKeySchema)
 	if errors.Is(err, pebble.ErrNotFound) {
+		// Missing metadata in a used database is corruption, not bootstrap.
+		// In particular, never hide retained effect history behind a fresh base.
+		iterator, iterErr := persistence.db.NewIter(nil)
+		if iterErr != nil {
+			return iterErr
+		}
+		hasData := iterator.First()
+		if err := errors.Join(iterator.Error(), iterator.Close()); err != nil {
+			return err
+		}
+		if hasData {
+			return storage.ErrCorrupt
+		}
 		return persistence.initialize(store.nodes[store.baseID], configured, store.tipID)
 	}
 	if err != nil {
 		return err
 	}
-	if len(schema) != 2 || binary.BigEndian.Uint16(schema) != workSchemaVersion {
+	if len(schema) != 2 || (binary.BigEndian.Uint16(schema) != workSchemaVersion &&
+		binary.BigEndian.Uint16(schema) != workEffectSchemaVersion) {
 		return storage.ErrCorrupt
 	}
+	persistence.effectSchema = binary.BigEndian.Uint16(schema) == workEffectSchemaVersion
 	storedConfig, err := persistence.get(workKeyConfig)
 	if err != nil {
 		return err
@@ -309,6 +331,8 @@ func (persistence *workPersistence) pruneCanonicalPrefix(
 	anchor *chainNode,
 	boundary *CanonicalFloor,
 	authorize func() (uint64, error),
+	effect *CanonicalPruneEffect,
+	report CanonicalPruneReport,
 ) (uint64, uint64, error) {
 	if len(remove) == 0 || anchor == nil || anchor.block == nil || anchor.state == nil || boundary == nil {
 		return 0, 0, ErrCanonicalPrune
@@ -403,6 +427,35 @@ func (persistence *workPersistence) pruneCanonicalPrefix(
 	if err != nil || released > persistence.historyBytes {
 		return 0, 0, storage.ErrCorrupt
 	}
+	var effectSize int
+	if effect != nil {
+		// All report fields are fixed-width, including accounting itself. Prepare
+		// a valid placeholder before the final authorization callback.
+		effect.VerifiedAt, effect.Report = boundary.VerifiedAt, report
+		effect.Report.AddedHistoryBytes, effect.Report.ReleasedHistoryBytes = added, released
+		encoded, err := effect.CanonicalBytes()
+		if err != nil {
+			return 0, 0, err
+		}
+		effectSize = len(encoded)
+		added, err = checkedHistoryBytes(added, uint64(len(workPruneEffectKey(effect.Operation.TicketID))+effectSize))
+		if err != nil {
+			return 0, 0, err
+		}
+		effect.Report.AddedHistoryBytes = added
+		encoded, err = effect.CanonicalBytes()
+		if err != nil || len(encoded) != effectSize {
+			return 0, 0, ErrCanonicalPrune
+		}
+		if err := batch.Set(workPruneEffectKey(effect.Operation.TicketID), encoded, nil); err != nil {
+			return 0, 0, err
+		}
+		var schema [2]byte
+		binary.BigEndian.PutUint16(schema[:], workEffectSchemaVersion)
+		if err := batch.Set(workKeySchema, schema[:], nil); err != nil {
+			return 0, 0, err
+		}
+	}
 	nextHistory, err := checkedHistoryBytes(persistence.historyBytes-released, added)
 	if err != nil || nextHistory > persistence.policy.MaxHistoryBytes {
 		return 0, 0, storage.ErrHistoryLimit
@@ -436,8 +489,27 @@ func (persistence *workPersistence) pruneCanonicalPrefix(
 			return 0, 0, err
 		}
 	}
-	if err := batch.Commit(pebble.Sync); err != nil {
-		return 0, 0, err
+	if effect != nil {
+		effect.VerifiedAt = boundary.VerifiedAt
+		encoded, err := effect.CanonicalBytes()
+		if err != nil || len(encoded) != effectSize {
+			return 0, 0, ErrCanonicalPrune
+		}
+		if err := batch.Set(workPruneEffectKey(effect.Operation.TicketID), encoded, nil); err != nil {
+			return 0, 0, err
+		}
+	}
+	commit := persistence.pruneCommitHook
+	if commit == nil {
+		commit = func(batch *pebble.Batch) error { return batch.Commit(pebble.Sync) }
+	}
+	if err := commit(batch); err != nil {
+		persistence.uncertain = true
+		return 0, 0, errors.Join(ErrUncertain, err)
+	}
+	if effect != nil {
+		persistence.effectSchema = true
+		persistence.pruneEffects++
 	}
 	persistence.historyBytes = nextHistory
 	for _, id := range remove {
@@ -801,7 +873,7 @@ func (persistence *workPersistence) load(store *Store, base Base) error {
 			return storage.ErrCorrupt
 		}
 	}
-	return nil
+	return persistence.verifyPruneEffects(store)
 }
 
 func encodeNodeMetadata(node *chainNode) ([]byte, error) {
@@ -1110,7 +1182,11 @@ func encodeCanonicalFloor(floor CanonicalFloor) ([]byte, error) {
 		return nil, ErrCanonicalPrune
 	}
 	encoder := codec.NewEncoder(maxCanonicalFloorBytes)
-	encoder.U16(0)
+	version := uint16(0)
+	if !floor.PruneTicketID.IsZero() {
+		version = 1
+	}
+	encoder.U16(version)
 	encoder.Fixed(floor.BaseID[:])
 	encoder.BytesField(floor.Anchor.CanonicalBytes())
 	encoder.U64(floor.AncestryNodes)
@@ -1120,6 +1196,9 @@ func encodeCanonicalFloor(floor CanonicalFloor) ([]byte, error) {
 	encoder.Fixed(floor.AvailabilityID[:])
 	encoder.U64(floor.VerifiedAt)
 	encoder.U64(floor.RetainUntil)
+	if version == 1 {
+		encoder.Fixed(floor.PruneTicketID[:])
+	}
 	if encoder.Len() > maxCanonicalFloorBytes {
 		return nil, storage.ErrCorrupt
 	}
@@ -1132,7 +1211,7 @@ func decodeCanonicalFloor(input []byte) (CanonicalFloor, error) {
 	}
 	decoder := codec.NewDecoder(input)
 	version, err := decoder.U16()
-	if err != nil || version != 0 {
+	if err != nil || version > 1 {
 		return CanonicalFloor{}, storage.ErrCorrupt
 	}
 	result := CanonicalFloor{Pruned: true}
@@ -1171,6 +1250,16 @@ func decodeCanonicalFloor(input []byte) (CanonicalFloor, error) {
 	if result.RetainUntil, err = decoder.U64(); err != nil {
 		return CanonicalFloor{}, err
 	}
+	if version == 1 {
+		value, err := decoder.Fixed(types.HashSize)
+		if err != nil {
+			return CanonicalFloor{}, storage.ErrCorrupt
+		}
+		copy(result.PruneTicketID[:], value)
+		if result.PruneTicketID.IsZero() {
+			return CanonicalFloor{}, storage.ErrCorrupt
+		}
+	}
 	if err := decoder.Finish(); err != nil || result.validate() != nil {
 		return CanonicalFloor{}, storage.ErrCorrupt
 	}
@@ -1192,7 +1281,7 @@ func (persistence *workPersistence) historyUsage(
 	floor CanonicalFloor,
 ) (uint64, map[types.Hash]struct{}, []workblock.Header, error) {
 	iterator, err := persistence.db.NewIter(&pebble.IterOptions{
-		LowerBound: []byte{workNodePrefix}, UpperBound: []byte{workArchivedHeaderPrefix + 1},
+		LowerBound: []byte{workNodePrefix}, UpperBound: []byte{workPruneEffectPrefix + 1},
 	})
 	if err != nil {
 		return 0, nil, nil, err
@@ -1204,6 +1293,7 @@ func (persistence *workPersistence) historyUsage(
 	checkpoints := make(map[types.Hash]struct{})
 	deltas := make(map[types.Hash]struct{}, len(nodes))
 	archived := make(map[types.Hash]workblock.Header)
+	var effectCount uint32
 	for valid := iterator.First(); valid; valid = iterator.Next() {
 		key := iterator.Key()
 		if len(key) != 1+types.HashSize {
@@ -1246,6 +1336,16 @@ func (persistence *workPersistence) historyUsage(
 				return 0, nil, nil, storage.ErrCorrupt
 			}
 			archived[id] = header
+		case workPruneEffectPrefix:
+			if effectCount >= MaximumCanonicalPruneEffects {
+				return 0, nil, nil, storage.ErrCorrupt
+			}
+			effectCount++
+			effect, decodeErr := DecodeCanonicalPruneEffect(iterator.Value())
+			if !persistence.effectSchema || !floor.Pruned || decodeErr != nil ||
+				effect.Operation.TicketID != id || effect.Operation.Boundary.BaseID != baseID {
+				return 0, nil, nil, storage.ErrCorrupt
+			}
 		default:
 			return 0, nil, nil, storage.ErrCorrupt
 		}

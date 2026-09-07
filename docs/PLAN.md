@@ -287,6 +287,19 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
           stale-snapshot fallback, no duplicate effect on retry/restart, and no
           completion before the final effect has drained. Enforce at every
           audit/serve/prune acceptance path and test real partitions.
+          - [x] Atomic local prune effect: retain the exact assignment/ticket/
+            requested floor, final authorization time and original result in the
+            same synchronous WorkChain batch as deletion. Keep completed results
+            across later maintenance; exact retries only return evidence, and
+            conflicting ticket reuse fails. Bound retained results, account for
+            their bytes, reject inconsistent recovery and poison uncertain
+            canonical commits. Cover concurrent retries and four process-death
+            boundaries. This trusted primitive is not live authority enforcement.
+          - [ ] Consumer-owned durable request/start/terminal state, independently
+            pinned storage recovery, current-authority admission/completion
+            transport, and effect-specific audit/serve/prune runtime adapters.
+            Do not infer a safe retry from absence in a replaced/rolled-back
+            database, or sign completion from a generic callback return alone.
   - [ ] Filesystem-full, inode-exhaustion, power-loss, and long-running retention
     campaigns before deployment claims.
   - [x] Isolate the 2026-09-06 tie-pair/campaign early-close race with a

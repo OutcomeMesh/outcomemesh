@@ -2,8 +2,9 @@
 
 Status: bounded reference admission/drain machine in `node/custodyauthority`,
 local durable history and an independently retained intent/pin coordinator in
-`node/custodyauthority/store` are implemented. Network authority, consumer
-enforcement and active rebaseline are not installed.
+`node/custodyauthority/store` are implemented. WorkChain also has a trusted local
+ticketed-prune result primitive. Network authority, consumer enforcement and
+active rebaseline are not installed.
 
 Local retirement serializes upgraded participants using the named journal
 roots. It does not invalidate a previously extracted Ed25519 key, a copied
@@ -29,6 +30,76 @@ distributed revocation: the caller still supplies static replica policy, and
 no policy-generation identifier has entered receipts. Reading mutable authority
 once before the method, or inside its callback without a guard held through
 completion, cannot establish ordering against a concurrent retirement.
+
+### Implemented atomic local prune result
+
+`workchain.Store.PruneCanonicalPrefixOnce` takes a `CanonicalPruneOperation`:
+assignment ID, admission ticket ID and the exact requested `CanonicalFloor`,
+including its initial `VerifiedAt`. The requested floor must not already contain
+a `PruneTicketID`. These unsigned fields are caller-provided bindings, **not an
+admission proof**. The method does not contact the authority, verify a signed
+ticket, retain a consumer's pre-execution intent, or close an authority operation.
+No existing CLI or live archive acceptance path calls it yet.
+
+Under the chain's write lock, a new operation validates the same chain-local
+ancestry and retention conditions as ordinary pruning, then prepares one Pebble
+batch containing the deletion, retained state/floor, original operation/result,
+byte accounting and optional schema upgrade. The bounded final authorization
+callback still runs after all preparation. Its final time enters both the floor
+and result; only fixed-width fields change before synchronous commit. The floor
+gets the result's ticket ID in that same transaction. A successful return waits
+for both persistence and the corresponding in-memory floor/index transition.
+
+The result preserves the original removed/retained counts and byte accounting,
+not a refreshed report about the current chain. Exact retry returns
+`Applied=false` and those retained bytes without invoking authorization, deleting
+anything or refreshing time. Different parameters or assignment under the same
+ticket are rejected. Later ticketed or ordinary pruning, checkpoint rotation and
+fork maintenance do not delete the result. `CanonicalPruneEffect(ticketID)` is a
+read-only lookup, including after restart; an unknown ticket executes nothing.
+
+Each effect is a bounded version-0 `OMWCPREF` envelope containing two 32-byte IDs,
+a canonical length-prefixed requested floor, final time, and fixed-width report.
+Its evidence ID uses `OMESH/workgraph/canonical-prune-effect/id/v0`. The golden
+fixture is 490 bytes with ID
+`31be0ab8508b95f9f49708ad5c18d2c28300354873e778ad9a1a8e85f044bd99`.
+The maximum is 1,024 bytes per result and 65,536 retained results per database;
+result keys/values count toward `MaxHistoryBytes`. Exhaustion rejects new
+ticketed effects, not old result lookups. There is no result garbage collection,
+reset or automatic ticket release; runtime admission must account for capacity.
+
+Existing schema-4 stores/floor-v0 bytes are unchanged until the first ticketed
+prune. That transaction opts the database into WorkChain schema 5, adds result
+keys under `0x15 || ticketID`, and writes floor v1 with a nonzero ticket suffix.
+This schema does not downgrade when later ordinary pruning writes a v0 floor.
+Older schema-4-only binaries reject it instead of silently ignoring result
+history. There is no automatic migration of unrelated databases or consensus,
+receipt, authority-command or peer-wire format change.
+
+Reopen replays the ordinary chain, checks bounded result shapes and key/binding
+identity, exact logical-byte accounting, canonical anchor/previous-floor
+positions, nonoverlapping prune intervals, and the latest result-to-floor link.
+Historical external custody claims are not re-attested by this inspection.
+An uncertain canonical commit returns no result and disables subsequent public
+chain reads/writes until close and successful reopen; pre-commit denial leaves
+the healthy old state untouched. Pebble's normal read/write recovery flushes
+replayed WAL data before returning its handle. Tests cover both absent and
+written outcomes of a failed commit result, malformed recovery, concurrent
+retries and four additional process kills: prepared batch, final decision,
+post-sync/pre-return, and an unsynced WAL attempt. The last case permits either
+whole transaction, never a mixed floor/deletion/result/schema state. These are
+process-death tests, not physical power-loss certification.
+
+This primitive provides effect identity only within the intact owner-controlled
+database. It cannot detect rollback or replacement of the entire store.
+Missing schema metadata in a nonempty database is rejected, never reinitialized.
+`OpenWithPolicy` still supports explicit database creation, so an empty newly
+created database is not evidence that a previous effect never happened. A managed
+consumer must retain its exact request independently, bind recovery to its
+original storage and authority history, and keep the ticket pending until its
+last effect has drained. Finding a result does not authorize another effect;
+not finding one does not authorize a retry or a no-effect completion. Auditing,
+serving and authority completion transport remain separate runtime gates.
 
 ## Implemented reference kernel
 

@@ -272,6 +272,16 @@ confirmed history. The journal uses a distinct role marker, and overlapping or
 aliased roots are refused. Current-authority transport, single-execution consumer
 recovery, independent pin/intent deployment and connection to live acceptance
 paths remain separate gates; there is no active rebaseline.
+WorkChain's optional `PruneCanonicalPrefixOnce` now supplies one effect-specific
+storage primitive: the exact assignment/ticket/request and completed prune report
+commit atomically with deletion, the retained floor and byte accounting. Exact
+retries read the original result even after later maintenance; they do not
+re-authorize or delete again. The first use atomically opts that database from
+schema 4 into schema 5; older readers refuse it. Results are retained under a
+fixed count and logical-byte budget, and uncertain canonical commits require
+close/reopen before further chain access. This API trusts its caller to establish
+authority and retain an independent intent; it is not connected to live archive
+commands and cannot distinguish a new/rolled-back database from missing work.
 Receipt v1 can extend one exact
 predecessor only after a fresh signed random-sample challenge: sample IDs are
 deterministically derived from the nonce, manifest, and predecessor receipt;

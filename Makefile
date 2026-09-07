@@ -57,6 +57,7 @@ test-fuzz-smoke:
 	$(GO) test ./node/workchain -run '^$$' -fuzz '^FuzzDecodeNodeMetadataNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/workchain -run '^$$' -fuzz '^FuzzDecodePersistedStateNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/workchain -run '^$$' -fuzz '^FuzzDecodeStateDeltaNeverPanics$$' -fuzztime=$(FUZZTIME)
+	$(GO) test ./node/workchain -run '^$$' -fuzz '^FuzzCanonicalPruneEffect$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/workarchive -run '^$$' -fuzz '^FuzzDecodeStatementNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/workarchive -run '^$$' -fuzz '^FuzzDecodeCheckpointNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/workarchive -run '^$$' -fuzz '^FuzzDecodeArchiveManifestNeverPanics$$' -fuzztime=$(FUZZTIME)

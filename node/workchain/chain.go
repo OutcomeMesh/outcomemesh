@@ -24,6 +24,7 @@ var (
 	ErrDuplicate      = errors.New("duplicate WorkGraph chain block")
 	ErrHistoryPruned  = errors.New("WorkGraph block payload was archived and pruned")
 	ErrCanonicalPrune = errors.New("unsafe WorkGraph canonical-prefix prune")
+	ErrUncertain      = errors.New("uncertain WorkGraph storage commit; close and reopen required")
 )
 
 const (
@@ -82,6 +83,9 @@ type CanonicalFloor struct {
 	AvailabilityID types.Hash
 	VerifiedAt     uint64
 	RetainUntil    uint64
+	// PruneTicketID links a ticketed prune to its result in the same transaction.
+	// It is local provenance, not a remotely verified authority grant.
+	PruneTicketID types.Hash
 }
 
 // CanonicalPruneReport describes one atomic replacement of full canonical
@@ -166,8 +170,8 @@ func (store *Store) Tip() (storage.Tip, error) {
 	}
 	store.mu.RLock()
 	defer store.mu.RUnlock()
-	if store.closed {
-		return storage.Tip{}, storage.ErrClosed
+	if err := store.openErrorLocked(); err != nil {
+		return storage.Tip{}, err
 	}
 	return cloneTip(store.nodes[store.tipID].tip), nil
 }
@@ -181,8 +185,8 @@ func (store *Store) BaseID() (types.Hash, error) {
 	}
 	store.mu.RLock()
 	defer store.mu.RUnlock()
-	if store.closed {
-		return types.Hash{}, storage.ErrClosed
+	if err := store.openErrorLocked(); err != nil {
+		return types.Hash{}, err
 	}
 	return store.baseID, nil
 }
@@ -196,8 +200,8 @@ func (store *Store) NodeIDs() ([]types.Hash, error) {
 	}
 	store.mu.RLock()
 	defer store.mu.RUnlock()
-	if store.closed {
-		return nil, storage.ErrClosed
+	if err := store.openErrorLocked(); err != nil {
+		return nil, err
 	}
 	result := make([]types.Hash, 0, len(store.nodes))
 	for id := range store.nodes {
@@ -217,8 +221,8 @@ func (store *Store) TipByID(id types.Hash) (storage.Tip, error) {
 	}
 	store.mu.RLock()
 	defer store.mu.RUnlock()
-	if store.closed {
-		return storage.Tip{}, storage.ErrClosed
+	if err := store.openErrorLocked(); err != nil {
+		return storage.Tip{}, err
 	}
 	if node, exists := store.nodes[id]; exists {
 		return cloneTip(node.tip), nil
@@ -240,8 +244,8 @@ func (store *Store) CanonicalFloor() (CanonicalFloor, error) {
 	}
 	store.mu.RLock()
 	defer store.mu.RUnlock()
-	if store.closed {
-		return CanonicalFloor{}, storage.ErrClosed
+	if err := store.openErrorLocked(); err != nil {
+		return CanonicalFloor{}, err
 	}
 	return cloneCanonicalFloor(store.floor), nil
 }
@@ -256,8 +260,8 @@ func (store *Store) IsAncestor(ancestor, descendant types.Hash) (bool, error) {
 	}
 	store.mu.RLock()
 	defer store.mu.RUnlock()
-	if store.closed {
-		return false, storage.ErrClosed
+	if err := store.openErrorLocked(); err != nil {
+		return false, err
 	}
 	return store.isAncestorLocked(ancestor, descendant)
 }
@@ -275,8 +279,8 @@ func (store *Store) SelectedAncestryCommitment(
 	}
 	store.mu.RLock()
 	defer store.mu.RUnlock()
-	if store.closed {
-		return types.Hash{}, 0, storage.ErrClosed
+	if err := store.openErrorLocked(); err != nil {
+		return types.Hash{}, 0, err
 	}
 	return store.selectedAncestryCommitmentLocked(anchor)
 }
@@ -294,8 +298,8 @@ func (store *Store) SelectedHistorySnapshot(
 	}
 	store.mu.RLock()
 	defer store.mu.RUnlock()
-	if store.closed {
-		return SelectedHistory{}, storage.ErrClosed
+	if err := store.openErrorLocked(); err != nil {
+		return SelectedHistory{}, err
 	}
 	selected, err := store.isAncestorLocked(anchor, store.tipID)
 	if err != nil {
@@ -401,8 +405,8 @@ func (store *Store) Snapshot() (*state.Memory, error) {
 	}
 	store.mu.RLock()
 	defer store.mu.RUnlock()
-	if store.closed {
-		return nil, storage.ErrClosed
+	if err := store.openErrorLocked(); err != nil {
+		return nil, err
 	}
 	return cloneState(store.nodes[store.tipID].state)
 }
@@ -413,8 +417,8 @@ func (store *Store) BlockByID(id types.Hash) (workblock.Block, error) {
 	}
 	store.mu.RLock()
 	defer store.mu.RUnlock()
-	if store.closed {
-		return workblock.Block{}, storage.ErrClosed
+	if err := store.openErrorLocked(); err != nil {
+		return workblock.Block{}, err
 	}
 	node, exists := store.nodes[id]
 	if !exists || node.block == nil {
@@ -436,9 +440,9 @@ func (store *Store) Prepare(
 		return nil, workblock.Position{}, ErrConfiguration
 	}
 	store.mu.RLock()
-	if store.closed {
+	if err := store.openErrorLocked(); err != nil {
 		store.mu.RUnlock()
-		return nil, workblock.Position{}, storage.ErrClosed
+		return nil, workblock.Position{}, err
 	}
 	parent, exists := store.nodes[parentID]
 	if !exists {
@@ -470,8 +474,8 @@ func (store *Store) Commit(
 	parentID := candidate.Header.Seal.AnchorParent
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	if store.closed {
-		return storage.Tip{}, workblock.Result{}, storage.ErrClosed
+	if err := store.openErrorLocked(); err != nil {
+		return storage.Tip{}, workblock.Result{}, err
 	}
 	parent, exists := store.nodes[parentID]
 	if !exists {
@@ -540,8 +544,8 @@ func (store *Store) HistoryUsage() (uint64, uint64, error) {
 	}
 	store.mu.RLock()
 	defer store.mu.RUnlock()
-	if store.closed {
-		return 0, 0, storage.ErrClosed
+	if err := store.openErrorLocked(); err != nil {
+		return 0, 0, err
 	}
 	if store.persistence == nil {
 		return 0, 0, nil
@@ -559,8 +563,8 @@ func (store *Store) PruneStaleForks() (PruneReport, error) {
 	}
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	if store.closed {
-		return PruneReport{}, storage.ErrClosed
+	if err := store.openErrorLocked(); err != nil {
+		return PruneReport{}, err
 	}
 	if store.persistence == nil || store.persistence.policy.ForkRetention == 0 {
 		return PruneReport{RetainedNodes: uint64(len(store.nodes))}, nil
@@ -645,14 +649,20 @@ func (store *Store) PruneCanonicalPrefixAuthorized(
 func (store *Store) pruneCanonicalPrefix(
 	boundary CanonicalFloor, authorize func() (uint64, error),
 ) (CanonicalPruneReport, error) {
-	if store == nil || boundary.validate() != nil {
+	if store == nil || boundary.validate() != nil || !boundary.PruneTicketID.IsZero() {
 		return CanonicalPruneReport{}, ErrCanonicalPrune
 	}
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	if store.closed {
-		return CanonicalPruneReport{}, storage.ErrClosed
+	if err := store.openErrorLocked(); err != nil {
+		return CanonicalPruneReport{}, err
 	}
+	return store.pruneCanonicalPrefixLocked(boundary, authorize, nil)
+}
+
+func (store *Store) pruneCanonicalPrefixLocked(
+	boundary CanonicalFloor, authorize func() (uint64, error), effect *CanonicalPruneEffect,
+) (CanonicalPruneReport, error) {
 	if store.persistence == nil || store.persistence.policy.CanonicalRetention == 0 ||
 		boundary.BaseID != store.baseID || boundary.Anchor.ID == store.floor.Anchor.ID {
 		return CanonicalPruneReport{}, ErrCanonicalPrune
@@ -720,13 +730,17 @@ func (store *Store) pruneCanonicalPrefix(
 	if err != nil {
 		return CanonicalPruneReport{}, err
 	}
+	report := CanonicalPruneReport{
+		PreviousFloorID: store.floor.Anchor.ID, FloorID: boundary.Anchor.ID,
+		RemovedNodes: uint64(len(remove)), RetainedNodes: uint64(len(store.nodes) - len(remove)),
+		ArchivedHeaders: uint64(len(newHeaders)),
+	}
 	added, released, err := store.persistence.pruneCanonicalPrefix(
-		store.nodes, remove, anchor, &boundary, authorize,
+		store.nodes, remove, anchor, &boundary, authorize, effect, report,
 	)
 	if err != nil {
 		return CanonicalPruneReport{}, err
 	}
-	previousFloorID := store.floor.Anchor.ID
 	for _, id := range remove {
 		delete(store.nodes, id)
 	}
@@ -735,12 +749,19 @@ func (store *Store) pruneCanonicalPrefix(
 	store.archivedIndex = archivedIndex
 	store.archivedTips = archivedTips
 	store.archivedHistory = archivedHistory
-	return CanonicalPruneReport{
-		PreviousFloorID: previousFloorID, FloorID: boundary.Anchor.ID,
-		RemovedNodes: uint64(len(remove)), RetainedNodes: uint64(len(store.nodes)),
-		ArchivedHeaders: uint64(len(newHeaders)), AddedHistoryBytes: added,
-		ReleasedHistoryBytes: released,
-	}, nil
+	report.AddedHistoryBytes, report.ReleasedHistoryBytes = added, released
+	return report, nil
+}
+
+// The caller holds store.mu. Close remains available after an uncertain commit.
+func (store *Store) openErrorLocked() error {
+	if store.closed {
+		return storage.ErrClosed
+	}
+	if store.persistence != nil && store.persistence.uncertain {
+		return ErrUncertain
+	}
+	return nil
 }
 
 // CreateReplayCheckpoint atomically replaces the selected tip's resource delta
@@ -754,8 +775,8 @@ func (store *Store) CreateReplayCheckpoint() (CheckpointReport, error) {
 	}
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	if store.closed {
-		return CheckpointReport{}, storage.ErrClosed
+	if err := store.openErrorLocked(); err != nil {
+		return CheckpointReport{}, err
 	}
 	if store.persistence == nil || store.persistence.policy.CheckpointEvery == 0 ||
 		store.persistence.policy.CheckpointKeep == 0 {

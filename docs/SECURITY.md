@@ -441,6 +441,25 @@ All old runtime acceptance paths remain under their existing policies until
 explicitly integrated. No authority entry is accepted as a replica receipt,
 challenge, availability bundle or rebaseline proposal.
 
+The optional WorkChain ticketed-prune primitive now binds the exact requested
+floor and original result to an assignment/ticket in the same synchronous batch
+as deletion. Its unsigned parameters are not proof of admission. Exact retries
+return retained historical evidence without executing or authorizing again;
+conflicting ticket reuse fails, and later maintenance cannot remove completed
+result records. The first such effect atomically enables schema 5 so older
+schema-4-only binaries fail closed. Results count toward byte and fixed-count
+limits; there is no automatic recycling. An uncertain canonical commit poisons
+public chain access until successful reopen; no successful result escapes first.
+
+The runtime still needs an independently retained consumer intent, admission
+verification, storage identity/pins, and completion only after its last effect
+drains. An effect lookup is local evidence, not a remote permission or a durable
+consumer terminal decision. In particular, absent results in a freshly created,
+replaced or rolled-back database cannot justify retry or no-effect completion.
+The new primitive is not used by the live archive CLI or raw custody sessions.
+Canonical record recovery checks shape/accounting and local floor/ancestry
+consistency, not historical external availability or trusted-owner tampering.
+
 Availability files now use no-replace publication. Exact retries verify and
 fsync the existing regular inode; conflicting bundles, damaged files, and
 symlinks are rejected without replacing the path. A failure after publication

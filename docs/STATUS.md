@@ -613,6 +613,21 @@ Implemented in an isolated, not-yet-activated consensus package:
   power-loss campaigns, current-authority transport and durable consumer effects
   remain open. Runtime acceptance paths are not connected yet; reference entries
   and durable history results are not live permissions or activation evidence.
+  Consumer-effect groundwork (2026-09-07): WorkChain now has an optional
+  `PruneCanonicalPrefixOnce` primitive. An exact assignment/ticket/request and
+  original completed result commit in the same synchronous batch as deletion,
+  floor state and logical-byte accounting. Lost-result recovery is read-only;
+  exact retries do not invoke authorization or repeat deletion, even after
+  later pruning. Conflicting ticket reuse fails. Results are retained within
+  65,536-record and byte budgets, and the first effect atomically opts only that
+  database into schema 5, refusing older readers. Recovery rejects malformed or
+  inconsistent result/floor history; uncertain canonical commits block chain
+  access until close/reopen. Tests cover 16 concurrent retries, timestamp gates,
+  ticket substitution, later maintenance, codecs, invalid recovery and four
+  additional process-kill boundaries, including an unsynced ambiguous attempt.
+  The primitive is not a live grant, consumer intent journal, completion service
+  or anti-rollback storage identity. Current-authority transport and all live
+  audit/serve/prune adapters remain open; existing CLI behavior is unchanged.
   QUIC follow-up (2026-09-06): the first combined process run failed in
   `TestProcessTiePairQUICReachesIndependentV2ObserversAndRecoversAck` with a
   remote QUIC close, and in the coordinator-journal-before-rename case of

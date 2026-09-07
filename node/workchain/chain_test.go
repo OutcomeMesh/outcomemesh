@@ -1372,7 +1372,8 @@ func equalCanonicalTestFloor(left, right CanonicalFloor) bool {
 		storage.EqualTips(left.Anchor, right.Anchor) && left.AncestryNodes == right.AncestryNodes &&
 		left.AncestryRoot == right.AncestryRoot && left.StatementID == right.StatementID &&
 		left.ManifestID == right.ManifestID && left.AvailabilityID == right.AvailabilityID &&
-		left.VerifiedAt == right.VerifiedAt && left.RetainUntil == right.RetainUntil
+		left.VerifiedAt == right.VerifiedAt && left.RetainUntil == right.RetainUntil &&
+		left.PruneTicketID == right.PruneTicketID
 }
 
 func mineChild(

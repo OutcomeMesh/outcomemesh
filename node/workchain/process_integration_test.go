@@ -4,6 +4,7 @@ package workchain
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cockroachdb/pebble/v2"
 	"github.com/outcomemesh/outcomemesh/core/types"
 	"github.com/outcomemesh/outcomemesh/core/workblock"
 	"github.com/outcomemesh/outcomemesh/storage"
@@ -39,6 +41,10 @@ func TestPebbleProcessCrashAtomicity(t *testing.T) {
 		{operation: "authorized", boundary: "before"},
 		{operation: "authorized", boundary: "decision"},
 		{operation: "authorized", boundary: "after"},
+		{operation: "ticketed", boundary: "before"},
+		{operation: "ticketed", boundary: "decision"},
+		{operation: "ticketed", boundary: "after"},
+		{operation: "ticketed", boundary: "unsynced"},
 	} {
 		name := fixture.operation + "-" + fixture.boundary
 		t.Run(name, func(t *testing.T) {
@@ -57,6 +63,14 @@ func TestPebbleProcessCrashAtomicity(t *testing.T) {
 			}
 			runCrashOperation(t, expectedStore, fixture.operation, parameters)
 			after := crashStoreSummary(t, expectedStore)
+			var expectedEffect CanonicalPruneEffect
+			if fixture.operation == "ticketed" {
+				var found bool
+				expectedEffect, found, err = expectedStore.CanonicalPruneEffect(pruneOperation(CanonicalFloor{}, "process").TicketID)
+				if err != nil || !found {
+					t.Fatal("missing expected prune result", err)
+				}
+			}
 			if err := expectedStore.Close(); err != nil {
 				t.Fatal(err)
 			}
@@ -85,11 +99,29 @@ func TestPebbleProcessCrashAtomicity(t *testing.T) {
 			}
 			actual := crashStoreSummary(t, reopened)
 			want := before
-			if fixture.boundary == "after" {
+			if fixture.boundary == "after" || (fixture.boundary == "unsynced" && equalCrashSummary(actual, after)) {
 				want = after
 			}
 			if !equalCrashSummary(actual, want) {
 				t.Fatalf("%s recovery mismatch\nactual: %+v\nwant:   %+v", name, actual, want)
+			}
+			if fixture.operation == "ticketed" {
+				// NoSync can still be in Pebble's userspace WAL buffer at death.
+				// Either complete transaction is legal; a hybrid is never legal.
+				persisted := actual.FloorPruned
+				observed, found, err := reopened.CanonicalPruneEffect(expectedEffect.Operation.TicketID)
+				if err != nil || found != persisted || (found && !equalPruneEffect(observed, expectedEffect)) {
+					t.Fatal("reopen did not preserve exact result", err)
+				}
+				calls := 0
+				retry, err := reopened.PruneCanonicalPrefixOnce(expectedEffect.Operation, func() (uint64, error) { calls++; return 200, nil })
+				if err != nil || retry.Applied == persisted || !equalPruneEffect(retry.Effect, expectedEffect) ||
+					calls != map[bool]int{false: 1, true: 0}[persisted] {
+					t.Fatal("lost response repeated or changed the effect", retry, calls, err)
+				}
+				if !equalCrashSummary(crashStoreSummary(t, reopened), after) {
+					t.Fatal("retry changed accounting or retained evidence")
+				}
 			}
 			tip, err := reopened.Tip()
 			if err != nil {
@@ -118,7 +150,7 @@ func TestWorkChainCrashHelper(t *testing.T) {
 	parameters := testParameters()
 	base := testBase(t, parameters)
 	parts := strings.Split(mode, "-")
-	if len(parts) != 2 || (parts[1] != "before" && parts[1] != "after" && parts[1] != "decision") {
+	if len(parts) != 2 || (parts[1] != "before" && parts[1] != "after" && parts[1] != "decision" && parts[1] != "unsynced") {
 		t.Fatalf("unknown crash mode %q", mode)
 	}
 	operation, boundary := parts[0], parts[1]
@@ -135,24 +167,35 @@ func TestWorkChainCrashHelper(t *testing.T) {
 		}
 	case "after":
 		store.persistence.afterCommitHook = stop
+	case "unsynced":
+		store.persistence.pruneCommitHook = func(batch *pebble.Batch) error {
+			if err := batch.Commit(pebble.NoSync); err != nil {
+				return err
+			}
+			stop()
+			return errors.New("unreachable crash hook")
+		}
 	}
 	runCrashOperation(t, store, operation, parameters)
 	t.Fatal("crash hook returned")
 }
 
 type processCrashSummary struct {
-	TipID       types.Hash
-	StateRoot   types.Hash
-	Height      uint64
-	Timestamp   uint64
-	Work        []byte
-	History     uint64
-	Nodes       []types.Hash
-	Checkpoints []types.Hash
-	FloorID     types.Hash
-	FloorPruned bool
-	VerifiedAt  uint64
-	Archived    []types.Hash
+	TipID        types.Hash
+	StateRoot    types.Hash
+	Height       uint64
+	Timestamp    uint64
+	Work         []byte
+	History      uint64
+	Nodes        []types.Hash
+	Checkpoints  []types.Hash
+	FloorID      types.Hash
+	FloorPruned  bool
+	VerifiedAt   uint64
+	Archived     []types.Hash
+	PruneTicket  types.Hash
+	EffectIDs    []types.Hash
+	EffectSchema bool
 }
 
 func crashPolicy(operation string) Policy {
@@ -164,7 +207,7 @@ func crashPolicy(operation string) Policy {
 		policy.CheckpointKeep = 2
 	case "prune":
 		policy.ForkRetention = 1
-	case "canonical", "authorized":
+	case "canonical", "authorized", "ticketed":
 		policy.ForkRetention = 1
 		policy.CanonicalRetention = 1
 	default:
@@ -188,11 +231,11 @@ func prepareCrashStore(
 	}
 	switch operation {
 	case "commit":
-	case "checkpoint", "canonical", "authorized":
+	case "checkpoint", "canonical", "authorized", "ticketed":
 		parentID := base.Tip.ID
 		timestamp := base.Tip.Timestamp
 		blocks := 2
-		if operation == "canonical" || operation == "authorized" {
+		if operation == "canonical" || operation == "authorized" || operation == "ticketed" {
 			blocks = 5
 		}
 		for height := 1; height <= blocks; height++ {
@@ -251,7 +294,7 @@ func runCrashOperation(t testing.TB, store *Store, operation string, parameters 
 		if report, err := store.PruneStaleForks(); err != nil || report.RemovedNodes == 0 {
 			t.Fatalf("prune operation report=%+v err=%v", report, err)
 		}
-	case "canonical", "authorized":
+	case "canonical", "authorized", "ticketed":
 		tip, err := store.Tip()
 		if err != nil {
 			t.Fatal(err)
@@ -274,13 +317,18 @@ func runCrashOperation(t testing.TB, store *Store, operation string, parameters 
 		}
 		boundary := canonicalTestFloor(store.baseID, anchor, root, count, "process-crash")
 		var report CanonicalPruneReport
-		if operation == "authorized" {
-			report, err = store.PruneCanonicalPrefixAuthorized(boundary, func() (uint64, error) {
-				if os.Getenv(crashModeEnvironment) == "authorized-decision" {
-					blockAtCrashMarker(os.Getenv(crashMarkerEnvironment))
-				}
-				return 200, nil
-			})
+		authorize := func() (uint64, error) {
+			if os.Getenv(crashModeEnvironment) == operation+"-decision" {
+				blockAtCrashMarker(os.Getenv(crashMarkerEnvironment))
+			}
+			return 200, nil
+		}
+		if operation == "ticketed" {
+			var commit CanonicalPruneCommit
+			commit, err = store.PruneCanonicalPrefixOnce(pruneOperation(boundary, "process"), authorize)
+			report = commit.Effect.Report
+		} else if operation == "authorized" {
+			report, err = store.PruneCanonicalPrefixAuthorized(boundary, authorize)
 		} else {
 			report, err = store.PruneCanonicalPrefix(boundary)
 		}
@@ -347,11 +395,34 @@ func crashStoreSummary(t testing.TB, store *Store) processCrashSummary {
 			t.Fatal(err)
 		}
 	}
+	var effectIDs []types.Hash
+	iterator, err := store.persistence.db.NewIter(&pebble.IterOptions{LowerBound: []byte{workPruneEffectPrefix}, UpperBound: []byte{workPruneEffectPrefix + 1}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for valid := iterator.First(); valid; valid = iterator.Next() {
+		effect, err := DecodeCanonicalPruneEffect(iterator.Value())
+		if err != nil {
+			t.Fatal(err)
+		}
+		id, err := effect.ID()
+		if err != nil {
+			t.Fatal(err)
+		}
+		effectIDs = append(effectIDs, id)
+	}
+	if err := iterator.Error(); err != nil {
+		t.Fatal(err)
+	}
+	if err := iterator.Close(); err != nil {
+		t.Fatal(err)
+	}
 	return processCrashSummary{
 		TipID: tip.ID, StateRoot: state.Root(), Height: tip.Height, Timestamp: tip.Timestamp,
 		Work: append([]byte(nil), tip.CumulativeWork...), History: history,
 		Nodes: append([]types.Hash(nil), nodes...), Checkpoints: checkpoints,
 		FloorID: floor.Anchor.ID, FloorPruned: floor.Pruned, VerifiedAt: floor.VerifiedAt, Archived: archived,
+		PruneTicket: floor.PruneTicketID, EffectIDs: effectIDs, EffectSchema: store.persistence.effectSchema,
 	}
 }
 
@@ -360,7 +431,8 @@ func equalCrashSummary(left, right processCrashSummary) bool {
 		left.Height == right.Height && left.Timestamp == right.Timestamp && left.History == right.History &&
 		bytes.Equal(left.Work, right.Work) && hashSlicesEqual(left.Nodes, right.Nodes) &&
 		hashSlicesEqual(left.Checkpoints, right.Checkpoints) && left.FloorID == right.FloorID &&
-		left.FloorPruned == right.FloorPruned && left.VerifiedAt == right.VerifiedAt && hashSlicesEqual(left.Archived, right.Archived)
+		left.FloorPruned == right.FloorPruned && left.VerifiedAt == right.VerifiedAt && hashSlicesEqual(left.Archived, right.Archived) &&
+		left.PruneTicket == right.PruneTicket && left.EffectSchema == right.EffectSchema && hashSlicesEqual(left.EffectIDs, right.EffectIDs)
 }
 
 func hashSlicesEqual(left, right []types.Hash) bool {
