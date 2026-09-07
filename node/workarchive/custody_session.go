@@ -602,7 +602,13 @@ func (session *CustodySession) setDeadline(ctx context.Context, stream CustodySe
 	if contextDeadline, ok := ctx.Deadline(); ok && contextDeadline.Before(deadline) {
 		deadline = contextDeadline
 	}
-	return stream.SetDeadline(deadline)
+	// A peer may reject and close immediately after consuming the previous
+	// frame. Deadline setup is part of the same fallible session I/O boundary
+	// as Read/Write; preserve both its cause and the session classification.
+	if err := stream.SetDeadline(deadline); err != nil {
+		return errors.Join(ErrCustodySession, err)
+	}
+	return nil
 }
 
 func writeCustodySessionBytes(writer io.Writer, encoded []byte) error {
