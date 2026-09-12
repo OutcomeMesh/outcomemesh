@@ -180,7 +180,7 @@ func pruneExternalID(name, encoded string) (types.Hash, error) {
 	return id, nil
 }
 
-// All flags in these three commands take a value. Wrap their setters so a
+// All flags in the prune transport/preparation commands take a value. Wrap their setters so a
 // repeated trust pin/path cannot silently override an earlier reviewed value.
 func parsePruneFlags(flags *flag.FlagSet, arguments []string) error {
 	flags.VisitAll(func(f *flag.Flag) { f.Value = &pruneOnceFlag{value: f.Value} })

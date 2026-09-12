@@ -424,8 +424,24 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
                     Return retained storage/shutdown errors; handle broken stdout
                     through cleanup. Cover real CLI SIGTERM/kill/restart, SIGPIPE
                     and exact historical retry. Publish the scoped operator runbook.
-                  - [ ] Reviewed bootstrap/signing and ownership handoff plus
-                    actual audit/serve/prune wiring with live archive policy,
+                  - [x] Explicit offline bootstrap for two new authority roots
+                    under pins-first ownership, and an independently pinned
+                    executor pair. Default placement review is non-mutating;
+                    verify only reopens exact retained state. Preserve partial
+                    initialization and never attach fresh pins to old work.
+                  - [x] Reviewed prune Admit/Complete signing: consumer review
+                    and signature followed by independent authority review and
+                    co-signature, using existing signature domains. Pin request,
+                    original admission and terminal bytes; publish immutable
+                    outputs. Never infer a current head or durable terminal state.
+                  - [x] Offline preparation of both typed outboxes from exact
+                    co-signed entries and independent endpoint/intent pins.
+                    Default review writes nothing; create only initializes a new
+                    root; verify reports historical receipts without sending.
+                    Exercise all six commands in a separate-process pipeline
+                    and preserve roots/artifacts after broken stdout.
+                  - [ ] Reviewed ownership handoff and actual audit/serve/prune
+                    wiring with live archive policy,
                     all-required-assignment guards and protected storage pins.
   - [ ] Filesystem-full, inode-exhaustion, power-loss, and long-running retention
     campaigns before deployment claims.

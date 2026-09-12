@@ -1064,9 +1064,62 @@ Implemented in an isolated, not-yet-activated consensus package:
   The production builds emitted nonfatal sandbox warnings when Go tried to cache
   VCS module metadata outside the workspace, but returned success and produced
   the checked binaries. Cross-compilation is not non-macOS runtime evidence.
-  Reviewed bootstrap/signing, ownership handoff and actual audit/serve/prune
-  integration with all-required-assignment and physical storage guards remain
-  open. No active cross-host cutover or public-testnet readiness is claimed.
+  Offline preparation follow-up (2026-09-12): six separate omd commands now
+  expose three more functional stages. Explicit authority bootstrap creates two
+  new disjoint roots under continuous pins-first ownership, then validates the
+  combined snapshot. Executor preparation uses the existing pinned constructor
+  with a separately retained storage-bound request. Both default to non-mutating
+  placement review; explicit verify opens only existing roots, reports retained
+  state and compares the full executor request without appending or resuming.
+  Partial initialization is preserved, never reset or silently given fresh pins.
+  These are independent pair operations, not an atomic four-root transaction.
+  Consumer review/sign and independent authority review/co-sign bind the exact
+  existing role-specific signature-message hash. They require explicit request,
+  sequence/head and, for Complete, original admission/terminal artifacts and
+  their independent IDs. Static role/sequence/linkage checks precede key reads;
+  immutable artifact publication accepts only byte-identical retry. No signer
+  opens a journal or discovers/refreshes a current head. Supplied cancellation
+  or effect bytes remain historical input, not durable/live execution proof.
+  Both typed outboxes now have offline review/create/verify commands binding an
+  already co-signed entry and independently retained entry/endpoint/intent IDs.
+  Review creates nothing; create accepts only a new root; verify compares the
+  full retained intent and can report an offline historical ACK without sending.
+  Owners close before output; lost stdout preserves roots and published bytes.
+  The separate process suite runs all six commands through Admit delivery,
+  explicit guarded offline cancellation, Complete delivery and repeated local
+  verification. Real closed-stdout cases exercise both bootstrap pairs, both
+  signing roles and both typed outbox publishers. The fixture has no WorkChain
+  database and does not establish a live effect or physical independence.
+  PRUNE_PREPARATION.md documents modes, independent review checkpoints, bounded
+  artifact/key input, partial initialization and recovery. Ordinary daemon and
+  transport entry points do not infer any preparation step. Consensus rules,
+  signature domains and journal/wire encodings are unchanged.
+  Cross-review also tightened the shared immutable artifact publisher's exact
+  retry branch. Matching bytes previously caused only the parent directory to
+  be synced, which did not establish file durability for an artifact originally
+  written elsewhere. Retry now checks and syncs the same bounded regular inode,
+  rechecks its path identity and returns Close errors before syncing the parent.
+  Fault tests cover file-sync/close errors, conflicting bytes and an identical
+  replacement inode, without removing the retained evidence. This is a local
+  fsync contract, not proof of hardware power-loss behavior or copied-owner fencing.
+  Final-source targeted CLI/artifact/process tests passed with race detection in
+  47.867 seconds. Both full `go test ./...` and `go test -race ./...` passed;
+  cmd/omd took 6.493 and 11.033 seconds after the publisher change, with unchanged
+  packages using the cache. Earlier uncached store runs for this stage passed in
+  275.002 and 286.410 seconds, and workarchive in 137.739 and 196.571 seconds.
+  The suites ran sequentially; no timeout was extended.
+  The complete ten-suite process gate passed with fresh runs: preparation CLI
+  1.840 seconds, delivery CLI 2.506, existing node scenarios 65.237, chain 29.216,
+  archive 16.183, authority/executor 210.286, completion outbox 24.837, admission
+  server 19.007, admission outbox 14.749 and command runtime 20.335 seconds.
+  Full vet and integration-tag vet for cmd/omd also passed.
+  CGO-disabled builds with VCS stamping disabled succeeded for macOS arm64,
+  Linux amd64 and Windows amd64. Linux/Windows integration test binaries also
+  compiled; native `omd help` exposes all six preparation commands. This is
+  cross-compilation coverage, not Linux/Windows runtime or filesystem evidence.
+  Reviewed ownership handoff and actual audit/serve/prune integration with
+  all-required-assignment and physical storage guards remain open. No active
+  cross-host cutover or public-testnet readiness is claimed.
   Process-gate observation (2026-09-07): the first combined run stopped at
   `TestProcessTieCampaignStorageFailuresRecoverWithoutFalseAdvance/observer_confirmation_after_link`
   because the expected confirmation marker was absent. Five isolated repetitions

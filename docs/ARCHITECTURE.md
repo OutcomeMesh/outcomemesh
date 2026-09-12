@@ -316,7 +316,12 @@ not a live effect scheduler or all-assignment acceptance layer. Three explicit
 `work-prune-*-quic` operator commands now expose that command-only runtime and
 the two retained delivery runners. They require independently pinned prepared
 inputs, reject missing-root bootstrap and never sign or execute work; see
-[PRUNE_COMMANDS.md](PRUNE_COMMANDS.md).
+[PRUNE_COMMANDS.md](PRUNE_COMMANDS.md). Six separate offline preparation commands
+provide explicit all-new journal-pair creation, reviewed two-role signing and
+typed outbox preparation. Review defaults to no writes; verify uses only exact
+retained evidence. These paths do not learn a live head, open WorkChain or hand
+off runtime ownership. Signature messages and journal/wire encodings remain
+unchanged; see [PRUNE_PREPARATION.md](PRUNE_PREPARATION.md).
 Receipt v1 can extend one exact
 predecessor only after a fresh signed random-sample challenge: sample IDs are
 deterministically derived from the nonce, manifest, and predecessor receipt;

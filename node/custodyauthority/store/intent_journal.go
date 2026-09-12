@@ -82,8 +82,10 @@ func createIntentJournal(path string, assignment custodyauthority.Assignment, ex
 	if err := syncDirectory(path); err != nil {
 		return nil, err
 	}
-	// Lock order is always intent journal -> authority. A new journal may only
-	// attach to an already initialized, independently pinned sequence-zero store.
+	// Lock order is always intent journal -> authority. The callback must hold
+	// an independently pinned, initialized sequence-zero store before this
+	// journal becomes ready. Explicit all-new bootstrap creates it under that
+	// lock order; the existing-store constructor only opens an unused store.
 	if err := verifyAuthority(); err != nil {
 		return nil, err
 	}

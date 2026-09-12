@@ -104,7 +104,11 @@ than a public testnet.
 Three explicit command-only prune transport commands can now serve an existing
 pinned executor/coordinator or deliver a retained admission/completion outbox.
 They require independently prepared and pinned inputs; they do not sign commands,
-initialize journals or execute pruning. See the
+initialize journals or execute pruning. Six separate
+[offline preparation commands](docs/PRUNE_PREPARATION.md) now provide explicit
+new-root bootstrap, reviewed consumer/authority signing and typed outbox
+preparation. Review is the default; neither preparation nor delivery authorizes
+a live prune. See the
 [prune command runbook](docs/PRUNE_COMMANDS.md) for flags, shutdown, recovery and
 the remaining live-authorization gates.
 

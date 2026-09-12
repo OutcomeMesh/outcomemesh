@@ -27,12 +27,12 @@ Prepare and independently review these inputs before using the commands:
   authority-co-signed; its transport pins select the two endpoints. Completion
   must name the original executor's independently confirmed terminal evidence.
 
-Bootstrap, request preparation, signing and outbox creation currently remain
-explicit library workflows, not new CLI commands. The existing APIs include
-`Create`, `CreateCoordinator`, `CreatePinnedPruneExecutor`,
-`CreateAdmissionOutbox` and `CreateCompletionOutbox`; their independent-ID and
-new-root preconditions still apply. There is no `--init`, `--sign`, `--resume`,
-`--execute`, missing-root fallback, head refresh or automatic signature renewal.
+Six separate [offline preparation commands](PRUNE_PREPARATION.md) now expose
+explicit new-root bootstrap, reviewed consumer signing/authority co-signing and
+typed outbox creation/verification. Request construction remains a guarded
+library workflow. None of those steps is inferred by these transport commands:
+there is no `--init`, `--sign`, `--resume`, `--execute`, missing-root fallback,
+head refresh or automatic signature renewal in the transport entry points.
 
 An assignment file is bounded to 8 KiB and canonically decoded. A `--key` file
 contains exactly 32 raw Ed25519 seed bytes, not hex or a 64-byte private key.
@@ -140,7 +140,7 @@ authorization. Changing a route does not change either peer pin.
 The service currently has to be stopped for an explicit local ownership handoff
 to the existing guarded executor APIs. The CLI does not perform that handoff or
 expose an effect API. Live archive-policy checks, all-required-assignment
-enforcement, reviewed bootstrap/signing, protected physical storage/pins,
+enforcement, reviewed ownership handoff, protected physical storage/pins,
 copied-owner fencing and active cross-host cutover remain separate open gates.
 
 ## Verification scope

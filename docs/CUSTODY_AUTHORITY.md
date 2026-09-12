@@ -771,7 +771,18 @@ integrated live archive acceptance pipeline or all-assignment fence. Explicit
 command service and typed one-shot runners. They require prepared roots, keys
 and independent IDs; they do not bootstrap, sign, execute or install a default
 daemon/auditor/replica path. See [PRUNE_COMMANDS.md](PRUNE_COMMANDS.md) for flags,
-stdout semantics, ordered signal shutdown and the remaining preparation gates.
+stdout semantics and ordered signal shutdown. Separate offline operator commands
+now create an all-new coordinated authority pair or pinned executor pair,
+review/sign and independently review/co-sign prune Admit/Complete entries, and
+review/create/verify either typed client outbox. Review never mutates; opening
+for verification never appends or resumes. The new authority constructor holds
+both owners continuously from pins-first creation through snapshot validation.
+Each signing review ID is the existing role-specific signature-message hash;
+no evidence or wire format changes. Supplied terminal bytes are independently
+pinned history, not a proof of live executor state. See
+[PRUNE_PREPARATION.md](PRUNE_PREPARATION.md). Request construction, live policy
+checks, reviewed ownership handoff and all-required-assignment enforcement remain
+separate open gates; there is still no operator Execute path.
 
 Tests exercise actual one-shot clients through both owned endpoints, including
 an explicit local guarded execution/cancellation handoff, completion and

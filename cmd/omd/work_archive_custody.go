@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"crypto/ed25519"
 	"errors"
@@ -823,9 +822,8 @@ func publishImmutableArtifact(path string, encoded []byte) error {
 		if !errors.Is(err, os.ErrExist) {
 			return err
 		}
-		current, readErr := readRegularArtifact(path, len(encoded))
-		if readErr != nil || !bytes.Equal(current, encoded) {
-			return errors.Join(errors.New("immutable artifact conflict"), readErr)
+		if confirmErr := syncExactRegularArtifact(path, encoded, nil); confirmErr != nil {
+			return errors.Join(errors.New("existing immutable artifact is not confirmed"), confirmErr)
 		}
 		return syncCustodyArtifactDirectory(directory)
 	}

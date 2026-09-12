@@ -640,6 +640,23 @@ Printed/cached ACKs remain historical, not live execution grants. The input
 reader does not establish OS owner/ACL protection, physical isolation or memory
 zeroization. The operator boundary is documented in `PRUNE_COMMANDS.md`.
 
+Offline preparation is a separate explicit boundary, not a transport fallback.
+Bootstrap requires two absent, disjoint roots and holds pins before the writer;
+it never reinitializes partial data or attaches fresh pins to an old authority.
+Review checks placement only, even if existing journal contents are invalid.
+Verify may re-sync retained evidence but cannot append/confirm/resume an attempt.
+The two pair operations are not a four-root atomic transaction or physical fence.
+Reviewed consumer signing and independent authority co-signing require exact
+existing signature-message IDs, pinned request/evidence files and role-specific
+seed paths. No key is read until the input and review IDs match. Signatures and
+terminal files remain historical bytes, not proof of the executor's current or
+durably committed state. An outbox review binds an already co-signed entry and
+separate transport pins; explicit create accepts only a new typed root, and
+verify cannot send. All owners close before success output. Failed stdout leaves
+published artifacts/roots intact; it never triggers reset, replacement or retry.
+The artifact publisher may create output parent directories; operators must
+protect those paths. See `PRUNE_PREPARATION.md` for the trust and recovery rules.
+
 The opt-in storage-incarnation mode adds a narrower local guarantee. A fresh
 caller-selected ID is atomically bound to a new schema-6 WorkChain database;
 reopen needs the independently retained ID and never initializes missing data.
