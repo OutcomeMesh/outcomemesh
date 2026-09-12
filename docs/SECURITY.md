@@ -591,8 +591,18 @@ required. Admission traffic cannot spend completion's budget. Historical ACKs
 remain historical after Stop/Complete/Retire; Execute must still acquire the
 original coordinator's live pending-ticket guard. No generic remote execution
 grant, cached-state fallback, remote request creation or effect callback exists.
-The low-level client does not retain intent/receipt or automatically retry; a
-durable admission client journal is still needed before managed runtime wiring.
+The low-level client does not retain intent/receipt or automatically retry.
+The separate `AdmissionOutbox` retains one externally signed prune Admit and
+both peer pins before sending, then syncs the checked ACK before success. Its
+formats and typed ACK are distinct from completion. Open sends nothing; only
+explicit retry can send the same command with a fresh nonce. It cannot replace
+a rejected request/head or turn a historical ACK into an execution permission.
+Request bytes remain in the separately prepared server executor; client intent
+validation does not prove server preparation or current authority. A local
+publication failure poisons the writer until reopen. A visible final receipt
+is re-synced, never inferred from staging data. Receipt-only rollback remains
+undetectable without an independent receipt-position pin: it makes delivery
+unresolved, not permission to execute. The checksum is not malicious-root defense.
 No live audit/serve/prune path is installed by these opt-in library APIs. Physical
 root separation, copied/shared rollback, signing-key ownership, fencing and
 all-required-assignment enforcement remain external/open gates.

@@ -15,6 +15,10 @@ execution authority or install a default daemon service; see its scope below.
 A separate one-command client outbox can retain that delivery and its checked
 channel acknowledgement across local process crashes. Neither is a live grant.
 
+The separate opt-in admission-only endpoint and its own client outbox deliver
+an externally co-signed prune Admit for an already prepared server request.
+They retain admission without remotely starting work or installing live handlers.
+
 Local retirement serializes upgraded participants using the named journal
 roots. It does not invalidate a previously extracted Ed25519 key, a copied
 unretired journal, an old binary, or a receipt already delivered elsewhere.
@@ -617,8 +621,8 @@ before using it. Lost/partial replies and disconnects remain unresolved, never
 permission to choose a replacement operation. Every explicit exchange uses a
 fresh nonce. ACKs are unsigned authenticated-channel observations, not portable
 proofs, current-state grants or evidence that a remote executor may start.
-The completion outbox does not accept admission entries; an admission client
-journal and runtime ownership wiring remain separate work.
+The completion outbox does not accept admission entries. The separate admission
+outbox below retains that exchange; managed runtime ownership remains open.
 
 Tests cover 42 initial publication boundaries and 14 interrupted executor-resume
 boundaries, canonical vectors and protocol separation, wrong bindings, cancellation,
@@ -631,6 +635,81 @@ QUIC-complete test covers the lifecycle; a historical admission ACK with a close
 ticket still cannot start the executor. None of this fences copied owners, proves
 physical pin independence, enforces all replica assignments or installs live
 audit/serve/prune handlers.
+
+### One-command admission client outbox
+
+`store.AdmissionOutbox` retains exactly one `AdmissionIntent`: an externally
+co-signed prune Admit and the independently selected client/server transport IDs.
+Its independently retained ID pins all three. The signed `OperationID` names the
+server's separately prepared `PruneRequest`; this journal does not retain or
+upload request bytes, create a request, or establish that the server has one.
+The server must still validate its own request and current authority before
+first binding. Local validation checks the assignment, authority key, declared
+prune consumer and canonical signatures. It rejects sequences above
+`2*(MaximumOperations-1)`: before a new Admit there can be at most N-1 prior
+admissions and N-1 completions, and Stop forbids new admissions. Passing that
+static bound is not a current-head check.
+
+The new root layout is deliberately distinct from completion:
+
+```text
+admission.lock             empty lifetime process-lock file
+assignment.omcaa           exact canonical assignment
+intent.omcai               immutable 456-byte intent
+ready.omcao                42-byte initialization marker
+received/ack.omcar         optional 148-byte local acknowledgement receipt
+pending/entry-*            bounded unpublished receipt files
+```
+
+Intent encoding is `OMCASEND`, big-endian uint16 version zero, client ID,
+server ID and the exact 382-byte signed entry. Its ID domain is
+`OMESH/custody-admission/intent/id/v0`. The ready marker is `OMCAINIT`,
+the same version and intent ID. A receipt is `OMCADONE`, the same version,
+intent ID, the 74-byte admission-wire ACK and a 32-byte checksum over the preceding
+bytes under `OMESH/custody-admission/receipt/v0`. Neither completion envelopes
+nor their embedded ACKs are interchangeable with these formats.
+
+`CreateAdmissionOutbox` writes and syncs a new root before returning, without
+sending. `OpenAdmissionOutbox` validates and re-syncs existing evidence against
+the external intent ID; it creates no files, promotes no temporary receipt and
+makes no network call. Missing/partial roots cannot be recreated as recovery.
+`Deliver` accepts only the concrete identity-pinned QUIC host, not an arbitrary
+success callback. A supplied address is a route, never a replacement trust pin.
+The mutex and lifetime process lock span validation, exchange and receipt fsync;
+concurrent deliveries serialize and Close waits for that owner.
+
+A fully checked response and EOF precede the synced staging file, no-replace
+receipt publication and directory fsync. Success is returned only after all
+those steps. Cancellation after the checked response does not discard it.
+Failed local publication returns no ACK and makes that writer unusable until
+close/reopen. Recovery re-syncs a visible exact final receipt; a staging file
+alone stays unresolved. At most 128 pending files of at most 148 bytes are
+allowed; capacity exhaustion refuses a send before using the network.
+
+A nil acknowledgement means unresolved, not unsent or rejected. An explicit
+retry sends the same signed command with a fresh nonce; there is no signing,
+head refresh, automatic retry/failover, queue, drop/reset API or request rewrite.
+A retained acknowledgement returns offline with its original nonce. It records
+historical delivery, even after Stop, completion and retirement; it cannot
+authorize Execute or reopen a ticket. A server rejection likewise cannot turn
+the original command into a newly signed request.
+
+The receipt is an unsigned local channel observation, not portable proof.
+Its checksum detects corruption, not a malicious root owner. Intent pinning
+does not detect copied roots, shared rollback or ACK-only loss. Losing an ACK
+can only make delivery unresolved and require an exact retry against retained
+server history. Physical root protection, independent pins, server retention,
+copy fencing and all-assignment live enforcement remain external/open gates.
+Timeouts bound network I/O, not mutex waits or filesystem latency.
+
+Tests cover strict canonical records and domain separation, sequence endpoints,
+wrong bindings, malformed/replaced files, receipt faults, concurrency, cancellation
+and lost/partial QUIC responses. Forty-one client-process kills cover four server
+lifecycle phases (initial, admitted, stopping, retired), client receipt boundaries,
+both in-flight server confirmations and initialization. Reopening twice must not
+send; explicit exact retry preserves the lifecycle and never prunes chain data.
+These logical process tests do not demonstrate power-loss durability or install
+managed runtime services.
 
 ### Storage-incarnation-bound prune requests
 

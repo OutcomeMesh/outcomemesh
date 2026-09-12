@@ -1,6 +1,6 @@
 # Implementation status
 
-Updated: 2026-09-07
+Updated: 2026-09-12
 
 This file records evidence against `PLAN.md`. A milestone remains open until all
 of its exit gates pass; implementing most deliverables does not close it.
@@ -868,7 +868,8 @@ Implemented in an isolated, not-yet-activated consensus package:
   frames, strict request/reply EOF and fresh exchange nonces. It has separate
   rate/concurrency/memory limits, including a check that exhausted admission
   traffic cannot spend completion's rate budget. There is no live handler wiring
-  or durable admission client journal yet; the completion outbox rejects Admit.
+  or durable admission client journal at that checkpoint; the completion outbox
+  rejects Admit. The client-journal follow-up is recorded below.
   Tests cover all 42 initial publication faults, 14 interrupted executor resumes,
   cancellation at retained-intent boundaries, wrong signed bindings, concurrent
   retries/Stop, lost/partial replies and the QUIC-admit / locally guarded effect /
@@ -907,9 +908,65 @@ Implemented in an isolated, not-yet-activated consensus package:
   passed: command processes 65.596 seconds, 100 WorkChain crash cases 28.227
   seconds, archive recovery 16.114 seconds, 466 authority/executor crash cases
   204.191 seconds, 41 completion-outbox crash cases 22.152 seconds, and 45 new
-  admission-server crash cases 28.470 seconds. Admission client durability,
-  managed ownership, all-assignment live enforcement and physical/copy-fencing
-  guarantees remain open; these results do not promote the project to production.
+  admission-server crash cases 28.470 seconds. Admission client durability was
+  still open at that checkpoint. Managed ownership, all-assignment live
+  enforcement and physical/copy-fencing guarantees remain open; these results
+  do not promote the project to production.
+  Admission client outbox follow-up (2026-09-12): one immutable 456-byte intent
+  now retains an externally co-signed prune Admit and both transport identity
+  pins before sending. Its externally retained ID binds the exact command and
+  peers. It does not contain the PruneRequest bytes or prove server preparation;
+  the signed OperationID binds the separately retained server request.
+  Static validation checks assignment/authority/prune membership and rejects an
+  ExpectedSequence above 2*(MaximumOperations-1), without refreshing the head.
+  Create sends nothing. Open validates and re-syncs existing files without
+  creating a root, promoting a staging receipt or submitting a command. Deliver
+  uses only the concrete pinned QUIC client and returns success after a checked
+  reply/EOF and durable 148-byte local receipt. Distinct magic, hash domains and
+  typed wire ACKs prevent completion/admission format confusion.
+  A lifetime process lock and mutex cover exchange/publication; Close waits,
+  concurrent delivery serializes, and cancellation after a verified reply still
+  allows recording it. Failed local publication returns no ACK and poisons the
+  writer until reopen. Missing replies/receipts remain unresolved. Explicit
+  retries send the same entry with a fresh nonce; a retained local ACK returns
+  offline and stays historical after Stop, completion or retirement. There is
+  no signing, request rewrite, reset/drop, queue or automatic retry/failover.
+  Tests cover canonical records, domain separation, static sequence endpoints,
+  malformed/replaced files, wrong bindings, receipt publication failures,
+  cancellation, concurrent delivery/close and lost/partial QUIC replies. The
+  initial targeted race-enabled integration run passed in 33.751 seconds,
+  including 41 client-process kills: nine delivery/publication points in each
+  of four server phases, both in-flight server confirmations, and three
+  initialization points. Recovery opens twice without sending, then explicitly
+  retries and checks the retained lifecycle with no chain prune effect.
+  The final record decoder completed 100,000 fuzz executions (8.466 seconds);
+  `go vet ./...` passed, and Linux/Windows amd64 integration binaries compiled
+  with CGO disabled. Runtime checks were on macOS, not those target systems.
+  Whole-repository normal tests passed (store 537.022 seconds, archive 290.019
+  seconds). The concurrent whole-repository race run reached the unchanged
+  10-minute store-package limit (604.115 seconds reported). Its active
+  cancellation test had run for only two seconds; the retained stack showed
+  fixture reopen waiting for Pebble Close while the WAL writer was in a write
+  syscall. Other race-tested packages passed, including archive (389.378
+  seconds). This was an aggregate suite timeout, not a reported failed
+  acceptance assertion or detected data race. The complete store package then
+  passed separately with race detection in 249.425 seconds, without concurrent
+  test/build jobs and without extending its limit. The first combined run remains
+  a timeout observation, not a successful aggregate-load latency claim.
+  The final `go test -race ./...` check succeeded using those cached successful
+  package results. Integration-tag vet also passed. The full process gate ran
+  separately with `make test-process GO=.tools/go/bin/go`; all seven suites
+  passed: command processes 64.084 seconds, 100 WorkChain crash cases 27.740
+  seconds, archive recovery 15.672 seconds, 466 authority/executor cases 190.841
+  seconds, 41 completion-client cases 16.078 seconds, 45 admission-server cases
+  18.390 seconds and 41 admission-client cases 14.838 seconds. Test limits and
+  acceptance assertions were not relaxed. The final 41-case admission-client
+  process suite also passed with race detection in 22.199 seconds.
+  Receipt-only rollback is not detected by the intent pin and may require an
+  exact retry against independently retained server history. Checksums do not
+  defend against a malicious journal owner. Managed runtime ownership, all
+  required replica assignments, physical pin protection, copied-root fencing,
+  power-loss/full-filesystem testing and active cutover remain separate gates.
   Process-gate observation (2026-09-07): the first combined run stopped at
   `TestProcessTieCampaignStorageFailuresRecoverWithoutFalseAdvance/observer_confirmation_after_link`
   because the expected confirmation marker was absent. Five isolated repetitions

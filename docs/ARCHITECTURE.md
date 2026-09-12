@@ -297,6 +297,15 @@ confirmed prefix or one retained next transition; explicit resume never executes
 the chain. Shared rollback, physical chain-storage pins, safe no-effect disposition,
 all-replica authority coverage, transport and live archive-policy integration remain
 open. This local library does not change any existing CLI or custody-session behavior.
+Separate opt-in admission-only and completion-only QUIC adapters now deliver
+externally co-signed commands to that original colocated executor/coordinator.
+Admission replies follow both authority confirmation and executor binding;
+neither endpoint runs chain effects or signs commands. Each has its own
+one-command client outbox, immutable command/peer pins and durable checked-reply
+receipt. Opening an outbox never sends; explicit retries keep the original entry.
+Cached acknowledgements are historical observations, not live execution grants.
+These adapters do not install managed runtime handlers or close all-assignment,
+physical pin independence, copy-fencing or active-cutover gates.
 Receipt v1 can extend one exact
 predecessor only after a fresh signed random-sample challenge: sample IDs are
 deterministically derived from the nonce, manifest, and predecessor receipt;

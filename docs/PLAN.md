@@ -389,6 +389,19 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
               ownership: retain the exact signed command and endpoint pins before
               sending, recover without signing/refreshed heads or implicit sends,
               and never treat a retained admission ACK as a live execution grant.
+              - [x] Separate one-command AdmissionOutbox: retain the exact prune
+                Admit and both transport pins before any send; persist a checked,
+                domain-separated ACK before success. Open only validates and
+                re-syncs existing evidence. Explicit retries use the original
+                command and fresh wire nonces, including after Stop/Complete/
+                Retire. Cover receipt failures, wrong request/head, sequence
+                bounds, lost replies, concurrency and 41 client-process kills.
+                Request bytes remain separately prepared on the server; no
+                request creation, signing, execution or current-authority grant.
+              - [ ] Connect managed runtime owners to the two outboxes and
+                colocated admission/completion handlers, with explicit roots,
+                identity/key ownership, recovery and shutdown. Keep every
+                actual effect under live authority and all-assignment checks.
   - [ ] Filesystem-full, inode-exhaustion, power-loss, and long-running retention
     campaigns before deployment claims.
   - [x] Isolate the 2026-09-07 custody sibling-rejection deadline race: force the
