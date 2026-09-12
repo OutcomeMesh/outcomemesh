@@ -967,6 +967,56 @@ Implemented in an isolated, not-yet-activated consensus package:
   defend against a malicious journal owner. Managed runtime ownership, all
   required replica assignments, physical pin protection, copied-root fencing,
   power-loss/full-filesystem testing and active cutover remain separate gates.
+  Command runtime ownership follow-up (2026-09-12): an optional
+  PruneCommandService now exclusively owns four existing authority/executor
+  roots and both concrete command handlers. Open checks external assignment,
+  request and peer pins, rejects overlapping/aliased roots and loads retained
+  state without listening or resuming an attempt. Partial open failure releases
+  acquired owners. Explicit Start validates and copies the canonical transport
+  key before creating a host; both transport peer identities must be separate
+  from all assignment control/evidence roles. Neither raw writers nor the host
+  are exposed. No command signer, request creator or effect API was added.
+  A separate admission gate forbids new in-flight handlers once Close begins
+  draining. Shutdown cancels/closes transport, waits for accepted handlers and
+  only then releases executor/coordinator owners. Context cancellation follows
+  the same path; concurrent/repeated Close returns the retained final error.
+  Local storage uncertainty stops admission and drains the service without
+  automatic reopen, retry, cancellation or rollback. Malformed/stale commands
+  do not shut down a healthy service. Empty/nil runtime Close is safe.
+  DeliverPruneAdmission and DeliverPruneCompletion are typed one-shot runners:
+  own an existing ID-pinned outbox before transport creation, validate the
+  retained peer roles/key, perform at most one explicit exchange and close
+  transport before journal ownership. Cached ACKs return without a socket but
+  still require the client identity. Missing roots are never initialized.
+  Failures after acquiring the outbox retain Unconfirmed alongside their cause
+  and return no ACK, including cleanup failures after a decision/receipt may
+  already have committed. Journals store no private keys; memory copying is not
+  a secure-erasure claim.
+  The initial targeted runtime suite passed with race detection (7.571 seconds);
+  all 16 separate-server-process recovery cases passed with race detection
+  (25.688 seconds). The expanded runtime/integration suite then passed in
+  33.817 seconds, including incomplete streams, concurrent Start/Close, both
+  independent-confirmation shutdown barriers, competing client owners, local
+  storage failures and exact retries after retirement. The process cases cover
+  Open, Start and confirmed-before-reply checkpoints in prepared, admitted,
+  succeeded, cancelled and retired phases, with two read-only recoveries and no
+  repeated chain effect. Full and integration-tag vet passed.
+  Final-source `go test ./...` and `go test -race ./...` both passed when run
+  sequentially; the store package took 224.110 and 262.371 seconds respectively,
+  with unchanged packages served from the test cache. No timeout was extended.
+  The complete eight-suite `make test-process` gate passed sequentially with
+  `-count=1`: node processes 63.624 seconds, chain 29.259, archive 15.958,
+  authority/executor 195.050, completion outbox 17.101, admission server 18.248,
+  admission outbox 14.781 and the new 16-case command runtime suite 20.467.
+  Linux and Windows amd64 integration test binaries compiled with CGO disabled;
+  this is build coverage, not non-macOS runtime or filesystem evidence. Full and
+  integration-tag vet passed again on the final source.
+  Operator CLI wiring and the actual audit/serve/prune lifecycle remain open.
+  The command-only service must currently be closed for an explicit ownership
+  handoff to the existing guarded local effect API. It does not own WorkChain,
+  establish all-required-assignment enforcement or install a default daemon.
+  Physical pin independence, copied-owner/key fencing, full-filesystem and
+  power-loss evidence and active cutover are still deployment gates.
   Process-gate observation (2026-09-07): the first combined run stopped at
   `TestProcessTieCampaignStorageFailuresRecoverWithoutFalseAdvance/observer_confirmation_after_link`
   because the expected confirmation marker was absent. Five isolated repetitions

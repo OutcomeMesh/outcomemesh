@@ -306,6 +306,13 @@ receipt. Opening an outbox never sends; explicit retries keep the original entry
 Cached acknowledgements are historical observations, not live execution grants.
 These adapters do not install managed runtime handlers or close all-assignment,
 physical pin independence, copy-fencing or active-cutover gates.
+An opt-in command runtime now owns the original coordinator/executor roots and
+both endpoint handlers. Open is network-free; Start explicitly creates the
+pinned transport. Shutdown rejects new handlers, cancels the network, drains
+accepted handlers and only then closes journal owners. Typed one-shot delivery
+runners own an existing outbox before transport and release it after transport
+shutdown; cached receipts need no socket. This is command delivery ownership,
+not a live effect scheduler, operator CLI or all-assignment acceptance layer.
 Receipt v1 can extend one exact
 predecessor only after a fresh signed random-sample challenge: sample IDs are
 deterministically derived from the nonce, manifest, and predecessor receipt;

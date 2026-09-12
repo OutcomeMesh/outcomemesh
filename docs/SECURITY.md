@@ -607,6 +607,26 @@ No live audit/serve/prune path is installed by these opt-in library APIs. Physic
 root separation, copied/shared rollback, signing-key ownership, fencing and
 all-required-assignment enforcement remain external/open gates.
 
+The optional command runtime now owns all four existing coordinator/executor
+roots and the dedicated transport, without exporting writer or host pointers.
+Open neither listens nor resumes. Explicit Start validates the canonical key
+against its external transport pin; both peer identities must be separate from
+all assignment control/evidence roles. Cancellation and local storage uncertainty
+close the handler-admission gate, interrupt the network and drain accepted
+handlers before any journal lock is released. A failed command cannot trigger
+automatic recovery, effect replay or cancellation. Malformed requests do not
+turn into service-level storage failures.
+
+Typed one-shot delivery runners own an existing outbox before opening transport
+and close transport before releasing that journal. Cached ACKs need no socket
+but still require the pinned client identity. Missing roots are never created.
+Cleanup errors return no ACK and remain unresolved even if receipt/decision
+history was already retained. No private key is persisted in these journals;
+memory copying is not a secure-erasure guarantee.
+This command-only runtime supplies no execution API or default operator/daemon
+wiring. Physical isolation, copied keys/roots, all-assignment live enforcement
+and active cutover remain open; closing a local runtime does not fence a copy.
+
 The opt-in storage-incarnation mode adds a narrower local guarantee. A fresh
 caller-selected ID is atomically bound to a new schema-6 WorkChain database;
 reopen needs the independently retained ID and never initializes missing data.

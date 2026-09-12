@@ -711,6 +711,74 @@ send; explicit exact retry preserves the lifecycle and never prunes chain data.
 These logical process tests do not demonstrate power-loss durability or install
 managed runtime services.
 
+### Owned command runtimes
+
+`OpenPruneCommandService` accepts explicit authority, authority-pin, executor
+and executor-pin paths, a canonical assignment and its external ID, the external
+request ID, both transport peer pins and a bounded session timeout. All four
+roots must already exist. Pairwise path/ancestor checks reject containment,
+symlinks and known directory aliases before acquiring locks. Executor pins and
+executor ownership are acquired first, then coordinator pins and authority.
+An unsuccessful open releases only acquired owners; it cannot recreate a root,
+query a newer head, confirm an attempt, listen or send.
+
+`Start` explicitly creates the service's QUIC host and installs the existing
+admission and completion adapters. It checks the supplied Ed25519 private key
+against its canonical seed-derived form and the external server pin before
+creating a listener. Both peer pins must differ from every declared authority,
+consumer, replica and auditor key's transport identity. Transport authentication
+still does not substitute for command signatures. The service generates no key,
+keeps no key in the journals, and does not promise private-key zeroization in
+Go/libp2p memory. Failed startup leaves the journals owned until explicit Close
+or a corrected Start; a second successful Start is rejected.
+
+A handler-admission gate and in-flight count are separate from lifecycle
+serialization. Shutdown first closes that gate, cancels network I/O and closes
+the host, then waits for all admitted handlers before releasing executor and
+coordinator ownership. No handler needs the lifecycle mutex while draining.
+New handlers cannot increment the count after shutdown starts waiting.
+Cancellation of the Start context performs the same shutdown. `Done` closes
+only after all owners are closed; concurrent/repeated Close calls return the
+same final error. Filesystem operations are not force-aborted by network timeout
+or cancellation, and an unresolved operation is never automatically cancelled.
+
+Storage uncertainty in a command handler stops new admission and triggers that
+same ordered shutdown. The shutdown error retains the original cause; it never
+silently reopens, retries or clears the attempted command. A malformed/rejected
+command does not itself stop a healthy service. No raw host, coordinator or
+executor pointer is exposed. Addresses are routes, not new identity pins.
+
+`DeliverPruneAdmission` and `DeliverPruneCompletion` are separately typed
+one-shot client runners. Their config selects an existing outbox, assignment,
+external intent ID, explicit route, timeout and transport limits. The runner
+opens and owns the outbox before creating a transport; it validates the supplied
+canonical transport key and both retained peer roles. A missing journal is an
+error, not bootstrap. A retained checked ACK returns after identity validation
+without creating a socket, even with an offline route. Otherwise the owned
+transport performs at most one exact outbox delivery, then closes before journal
+ownership is released. Concurrent runners on the same root receive Busy.
+Errors after acquiring the journal return no ACK and retain Unconfirmed alongside
+their cause; even a cleanup error cannot assert that the server did not commit.
+There is no signing, address discovery, automatic retry or request replacement.
+
+The service is command-only. It never opens WorkChain or provides Execute,
+Cancel, Stop, Retire or generic operation methods. An explicit local operation
+currently requires closing the service and handing ownership back to the existing
+guarded APIs, followed by reopening the same retained roots. This is not yet an
+operator CLI, managed live archive acceptance pipeline or all-assignment fence.
+No existing daemon, auditor, replica or pruning command installs it by default.
+
+Tests exercise actual one-shot clients through both owned endpoints, including
+an explicit local guarded execution/cancellation handoff, completion and
+historical retry after retirement. They cover key/role rejection, partial open
+cleanup, context cancellation, competing client owners, incomplete streams,
+Start/Close races and barriers inside both independent confirmations. Sixteen
+server-process kills cover Open, Start and confirmed-before-reply points in
+prepared, admitted, succeeded, cancelled and retired phases. Reopening twice
+and explicit exact retry cannot change chain data or replay an effect.
+These tests do not establish physical independence, copied-owner fencing or
+power-loss/full-filesystem behavior.
+
 ### Storage-incarnation-bound prune requests
 
 An opt-in local database mode now distinguishes independently initialized

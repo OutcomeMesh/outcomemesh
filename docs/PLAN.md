@@ -402,6 +402,20 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
                 colocated admission/completion handlers, with explicit roots,
                 identity/key ownership, recovery and shutdown. Keep every
                 actual effect under live authority and all-assignment checks.
+                - [x] Command-only runtime ownership: open four existing pinned
+                  roots without listening or resuming; explicitly start the
+                  original colocated Admit/Complete service. Keep transport keys
+                  separate from control/evidence keys; expose no raw writer or
+                  effect API. Close listener, drain handlers, then release roots.
+                  Stop on storage uncertainty without automatic recovery.
+                  Add typed one-shot client runners around existing outboxes;
+                  check pinned identity, retain receipt before success, close
+                  transport before releasing the journal and return cached ACKs
+                  without a socket. Cover shutdown/startup races and 16 separate
+                  server-process crashes across five lifecycle phases.
+                - [ ] Expose explicit operator commands and connect the actual
+                  audit/serve/prune lifecycle, including live all-assignment
+                  enforcement, storage pins and reviewed ownership handoff.
   - [ ] Filesystem-full, inode-exhaustion, power-loss, and long-running retention
     campaigns before deployment claims.
   - [x] Isolate the 2026-09-07 custody sibling-rejection deadline race: force the
