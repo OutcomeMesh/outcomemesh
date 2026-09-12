@@ -312,7 +312,11 @@ pinned transport. Shutdown rejects new handlers, cancels the network, drains
 accepted handlers and only then closes journal owners. Typed one-shot delivery
 runners own an existing outbox before transport and release it after transport
 shutdown; cached receipts need no socket. This is command delivery ownership,
-not a live effect scheduler, operator CLI or all-assignment acceptance layer.
+not a live effect scheduler or all-assignment acceptance layer. Three explicit
+`work-prune-*-quic` operator commands now expose that command-only runtime and
+the two retained delivery runners. They require independently pinned prepared
+inputs, reject missing-root bootstrap and never sign or execute work; see
+[PRUNE_COMMANDS.md](PRUNE_COMMANDS.md).
 Receipt v1 can extend one exact
 predecessor only after a fresh signed random-sample challenge: sample IDs are
 deterministically derived from the nonce, manifest, and predecessor receipt;

@@ -416,6 +416,17 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
                 - [ ] Expose explicit operator commands and connect the actual
                   audit/serve/prune lifecycle, including live all-assignment
                   enforcement, storage pins and reviewed ownership handoff.
+                  - [x] Command-only operator entry points: explicitly serve
+                    Admit/Complete from four existing pinned roots and deliver
+                    either typed retained outbox once. Require independent IDs
+                    and transport seed paths, reject repeated flags, keep
+                    shutdown ordered and stdout failure historically unresolved.
+                    Return retained storage/shutdown errors; handle broken stdout
+                    through cleanup. Cover real CLI SIGTERM/kill/restart, SIGPIPE
+                    and exact historical retry. Publish the scoped operator runbook.
+                  - [ ] Reviewed bootstrap/signing and ownership handoff plus
+                    actual audit/serve/prune wiring with live archive policy,
+                    all-required-assignment guards and protected storage pins.
   - [ ] Filesystem-full, inode-exhaustion, power-loss, and long-running retention
     campaigns before deployment claims.
   - [x] Isolate the 2026-09-07 custody sibling-rejection deadline race: force the

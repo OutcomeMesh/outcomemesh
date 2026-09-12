@@ -765,8 +765,13 @@ The service is command-only. It never opens WorkChain or provides Execute,
 Cancel, Stop, Retire or generic operation methods. An explicit local operation
 currently requires closing the service and handing ownership back to the existing
 guarded APIs, followed by reopening the same retained roots. This is not yet an
-operator CLI, managed live archive acceptance pipeline or all-assignment fence.
-No existing daemon, auditor, replica or pruning command installs it by default.
+integrated live archive acceptance pipeline or all-assignment fence. Explicit
+`work-prune-command-serve-quic`, `work-prune-admission-deliver-quic` and
+`work-prune-completion-deliver-quic` operator commands now expose only the owned
+command service and typed one-shot runners. They require prepared roots, keys
+and independent IDs; they do not bootstrap, sign, execute or install a default
+daemon/auditor/replica path. See [PRUNE_COMMANDS.md](PRUNE_COMMANDS.md) for flags,
+stdout semantics, ordered signal shutdown and the remaining preparation gates.
 
 Tests exercise actual one-shot clients through both owned endpoints, including
 an explicit local guarded execution/cancellation handoff, completion and

@@ -1017,6 +1017,56 @@ Implemented in an isolated, not-yet-activated consensus package:
   establish all-required-assignment enforcement or install a default daemon.
   Physical pin independence, copied-owner/key fencing, full-filesystem and
   power-loss evidence and active cutover are still deployment gates.
+  Command-only operator follow-up (2026-09-12): three explicit omd commands now
+  expose the owned Admit/Complete service and the two retained delivery runners.
+  Each requires a canonical assignment, its independent ID and an explicit
+  transport seed path. The server also requires four existing roots, request ID
+  and both external peer pins; delivery requires an existing typed outbox, its
+  external intent ID and an explicit route. The artifact reader bounds files and
+  rejects final symlinks. Positional, unknown and repeated flags are rejected.
+  No signer, request creator, missing-root initialization, WorkChain handle,
+  effect API, daemon default or automatic retry was added.
+  Signal shutdown drains accepted handlers before releasing roots. A failed
+  readiness write closes acquired owners; a delivery stdout failure preserves
+  Unconfirmed and never deletes an already retained receipt. Successful output
+  explicitly identifies historical delivery, not execution authority or proof
+  that a fresh connection occurred. Both cached paths still validate the key.
+  The new targeted CLI suite passed with race detection in 3.426 seconds. Two
+  real CLI-process campaigns passed with race detection in 21.092 seconds,
+  covering SIGTERM/kill, exclusive ownership, restart, offline receipts and exact
+  historical retry after retirement. Their command-only fixture has no chain
+  database and makes no new chain-effect or power-loss claim. The new process
+  gate is included in make test-process. PRUNE_COMMANDS.md documents prerequisites,
+  flags, recovery and the distinction between command delivery and live authority.
+  Final review added a failing-before-fix regression: making the disposable
+  executor root unavailable stopped the service but returned nil because a local
+  error shadowed the named result captured by deferred Close. The wrapper now
+  retains the shutdown error; ten race-enabled repetitions passed in 3.615 seconds,
+  and the expanded CLI/process suite passed in 22.889 seconds. A second real-process
+  regression initially exited on SIGPIPE with no returned CLI error when stdout
+  was already closed. A command-lifetime SIGPIPE subscription now keeps EPIPE on
+  the cleanup path; it does not affect other command entry points. Closed-output
+  tests cover readiness and both delivery types, preserving their durable receipts.
+  After correcting the test's expected helper error exit code (2, not main's 1),
+  three race-enabled closed-pipe repetitions passed in 22.900 seconds. The final
+  expanded CLI/unit/process race suite then passed in 29.703 seconds.
+  Final-source `go test ./...` and `go test -race ./...` passed sequentially;
+  cmd/omd took 5.285 and 7.950 seconds, with unchanged packages using cached
+  results. No consensus, journal encoding or peer protocol changed.
+  The full nine-suite process gate passed with fresh runs: new CLI scenarios
+  2.298 seconds, existing node processes 64.991, chain 29.504, archive 15.773,
+  authority/executor 181.293, completion outbox 16.243, admission server 17.626,
+  admission outbox 13.898 and owned runtime recovery 20.186. The suites ran
+  sequentially, without extending any timeout.
+  Full vet and integration-tag vet for cmd/omd passed. CGO-disabled omd builds
+  succeeded for native macOS arm64, Linux amd64 and Windows amd64; both cross-OS
+  integration test binaries also compiled. Native help exposed all three commands.
+  The production builds emitted nonfatal sandbox warnings when Go tried to cache
+  VCS module metadata outside the workspace, but returned success and produced
+  the checked binaries. Cross-compilation is not non-macOS runtime evidence.
+  Reviewed bootstrap/signing, ownership handoff and actual audit/serve/prune
+  integration with all-required-assignment and physical storage guards remain
+  open. No active cross-host cutover or public-testnet readiness is claimed.
   Process-gate observation (2026-09-07): the first combined run stopped at
   `TestProcessTieCampaignStorageFailuresRecoverWithoutFalseAdvance/observer_confirmation_after_link`
   because the expected confirmation marker was absent. Five isolated repetitions

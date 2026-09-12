@@ -101,6 +101,13 @@ Together with unaudited PoW parameters, the raw-seed CLI wallet, and provisional
 peer routing policy, this keeps the system a local development chain rather
 than a public testnet.
 
+Three explicit command-only prune transport commands can now serve an existing
+pinned executor/coordinator or deliver a retained admission/completion outbox.
+They require independently prepared and pinned inputs; they do not sign commands,
+initialize journals or execute pruning. See the
+[prune command runbook](docs/PRUNE_COMMANDS.md) for flags, shutdown, recovery and
+the remaining live-authorization gates.
+
 ## Build and run
 
 Go 1.26.7 is the pinned toolchain. With it available as `go`:

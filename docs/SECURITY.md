@@ -627,6 +627,19 @@ This command-only runtime supplies no execution API or default operator/daemon
 wiring. Physical isolation, copied keys/roots, all-assignment live enforcement
 and active cutover remain open; closing a local runtime does not fence a copy.
 
+The explicit command-only prune CLI requires canonical bounded assignment/seed
+files, external assignment/request/intent IDs and prepared roots. Final-file
+symlinks, malformed inputs, unknown/positional/repeated flags and key/pin
+mismatches are rejected. It uses existing bounded transport settings, exposes
+no signer or WorkChain handle and never creates a missing journal. SIGTERM or
+interrupt follows the runtime's ordered shutdown. A stdout failure can follow
+a durable receipt: it returns an error without erasing evidence or retrying.
+The command lifetime subscribes to Unix SIGPIPE so a broken stdout returns EPIPE
+through cleanup rather than terminating before journal owners are drained.
+Printed/cached ACKs remain historical, not live execution grants. The input
+reader does not establish OS owner/ACL protection, physical isolation or memory
+zeroization. The operator boundary is documented in `PRUNE_COMMANDS.md`.
+
 The opt-in storage-incarnation mode adds a narrower local guarantee. A fresh
 caller-selected ID is atomically bound to a new schema-6 WorkChain database;
 reopen needs the independently retained ID and never initializes missing data.
