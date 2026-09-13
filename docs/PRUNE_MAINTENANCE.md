@@ -1,8 +1,9 @@
 # Reviewed local prune maintenance
 
 Status: opt-in pre-alpha operator boundary for one original, colocated pinned
-executor/coordinator. It can review retained state and cancel admitted work
-before start. It cannot Execute, Complete, sign, resume, repair, retire, discover
+executor/coordinator. It can review retained state, cancel admitted work
+before start and explicitly recover one eligible retained transition offline.
+It cannot Execute, create a new Complete, sign, repair, retire, discover
 owners, stop another process or authorize live archive pruning. Do not use these
 commands with production data or real value.
 
@@ -16,10 +17,10 @@ independently retained assignment, request and transport identity pins.
 | Entry point | Ownership and lifetime |
 | --- | --- |
 | Existing command server with `--maintenance-control stdin` | First `review` parks transport and drains accepted handlers without releasing any of the four original locks. The local pipe supervises the same owners until shutdown. |
-| `work-prune-maintenance` | Opens the four existing roots without starting transport, performs one review or explicitly pinned cancellation, then closes. Another owner must already have stopped. Separate invocations do not keep locks between them. |
+| `work-prune-maintenance` | Opens the four existing roots without starting transport, performs one review, explicitly pinned cancellation or exact single-transition recovery, then closes. Another owner must already have stopped. Separate invocations do not keep locks between them. |
 
-Neither entry point creates missing roots. They reject unresolved authority or
-executor confirmations and never fill a partial admission-binding gap. A review
+Neither entry point creates missing roots. Ordinary review/cancel rejects unresolved
+authority or executor confirmations. Neither fills a partial admission-binding gap. A review
 may describe Prepared, Started or Succeeded state, but none can be cancelled.
 Stopping may still drain an already admitted ticket. Started means cancellation
 is forbidden even when the effect's outcome is unknown.
@@ -67,6 +68,65 @@ A head, phase, admission or terminal change makes an old review unusable. The
 command does not query a replacement ID, choose a new head or retry for you.
 Review mode rejects `--expected-review-id`, even when empty. All repeated flags,
 unknown flags and positional arguments are rejected.
+
+## Offline recovery of one retained intent
+
+After uncertainty, close the original owner and reopen the **same** four retained
+roots. Never delete a confirmation, intent or lock, replace a journal, or derive
+missing evidence from an old backup. A sticky storage error is not cleared by a
+recovery call on that handle. Corrupt, missing or mismatched roots still fail.
+
+Using the same required identity/root flags shown above, obtain a separate review:
+
+```text
+--mode recovery-review
+```
+
+`work_prune_recovery_review` distinguishes the independently confirmed authority
+and executor prefixes from the actually observed prefixes and exact pending
+intents. It includes the assignment/request/storage/binding IDs, authority phase,
+pending entry ID/kind, pending executor stage/head, retained admission/terminal
+IDs and `recovery_action`. Retained terminal bytes are not called confirmed while
+their pin is pending. All these fields enter a separate local hash domain:
+`OMESH/custody-prune/maintenance/recovery-review/v0`. A cancellation review ID
+cannot substitute for a recovery review ID. Review never promotes evidence.
+
+Independently inspect the retained intent and select exactly the reported action:
+
+| Action | The only allowed change |
+| --- | --- |
+| `authority-admission` | Finish an existing co-signed Admit for this exact request while the executor is Prepared. Do not bind the executor. |
+| `authority-completion` | Finish an existing co-signed Complete matching this executor's already confirmed terminal evidence. Do not create or sign another entry. |
+| `executor-admission` | Retain/confirm the already journaled admission binding; do not start work. |
+| `executor-start` | Retain/confirm the already journaled start. It remains Started/unknown; no effect, retry or cancellation is allowed. |
+| `executor-result` | Retain/confirm the already journaled result, without invoking WorkChain or submitting Complete. |
+| `executor-cancellation` | Retain/confirm the already journaled cancellation, without submitting Complete. |
+| `none` | No incomplete transition exists; there is no recover action. |
+| `blocked` | Unrelated authority intent, mismatched terminal or pending intents on both layers. No automatic choice or repair is permitted. |
+
+For one of the six eligible actions, submit a separate invocation:
+
+```text
+--mode recover --expected-review-id <independently-reviewed-recovery-id> --recovery-action <independently-chosen-action>
+```
+
+Both ID and action are compared under the same lifecycle → executor → coordinator
+guards held through recovery and rereview. Only that already retained transition
+may finish. No follow-on binding, execution, new completion, Stop or Retire is
+inferred. `--recovery-action` is forbidden outside recover mode, even when empty.
+Both review modes forbid `--expected-review-id`, even when empty.
+
+Success emits `work_prune_recovered`, the supplied ID, recovered action, a new
+`after_review_id` and resulting prefixes. `single_transition=true`,
+`effect_execution=false`, `execution_authorized=false`, `historical_only=true`
+and `automatic_retry=false` describe this narrow result. It is not portable
+durability evidence or authorization for another operation. Lost/short stdout
+does not undo the transition; a new recovery-review is required. The old review
+is stale even if only the observed prefix advanced before confirmation failed.
+A fresh `none` is an observation, not another successful recovery.
+
+Recovery is not part of the live stdin grammar. Stop that local session normally
+before using offline recovery. No remote recovery endpoint has been added.
 
 ## Local control of a running service
 
@@ -143,12 +203,12 @@ without erasing the journals. Close/reopen the same roots when necessary, obtain
 a new review, and inspect its terminal state. An explicit cancel call pinned to
 a fresh confirmed Cancelled review returns the original historical bytes. It
 does not cancel another operation or submit Complete. Unconfirmed transitions
-still require existing exact recovery APIs outside these CLI entry points.
+require the separate offline recovery-review/recover procedure above.
 
 ## Remaining gates
 
-This closes local review/cancellation control and its supervised lifetime, not
-the full archive lifecycle. Explicit operator recovery of incomplete transitions,
-actual audit/serve/prune acceptance under live policy, all-required-assignment
+This closes local review/cancellation control, its supervised lifetime and exact
+single-intent operator recovery, not the full archive lifecycle.
+Actual audit/serve/prune acceptance under live policy, all-required-assignment
 enforcement, protected physical storage checks, copied-owner fencing and active
 cross-host cutover remain open. There is no operator Execute path.

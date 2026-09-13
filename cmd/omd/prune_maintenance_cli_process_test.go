@@ -223,3 +223,28 @@ func TestProcessPruneMaintenanceCLIBrokenPipe(t *testing.T) {
 		})
 	}
 }
+
+func TestProcessPruneMaintenanceCLIRecovery(t *testing.T) {
+	for _, broken := range []bool{false, true} {
+		f := pruneCLIRecoveryFixture(t, true)
+		reviewArgs := append(f.maintenanceArgs(), "--mode", "recovery-review")
+		review := preparationProcessFields(t, reviewArgs)
+		args := append(f.maintenanceArgs(), "--mode", "recover", "--recovery-action", "executor-cancellation", "--expected-review-id", review["review_id"])
+		if broken {
+			runPruneBrokenOutput(t, args, errPruneMaintenanceUnobserved)
+		} else if result := preparationProcessFields(t, args); result["recovered_action"] != "executor-cancellation" || result["effect_execution"] != "false" {
+			t.Fatal("invalid process recovery", result)
+		}
+		if output, err := runProcessCommandError(15*time.Second, args...); err == nil || strings.Contains(output, "work_prune_recovered") {
+			t.Fatal("process accepted old review", err, output)
+		}
+		after := preparationProcessFields(t, reviewArgs)
+		if after["review_id"] == review["review_id"] || after["recovery_action"] != "none" || after["executor_confirmed_stage"] != "5" {
+			t.Fatal("process lost confirmed recovery", after)
+		}
+		state, authority := f.snapshot(t)
+		if state.Protection.Pending != nil || authority.Authority.Sequence != 1 || authority.Authority.Pending != 1 {
+			t.Fatal("process recovery changed authority")
+		}
+	}
+}

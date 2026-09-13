@@ -145,8 +145,11 @@ An explicitly configured local stdin pipe can now enter the
 [one-way maintenance boundary](PRUNE_MAINTENANCE.md) without releasing the
 original locks. It permits only review and exact reviewed pre-start cancellation,
 not Execute. The default service still ignores stdin. A separate offline command
-opens only stopped owners, without listening, signing or resuming. Any local
-chain effect still requires a separate guarded ownership handoff; there is no
+opens only stopped owners, without listening, signing or automatic recovery.
+Its separate recovery-review/recover modes require an exact confirmed/observed
+state digest and explicit action, and can settle only one eligible retained
+transition. They never fill an admission-binding gap or create a new Complete.
+Any local chain effect still requires a separate guarded ownership handoff; there is no
 CLI effect API. Live archive-policy checks, all-required-assignment
 enforcement, reviewed ownership handoff, protected physical storage/pins,
 copied-owner fencing and active cross-host cutover remain separate open gates.

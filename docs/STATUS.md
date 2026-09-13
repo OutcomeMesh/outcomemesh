@@ -1,9 +1,14 @@
 # Implementation status
 
-Updated: 2026-09-12
+Updated: 2026-09-13
 
 This file records evidence against `PLAN.md`. A milestone remains open until all
 of its exit gates pass; implementing most deliverables does not close it.
+
+Full planned production readiness is approximately **40/100**, using the weighted
+[readiness baseline](PRODUCTION_READINESS.md). This is an engineering estimate,
+not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
+gated; local tests do not satisfy the public-testnet stability period.
 
 ## Milestone 0: specification foundation — complete
 
@@ -1213,6 +1218,49 @@ Implemented in an isolated, not-yet-activated consensus package:
   Reviewed ownership handoff and actual audit/serve/prune integration with
   all-required-assignment and physical storage guards remain open. No active
   cross-host cutover or public-testnet readiness is claimed.
+
+  Exact recovery follow-up (2026-09-13): the same maintenance capability now
+  supports a separate ReviewRecovery/Recover boundary. Its local domain-separated
+  digest binds confirmed and observed authority/executor prefixes, both retained
+  intents, request/assignment/storage/binding IDs, phase and terminal identity.
+  Recovery requires that exact digest AND an independently chosen action under
+  lifecycle -> executor -> coordinator guards. It settles only one retained
+  authority Admit/Complete or executor admission/start/result/cancellation.
+  Authority completion reuses the terminal validation from the existing adapter;
+  no signed command, wire encoding or journal format changes. Unrelated authority
+  commands and two pending layers are blocked. A recovered start remains unknown;
+  WorkChain is never called, no binding gap is filled, and no next step is inferred.
+  Sticky storage errors require Close/reopen; failed output cannot erase history
+  or make an old review usable. The offline maintenance CLI now has explicit
+  recovery-review/recover modes and rejects missing/foreign action or review flags.
+  Live stdin remains review/cancel-before-start/close, without recovery or a new
+  network endpoint. PRUNE_MAINTENANCE.md records the action matrix and failure path.
+  Core recovery/completion tests passed under race detection in 56.453 seconds.
+  Focused CLI/unit and actual EPIPE process recovery passed with race detection
+  in 10.341 seconds. Eighteen process kills across six actions (before writes,
+  before confirmation and after confirmation) passed under race in 11.952 seconds;
+  reopen preserves pending/confirmed distinctions and unchanged chain accounting.
+  Full `go test ./...` passed: cmd/omd 38.057 seconds and authority/executor store
+  277.610 seconds, with unchanged packages using their existing test cache.
+  Full `go test -race ./...` passed too: cmd/omd 33.933 seconds and store 293.833
+  seconds. Heavy suites ran sequentially.
+  The complete ten-group process gate passed with fresh runs inside unchanged
+  timeouts: preparation CLI 2.029 seconds, command/maintenance/recovery CLI 5.933,
+  existing node scenarios 65.497, chain 30.753, archive 16.087, authority/executor
+  198.124, completion outbox 23.197, admission server 19.235, admission outbox
+  15.737 and runtime/maintenance/recovery 29.544 seconds. The two new process
+  recovery tests are included in Makefile's permanent process gate.
+  Full vet and integration-tag vet for cmd/omd and store passed.
+  CGO-disabled omd builds passed for macOS arm64, Linux amd64 and Windows amd64;
+  both cmd/omd and store integration test binaries compiled for Linux/Windows.
+  Native help still exposes the maintenance command. These build checks are not
+  Linux/Windows runtime, filesystem or power-loss evidence. Native Windows live
+  stdin control remains disabled; its offline recovery build remains available.
+  The first full-plan production readiness baseline is approximately 40/100;
+  PRODUCTION_READINESS.md separates weighted implementation credit from independent
+  audit, public-testnet and operational launch gates. This is not public-testnet
+  activation or production authorization; live all-assignment/storage acceptance
+  and the remainder of the full plan stay open.
   Process-gate observation (2026-09-07): the first combined run stopped at
   `TestProcessTieCampaignStorageFailuresRecoverWithoutFalseAdvance/observer_confirmation_after_link`
   because the expected confirmation marker was absent. Five isolated repetitions

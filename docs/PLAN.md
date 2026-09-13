@@ -23,6 +23,11 @@ Every consensus-affecting change must include:
 No milestone is complete because the code merely compiles. Completion requires
 the stated safety properties and reproducible tests.
 
+Progress reports end with an approximate production-readiness score out of 100,
+using `PRODUCTION_READINESS.md`. The denominator is this full launch plan, not
+the current slice. Small completed tasks do not automatically increase the score;
+an estimate never overrides an unpassed exit gate.
+
 ## Product thesis
 
 The initial product is a native ledger where a user signs both a resource
@@ -462,8 +467,17 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
                       Test stale/partial input, short output, pending pins,
                       nine lifecycle process exits, SIGPIPE and public-CLI-only
                       preparation through completion. No Execute or auto-resume.
-                    - [ ] Explicit reviewed operator recovery of incomplete
-                      transitions and actual audit/serve/prune acceptance with
+                    - [x] Explicit reviewed operator recovery of one retained
+                      transition: separate confirmed/observed-prefix digest and
+                      independently chosen action under the original owner guards.
+                      Limit authority recovery to exact-request Admit or confirmed-
+                      terminal Complete; limit executor recovery to its exact
+                      pending record. No Execute, binding-gap fill or next-step
+                      inference. Reject unrelated/two-layer pending state. Provide
+                      offline recovery-review/recover; leave live stdin unchanged.
+                      Cover six actions at both retained states, sticky failure,
+                      stale review, lost output, Close drain and 18 process kills.
+                    - [ ] Actual audit/serve/prune acceptance with
                       live policy, all-required-assignment and protected-storage
                       checks. Native Windows live stdin control remains absent;
                       offline maintenance is the supported boundary there.

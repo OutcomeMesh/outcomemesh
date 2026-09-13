@@ -846,8 +846,15 @@ entry and the original terminal-aware adapter.
 
 Review/cancel errors return no success artifact. Storage uncertainty is retained
 on the owning service and returned again by Review/Close; it is not cleared by a
-retry. After closing/reopening, unresolved transitions require the existing
-explicit exact recovery APIs outside this capability. It has no resume, repair,
+retry. After closing/reopening, unresolved transitions require a separate
+`ReviewRecovery` followed by `Recover(ctx, exactID, explicitAction)`. Its local
+domain-separated digest binds confirmed and observed prefixes, both pending
+intents, identity/storage/binding IDs and retained terminal history. Under the
+same owner guards it finishes only one eligible retained authority Admit/Complete
+or executor admission/start/result/cancellation. Authority recovery validates the
+exact request/terminal and never fills a binding gap; executor recovery never
+calls WorkChain or submits Complete. Started remains unknown. Unrelated commands
+and two-layer pending ambiguity are blocked. There is no repair,
 reset, automatic retry, signer, generic effect callback or Execute method. A
 process death releases OS locks but does not perform recovery or cancel work.
 
@@ -855,12 +862,18 @@ This library boundary now has explicit [local operator wiring](PRUNE_MAINTENANCE
 an opt-in macOS/Linux stdin pipe parks an existing command service without an
 unlock gap, while a separate offline command opens only stopped owners. The
 pipe's lifetime remains supervised after transport shutdown. Neither entry point
-adds a remote endpoint, stops another process, executes a chain effect or resumes
-an incomplete attempt. Live archive policy, all-required-assignment enforcement
+adds a remote endpoint, stops another process or executes a chain effect. Only
+the separate offline recovery mode may finish an exact reviewed incomplete intent;
+the live pipe grammar is unchanged. Live archive policy, all-required-assignment enforcement
 and copied-owner/physical-storage fencing remain open. Tests cover held
 confirmation barriers, stale/altered review IDs,
 context and Close/Start races, retained uncertainty and four separate-process kills
 after drain, after review, before cancellation confirmation and after cancellation.
+Recovery adds all six actions at intent-only/record-present states, unchanged
+chain accounting, unrelated/two-layer rejection, sticky-error reopen, Close drain,
+stale observed-prefix rejection, and 18 process-kill checkpoints before writes,
+before confirmation and after confirmation. Operator tests also retain completed
+recovery when actual EPIPE or a short write loses its output.
 
 ### Storage-incarnation-bound prune requests
 

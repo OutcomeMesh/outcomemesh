@@ -35,7 +35,7 @@ func runPruneMaintenance(ctx context.Context, arguments []string, output io.Writ
 	}
 	flags := flag.NewFlagSet(pruneMaintenanceCommand, flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
-	mode := flags.String("mode", "review", "review (default) or cancel; never execute, resume or complete")
+	mode := flags.String("mode", "review", "review (default), cancel, recovery-review or recover; never execute")
 	assignmentPath := flags.String("assignment", "", "trusted canonical assignment file (required)")
 	assignmentText := flags.String("assignment-id", "", "independently retained assignment ID (required)")
 	authorityPath := flags.String("authority", "", "existing authority root (required)")
@@ -45,20 +45,30 @@ func runPruneMaintenance(ctx context.Context, arguments []string, output io.Writ
 	requestText := flags.String("request-id", "", "independently retained request ID (required)")
 	serverText := flags.String("server-peer-id", "", "retained service transport identity pin (required; never dialled)")
 	clientText := flags.String("client-peer-id", "", "retained client transport identity pin (required; never dialled)")
-	expectedText := flags.String("expected-review-id", "", "cancel only: independently reviewed exact maintenance ID")
+	expectedText := flags.String("expected-review-id", "", "cancel/recover only: independently reviewed exact state ID")
+	actionText := flags.String("recovery-action", "", "recover only: independently chosen single retained transition")
 	if err := parsePruneFlags(flags, arguments[1:]); err != nil {
 		return err
 	}
 	present := make(map[string]bool)
 	flags.Visit(func(f *flag.Flag) { present[f.Name] = true })
-	if *mode != "review" && *mode != "cancel" {
-		return errors.New("maintenance mode must be review or cancel")
+	if *mode != "review" && *mode != "cancel" && *mode != "recovery-review" && *mode != "recover" {
+		return errors.New("maintenance mode must be review, cancel, recovery-review or recover")
 	}
-	if *mode == "review" && present["expected-review-id"] {
+	if (*mode == "review" || *mode == "recovery-review") && present["expected-review-id"] {
 		return errors.New("review forbids expected-review-id, including an empty value")
 	}
+	if *mode != "recover" && present["recovery-action"] {
+		return errors.New("recovery-action is allowed only in recover mode, including an empty value")
+	}
+	var action authoritystore.PruneRecoveryAction
+	if *mode == "recover" {
+		if action, err = parsePruneRecoveryAction(*actionText); err != nil {
+			return err
+		}
+	}
 	var expected types.Hash
-	if *mode == "cancel" {
+	if *mode == "cancel" || *mode == "recover" {
 		if expected, err = pruneExternalID("expected-review-id", *expectedText); err != nil {
 			return err
 		}
@@ -93,10 +103,64 @@ func runPruneMaintenance(ctx context.Context, arguments []string, output io.Writ
 	if err != nil {
 		return err
 	}
-	if *mode == "review" {
+	switch *mode {
+	case "review":
 		return writePruneMaintenanceReview(ctx, owner, output)
+	case "recovery-review":
+		return writePruneRecoveryReview(ctx, owner, output)
+	case "recover":
+		return recoverPruneMaintenance(ctx, owner, expected, action, output)
+	default:
+		return cancelPruneMaintenance(ctx, owner, expected, output)
 	}
-	return cancelPruneMaintenance(ctx, owner, expected, output)
+}
+
+func parsePruneRecoveryAction(text string) (authoritystore.PruneRecoveryAction, error) {
+	for action := authoritystore.PruneRecoveryAuthorityAdmission; action <= authoritystore.PruneRecoveryExecutorCancellation; action++ {
+		if action.String() == text {
+			return action, nil
+		}
+	}
+	return authoritystore.PruneRecoveryNone, errors.New("recover requires an exact recovery-action: authority-admission, authority-completion, executor-admission, executor-start, executor-result or executor-cancellation")
+}
+
+// Recovery is deliberately offline-only. The live stdin grammar below remains
+// review/cancel-before-start/close and cannot promote an incomplete intent.
+func pruneRecoveryFields(review authoritystore.PruneRecoveryReview) string {
+	return fmt.Sprintf("assignment_id=%s request_id=%s storage_id=%s binding_id=%s authority_confirmed_sequence=%d authority_confirmed_head=%s authority_observed_sequence=%d authority_observed_head=%s authority_phase=%d authority_pending_id=%s authority_pending_kind=%d executor_confirmed_stage=%d executor_confirmed_head=%s executor_observed_stage=%d executor_observed_head=%s executor_pending_stage=%d executor_pending_head=%s retained_admission_id=%s retained_terminal_id=%s recovery_action=%s network_stopped=true historical_only=true execution_authorized=false effect_execution=false automatic_resume=false",
+		review.AssignmentID, review.RequestID, review.StorageID, review.BindingID,
+		review.AuthorityConfirmed.Sequence, review.AuthorityConfirmed.HeadID, review.AuthorityObserved.Sequence, review.AuthorityObserved.HeadID,
+		review.AuthorityPhase, review.AuthorityPendingID, review.AuthorityPendingKind,
+		review.ExecutorConfirmed.Stage, review.ExecutorConfirmed.HeadID, review.ExecutorObserved.Stage, review.ExecutorObserved.HeadID,
+		review.ExecutorPending.Stage, review.ExecutorPending.HeadID, review.AdmissionID, review.TerminalID, review.Action)
+}
+
+func writePruneRecoveryReview(ctx context.Context, owner *authoritystore.PruneMaintenance, output io.Writer) error {
+	review, err := owner.ReviewRecovery(ctx)
+	if err != nil {
+		return err
+	}
+	id, err := review.ID()
+	if err != nil {
+		return err
+	}
+	return writePruneOutputLine(output, fmt.Sprintf("work_prune_recovery_review review_id=%s recovery_performed=false %s\n", id, pruneRecoveryFields(review)))
+}
+
+func recoverPruneMaintenance(ctx context.Context, owner *authoritystore.PruneMaintenance, expected types.Hash, action authoritystore.PruneRecoveryAction, output io.Writer) error {
+	result, err := owner.Recover(ctx, expected, action)
+	if err != nil {
+		return err
+	}
+	afterID, err := result.After.ID()
+	if err != nil {
+		return errors.Join(errPruneMaintenanceUnobserved, err)
+	}
+	err = writePruneOutputLine(output, fmt.Sprintf("work_prune_recovered expected_review_id=%s after_review_id=%s recovered_action=%s recovery_performed=true single_transition=true automatic_retry=false %s\n", expected, afterID, action, pruneRecoveryFields(result.After)))
+	if err != nil {
+		return errors.Join(errPruneMaintenanceUnobserved, err)
+	}
+	return nil
 }
 
 // The native command accepts a dedicated pipe, not a terminal, regular file or

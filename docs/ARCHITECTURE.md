@@ -331,8 +331,13 @@ now supplies CLI lifetime supervision before and after handoff on macOS/Linux;
 EOF, signals and I/O/storage failures close the session. The separate offline
 maintenance command never starts a listener and requires an exact external review
 ID for cancellation. It exports canonical historical terminal bytes for the
-existing Complete signing workflow. Explicit recovery and all-assignment/live-
-storage acceptance remain separate gates; see [PRUNE_MAINTENANCE.md](PRUNE_MAINTENANCE.md).
+existing Complete signing workflow. Separate offline recovery-review/recover modes
+compare an exact observed/confirmed-state digest and explicit action under the
+same guards, then settle one eligible retained intent on one layer. They cannot
+execute, fill a binding gap, create a new completion or chain actions. A retained
+Started record stays unknown. The live stdin grammar is unchanged.
+All-assignment/live-storage acceptance remains gated; see
+[PRUNE_MAINTENANCE.md](PRUNE_MAINTENANCE.md).
 Receipt v1 can extend one exact
 predecessor only after a fresh signed random-sample challenge: sample IDs are
 deterministically derived from the nonce, manifest, and predecessor receipt;

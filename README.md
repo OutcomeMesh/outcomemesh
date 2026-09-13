@@ -8,6 +8,10 @@ Substrate dependency.
 The project is pre-alpha. Nothing in this repository is ready to secure real
 value.
 
+Estimated readiness for the full planned production launch: **about 40/100**.
+This is a weighted engineering assessment, not a security guarantee or a count
+of completed tasks. See [the baseline and remaining launch gates](docs/PRODUCTION_READINESS.md).
+
 ## Design principles
 
 - Users sign constraints over the final state diff.
@@ -114,7 +118,9 @@ the remaining live-authorization gates.
 [Reviewed local maintenance](docs/PRUNE_MAINTENANCE.md) can now park command
 transport without unlocking journals through an opt-in macOS/Linux stdin pipe.
 A separate offline command reviews existing owners or cancels before start using
-an exact review ID. Neither path executes pruning or supplies live authorization.
+an exact review ID. Separate offline recovery review/action modes can settle one
+already retained intent, with no new execution or automatic next step.
+Neither path executes pruning or supplies live authorization.
 
 ## Build and run
 

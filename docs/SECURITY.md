@@ -681,8 +681,20 @@ Standalone offline maintenance takes no key/socket and requires an exact externa
 review ID for cancellation. Canonical terminal bytes printed on stdout remain
 historical evidence, not portable current authority. Broken/short output after
 cancellation preserves ambiguity and requires new review, never automatic retry.
-Explicit pending-transition recovery and actual archive acceptance remain gated;
-see `PRUNE_MAINTENANCE.md`.
+Separate offline recovery requires a distinct review digest and explicit action.
+The digest binds both independently confirmed and observed prefixes, pending
+intent IDs/positions and retained terminal identity under the same owner guards.
+Only one already retained transition on one layer may finish: exact-request Admit,
+exact-terminal Complete or executor admission/start/result/cancellation. Unrelated
+authority intents and simultaneous pending layers are blocked. No new command is
+signed or inferred; recovered Started remains unknown and cannot execute or cancel.
+This does not clear sticky errors, reset roots, fence copies or grant live storage
+authority. A changed observed or confirmed prefix invalidates the review;
+missing output does not authorize
+automatic retry. Normal open, review/cancel and live stdin never initiate recovery.
+Authority/executor on-disk, signed and wire encodings are unchanged; the new hash
+domain is local historical review only. Actual archive acceptance remains gated;
+see `PRUNE_MAINTENANCE.md` for the action matrix and failure procedure.
 
 The opt-in storage-incarnation mode adds a narrower local guarantee. A fresh
 caller-selected ID is atomically bound to a new schema-6 WorkChain database;

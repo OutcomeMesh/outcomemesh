@@ -255,6 +255,20 @@ func TestPruneCommandRuntimeCrashHelper(t *testing.T) {
 	}
 	publish(s.Addresses()[0])
 	_ = reach("started")
+	if strings.HasPrefix(stage, "recovery-") {
+		hooks := storeHooks{at: func(at string) error { return reach("recovery-" + at) }}
+		s.executor.hooks, s.executor.pins.hooks = hooks, hooks
+		setCoordinatorHooks(s.coordinator, hooks)
+		owner, err := s.EnterMaintenance(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		review, id := recoveryReview(t, owner)
+		if _, err := owner.Recover(context.Background(), id, review.Action); err != nil {
+			t.Fatal(err)
+		}
+		t.Fatal("recovery helper missed controlled checkpoint")
+	}
 	if stage == "runtime-maintenance-drained" || strings.HasPrefix(stage, "maintenance-") {
 		s.executor.hooks.at = func(at string) error { return reach("maintenance-" + at) }
 		s.executor.pins.hooks.at = func(at string) error { return reach("maintenance-" + at) }

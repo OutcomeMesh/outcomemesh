@@ -43,33 +43,8 @@ func (executor *PruneExecutor) Complete(ctx context.Context, coordinator *Coordi
 	if executor.pins == nil {
 		return Commit{}, ErrPrunePin
 	}
-	var evidence types.Hash
-	var err error
-	switch executor.stage {
-	case PruneSucceeded:
-		evidence, err = executor.effect.ID()
-	case PruneCancelled:
-		evidence, err = executor.cancellation.ID()
-	case PruneStarted:
-		return Commit{}, ErrPruneOutcome
-	default:
-		return Commit{}, ErrPruneStage
-	}
-	if err != nil {
+	if err := executor.validateCompletion(entry); err != nil {
 		return Commit{}, err
-	}
-	binding, err := pruneAdmissionBinding(executor.assignment, executor.request, *executor.admission)
-	if err != nil {
-		return Commit{}, err
-	}
-	if _, err := entry.CanonicalBytes(); err != nil {
-		return Commit{}, err
-	}
-	command := entry.Command
-	if entry.AuthorityPublicKey != executor.assignment.AuthorityPublicKey || command.Kind != custodyauthority.Complete ||
-		command.AssignmentID != binding.AssignmentID || command.ActorPublicKey != binding.ConsumerPublicKey ||
-		command.TicketID != binding.TicketID || command.EvidenceID != evidence {
-		return Commit{}, ErrPruneCompletion
 	}
 	// Lock order matches BindAdmission/Execute/CancelBeforeStart. Keeping this
 	// guard through append prevents Close/Stop/Retire from splitting validation
@@ -84,4 +59,38 @@ func (executor *PruneExecutor) Complete(ctx context.Context, coordinator *Coordi
 		return Commit{}, err
 	}
 	return coordinator.append(ctx, entry)
+}
+
+// validateCompletion requires the executor mutex and already checked state.
+// It is shared with exact retained-intent recovery; it never submits an entry.
+func (executor *PruneExecutor) validateCompletion(entry custodyauthority.Entry) error {
+	var evidence types.Hash
+	var err error
+	switch executor.stage {
+	case PruneSucceeded:
+		evidence, err = executor.effect.ID()
+	case PruneCancelled:
+		evidence, err = executor.cancellation.ID()
+	case PruneStarted:
+		return ErrPruneOutcome
+	default:
+		return ErrPruneStage
+	}
+	if err != nil {
+		return err
+	}
+	binding, err := pruneAdmissionBinding(executor.assignment, executor.request, *executor.admission)
+	if err != nil {
+		return err
+	}
+	if _, err := entry.CanonicalBytes(); err != nil {
+		return err
+	}
+	command := entry.Command
+	if entry.AuthorityPublicKey != executor.assignment.AuthorityPublicKey || command.Kind != custodyauthority.Complete ||
+		command.AssignmentID != binding.AssignmentID || command.ActorPublicKey != binding.ConsumerPublicKey ||
+		command.TicketID != binding.TicketID || command.EvidenceID != evidence {
+		return ErrPruneCompletion
+	}
+	return nil
 }
