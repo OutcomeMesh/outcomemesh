@@ -696,6 +696,31 @@ Authority/executor on-disk, signed and wire encodings are unchanged; the new has
 domain is local historical review only. Actual archive acceptance remains gated;
 see `PRUNE_MAINTENANCE.md` for the action matrix and failure procedure.
 
+The opt-in local `ExecuteArchive` adapter pins exact checkpoint/trust/timing
+configuration, request and independent executor/storage pair IDs, and every
+selected initial-receipt assignment. It rejects incomplete/relabelled owners
+before work, locks all coordinators using immutable constructor assignment IDs,
+and keeps those guards through replica replay, final storage-time authorization
+and independently confirmed executor result. Sorting caller labels alone would
+allow inconsistent multi-lock order; the immutable owner pins are checked first.
+Bounded input slices are detached before waiting. Position-pinned storage is
+mandatory, and all original root paths, replica directories and the dedicated
+evidence directory must be disjoint. `StorageRoots` is inspection, not a lease
+or physical-identity proof. These checks neither fence copied pairs nor establish
+physical failure-domain independence.
+
+Only exact initial receipts are accepted; a renewal under an old key cannot skip
+lineage/assignment review. The managed adapter shares full archive replay and
+fresh wall-clock checks with the legacy gate, but matches every retained floor
+field before publication, preserves original request VerifiedAt and samples again
+inside the prepared deletion batch after storage-intent I/O. Errors after Started
+remain unresolved; absence does not authorize no-effect completion or retry.
+All authority tickets, including secondary ones, stay pending. No command/effect/
+terminal/journal format changes or portable all-assignment certificate is implied.
+Secondary terminal adapters, policy/operation inventory, audit/serve acceptance,
+supervised operator handoff and cross-host enforcement remain open. This is not a
+CLI or remotely exposed effect path; see `PRUNE_ACCEPTANCE.md`.
+
 The opt-in storage-incarnation mode adds a narrower local guarantee. A fresh
 caller-selected ID is atomically bound to a new schema-6 WorkChain database;
 reopen needs the independently retained ID and never initializes missing data.

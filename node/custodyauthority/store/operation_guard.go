@@ -1,7 +1,9 @@
 package store
 
 import (
+	"bytes"
 	"context"
+	"sort"
 
 	"github.com/outcomemesh/outcomemesh/core/types"
 	"github.com/outcomemesh/outcomemesh/node/custodyauthority"
@@ -47,6 +49,14 @@ func (coordinator *Coordinator) withOperation(ctx context.Context, binding Opera
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	if err := coordinator.checkOperation(binding); err != nil {
+		return err
+	}
+	return action()
+}
+
+// checkOperation requires the coordinator mutex. It never invokes an effect.
+func (coordinator *Coordinator) checkOperation(binding OperationBinding) error {
 	current, err := coordinator.snapshot()
 	if err != nil {
 		return err
@@ -68,7 +78,61 @@ func (coordinator *Coordinator) withOperation(ctx context.Context, binding Opera
 			operation.Purpose != binding.Purpose || !operation.CompletionID.IsZero() {
 			return custodyauthority.ErrOperation
 		}
-		return action()
+		return nil
 	}
 	return custodyauthority.ErrOperation
+}
+
+// RequiredOperation couples one local owner to an already signed admission.
+// The caller must independently establish the COMPLETE required assignment set;
+// this struct and any detached snapshot are not current execution permission.
+type RequiredOperation struct {
+	Coordinator *Coordinator
+	Binding     OperationBinding
+}
+
+// withRequiredOperations locks the entire exact set before checking any ticket.
+// Callers hold their executor first. No callback can acquire another coordinator;
+// all multi-owner paths use assignment-ID order and release in reverse order.
+func withRequiredOperations(ctx context.Context, required []RequiredOperation, action func() error) error {
+	if ctx == nil || action == nil || len(required) == 0 || len(required) > custodyauthority.MaximumMembers {
+		return custodyauthority.ErrOperation
+	}
+	ordered := append([]RequiredOperation(nil), required...)
+	seen := make(map[*Coordinator]bool, len(ordered))
+	for _, operation := range ordered {
+		b := operation.Binding
+		if operation.Coordinator == nil || seen[operation.Coordinator] || b.AssignmentID.IsZero() || b.TicketID.IsZero() ||
+			b.OperationID.IsZero() || b.ConsumerPublicKey == [32]byte{} || b.Purpose != custodyauthority.Prune {
+			return custodyauthority.ErrOperation
+		}
+		if operation.Coordinator.assignmentID != b.AssignmentID {
+			return custodyauthority.ErrAssignment // never order locks by caller-relabelled owners
+		}
+		seen[operation.Coordinator] = true
+	}
+	sort.Slice(ordered, func(i, j int) bool {
+		return bytes.Compare(ordered[i].Binding.AssignmentID[:], ordered[j].Binding.AssignmentID[:]) < 0
+	})
+	for i := 1; i < len(ordered); i++ {
+		if ordered[i-1].Binding.AssignmentID == ordered[i].Binding.AssignmentID {
+			return custodyauthority.ErrOperation
+		}
+	}
+	for _, operation := range ordered {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		operation.Coordinator.mu.Lock()
+		defer operation.Coordinator.mu.Unlock()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	for _, operation := range ordered {
+		if err := operation.Coordinator.checkOperation(operation.Binding); err != nil {
+			return err
+		}
+	}
+	return action()
 }

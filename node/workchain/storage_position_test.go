@@ -79,6 +79,57 @@ func (f *positionFixture) operation() CanonicalPruneOperation {
 	return op
 }
 
+func TestPositionStorageRootInspectionIsReadOnlyAndPinnedOnly(t *testing.T) {
+	f := newPositionFixture(t, 0)
+	// The owner reports canonical placement, including temporary-directory
+	// aliases such as /var -> /private/var on macOS.
+	wantDatabase, err := filepath.EvalSymlinks(f.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantPins, err := filepath.EvalSymlinks(f.pins)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := f.chain.StorageProtection()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		database, pins, err := f.chain.StorageRoots()
+		if err != nil || database != wantDatabase || pins != wantPins {
+			t.Fatal("wrong owned placement", database, pins, err)
+		}
+	}
+	after, err := f.chain.StorageProtection()
+	if err != nil || before != after {
+		t.Fatal("inspection changed storage position", err)
+	}
+	memory, err := New(f.base, f.parameters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer memory.Close()
+	for _, unpinned := range []*Store{nil, memory} {
+		if database, pins, err := unpinned.StorageRoots(); !errors.Is(err, ErrStoragePosition) || database != "" || pins != "" {
+			t.Fatal("unpinned storage reported protected roots", err)
+		}
+	}
+	if err := f.chain.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if database, pins, err := f.chain.StorageRoots(); !errors.Is(err, storage.ErrClosed) || database != "" || pins != "" {
+		t.Fatal("closed roots disclosed as owned", err)
+	}
+	f.chain, err = OpenPositionPinnedWithPolicy(f.path, f.pins, f.base, f.parameters, f.policy, testStorageID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if database, pins, err := f.chain.StorageRoots(); err != nil || database != wantDatabase || pins != wantPins {
+		t.Fatal("reopen changed root identity", err)
+	}
+}
+
 func positionAction(t testing.TB, f *positionFixture, kind string) func() error {
 	t.Helper()
 	switch kind {

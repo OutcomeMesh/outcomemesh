@@ -122,6 +122,13 @@ an exact review ID. Separate offline recovery review/action modes can settle one
 already retained intent, with no new execution or automatic next step.
 Neither path executes pruning or supplies live authorization.
 
+A separate opt-in [local archive-prune library adapter](docs/PRUNE_ACCEPTANCE.md)
+now replays all selected replicas and holds each assignment's original permission
+guard through deletion and confirmed result. It requires exact policy and storage
+pair pins and accepts only initial receipts. It is not a new CLI effect command;
+renewal lineage, secondary terminal tooling, managed audit/serve and cross-host
+enforcement remain open.
+
 ## Build and run
 
 Go 1.26.7 is the pinned toolchain. With it available as `go`:

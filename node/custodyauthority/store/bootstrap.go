@@ -66,7 +66,7 @@ func createCoordinatedAuthority(authorityPath, journalPath string, assignment cu
 	if err != nil {
 		return nil, err
 	}
-	coordinator := &Coordinator{journal: journal, authority: authority}
+	coordinator := &Coordinator{journal: journal, authority: authority, assignmentID: expectedID}
 	if _, err := coordinator.Snapshot(); err != nil {
 		return nil, err
 	}

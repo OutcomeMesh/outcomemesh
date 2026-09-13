@@ -1261,6 +1261,55 @@ Implemented in an isolated, not-yet-activated consensus package:
   audit, public-testnet and operational launch gates. This is not public-testnet
   activation or production authorization; live all-assignment/storage acceptance
   and the remainder of the full plan stay open.
+
+  Local archive acceptance follow-up (2026-09-13): ExecuteArchive now composes
+  an independently pinned archive/trust/timing policy, exact initial-receipt
+  assignment coverage, one retained executor and concrete position-pinned WorkChain.
+  It requires each selected assignment's original confirmed pending Prune ticket,
+  locks all coordinators in immutable construction-ID order, replays all replicas,
+  matches the retained floor before evidence publication, and keeps all guards
+  through final live-time storage authorization and confirmed executor result.
+  Relabelled/repeated/missing owners cannot change lock order or narrow coverage.
+  Existing request/effect/terminal/signature/journal encodings remain unchanged.
+  The legacy archive gate shares the factored replay/time path; no old CLI is
+  silently upgraded and maintenance still exposes no Execute or raw-owner access.
+  StorageRoots is read-only original placement inspection. All owner roots,
+  replica directories and the existing dedicated evidence directory must be
+  disjoint. The policy binds both executor and storage pairs, and pending database
+  positions fail closed. Accepted policy/owner/replica slices are detached.
+  The initial focused archive-acceptance race suite passed in 20.347 seconds;
+  the expanded suite plus six process kills passed in 26.501 seconds. Shared
+  exact-request, clock and policy-ID tests passed under race in 5.236 seconds;
+  additional cancellation/drain/input-detachment tests passed in 4.081 seconds.
+  Full-suite validation exposed two mistakes in the new StorageRoots test:
+  comparing macOS's original /var temporary path with canonical /private/var,
+  then closing an already closed fixture in its reopen helper. The test now
+  compares resolved paths and opens the closed owner directly. The focused
+  regression passed in 0.658 seconds; production path/close checks were not relaxed.
+  Full `go test ./...` then passed: WorkChain reran in 37.618 seconds;
+  cmd/omd, authority/executor store and archive reused this pass's successful
+  70.499-, 377.580- and 180.979-second results. Heavy full suites ran sequentially.
+  Full `go test -race ./...` passed: cmd/omd 60.678 seconds, store 354.174,
+  archive 212.225 and WorkChain 67.131 seconds. No race detector report occurred.
+  All ten fresh process groups passed inside unchanged timeouts: preparation CLI
+  2.025 seconds, command/maintenance/recovery CLI 5.834, existing node scenarios
+  65.858, chain 28.741, archive 15.726, authority/executor 218.743, completion
+  outbox 17.746, admission server 18.360, admission outbox 14.963 and the expanded
+  runtime/maintenance/recovery/archive group 33.759 seconds. The six new archive
+  process-kill boundaries are part of Makefile's permanent gate.
+  Full vet and integration-tag vet for cmd/omd, store, archive and WorkChain passed.
+  CGO-disabled omd builds passed for macOS arm64, Linux amd64 and Windows amd64.
+  Integration test binaries for cmd/omd, store, archive and WorkChain compiled
+  for both Linux and Windows. These are build checks, not runtime/physical-storage
+  evidence on those systems. Native Windows live stdin control remains disabled.
+  Actual two-replica deletion confirms the database and executor but leaves every
+  authority ticket pending. Process reopen preserves admitted/started/terminal
+  states, and positive effect recovery never re-executes. Cancellation after a
+  storage intent preserves an unresolved pin and never infers a no-effect result.
+  PRUNE_ACCEPTANCE.md describes the exact boundary and remaining work: renewal
+  lineage, protected policy/operation inventory, secondary admission/terminal
+  adapters, multi-owner operator handoff, managed audit/serve, and cross-host/
+  physical/copy fencing. Full-plan readiness remains approximately 40/100.
   Process-gate observation (2026-09-07): the first combined run stopped at
   `TestProcessTieCampaignStorageFailuresRecoverWithoutFalseAdvance/observer_confirmation_after_link`
   because the expected confirmation marker was absent. Five isolated repetitions

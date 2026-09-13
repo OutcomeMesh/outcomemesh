@@ -86,6 +86,7 @@ func DefaultPolicy() Policy {
 }
 
 type workPersistence struct {
+	rootPath         string // immutable original path for protected runtime placement checks
 	db               *pebble.DB
 	policy           Policy
 	historyBytes     uint64
@@ -135,7 +136,8 @@ func openWithPositionPins(path string, base Base, parameters workblock.Parameter
 		return nil, err
 	}
 	persistence := &workPersistence{
-		db: db, policy: policy, checkpoints: make(map[types.Hash]struct{}), storageID: storageID, initializeCommit: initializeCommit, pins: pins,
+		rootPath: path,
+		db:       db, policy: policy, checkpoints: make(map[types.Hash]struct{}), storageID: storageID, initializeCommit: initializeCommit, pins: pins,
 	}
 	if err := persistence.initializeOrLoad(store, base, !existingOnly); err != nil {
 		_ = db.Close()

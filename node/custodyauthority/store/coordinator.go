@@ -35,10 +35,11 @@ type Coordination struct {
 // writer is exposed. A separate physical/access-control failure domain for the
 // journal is an operator deployment requirement, not something two paths prove.
 type Coordinator struct {
-	mu        sync.Mutex
-	journal   *intentJournal
-	authority *Store
-	failed    bool
+	assignmentID types.Hash // immutable construction pin; orders multi-owner locks
+	mu           sync.Mutex
+	journal      *intentJournal
+	authority    *Store
+	failed       bool
 }
 
 // CreateCoordinator bootstraps a NEW intent journal for an EXISTING initialized
@@ -71,7 +72,7 @@ func createCoordinator(authorityPath, journalPath string, assignment custodyauth
 		return nil, err
 	}
 	setAuthorityHooks(authority, hooks)
-	return &Coordinator{journal: journal, authority: authority}, nil
+	return &Coordinator{journal: journal, authority: authority, assignmentID: expectedID}, nil
 }
 
 // OpenCoordinator replays the independently configured intent journal FIRST,
@@ -115,7 +116,7 @@ func openCoordinator(authorityPath, journalPath string, assignment custodyauthor
 		return nil, err
 	}
 	setAuthorityHooks(authority, hooks)
-	return &Coordinator{journal: journal, authority: authority}, nil
+	return &Coordinator{journal: journal, authority: authority, assignmentID: expectedID}, nil
 }
 
 func setAuthorityHooks(authority *Store, hooks storeHooks) {

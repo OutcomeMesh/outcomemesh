@@ -44,6 +44,24 @@ type StorageProtection struct {
 	Pending   *StoragePosition
 }
 
+// StorageRoots returns the original position-pinned local paths for a runtime's
+// disjoint-placement checks. It grants no write access, proves no independent
+// failure domain and does not fence copied pairs. No root is created or repaired.
+func (store *Store) StorageRoots() (databasePath, pinsPath string, err error) {
+	if store == nil {
+		return "", "", ErrStoragePosition
+	}
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+	if err := store.openErrorLocked(); err != nil {
+		return "", "", err
+	}
+	if err := store.positionErrorLocked(); err != nil {
+		return "", "", err
+	}
+	return store.persistence.rootPath, store.persistence.pins.path, nil
+}
+
 type storagePositionPins struct {
 	path            string
 	lock            *os.File

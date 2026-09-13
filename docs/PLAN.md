@@ -481,6 +481,24 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
                       live policy, all-required-assignment and protected-storage
                       checks. Native Windows live stdin control remains absent;
                       offline maintenance is the supported boundary there.
+                      - [x] Opt-in colocated archive-prune library acceptance:
+                        pin exact checkpoint/trust/timing policy, selected replica
+                        assignments and both executor/storage pair IDs. Lock every
+                        original coordinator in immutable assignment-ID order
+                        through replica replay, exact evidence, final live-time
+                        storage check and independently confirmed executor result.
+                        Require initial receipt coverage and position-pinned DB;
+                        reject missing/relabelled owners and overlapping placement.
+                        No new execution from retained starts, automatic completion
+                        or cached result relabelled as live acceptance. Cover
+                        secondary-stop barriers, cancellation and six process kills;
+                        keep journal/command/effect encodings unchanged.
+                      - [ ] Verified renewal lineage, retained policy/operation
+                        inventory, secondary admission/terminal tooling and reviewed
+                        multi-owner runtime/CLI handoff. Integrate managed audit/serve
+                        paths; test remote partitions and physical/copy fencing
+                        before activation. Library acceptance alone does not close
+                        this parent gate.
   - [ ] Filesystem-full, inode-exhaustion, power-loss, and long-running retention
     campaigns before deployment claims.
   - [x] Isolate the 2026-09-07 custody sibling-rejection deadline race: force the

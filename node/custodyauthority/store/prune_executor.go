@@ -470,41 +470,48 @@ func (executor *PruneExecutor) Execute(ctx context.Context, coordinator *Coordin
 		if err := executor.checkAuthorityRoots(coordinator); err != nil {
 			return err
 		}
-		if err := executor.publish(ctx, 1, pruneStartedBytes(executor.id, binding.TicketID), "prune-start"); err != nil {
-			return err
-		}
-		executor.stage = PruneStarted
-		if err := executor.applied("prune-start"); err != nil {
-			return err
-		}
-		if err := executor.hooks.reach("prune-before-effect"); err != nil {
-			return errors.Join(ErrPruneOutcome, err)
-		}
-		commit, err := chain.PruneCanonicalPrefixOnce(workchain.CanonicalPruneOperation{
-			AssignmentID: executor.request.AssignmentID, TicketID: binding.TicketID, Boundary: executor.request.Boundary,
-			StorageID: executor.request.StorageID,
-		}, func() (uint64, error) {
-			if err := ctx.Err(); err != nil {
-				return 0, err
-			}
-			return authorize()
-		})
-		if err != nil {
-			return errors.Join(ErrPruneOutcome, err)
-		}
-		if err := executor.hooks.reach("prune-after-effect"); err != nil {
-			return errors.Join(ErrPruneOutcome, err)
-		}
-		if err := executor.saveResult(context.Background(), commit.Effect); err != nil {
-			return err
-		}
-		result = commit
-		return nil
+		result, err = executor.executeGuarded(ctx, chain, binding, authorize)
+		return err
 	})
 	if err != nil {
 		return workchain.CanonicalPruneCommit{}, err
 	}
 	return result, nil
+}
+
+// executeGuarded requires the executor and every required coordinator guard,
+// with all binding/storage/archive preflight complete. It never acquires another
+// authority mutex. Keep those guards through independently confirmed result.
+func (executor *PruneExecutor) executeGuarded(ctx context.Context, chain *workchain.Store, binding OperationBinding, authorize func() (uint64, error)) (workchain.CanonicalPruneCommit, error) {
+	if err := executor.publish(ctx, 1, pruneStartedBytes(executor.id, binding.TicketID), "prune-start"); err != nil {
+		return workchain.CanonicalPruneCommit{}, err
+	}
+	executor.stage = PruneStarted
+	if err := executor.applied("prune-start"); err != nil {
+		return workchain.CanonicalPruneCommit{}, err
+	}
+	if err := executor.hooks.reach("prune-before-effect"); err != nil {
+		return workchain.CanonicalPruneCommit{}, errors.Join(ErrPruneOutcome, err)
+	}
+	commit, err := chain.PruneCanonicalPrefixOnce(workchain.CanonicalPruneOperation{
+		AssignmentID: executor.request.AssignmentID, TicketID: binding.TicketID, Boundary: executor.request.Boundary,
+		StorageID: executor.request.StorageID,
+	}, func() (uint64, error) {
+		if err := ctx.Err(); err != nil {
+			return 0, err
+		}
+		return authorize()
+	})
+	if err != nil {
+		return workchain.CanonicalPruneCommit{}, errors.Join(ErrPruneOutcome, err)
+	}
+	if err := executor.hooks.reach("prune-after-effect"); err != nil {
+		return workchain.CanonicalPruneCommit{}, errors.Join(ErrPruneOutcome, err)
+	}
+	if err := executor.saveResult(context.Background(), commit.Effect); err != nil {
+		return workchain.CanonicalPruneCommit{}, err
+	}
+	return commit, nil
 }
 
 // Recover resolves Started only from the concrete database's already committed,

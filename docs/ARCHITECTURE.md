@@ -338,6 +338,14 @@ execute, fill a binding gap, create a new completion or chain actions. A retaine
 Started record stays unknown. The live stdin grammar is unchanged.
 All-assignment/live-storage acceptance remains gated; see
 [PRUNE_MAINTENANCE.md](PRUNE_MAINTENANCE.md).
+An opt-in [colocated archive-prune adapter](PRUNE_ACCEPTANCE.md) now covers one
+bounded acceptance slice: independently pinned policy and executor/storage pairs,
+exact initial-receipt assignment coverage, all original coordinator guards through
+full replica replay, final live-time batch authorization and confirmed result.
+Coordinator lock order uses immutable construction IDs, not caller labels; input
+order and missing/repeated owners cannot weaken coverage. No external Execute
+callback is accepted. Secondary admissions/terminals, renewal lineage, managed
+audit/serve and supervised operator handoff remain open; old CLI paths stay unchanged.
 Receipt v1 can extend one exact
 predecessor only after a fresh signed random-sample challenge: sample IDs are
 deterministically derived from the nonce, manifest, and predecessor receipt;

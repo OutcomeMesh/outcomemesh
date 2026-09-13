@@ -6,8 +6,10 @@ local durable history and an independently retained intent/pin coordinator in
 ticketed-prune result primitive, now used by an optional one-assignment local
 executor journal, optional independent stage pins and coordinator guard. An
 explicit local completion adapter binds externally signed completion to retained
-terminal evidence. Network authority, integration into existing live acceptance
-paths, and active rebaseline are not installed.
+terminal evidence. An opt-in colocated archive-prune library adapter now enforces
+every selected replica assignment through replay and deletion, using pinned policy
+and position-pinned storage. Existing CLI and audit/serve paths, network authority
+and active rebaseline are not upgraded by this adapter.
 
 An opt-in, completion-only QUIC endpoint now delivers an already co-signed
 command to that original colocated executor/coordinator. It does not distribute
@@ -34,6 +36,7 @@ This is why another signed retirement file, by itself, is not a global fence.
 | Raw/record-backed sessions and signing helpers | Signature, binding and timing checks; no journal retirement guard | Remain ineligible for managed cutover or require the same authority protocol; no silent fallback |
 | `CustodySession.Audit` live result acceptance | Rechecks returned renewal at current time under static keys | Hold a current assignment decision through durable acceptance, not just transport identity |
 | `workarchive.PruneCanonicalPrefix` destructive maintenance | Full replica replay, static trusted keys, immutable evidence and final in-batch time/cancellation check | Hold current assignment authorization through storage transition; reject retired receipt keys regardless of their signatures |
+| Opt-in `PruneExecutor.ExecuteArchive` | Pinned local policy, exact initial-receipt assignment coverage, all original coordinator guards through replay/deletion/result and position-pinned WorkChain | Renewal lineage, retained policy/operation inventory, secondary terminal tooling, supervised multi-owner handoff and cross-host/copy fencing |
 | `workchain.Store.PruneCanonicalPrefix` low-level primitive | Chain ancestry, retained-depth policy and atomic persistence | Remain a trusted internal primitive; never expose it as a command bypassing archive/authority policy |
 | Codecs, journal replay, pinned backups, historical application | Canonical signatures and exact historical links; explicit observation times where applicable | Keep historical verification independent of live authority so retirement does not destroy auditability |
 
@@ -52,7 +55,9 @@ including its initial `VerifiedAt`. The requested floor must not already contain
 a `PruneTicketID`. These unsigned fields are caller-provided bindings, **not an
 admission proof**. The method does not contact the authority, verify a signed
 ticket, retain a consumer's pre-execution intent, or close an authority operation.
-No existing CLI or live archive acceptance path calls it yet.
+No existing CLI calls it. The opt-in local ExecuteArchive adapter now composes
+this primitive with all selected original coordinator guards and full archive
+verification; the primitive itself remains a trusted internal API.
 
 Under the chain's write lock, a new operation validates the same chain-local
 ancestry and retention conditions as ordinary pruning, then prepares one Pebble
@@ -122,6 +127,14 @@ as a substitute. This is one trusted, one-assignment library operation, not an
 installed archive command. The caller must still perform full archive/replica
 verification and provide the bounded final live-time authorization check. One
 assignment's pending ticket is not authorization for every replica in a quorum.
+
+A separate [colocated archive acceptance adapter](PRUNE_ACCEPTANCE.md) now supplies
+full replica verification and the final live-time check while holding every selected
+assignment's original coordinator guard. It requires an independently pinned policy,
+exact initial receipts and both executor/storage pairs. This does not change the
+one-assignment Execute primitive, expose an operator effect command or complete any
+authority ticket. Renewal lineage, secondary terminal adapters and audit/serve
+integration remain open.
 
 `PruneRequest` commits the assignment, consumer control key and exact requested
 floor, without a ticket. `CreatePruneExecutor` retains it in a new protected root;
