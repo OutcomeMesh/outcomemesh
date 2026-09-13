@@ -451,10 +451,22 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
                       guards held through CancelBeforeStart; never resume an
                       attempt or expose Execute/raw owners. Cover lifecycle
                       races, confirmation barriers and four process-kill points.
-                    - [ ] Operator integration and lifetime supervision for the
-                      maintenance boundary, explicit reviewed recovery, and
-                      actual audit/serve/prune acceptance with live policy,
-                      all-required-assignment and protected-storage checks.
+                    - [x] Local operator integration and lifetime supervision:
+                      opt-in macOS/Linux stdin control parks the same service
+                      without unlocking, compares exact review IDs, and handles
+                      EOF, SIGTERM, input/output and retained storage errors.
+                      Adopt inherited pipe descriptors into interruptible I/O
+                      before opening owners. Add standalone non-listening
+                      review/cancel and export canonical cancellation bytes for
+                      the existing independently reviewed Complete pipeline.
+                      Test stale/partial input, short output, pending pins,
+                      nine lifecycle process exits, SIGPIPE and public-CLI-only
+                      preparation through completion. No Execute or auto-resume.
+                    - [ ] Explicit reviewed operator recovery of incomplete
+                      transitions and actual audit/serve/prune acceptance with
+                      live policy, all-required-assignment and protected-storage
+                      checks. Native Windows live stdin control remains absent;
+                      offline maintenance is the supported boundary there.
   - [ ] Filesystem-full, inode-exhaustion, power-loss, and long-running retention
     campaigns before deployment claims.
   - [x] Isolate the 2026-09-07 custody sibling-rejection deadline race: force the

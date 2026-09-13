@@ -35,12 +35,16 @@ func runPruneCommandCLI(arguments []string) error {
 	defer signal.Stop(brokenPipe)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	return runPruneCommand(ctx, arguments, os.Stdout)
+	return runPruneCommandIO(ctx, arguments, os.Stdin, os.Stdout)
 }
 
 // The command boundary owns no signer or WorkChain handle. Existing roots and
 // independently supplied IDs are mandatory; a failed open never bootstraps them.
 func runPruneCommand(ctx context.Context, arguments []string, output io.Writer) (err error) {
+	return runPruneCommandIO(ctx, arguments, nil, output)
+}
+
+func runPruneCommandIO(ctx context.Context, arguments []string, input io.ReadCloser, output io.Writer) (err error) {
 	if ctx == nil || output == nil || len(arguments) == 0 {
 		return errors.New("prune command needs a context, output and explicit command")
 	}
@@ -59,7 +63,9 @@ func runPruneCommand(ctx context.Context, arguments []string, output io.Writer) 
 	timeout := flags.Duration("timeout", 10*time.Second, "per-exchange timeout, 100ms..2m; not a filesystem deadline")
 	var authorityPath, authorityPins, executorPath, executorPins, requestText, serverText, clientText, listen string
 	var outboxPath, intentText, address string
+	var maintenanceControl string
 	if serving {
+		flags.StringVar(&maintenanceControl, "maintenance-control", "none", "none (default) or stdin: dedicated local pipe for reviewed maintenance")
 		flags.StringVar(&authorityPath, "authority", "", "existing authority root (required)")
 		flags.StringVar(&authorityPins, "authority-pins", "", "existing independent authority intent/pin root (required)")
 		flags.StringVar(&executorPath, "executor", "", "existing executor root (required)")
@@ -75,6 +81,20 @@ func runPruneCommand(ctx context.Context, arguments []string, output io.Writer) 
 	}
 	if err := parsePruneFlags(flags, arguments[1:]); err != nil {
 		return err
+	}
+	var control *pruneControlInput
+	if serving {
+		switch maintenanceControl {
+		case "none":
+		case "stdin":
+			control, err = ownPruneControlInput(input)
+			if err != nil {
+				return err
+			}
+			defer func() { err = errors.Join(err, control.Close()) }()
+		default:
+			return errors.New("maintenance-control must be none or stdin")
+		}
 	}
 	if *assignmentPath == "" || *keyPath == "" || *timeout < admissionwire.MinimumTimeout || *timeout > admissionwire.MaximumTimeout {
 		return errors.New("assignment, key and a timeout within 100ms..2m are required")
@@ -139,9 +159,12 @@ func runPruneCommand(ctx context.Context, arguments []string, output io.Writer) 
 		if err := service.Start(ctx, key, config); err != nil {
 			return err
 		}
-		if _, err := fmt.Fprintf(output, "serving_work_prune_commands peer_id=%s client_peer_id=%s assignment_id=%s request_id=%s listen=%s command_only=true execution_enabled=false automatic_resume=false\n",
-			serverID, clientID, assignmentID, requestID, strings.Join(service.Addresses(), ",")); err != nil {
+		if err := writePruneOutputLine(output, fmt.Sprintf("serving_work_prune_commands peer_id=%s client_peer_id=%s assignment_id=%s request_id=%s listen=%s maintenance_control=%s command_only=true execution_enabled=false automatic_resume=false\n",
+			serverID, clientID, assignmentID, requestID, strings.Join(service.Addresses(), ","), maintenanceControl)); err != nil {
 			return err // the deferred Close drains owners even if readiness cannot be reported
+		}
+		if control != nil {
+			return runPruneMaintenanceControl(ctx, service, control, output)
 		}
 		<-service.Done()
 		return nil // Close returns any retained storage/shutdown failure
@@ -180,7 +203,7 @@ func pruneExternalID(name, encoded string) (types.Hash, error) {
 	return id, nil
 }
 
-// All flags in the prune transport/preparation commands take a value. Wrap their setters so a
+// All prune operator flags take a value. Wrap their setters so a
 // repeated trust pin/path cannot silently override an earlier reviewed value.
 func parsePruneFlags(flags *flag.FlagSet, arguments []string) error {
 	flags.VisitAll(func(f *flag.Flag) { f.Value = &pruneOnceFlag{value: f.Value} })

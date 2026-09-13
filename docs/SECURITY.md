@@ -657,7 +657,7 @@ published artifacts/roots intact; it never triggers reset, replacement or retry.
 The artifact publisher may create output parent directories; operators must
 protect those paths. See `PRUNE_PREPARATION.md` for the trust and recovery rules.
 
-The library-only maintenance capability parks command transport without releasing
+The maintenance capability parks command transport without releasing
 the four root locks. It does not expose raw owners or Execute. Review and local
 CancelBeforeStart hold lifecycle -> executor -> coordinator guards, and the exact
 review ID is recomputed under those guards before the existing pending-ticket
@@ -668,7 +668,21 @@ review ID but still requires separate authority completion. Storage uncertainty
 survives into Close. The caller must explicitly close a handed-off capability:
 its lifetime is no longer tied to the former transport context. This local lock
 continuity neither fences copies nor supplies all-assignment/physical-storage
-authorization, and no operator control endpoint is enabled by this change.
+authorization. Opt-in local operator wiring now uses an exclusively owned stdin
+pipe on macOS/Linux, never a remotely reachable endpoint. The dedicated inherited
+read endpoint is duplicated close-on-exec, made nonblocking and registered with
+Go's poller before acquiring journals; otherwise inherited stdin can keep Close
+blocked behind Read. Parent cancellation, service failure and EOF supervise the
+same owners after transport handoff. Default mode does not adopt stdin, and
+unsupported native platforms reject live control before opening roots.
+The 96-byte LF-terminated grammar has no generic action or implicit review; a
+bad command ends the local session without undoing earlier durable work.
+Standalone offline maintenance takes no key/socket and requires an exact external
+review ID for cancellation. Canonical terminal bytes printed on stdout remain
+historical evidence, not portable current authority. Broken/short output after
+cancellation preserves ambiguity and requires new review, never automatic retry.
+Explicit pending-transition recovery and actual archive acceptance remain gated;
+see `PRUNE_MAINTENANCE.md`.
 
 The opt-in storage-incarnation mode adds a narrower local guarantee. A fresh
 caller-selected ID is atomically bound to a new schema-6 WorkChain database;

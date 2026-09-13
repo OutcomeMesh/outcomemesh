@@ -322,13 +322,17 @@ typed outbox preparation. Review defaults to no writes; verify uses only exact
 retained evidence. These paths do not learn a live head, open WorkChain or hand
 off runtime ownership. Signature messages and journal/wire encodings remain
 unchanged; see [PRUNE_PREPARATION.md](PRUNE_PREPARATION.md).
-A library-only one-way maintenance boundary can now park the command transport
+A one-way maintenance boundary can now park the command transport
 and drain accepted handlers without releasing any of the four root locks. A
 combined confirmed-state review ID is compared under the same guards held through
 local CancelBeforeStart; no raw owner, Execute, signer or automatic recovery is
-exposed. Done still waits for actual owner closure, and the new capability needs
-explicit lifetime supervision. Operator wiring and all-assignment/live-storage
-checks remain separate gates.
+exposed. Done still waits for actual owner closure. An opt-in local stdin pipe
+now supplies CLI lifetime supervision before and after handoff on macOS/Linux;
+EOF, signals and I/O/storage failures close the session. The separate offline
+maintenance command never starts a listener and requires an exact external review
+ID for cancellation. It exports canonical historical terminal bytes for the
+existing Complete signing workflow. Explicit recovery and all-assignment/live-
+storage acceptance remain separate gates; see [PRUNE_MAINTENANCE.md](PRUNE_MAINTENANCE.md).
 Receipt v1 can extend one exact
 predecessor only after a fresh signed random-sample challenge: sample IDs are
 deterministically derived from the nonce, manifest, and predecessor receipt;

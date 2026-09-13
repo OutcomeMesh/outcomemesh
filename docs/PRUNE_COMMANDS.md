@@ -3,12 +3,16 @@
 Status: opt-in pre-alpha operator commands for the original colocated pinned
 executor/coordinator and their existing client outboxes. These commands deliver
 already signed Admit/Complete entries. They do not validate archive availability,
-open WorkChain, sign entries, prepare requests, execute pruning, cancel work,
+open WorkChain, sign entries, prepare requests, execute pruning, remotely cancel work,
 stop/retire an assignment or implement all-assignment authorization.
 
 The lifecycle and trust boundaries are specified in
 [CUSTODY_AUTHORITY.md](CUSTODY_AUTHORITY.md). This runbook does not make the
 system suitable for real value or production data.
+
+Separate opt-in [local maintenance](PRUNE_MAINTENANCE.md) now exposes reviewed
+pre-start cancellation through a dedicated stdin control pipe or a standalone
+offline command. No cancellation method is added to either QUIC protocol.
 
 ## Required preparation
 
@@ -137,12 +141,13 @@ not reopen an admission or repeat a chain effect. A cached ACK is a local
 historical channel observation, not a signed portable certificate or current
 authorization. Changing a route does not change either peer pin.
 
-The CLI service still has to be stopped for an explicit local ownership handoff
-to the existing guarded executor APIs. A library integrator can now enter a
-[one-way maintenance boundary](CUSTODY_AUTHORITY.md#one-way-library-maintenance-boundary)
-without releasing the original locks, but it permits only reviewed local
-cancellation, not Execute. The CLI does not invoke that boundary or expose an
-effect API. Live archive-policy checks, all-required-assignment
+An explicitly configured local stdin pipe can now enter the
+[one-way maintenance boundary](PRUNE_MAINTENANCE.md) without releasing the
+original locks. It permits only review and exact reviewed pre-start cancellation,
+not Execute. The default service still ignores stdin. A separate offline command
+opens only stopped owners, without listening, signing or resuming. Any local
+chain effect still requires a separate guarded ownership handoff; there is no
+CLI effect API. Live archive-policy checks, all-required-assignment
 enforcement, reviewed ownership handoff, protected physical storage/pins,
 copied-owner fencing and active cross-host cutover remain separate open gates.
 

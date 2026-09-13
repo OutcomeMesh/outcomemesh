@@ -148,6 +148,11 @@ cancellation or canonical prune effect for the same request/ticket and archive
 boundary; successful effects must also match the storage ID. Admit rejects all
 four completion-only flags, including empty values.
 
+[Reviewed local maintenance](PRUNE_MAINTENANCE.md) can now supply the canonical
+cancellation bytes through its `canonical_hex` output. Decode that exact field
+into a protected terminal artifact and independently retain/check its terminal
+ID before this signing workflow. Maintenance does not sign or submit Complete.
+
 These checks bind supplied historical bytes, not physical state. A cancellation's
 binding ID is committed by the independent terminal ID but cannot prove the
 executor durably cancelled without its retained journals. An effect file alone

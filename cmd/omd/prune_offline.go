@@ -15,7 +15,7 @@ import (
 	authoritystore "github.com/outcomemesh/outcomemesh/node/custodyauthority/store"
 )
 
-// Offline preparation is explicitly selected, never a delivery/startup fallback.
+// Offline preparation/maintenance is explicit, never a delivery/startup fallback.
 // Protect cleanup from broken stdout just as the transport command boundary does.
 func runPruneOfflineCLI(arguments []string) error {
 	brokenPipe := make(chan os.Signal, 1)
@@ -40,6 +40,8 @@ func runPruneOffline(ctx context.Context, arguments []string, output io.Writer) 
 		return runPruneSigning(ctx, arguments, output)
 	case pruneAdmissionPrepareCommand, pruneCompletionPrepareCommand:
 		return runPruneOutboxPrepare(ctx, arguments, output)
+	case pruneMaintenanceCommand:
+		return runPruneMaintenance(ctx, arguments, output)
 	default:
 		return errors.New("unsupported offline prune command")
 	}

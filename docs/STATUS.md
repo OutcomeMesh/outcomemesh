@@ -1159,6 +1159,57 @@ Implemented in an isolated, not-yet-activated consensus package:
   the updated store integration test binaries also compiled for Linux/Windows.
   Native `omd help` passed. These are cross-build checks, not Linux/Windows
   runtime or filesystem guarantees; no new CLI command is introduced.
+  Operator maintenance follow-up (2026-09-13): the command server now accepts
+  explicit `--maintenance-control stdin` on macOS/Linux. Default `none` never
+  reads or adopts stdin. The dedicated local pipe has a 96-byte LF-terminated
+  grammar: review, cancel-before-start with one exact lowercase review ID, and
+  close. First review enters the existing one-way capability without releasing
+  any root lock; cancel cannot infer handoff or refresh a review. EOF, parent
+  signal, service/storage failure, malformed input and output errors terminate
+  the local session, join its input supervisor and close the same owners.
+  An initial real SIGTERM process test exposed blocking inherited os.Stdin:
+  closing it waited behind Read, so all three lifecycle phases timed out.
+  The fix adopts an atomic close-on-exec duplicate in nonblocking mode and checks
+  Go poller support before opening journals. It changes only the explicitly
+  dedicated read endpoint. Real SIGTERM now drains serving, parked and cancelled
+  processes with the writer still open; no test timeout was extended. Other
+  native platforms refuse this live control mode before opening roots.
+  The separate `work-prune-maintenance` command opens four existing owners
+  without listening or reading a key. Default review appends/resumes nothing;
+  cancel requires an independently supplied exact review ID. Both entry points
+  use the existing same-guard cancellation method and print canonical historical
+  terminal bytes for the separately reviewed Complete workflow. Neither signs,
+  completes, executes, resumes uncertainty, repairs storage or fences copies.
+  Cancellation output failure remains historically unresolved: a new explicit
+  review can retrieve the original confirmed terminal, never reuse the old ID.
+  The existing full preparation process fixture now goes from new-root bootstrap
+  through admission, public-CLI-only cancellation, two-role Complete signing,
+  outbox preparation, delivery and receipt verification without a private
+  cancellation call. Its journal fixtures still contain no WorkChain database.
+  Tests cover stale/partial/noncanonical/oversized input, EOF/context/close in
+  three phases, input-close and short-output errors, loss of original storage,
+  unconfirmed pins, rejection of competing owners and a fresh outbox unable to
+  reach the parked listener. Nine process exits cover EOF/SIGTERM/kill in the
+  same phases; actual SIGPIPE covers both live review/cancel and standalone
+  cancellation. The expanded new CLI/unit/process race suite passed in 67.592
+  seconds after the inherited-pipe fix. PRUNE_MAINTENANCE.md documents input
+  ownership, platform limits, exact review, output ambiguity and remaining gates.
+  The full prune operator subset (preparation, signing, delivery, maintenance and
+  all corresponding process cases) passed with race detection in 143.380 seconds.
+  Full `go test ./...` and `go test -race ./...` passed too: cmd/omd took 25.456
+  and 31.497 seconds, with unchanged packages using their test cache.
+  The complete ten-group process gate passed with fresh runs: preparation CLI
+  3.293 seconds, command/maintenance CLI 11.243, existing node scenarios 66.874,
+  chain 33.667, archive 23.625, authority/executor 296.009, completion outbox
+  16.989, admission server 18.457, admission outbox 14.867 and runtime/maintenance
+  21.809 seconds. Heavy suites ran sequentially within the existing gate
+  timeouts. Full vet and integration-tag vet for cmd/omd and store passed.
+  CGO-disabled omd builds passed for macOS arm64, Linux amd64 and Windows amd64;
+  cmd/omd integration test binaries also compiled for Linux/Windows. Native
+  `omd help` includes maintenance. These checks do not establish Linux/Windows
+  runtime or filesystem behavior; Windows live stdin control remains disabled.
+  Consensus rules, signature domains and journal/wire encodings are unchanged;
+  no network handler or remote control protocol is added.
   Reviewed ownership handoff and actual audit/serve/prune integration with
   all-required-assignment and physical storage guards remain open. No active
   cross-host cutover or public-testnet readiness is claimed.

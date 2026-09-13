@@ -192,27 +192,16 @@ func TestProcessPrunePreparationRoundTrip(t *testing.T) {
 	if state, authority := p.snapshot(t); state.Stage != authoritystore.PruneAdmitted || authority.Authority.Sequence != 1 || authority.Authority.Pending != 1 {
 		t.Fatal("prepared admission did not retain exactly one ticket")
 	}
-	// The only transition outside the public CLI is a guarded, explicitly
-	// offline cancellation through existing owners. This test never opens a
-	// WorkChain, authorizes a live prune, or introduces an Execute command.
-	executor, coordinator := p.owners(t)
-	terminal, err := executor.CancelBeforeStart(t.Context(), coordinator)
-	if closeErr := errors.Join(executor.Close(), coordinator.Close()); err != nil || closeErr != nil {
-		t.Fatal(err, closeErr)
-	}
-	terminalID, err := terminal.ID()
-	if err != nil {
-		t.Fatal(err)
-	}
-	encoded, err := terminal.CanonicalBytes()
-	if err != nil {
-		t.Fatal(err)
-	}
+	// Cancellation now uses only public CLI boundaries too. Review and action
+	// are separate, explicitly pinned invocations; neither opens a WorkChain.
+	review := preparationProcessFields(t, p.maintenanceArgs())
+	cancelled := preparationProcessFields(t, append(p.maintenanceArgs(), "--mode", "cancel", "--expected-review-id", review["review_id"]))
+	encoded := checkPruneCancellationOutput(t, p.pruneCLIFixture, cancelled)
 	terminalPath := filepath.Join(p.root, "cancelled.terminal")
 	writePruneCLIFile(t, terminalPath, encoded)
 	ticketID, _ := admission.ID()
 	completeArgs := pruneCLISet(pruneCLISet(pruneCLISet(p.signingArgs(), "kind", "complete"), "expected-sequence", "1"), "expected-head", ticketID.String())
-	completeArgs = append(completeArgs, "--admission", admissionPath, "--admission-id", ticketID.String(), "--terminal", terminalPath, "--terminal-id", terminalID.String())
+	completeArgs = append(completeArgs, "--admission", admissionPath, "--admission-id", ticketID.String(), "--terminal", terminalPath, "--terminal-id", cancelled["terminal_id"])
 	entryPath, complete := p.signEntry(t, completeArgs, "complete", false)
 	outbox := filepath.Join(p.root, "prepared-completion-outbox")
 	intentID, verify := p.prepareOutbox(t, pruneCompletionPrepareCommand, entryPath, outbox, complete, false)

@@ -851,10 +851,14 @@ explicit exact recovery APIs outside this capability. It has no resume, repair,
 reset, automatic retry, signer, generic effect callback or Execute method. A
 process death releases OS locks but does not perform recovery or cancel work.
 
-This is a library boundary, not a new omd control endpoint or permission to stop
-another process. Operator wiring, lifetime supervision, live archive policy,
-all-required-assignment enforcement and copied-owner/physical-storage fencing
-remain open. Tests cover held confirmation barriers, stale/altered review IDs,
+This library boundary now has explicit [local operator wiring](PRUNE_MAINTENANCE.md):
+an opt-in macOS/Linux stdin pipe parks an existing command service without an
+unlock gap, while a separate offline command opens only stopped owners. The
+pipe's lifetime remains supervised after transport shutdown. Neither entry point
+adds a remote endpoint, stops another process, executes a chain effect or resumes
+an incomplete attempt. Live archive policy, all-required-assignment enforcement
+and copied-owner/physical-storage fencing remain open. Tests cover held
+confirmation barriers, stale/altered review IDs,
 context and Close/Start races, retained uncertainty and four separate-process kills
 after drain, after review, before cancellation confirmation and after cancellation.
 
