@@ -761,10 +761,12 @@ Errors after acquiring the journal return no ACK and retain Unconfirmed alongsid
 their cause; even a cleanup error cannot assert that the server did not commit.
 There is no signing, address discovery, automatic retry or request replacement.
 
-The service is command-only. It never opens WorkChain or provides Execute,
-Cancel, Stop, Retire or generic operation methods. An explicit local operation
-currently requires closing the service and handing ownership back to the existing
-guarded APIs, followed by reopening the same retained roots. This is not yet an
+The network service is command-only. It never opens WorkChain or provides Execute,
+Cancel, Stop, Retire or generic remote operation methods. An explicit local chain
+effect still requires closing the service and handing ownership back to the existing
+guarded APIs, followed by reopening the same retained roots. A separate library
+maintenance capability now permits reviewed local cancellation without unlocking
+the four roots, as described below. This is not yet an
 integrated live archive acceptance pipeline or all-assignment fence. Explicit
 `work-prune-command-serve-quic`, `work-prune-admission-deliver-quic` and
 `work-prune-completion-deliver-quic` operator commands now expose only the owned
@@ -794,6 +796,67 @@ prepared, admitted, succeeded, cancelled and retired phases. Reopening twice
 and explicit exact retry cannot change chain data or replay an effect.
 These tests do not establish physical independence, copied-owner fencing or
 power-loss/full-filesystem behavior.
+
+### One-way library maintenance boundary
+
+`PruneCommandService.EnterMaintenance(ctx)` explicitly parks an opened or running
+command service. It disables admission of new handlers, closes transport and
+waits for accepted handlers while retaining the original executor/coordinator
+and all four journal locks. It returns a `PruneMaintenance` capability, not raw
+writers or a WorkChain handle. No command is submitted, inferred or resumed.
+An in-flight handler may finish a previously started confirmation while draining;
+authority admission can remain confirmed with the executor still Prepared if
+cancellation wins before binding begins. Maintenance does not fill that gap.
+
+The transition is one-way for that service instance. Addresses becomes empty
+and Start is rejected, including when maintenance was entered before any Start.
+Only one capability is issued; copying its struct does not grant another active
+handle. Either the capability's Close or the original service's Close waits for
+an active maintenance action, then releases the owners. Done retains its old
+meaning and stays open until those owners have closed, not merely until the
+network has stopped. Reopen the same retained roots for another command service.
+Close is shared shutdown, also through a copied handle; it does not grant another
+capability to review or cancel. Pass the original handle pointer for operations.
+
+After successful handoff the old transport context no longer controls journal
+ownership. The caller must supervise the new capability and explicitly Close it;
+there is no background timer or default daemon that does so. If transport-context
+cancellation has already scheduled service shutdown, handoff is refused rather
+than taking ownership from that callback. A cancelled handoff after draining
+leaves the service parked with its roots held for explicit retry or Close.
+Any entry failure still leaves the original caller responsible for Close.
+
+`PruneMaintenance.Review(ctx)` reads a combined, fully confirmed local state under
+lifecycle, executor and coordinator guards. A local review ID commits the exact
+authority position and phase, independently confirmed executor position, request,
+assignment, storage-incarnation and executor-binding IDs, admission ticket and
+terminal evidence ID. Unconfirmed authority/executor attempts block this review.
+A nonzero storage ID and independent executor pins are required. No database,
+physical storage identity, current archive availability or remote owner is checked.
+
+`CancelBeforeStart(ctx, expectedReviewID)` recomputes that ID under the same guards
+held through the existing live pending-ticket check and durable cancellation
+publication/independent confirmation. The independently reviewed ID cannot be
+silently refreshed. Prepared, Started/unknown or Succeeded work cannot be cancelled;
+an already admitted ticket may drain while Stopping. Any changed history, including
+successful cancellation, makes the earlier review stale. An explicit review of
+the confirmed Cancelled state can retrieve the same historical cancellation.
+This is not authority completion; Complete still needs a separately co-signed
+entry and the original terminal-aware adapter.
+
+Review/cancel errors return no success artifact. Storage uncertainty is retained
+on the owning service and returned again by Review/Close; it is not cleared by a
+retry. After closing/reopening, unresolved transitions require the existing
+explicit exact recovery APIs outside this capability. It has no resume, repair,
+reset, automatic retry, signer, generic effect callback or Execute method. A
+process death releases OS locks but does not perform recovery or cancel work.
+
+This is a library boundary, not a new omd control endpoint or permission to stop
+another process. Operator wiring, lifetime supervision, live archive policy,
+all-required-assignment enforcement and copied-owner/physical-storage fencing
+remain open. Tests cover held confirmation barriers, stale/altered review IDs,
+context and Close/Start races, retained uncertainty and four separate-process kills
+after drain, after review, before cancellation confirmation and after cancellation.
 
 ### Storage-incarnation-bound prune requests
 

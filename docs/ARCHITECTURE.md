@@ -322,6 +322,13 @@ typed outbox preparation. Review defaults to no writes; verify uses only exact
 retained evidence. These paths do not learn a live head, open WorkChain or hand
 off runtime ownership. Signature messages and journal/wire encodings remain
 unchanged; see [PRUNE_PREPARATION.md](PRUNE_PREPARATION.md).
+A library-only one-way maintenance boundary can now park the command transport
+and drain accepted handlers without releasing any of the four root locks. A
+combined confirmed-state review ID is compared under the same guards held through
+local CancelBeforeStart; no raw owner, Execute, signer or automatic recovery is
+exposed. Done still waits for actual owner closure, and the new capability needs
+explicit lifetime supervision. Operator wiring and all-assignment/live-storage
+checks remain separate gates.
 Receipt v1 can extend one exact
 predecessor only after a fresh signed random-sample challenge: sample IDs are
 deterministically derived from the nonce, manifest, and predecessor receipt;

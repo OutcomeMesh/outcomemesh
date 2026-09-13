@@ -27,8 +27,9 @@ type PruneCommandServiceConfig struct {
 }
 
 // PruneCommandService exclusively owns one original coordinator/pinned executor.
-// It has no request creation, signing, execution, cancellation, retirement or
-// generic operation API. Close it before an explicit offline ownership handoff.
+// Its network surface has no request creation, signing, execution, cancellation,
+// retirement or generic operation API. EnterMaintenance explicitly drains that
+// surface for reviewed local cancellation while retaining the original owners.
 // Start enables only the existing Admit/Complete command adapters; it is not
 // integration into live archive acceptance or cross-host execution authority.
 type PruneCommandService struct {
@@ -46,6 +47,9 @@ type PruneCommandService struct {
 	host                       *libp2ptransport.Host
 	cancel                     context.CancelFunc
 	stopWatch                  func() bool
+	quiesced                   bool
+	quiesceErr                 error
+	maintenance                *PruneMaintenance
 	closed                     bool
 	closeErr                   error
 	done                       chan struct{}
@@ -101,6 +105,9 @@ func (service *PruneCommandService) Start(ctx context.Context, key ed25519.Priva
 	defer service.mu.Unlock()
 	if service.closed || service.executor == nil || service.coordinator == nil {
 		return ErrClosed
+	}
+	if service.quiesced {
+		return ErrPruneServiceQuiesced
 	}
 	if service.host != nil {
 		return ErrPruneServiceStarted
@@ -195,7 +202,7 @@ func (service *PruneCommandService) Addresses() []string {
 	}
 	service.mu.Lock()
 	defer service.mu.Unlock()
-	if service.closed || service.host == nil {
+	if service.closed || service.quiesced || service.host == nil {
 		return nil
 	}
 	return service.host.Addresses()
@@ -238,7 +245,7 @@ func (service *PruneCommandService) Close() error {
 	}
 	service.inflight.Wait()
 	service.gate.Lock()
-	err = errors.Join(err, service.failure)
+	err = errors.Join(err, service.failure, service.quiesceErr)
 	service.gate.Unlock()
 	err = errors.Join(err, service.executor.Close(), service.coordinator.Close())
 	service.closeErr, service.closed = err, true

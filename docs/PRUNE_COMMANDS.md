@@ -137,9 +137,12 @@ not reopen an admission or repeat a chain effect. A cached ACK is a local
 historical channel observation, not a signed portable certificate or current
 authorization. Changing a route does not change either peer pin.
 
-The service currently has to be stopped for an explicit local ownership handoff
-to the existing guarded executor APIs. The CLI does not perform that handoff or
-expose an effect API. Live archive-policy checks, all-required-assignment
+The CLI service still has to be stopped for an explicit local ownership handoff
+to the existing guarded executor APIs. A library integrator can now enter a
+[one-way maintenance boundary](CUSTODY_AUTHORITY.md#one-way-library-maintenance-boundary)
+without releasing the original locks, but it permits only reviewed local
+cancellation, not Execute. The CLI does not invoke that boundary or expose an
+effect API. Live archive-policy checks, all-required-assignment
 enforcement, reviewed ownership handoff, protected physical storage/pins,
 copied-owner fencing and active cross-host cutover remain separate open gates.
 

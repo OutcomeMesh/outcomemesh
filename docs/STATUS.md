@@ -1117,6 +1117,48 @@ Implemented in an isolated, not-yet-activated consensus package:
   Linux amd64 and Windows amd64. Linux/Windows integration test binaries also
   compiled; native `omd help` exposes all six preparation commands. This is
   cross-compilation coverage, not Linux/Windows runtime or filesystem evidence.
+  Library maintenance follow-up (2026-09-13): EnterMaintenance parks the command
+  transport and drains accepted handlers without releasing any of the four root
+  locks. It issues one local maintenance capability; copied or closed handles
+  cannot review/cancel, duplicate acquisition is refused, and a parked service
+  cannot Start again. Done still
+  waits for actual owner closure. Old transport-context cancellation cannot
+  release a successfully handed-off owner; the new caller must supervise and
+  explicitly Close it. An already scheduled shutdown cannot be commandeered.
+  A combined review commits the confirmed authority/executor positions, phase,
+  request, assignment, storage and binding IDs, admission and terminal history.
+  Review and CancelBeforeStart hold lifecycle -> executor -> coordinator guards;
+  the exact review ID is recomputed before the existing live pending-ticket check
+  and cancellation publication/confirmation under those same guards. A changed
+  history makes a previous review stale. Prepared, Started/unknown, Succeeded,
+  raw/unbound or unconfirmed states do not become cancellable. A separately
+  reviewed confirmed cancellation remains historical evidence, not completion.
+  Storage uncertainty is retained and returned by subsequent Review/Close. The
+  handle never repairs or resumes an attempt and exposes no raw owner, signer,
+  generic action or Execute. Operator lifetime/control integration and actual
+  all-required-assignment/live-storage enforcement remain open.
+  Tests cover held confirmation barriers, exact review binding, stale heads,
+  retained authority/executor attempts, cancellation/Close ordering and
+  EnterMaintenance/Start/Close/context races. A drain test preserves a confirmed
+  authority Admit with a still-Prepared executor when cancellation wins before
+  binding; it does not automatically complete that transition. Four separate
+  process kills cover drained, reviewed, cancellation-confirmation and confirmed
+  cancellation boundaries, with two non-resuming reopens and unchanged chain
+  accounting. The expanded maintenance/cancellation suite, including existing
+  cancellation crash cases, passed with race detection in 72.519 seconds.
+  Both full `go test ./...` and `go test -race ./...` passed on the final source:
+  store took 263.949 and 282.659 seconds, and cmd/omd took 14.861 and 16.998
+  seconds. The heavy suites ran sequentially with their existing timeouts.
+  All ten process-gate groups passed with fresh runs: preparation CLI 2.073
+  seconds, delivery CLI 2.093, existing node scenarios 63.930, chain 28.983,
+  archive 16.312, authority/executor 200.993, completion outbox 16.425,
+  admission server 19.493, admission outbox 16.381, and the expanded command
+  runtime/maintenance group 23.398 seconds. Full vet and integration-tag vet
+  for both store and cmd/omd also passed.
+  CGO-disabled omd builds passed for macOS arm64, Linux amd64 and Windows amd64;
+  the updated store integration test binaries also compiled for Linux/Windows.
+  Native `omd help` passed. These are cross-build checks, not Linux/Windows
+  runtime or filesystem guarantees; no new CLI command is introduced.
   Reviewed ownership handoff and actual audit/serve/prune integration with
   all-required-assignment and physical storage guards remain open. No active
   cross-host cutover or public-testnet readiness is claimed.

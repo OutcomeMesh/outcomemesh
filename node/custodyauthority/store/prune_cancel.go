@@ -75,26 +75,32 @@ func (executor *PruneExecutor) CancelBeforeStart(ctx context.Context, coordinato
 	}
 	executor.mu.Lock()
 	defer executor.mu.Unlock()
-	if err := executor.operationCheck(); err != nil {
+	// Preserve the historical/nil-context paths without acquiring authority.
+	if err := executor.cancellationCheck(ctx); err != nil {
 		return PruneCancellation{}, err
-	}
-	if ctx == nil {
-		return PruneCancellation{}, ErrPruneRequest
-	}
-	if err := ctx.Err(); err != nil {
-		return PruneCancellation{}, err
-	}
-	if executor.pins == nil {
-		return PruneCancellation{}, ErrPrunePin
 	}
 	if executor.stage == PruneCancelled {
 		return *executor.cancellation, nil
 	}
-	if executor.stage == PruneStarted {
-		return PruneCancellation{}, ErrPruneOutcome
+	if coordinator == nil {
+		return PruneCancellation{}, ErrClosed
 	}
-	if executor.stage != PruneAdmitted {
-		return PruneCancellation{}, ErrPruneStage
+	coordinator.mu.Lock()
+	defer coordinator.mu.Unlock()
+	return executor.cancelBeforeStartLocked(ctx, coordinator)
+}
+
+// Both owners' mutexes must be held (unless coordinator is nil). The historical
+// branch requires no live authority grant, even with a closed coordinator.
+func (executor *PruneExecutor) cancelBeforeStartLocked(ctx context.Context, coordinator *Coordinator) (PruneCancellation, error) {
+	if err := executor.cancellationCheck(ctx); err != nil {
+		return PruneCancellation{}, err
+	}
+	if executor.stage == PruneCancelled {
+		return *executor.cancellation, nil
+	}
+	if coordinator == nil {
+		return PruneCancellation{}, ErrClosed
 	}
 	binding, err := pruneAdmissionBinding(executor.assignment, executor.request, *executor.admission)
 	if err != nil {
@@ -102,7 +108,7 @@ func (executor *PruneExecutor) CancelBeforeStart(ctx context.Context, coordinato
 	}
 	cancellation := PruneCancellation{AssignmentID: executor.request.AssignmentID, RequestID: executor.id, TicketID: binding.TicketID, BindingID: executor.pins.binding}
 	encoded, _ := cancellation.CanonicalBytes()
-	err = coordinator.WithOperation(ctx, binding, func() error {
+	err = coordinator.withOperation(ctx, binding, func() error {
 		if err := executor.checkAuthorityRoots(coordinator); err != nil {
 			return err
 		}
@@ -116,6 +122,29 @@ func (executor *PruneExecutor) CancelBeforeStart(ctx context.Context, coordinato
 		return PruneCancellation{}, err
 	}
 	return cancellation, nil
+}
+
+// cancellationCheck requires the executor mutex, but no authority ownership.
+func (executor *PruneExecutor) cancellationCheck(ctx context.Context) error {
+	if err := executor.operationCheck(); err != nil {
+		return err
+	}
+	if ctx == nil {
+		return ErrPruneRequest
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if executor.pins == nil {
+		return ErrPrunePin
+	}
+	if executor.stage == PruneStarted {
+		return ErrPruneOutcome
+	}
+	if executor.stage != PruneAdmitted && executor.stage != PruneCancelled {
+		return ErrPruneStage
+	}
+	return nil
 }
 
 func pruneRecordCount(stage PruneStage) int {

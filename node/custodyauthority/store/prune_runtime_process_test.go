@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -254,6 +255,28 @@ func TestPruneCommandRuntimeCrashHelper(t *testing.T) {
 	}
 	publish(s.Addresses()[0])
 	_ = reach("started")
+	if stage == "runtime-maintenance-drained" || strings.HasPrefix(stage, "maintenance-") {
+		s.executor.hooks.at = func(at string) error { return reach("maintenance-" + at) }
+		s.executor.pins.hooks.at = func(at string) error { return reach("maintenance-" + at) }
+		owner, err := s.EnterMaintenance(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		review, err := owner.Review(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		id, err := review.ID()
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = reach("maintenance-reviewed")
+		if _, err := owner.CancelBeforeStart(context.Background(), id); err != nil {
+			t.Fatal(err)
+		}
+		_ = reach("maintenance-cancelled")
+		t.Fatal("maintenance helper missed controlled checkpoint")
+	}
 	select {
 	case <-s.Done():
 		t.Fatal("runtime stopped before controlled crash", s.Close())

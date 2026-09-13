@@ -111,6 +111,10 @@ preparation. Review is the default; neither preparation nor delivery authorizes
 a live prune. See the
 [prune command runbook](docs/PRUNE_COMMANDS.md) for flags, shutdown, recovery and
 the remaining live-authorization gates.
+A library-only [maintenance boundary](docs/CUSTODY_AUTHORITY.md#one-way-library-maintenance-boundary)
+can park command transport without unlocking journals and perform reviewed local
+cancellation before start. It is not an operator Execute command or a live prune
+authorization layer.
 
 ## Build and run
 

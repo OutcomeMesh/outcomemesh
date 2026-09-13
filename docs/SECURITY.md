@@ -657,6 +657,19 @@ published artifacts/roots intact; it never triggers reset, replacement or retry.
 The artifact publisher may create output parent directories; operators must
 protect those paths. See `PRUNE_PREPARATION.md` for the trust and recovery rules.
 
+The library-only maintenance capability parks command transport without releasing
+the four root locks. It does not expose raw owners or Execute. Review and local
+CancelBeforeStart hold lifecycle -> executor -> coordinator guards, and the exact
+review ID is recomputed under those guards before the existing pending-ticket
+check and durable cancellation. Detached snapshots cannot replace that check.
+Unknown Started outcomes and unconfirmed transitions remain ineligible; no timeout
+or lost connection establishes cancellation. A successful cancellation changes the
+review ID but still requires separate authority completion. Storage uncertainty
+survives into Close. The caller must explicitly close a handed-off capability:
+its lifetime is no longer tied to the former transport context. This local lock
+continuity neither fences copies nor supplies all-assignment/physical-storage
+authorization, and no operator control endpoint is enabled by this change.
+
 The opt-in storage-incarnation mode adds a narrower local guarantee. A fresh
 caller-selected ID is atomically bound to a new schema-6 WorkChain database;
 reopen needs the independently retained ID and never initializes missing data.

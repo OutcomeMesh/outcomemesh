@@ -443,6 +443,18 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
                   - [ ] Reviewed ownership handoff and actual audit/serve/prune
                     wiring with live archive policy,
                     all-required-assignment guards and protected storage pins.
+                    - [x] One-way in-process maintenance capability: stop and
+                      drain the command transport without releasing any of the
+                      four root locks. Bind a local cancellation review ID to
+                      confirmed authority/executor positions, storage/binding
+                      IDs and terminal history. Compare it under the same
+                      guards held through CancelBeforeStart; never resume an
+                      attempt or expose Execute/raw owners. Cover lifecycle
+                      races, confirmation barriers and four process-kill points.
+                    - [ ] Operator integration and lifetime supervision for the
+                      maintenance boundary, explicit reviewed recovery, and
+                      actual audit/serve/prune acceptance with live policy,
+                      all-required-assignment and protected-storage checks.
   - [ ] Filesystem-full, inode-exhaustion, power-loss, and long-running retention
     campaigns before deployment claims.
   - [x] Isolate the 2026-09-07 custody sibling-rejection deadline race: force the
