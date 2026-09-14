@@ -522,8 +522,16 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
                         starts/results, pending state or unknown work as success.
                         Cover both modes, one-root downgrade and 19 process kills.
                         This is not a remote certificate or copy-fencing mechanism.
-                      - [ ] Bounded lineage evidence preparation, secondary
-                        admission/terminal tooling and reviewed
+                      - [x] Bounded historical lineage-body preparation and
+                        immutable retention: exact inventory/policy/evidence pins,
+                        complete verified prefixes in pinned assignment order,
+                        streaming file I/O and aggregate pre-allocation limits.
+                        Preserve original canonical bodies, reject replacement,
+                        permit exact retries and read-only re-verification. Cover
+                        mixed/empty prefixes, frozen vector, fuzz smoke and five
+                        publication process kills. This does not export a live
+                        journal, grant authority or bind the file ID into Started.
+                      - [ ] Secondary admission/terminal tooling and reviewed
                         multi-owner runtime/CLI handoff. Integrate managed audit/serve
                         paths; test remote partitions and physical/copy fencing
                         before activation. Library acceptance alone does not close

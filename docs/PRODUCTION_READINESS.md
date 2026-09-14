@@ -78,3 +78,11 @@ it through exact recovery and provides read-only local provenance inspection.
 Legacy starts/results cannot acquire the binding retroactively. This is still not
 the full operator lifecycle, secondary completion, managed audit/serve, remote
 certificate, physical/copy fencing or public-testnet evidence. The score stays 40/100.
+
+2026-09-14 lineage-retention follow-up: complete supplied historical prefixes now
+have bounded preparation, an immutable streaming file format, three independent
+pins and read-only full verification. They can feed the existing guarded library
+executor, but its start does not commit the evidence file ID. Live-journal extraction,
+secondary admission/completion, CLI ownership and physical/remote acceptance remain
+open. This closes a preparation substep, not the weighted lifecycle criterion;
+the score stays 40/100 and no audit or public-testnet credit is added.

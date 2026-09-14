@@ -72,9 +72,10 @@ journal head, independent storage durability, absence of forks, or live permissi
 It does not prove historical Audit-ticket admission: managed audit/serve acceptance
 remains a separate gate. The held current tickets authorize this Prune operation.
 It opens/repairs no journal and never activates historical-only evidence. There
-is no evidence extraction/publication CLI, new portable lineage-body format or new
-automatic recovery. Prepare and retain the exact bounded evidence independently;
-operator evidence preparation and runtime-bound inventory tooling remain open.
+is no live-journal evidence extraction/publication CLI or new automatic recovery.
+The separately pinned historical evidence file below now retains supplied complete
+prefixes; it does not discover or select them from live owner journals. Full
+operator ownership and CLI tooling remain open.
 The unchanged primary effect record alone does not certify use of this lineage
 mode. Historical recovery does not retroactively verify it. Only the explicit
 inventory-bound start path below records that link; merely supplying the
@@ -217,6 +218,61 @@ runtime. Shared rollback, malicious local file rewriting, copied owners and
 physical failure-domain independence remain outside this guarantee. Supervised
 operator handoff, remote acceptance, secondary tooling and activation remain gated.
 
+## Retained historical lineage bodies
+
+`PrepareArchivePruneLineageEvidence(ctx, inventory, inventoryID, policyID, lineages)`
+requires an independently pinned **lineage-mode** inventory, checks the shared
+1,024-entry / 256 MiB manifest-plus-entry budget before copying and reorders by its
+exact assignments. It fully verifies each prefix, its original receipt/custody
+policy and exact selected terminal receipt. Empty and mixed initial/renewed prefixes
+are supported; an initial-only inventory is not silently switched to lineage mode.
+The result is opaque and immutable. `ID()` supplies the evidence ID to review and
+retain independently; `Lineages(ctx)` returns fresh detached copies, never internal
+buffers. Preparation does no filesystem I/O and opens no owner or live journal.
+
+`SaveArchivePruneLineageEvidenceFile(ctx, path, evidence, evidenceID)` publishes
+without replacing an existing file. It streams to a private 0600 temporary file,
+syncs it, hard-links the final name, verifies the exact bounded stream ID, then
+syncs the same file and its parent. Exact retries use the existing inode. Failed
+or cancelled calls after publication may leave a complete file: inspect with the
+same external pins and retry exactly. Crash-left temporary files are never promoted
+or automatically deleted by retries. The parent must already exist, be dedicated
+and remain operator-controlled; symlink final files/parents are rejected.
+
+`LoadArchivePruneLineageEvidenceFile(ctx, path, inventory, inventoryID, policyID,
+evidenceID)` requires all three independent pins. It checks the file size and
+stream hash **before allocating lineage bodies**, then bounds every field/count
+before allocation, decodes, fully verifies all prefixes and checks canonical
+re-encoding against the same evidence ID. It opens the same regular inode read-only
+and checks file/parent identities. Concurrent mutation of inputs, files or their
+parent is unsupported. Stream hashing/read/write check cancellation in 64 KiB
+chunks; signature verification remains bounded per existing journal entry.
+
+The local v0 envelope is `OMCPLEVD`, big-endian u16 version zero, fixed inventory
+and policy IDs, and a u16 lineage count. Each ordered lineage contains its fixed
+assignment ID, u32-length canonical manifest and initial receipt, three u64 custody
+policy timing values, u16 auditor count and fixed keys, then u16 entry count and
+u32-length canonical entries. Zero-length bodies, unsupported versions, trailing
+bytes and noncanonical inner objects are rejected. The total file cap is 256 MiB
+plus 256 KiB framing/metadata; the latter **does not enlarge the body budget**.
+The ID is SHA-256 of `OMESH/custody-prune/lineage-evidence/id/v0` followed by the
+exact envelope stream. No second full-envelope buffer is required for file I/O;
+decoded bodies and explicit caller copies are still bounded in-memory values.
+The frozen two-replica, one-renewal-each test vector has evidence ID
+`9052483c729475add9d271a7039be21d6740a492f9d52a55b83e625a7326efca`.
+
+For library execution, load the evidence against the same inventory/policy pins,
+obtain `Lineages(ctx)` and pass them to `ExecutePreparedArchive`. That existing
+adapter independently re-verifies them under all live authority guards. Preserve
+the file and all pins outside owner/replica roots. **This is preparation/retention,
+not a new file-backed execution contract:** the adapter does not own/re-sync this
+file, and version-1 Started commits the inventory ID, **not the evidence file ID**.
+No inventory, request, start, effect, authority or consensus encoding changes.
+The file proves neither latest/unique journal head, historical Audit admission,
+current pending authority, physical durability, successful execution nor cutover.
+It remains historically readable after a ticket completes; it cannot authorize a
+new execution in that state. No journal extraction, CLI or activation is added.
+
 ## One synchronous execution
 
 1. Check healthy, fully confirmed executor state and the external policy ID.
@@ -297,7 +353,12 @@ one-root downgrade rejection. Nineteen process kills (nine initial, ten lineage)
 cover the existing stages plus package re-sync and both sides of start publication;
 repeated reopen/inspection does not promote pending or unknown state.
 
-Still required: bounded lineage evidence preparation and secondary terminal
+Historical lineage retention adds empty/mixed/renewed-prefix execution, detached
+buffers, wrong-pin/body/framing/budget rejection, equal/conflicting publishers,
+cancellation, a frozen canonical vector and five publication process kills.
+Loading retained bodies never bypasses a completed secondary admission.
+
+Still required: reviewed live-journal extraction and secondary admission/terminal
 adapters, supervised operator ownership handoff, actual managed audit/serve
 paths, cross-host/partition acceptance, copied-owner and physical-storage fencing,
 exhaustion/power-loss/long-soak campaigns, independent review and public testnet.

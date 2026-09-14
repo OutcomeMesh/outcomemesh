@@ -75,6 +75,13 @@ func newArchivePruneFixtureWithRenewals(t testing.TB, renewals []int) *archivePr
 			t.Fatal("fixture needs two renewal counts")
 		}
 		storedAt, retainUntil = now-2_000, now+18_000
+		// A mixed/empty historical prefix selects an initial receipt, which
+		// must still pass the fixture's unchanged live freshness policy.
+		for _, count := range renewals {
+			if count == 0 {
+				storedAt = now - 500
+			}
+		}
 	}
 	for _, seed := range []byte{61, 62} {
 		directory := filepath.Join(t.TempDir(), "replica")

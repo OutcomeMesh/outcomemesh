@@ -87,6 +87,7 @@ test-fuzz-smoke:
 	$(GO) test ./node/custodyauthority -run '^$$' -fuzz '^FuzzAuthorityDrainStateMachine$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyauthority/store -run '^$$' -fuzz '^FuzzDecodePruneRequest$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyauthority/store -run '^$$' -fuzz '^FuzzDecodeArchivePruneInventory$$' -fuzztime=$(FUZZTIME)
+	$(GO) test ./node/custodyauthority/store -run '^$$' -fuzz '^FuzzDecodePruneLineageEvidence$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyauthority/store -run '^$$' -fuzz '^FuzzPrunePinTransitions$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyauthority/store -run '^$$' -fuzz '^FuzzDecodePruneCancellation$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyauthority/completionwire -run '^$$' -fuzz '^FuzzCompletionFrames$$' -fuzztime=$(FUZZTIME)
@@ -107,7 +108,7 @@ test-process:
 	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestPruneAdmissionQUICProcessCrashAtomicity$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestAdmissionOutboxProcessCrashAtomicity$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestPrune((CommandRuntime|Maintenance|Recovery|Archive(Lineage)?)ProcessRecovery|InventoryProcessCrashAtomicity)$$' -count=1 -timeout=2m
-	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestPrunePreparedArchiveProcessRecovery$$' -count=1 -timeout=2m
+	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestPrune(PreparedArchiveProcessRecovery|LineageEvidenceProcessCrashAtomicity)$$' -count=1 -timeout=2m
 
 test-work-rollover-soak:
 	OUTCOMEMESH_WORK_ROLLOVER_SOAK_CYCLES=$(WORKROLLOVERCYCLES) $(GO) test ./cmd/omd -run '^TestMultiNodeWorkRolloverConvergesAcrossClockSkewChurnAndRelayLoss$$' -count=1 -timeout=5m

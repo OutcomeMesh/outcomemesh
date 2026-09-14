@@ -1441,6 +1441,46 @@ Implemented in an isolated, not-yet-activated consensus package:
   rerun; the full race suite and all process groups above are fresh final runs.
   Cross-builds do not establish Linux/Windows runtime or physical-storage behavior,
   and native Windows live stdin maintenance remains disabled.
+  Historical lineage retention follow-up (2026-09-14): an opaque, detached
+  ArchivePruneLineageEvidence now retains supplied complete prefixes against the
+  exact lineage-mode inventory and policy pins. Preparation checks one aggregate
+  1,024-entry / 256 MiB body budget before copying, orders by pinned assignments
+  and fully verifies each prefix/initial receipt/custody policy/selected receipt.
+  A separately reviewed evidence ID commits the exact v0 envelope and both pins.
+  Save/load use streaming I/O, bounded framing, regular-file identity checks and
+  immutable no-replace publication with exact retry and file/parent sync. Loading
+  authenticates the stream before body allocation and fully re-verifies historical
+  evidence. File I/O does not concatenate a second evidence-sized buffer; explicit
+  lineage getters still make bounded detached copies for the existing executor.
+  No keys, live journal discovery, owner activation or new pruning permission is
+  involved. Started still binds the inventory, not this separate evidence file;
+  the executor does not own or re-sync that file. Preserve it and all external pins
+  independently. Historical readability cannot bypass completed secondary tickets.
+  Tests cover empty, mixed and renewed prefixes through actual guarded deletion,
+  caller-buffer detachment, pin/body/framing/count/aggregate-budget rejection,
+  cancellation between 64 KiB chunks, corrupt/symlink/oversized files, inode
+  replacement rejection, equal/conflicting publishers and five process kills.
+  A frozen one-renewal-per-replica vector and fixed-seed decoder fuzz target are
+  included. Makefile adds this target to fuzz and the five kills to the existing
+  prepared-archive process group without changing any timeout or removing tests.
+  Reviewed live-journal extraction, secondary admission/completion, supervised
+  multi-owner CLI handoff, managed audit/serve and physical/remote acceptance remain
+  open. The weighted production readiness baseline stays approximately 40/100.
+  Lineage-retention verification: focused race/integration tests passed in 39.228
+  seconds, including all five new publication kills and 19 prepared-execution
+  recovery cases. After adding the explicit mid-stream cancellation assertion,
+  the full final `go test -race ./...` passed: store 390.744 seconds and cmd/omd
+  36.559, with unchanged packages cached. The final expanded standalone process
+  group passed all 24 kills in 16.866 seconds within its unchanged two-minute
+  timeout. The other ten process groups and the full normal suite were not rerun
+  in this pass; their previous results above are not claimed as fresh evidence.
+  Decoder fuzz smoke passed with three fixed seeds, two workers and a ten-second
+  budget: 5,765 reported executions, 11.829 seconds total. This is not a long fuzz
+  campaign. Full vet and integration-tag cmd/omd/store vet passed. CGO-disabled
+  trimpath omd builds passed for macOS arm64, Linux amd64 and Windows amd64;
+  integration-tag store test binaries compiled for Linux/Windows, and native
+  `omd help` exited successfully. Formatting/diff checks are clean. Cross-builds
+  are not Linux/Windows runtime, physical-storage, audit or public-testnet evidence.
   Process-gate observation (2026-09-07): the first combined run stopped at
   `TestProcessTieCampaignStorageFailuresRecoverWithoutFalseAdvance/observer_confirmation_after_link`
   because the expected confirmation marker was absent. Five isolated repetitions
