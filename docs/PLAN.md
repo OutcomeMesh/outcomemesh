@@ -493,8 +493,17 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
                         or cached result relabelled as live acceptance. Cover
                         secondary-stop barriers, cancellation and six process kills;
                         keep journal/command/effect encodings unchanged.
-                      - [ ] Verified renewal lineage, retained policy/operation
-                        inventory, secondary admission/terminal tooling and reviewed
+                      - [x] Complete renewal-prefix verification for colocated
+                        pruning: separate lineage policy pin, exact initial
+                        assignment/custody policy, canonical entries from sequence
+                        one and exact selected terminal receipt. Bound aggregate
+                        evidence before copying; retain all authority guards through
+                        historical verification, live archive replay and result.
+                        Reject gaps, substitutions and stale mode pins; preserve
+                        unknown starts and cover seven process-kill boundaries.
+                        This is not a latest-head proof or journal activation.
+                      - [ ] Retained policy/operation inventory, bounded lineage
+                        evidence preparation, secondary admission/terminal tooling and reviewed
                         multi-owner runtime/CLI handoff. Integrate managed audit/serve
                         paths; test remote partitions and physical/copy fencing
                         before activation. Library acceptance alone does not close

@@ -1,6 +1,6 @@
 # Production readiness baseline
 
-Assessment date: 2026-09-13. **Approximately 40/100 toward the full planned launch.**
+Assessment date: 2026-09-14. **Approximately 40/100 toward the full planned launch.**
 Status remains research/pre-alpha: do not secure real value with this code.
 
 This is a coarse, judgment-based engineering estimate, not an externally audited
@@ -14,7 +14,7 @@ step does not earn an automatic percentage increase.
 | --- | ---: | ---: | --- |
 | v0 specification, deterministic kernel, ledger and PoW (M0–3) | 20 | 20 | Repository exit gates recorded complete; this does not imply external security approval. |
 | Devnet and WorkGraph (M4–5) | 20 | 12 | M4 complete; M5 experimental implementation/research exists, but activation, independent review and calibration gates remain open. |
-| Protected storage and operator lifecycle (part of M5) | 15 | 8 | Pinned journals, delivery, preparation, maintenance, exact recovery and initial-receipt local archive acceptance exist; full operator/audit/serve integration and physical-storage acceptance remain open. |
+| Protected storage and operator lifecycle (part of M5) | 15 | 8 | Pinned journals, delivery, preparation, maintenance, exact recovery and local archive acceptance with explicit renewal-prefix verification exist; full operator/audit/serve integration and physical-storage acceptance remain open. |
 | Committee/application/privacy/proving scope (M6–8) | 15 | 0 | Not integrated; still gated by M5. |
 | Independent verification and security audits (M9–10) | 10 | 0 | No completed independent consensus verifier or external audit evidence satisfying the plan. |
 | Sustained adversarial public testnet (M9) | 10 | 0 | Local process tests are not a public testnet; the required six-month consensus stability gate is not met. |
@@ -58,3 +58,9 @@ every selected assignment guard through actual replay/deletion/result on pinned
 storage. The score remains 40/100: renewal lineage, secondary terminal tooling,
 managed audit/serve, operator ownership and physical/copy fencing do not yet close
 the weighted storage/lifecycle criterion. No audit or testnet credit was added.
+
+2026-09-14 follow-up: separately pinned, bounded renewal-prefix verification now
+feeds local archive pruning under all original authority guards. The score stays
+40/100: evidence preparation, retained inventory, secondary completion and the full
+operator/storage lifecycle remain open. No independent-audit, public-testnet or
+physical-storage acceptance credit is claimed.

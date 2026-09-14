@@ -25,9 +25,14 @@ type archivePruneFixture struct {
 	replicas   []workarchive.Replica
 	operations []RequiredOperation
 	path       string
+	lineages   []workarchive.CustodyReceiptLineage
 }
 
 func newArchivePruneFixture(t testing.TB) *archivePruneFixture {
+	return newArchivePruneFixtureWithRenewals(t, nil)
+}
+
+func newArchivePruneFixtureWithRenewals(t testing.TB, renewals []int) *archivePruneFixture {
 	t.Helper()
 	f := newPruneFixtureWithStoragePositions(t, testHash(91), true)
 	_ = f.executor.Close()
@@ -62,13 +67,20 @@ func newArchivePruneFixture(t testing.TB) *archivePruneFixture {
 		p.policy.CheckpointPolicy.TrustedAttestors = append(p.policy.CheckpointPolicy.TrustedAttestors, attestation.PublicKey)
 	}
 	now := uint64(time.Now().Unix())
+	storedAt, retainUntil := now, now+20_000
+	if renewals != nil {
+		if len(renewals) != 2 {
+			t.Fatal("fixture needs two renewal counts")
+		}
+		storedAt, retainUntil = now-2_000, now+18_000
+	}
 	for _, seed := range []byte{61, 62} {
 		directory := filepath.Join(t.TempDir(), "replica")
 		if err := os.CopyFS(directory, os.DirFS(archive)); err != nil {
 			t.Fatal(err)
 		}
 		receipt, err := workarchive.CreateReplicaReceipt(directory, checkpoint, p.policy.CheckpointPolicy, f.base, f.parameters,
-			workarchive.DefaultLimits(), testKey(seed), testHash(seed), now, now+20_000)
+			workarchive.DefaultLimits(), testKey(seed), testHash(seed), storedAt, retainUntil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -87,6 +99,11 @@ func newArchivePruneFixture(t testing.TB) *archivePruneFixture {
 			t.Fatal(err)
 		}
 		p.policy.Assignments = append(p.policy.Assignments, assignment)
+		if renewals != nil {
+			lineage, selected := archiveFixtureLineage(t, p, manifest, assignment, replica, custodyPolicy, renewals[i], now)
+			p.lineages = append(p.lineages, lineage)
+			p.replicas[i].Receipt = selected
+		}
 	}
 	bundle, err := workarchive.VerifyReplicaSet(p.replicas, checkpoint, p.policy.CheckpointPolicy, p.policy.ReplicaPolicy,
 		f.base, f.parameters, workarchive.DefaultLimits(), now)
@@ -97,7 +114,8 @@ func newArchivePruneFixture(t testing.TB) *archivePruneFixture {
 	f.request.Boundary.StatementID, _ = statement.ID()
 	f.request.Boundary.ManifestID, _ = manifest.ID()
 	f.request.Boundary.AvailabilityID, _ = bundle.ID()
-	f.request.Boundary.VerifiedAt, f.request.Boundary.RetainUntil = now, now+20_000
+	f.request.Boundary.VerifiedAt = now
+	f.request.Boundary.RetainUntil = min(p.replicas[0].Receipt.RetainUntil, p.replicas[1].Receipt.RetainUntil)
 	f.id, _ = f.request.ID()
 	f.executorPath, f.executorPinsPath = filepath.Join(t.TempDir(), "executor"), filepath.Join(t.TempDir(), "executor-pins")
 	f.executor, err = CreatePinnedPruneExecutor(f.executorPath, f.executorPinsPath, p.policy.Assignments[0], f.request, f.id)
@@ -137,6 +155,9 @@ func newArchivePruneFixture(t testing.TB) *archivePruneFixture {
 	p.policy.RequestID, p.policy.StoragePairID = f.id, protection.PairID
 	p.policy.ExecutorBindingID = pruneSnapshot(t, f.executor).Protection.BindingID
 	p.policyID, err = p.policy.ID()
+	if renewals != nil {
+		p.policyID, err = p.policy.LineageID()
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,6 +165,10 @@ func newArchivePruneFixture(t testing.TB) *archivePruneFixture {
 }
 
 func (p *archivePruneFixture) execute(ctx context.Context) (workchain.CanonicalPruneCommit, error) {
+	if p.lineages != nil {
+		return p.f.executor.ExecuteArchiveWithLineage(ctx, p.f.chain, p.policy, p.policyID, p.operations, p.replicas, p.lineages, p.path,
+			p.f.base, p.f.parameters, workarchive.DefaultLimits())
+	}
 	return p.f.executor.ExecuteArchive(ctx, p.f.chain, p.policy, p.policyID, p.operations, p.replicas, p.path,
 		p.f.base, p.f.parameters, workarchive.DefaultLimits())
 }

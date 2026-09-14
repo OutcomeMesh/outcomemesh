@@ -213,5 +213,6 @@ Actual audit/serve/prune acceptance under live policy, all-required-assignment
 enforcement, protected physical storage checks, copied-owner fencing and active
 cross-host cutover remain open. There is no operator Execute path.
 A separate [local archive acceptance library](PRUNE_ACCEPTANCE.md) now covers
-initial-receipt replica replay and all selected guards through deletion/result.
+initial receipts or separately pinned renewal prefixes, replica replay and all
+selected guards through deletion/result.
 It does not expose owners through this maintenance capability or extend stdin.

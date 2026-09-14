@@ -25,6 +25,7 @@ type archiveProcessConfig struct {
 	PolicyID                                                 types.Hash
 	Executor, ExecutorPins, Database, DatabasePins, Evidence string
 	Replicas                                                 []workarchive.Replica
+	Lineages                                                 []workarchive.CustodyReceiptLineage
 	Authorities                                              []archiveProcessAuthority
 }
 type archiveProcessAuthority struct {
@@ -34,7 +35,7 @@ type archiveProcessAuthority struct {
 
 func archiveProcessInputs(p *archivePruneFixture) archiveProcessConfig {
 	c := archiveProcessConfig{Policy: p.policy, PolicyID: p.policyID, Executor: p.f.executorPath, ExecutorPins: p.f.executorPinsPath,
-		Database: p.f.chainPath, DatabasePins: p.f.chainPositionPinsPath, Evidence: p.path, Replicas: p.replicas}
+		Database: p.f.chainPath, DatabasePins: p.f.chainPositionPinsPath, Evidence: p.path, Replicas: p.replicas, Lineages: p.lineages}
 	for _, operation := range p.operations {
 		c.Authorities = append(c.Authorities, archiveProcessAuthority{operation.Coordinator.authority.path, operation.Coordinator.journal.path, operation.Binding})
 	}
@@ -69,7 +70,7 @@ func openArchiveProcess(t testing.TB, config archiveProcessConfig) *archivePrune
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = f.chain.Close() })
-	p := &archivePruneFixture{f: f, policy: config.Policy, policyID: config.PolicyID, replicas: config.Replicas, path: config.Evidence}
+	p := &archivePruneFixture{f: f, policy: config.Policy, policyID: config.PolicyID, replicas: config.Replicas, path: config.Evidence, lineages: config.Lineages}
 	for i, authority := range config.Authorities {
 		c, err := OpenCoordinator(authority.Path, authority.Pins, config.Policy.Assignments[i], authority.Binding.AssignmentID)
 		if err != nil {
@@ -85,9 +86,26 @@ func openArchiveProcess(t testing.TB, config archiveProcessConfig) *archivePrune
 }
 
 func TestPruneArchiveProcessRecovery(t *testing.T) {
-	for _, stage := range []string{"archive-before-verification", "archive-before-start", "prune-before-effect", "prune-after-effect", "pins-result-confirm-before-publish", "archive-done"} {
+	testArchiveProcessRecovery(t, false)
+}
+
+func TestPruneArchiveLineageProcessRecovery(t *testing.T) {
+	testArchiveProcessRecovery(t, true)
+}
+
+func testArchiveProcessRecovery(t *testing.T, lineage bool) {
+	stages := []string{"archive-before-verification", "archive-before-start", "prune-before-effect", "prune-after-effect", "pins-result-confirm-before-publish", "archive-done"}
+	if lineage {
+		stages = append(stages, "archive-after-lineage")
+	}
+	for _, stage := range stages {
 		t.Run(stage, func(t *testing.T) {
-			p := newArchivePruneFixture(t)
+			var p *archivePruneFixture
+			if lineage {
+				p = newArchivePruneFixtureWithRenewals(t, []int{2, 1})
+			} else {
+				p = newArchivePruneFixture(t)
+			}
 			config := archiveProcessInputs(p)
 			before, _, err := p.f.chain.HistoryUsage()
 			if err != nil {
@@ -147,7 +165,7 @@ func TestPruneArchiveProcessRecovery(t *testing.T) {
 				t.Fatal("child missed forced termination")
 			}
 			wantStage := PruneStarted
-			if stage == "archive-before-verification" || stage == "archive-before-start" {
+			if stage == "archive-before-verification" || stage == "archive-before-start" || stage == "archive-after-lineage" {
 				wantStage = PruneAdmitted
 			}
 			if stage == "pins-result-confirm-before-publish" || stage == "archive-done" {

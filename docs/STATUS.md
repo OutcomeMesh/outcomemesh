@@ -1310,6 +1310,48 @@ Implemented in an isolated, not-yet-activated consensus package:
   lineage, protected policy/operation inventory, secondary admission/terminal
   adapters, multi-owner operator handoff, managed audit/serve, and cross-host/
   physical/copy fencing. Full-plan readiness remains approximately 40/100.
+  Renewal-prefix follow-up (2026-09-14): a separate ExecuteArchiveWithLineage
+  library mode now requires the independently pinned LineageID, which commits
+  the original archive policy and aggregate evidence budgets. The original
+  ExecuteArchive and its policy ID remain initial-only. Every selected assignment
+  supplies one exact initial receipt, custody policy, canonical manifest and
+  complete canonical journal-entry prefix from sequence one. The verifier
+  reconstructs the assignment and checks every predecessor, signed challenge,
+  sample batch, proof and renewal through the exact request receipt.
+  All current Prune guards remain held through historical verification, live
+  archive replay, evidence, final batch authorization and confirmed result.
+  Aggregate limits of 1,024 entries and 256 MiB of encoded manifests/entries are
+  checked before large buffer copies, including when evidence is split across
+  replicas. Accepted buffers and auditor sets are detached; cancellation, terminal
+  replay refusal and unresolved Started semantics are preserved.
+  This verifies a historical prefix, not a latest/uniquely retained journal head,
+  historical Audit-ticket admission, physical durability or permission to activate
+  recovered evidence. No journal, command, signature, terminal or consensus
+  format changes; no evidence-preparation CLI or automatic completion is added.
+  Initial focused verifier tests passed in 1.062 seconds and new local acceptance
+  tests in 13.082 seconds. The first combined race/integration run passed:
+  workarchive 2.956 seconds and store 55.153 seconds, covering both modes and
+  thirteen process kills (seven new renewal-mode boundaries). Makefile includes
+  the renewal process test in its existing final group with the same timeout.
+  The full normal regression passed: cmd/omd 51.714 seconds, store 353.500 and
+  workarchive 165.091 seconds. Final review then moved assignment validation
+  before its reconstruction/copy and added an oversized-consumer regression;
+  subsequent verification covers that final preflight ordering.
+  The full final `go test -race ./...` passed: cmd/omd 44.119 seconds, store
+  349.248 and workarchive 200.801 seconds, with unchanged packages cached.
+  The expanded final runtime/maintenance/recovery/archive process group passed
+  afresh under race in 52.621 seconds inside its unchanged two-minute timeout.
+  The other nine standalone process-gate groups were not rerun in this pass;
+  their last complete gate remains the 2026-09-13 archive-acceptance run above.
+  Full vet and integration-tag vet for cmd/omd, workarchive and store passed.
+  CGO-disabled omd builds passed for macOS arm64, Linux amd64 and Windows amd64;
+  integration test binaries for cmd/omd, workarchive and store compiled for Linux
+  and Windows. Native help remains available. Linux/Windows execution and physical
+  storage behavior were not tested by these cross-builds; live Windows stdin
+  maintenance remains disabled. No public-testnet or production launch is implied.
+  Bounded evidence preparation, retained policy/operation inventory, secondary
+  admission/completion tooling, supervised multi-owner handoff and managed
+  audit/serve remain open. Full-plan production readiness stays approximately 40/100.
   Process-gate observation (2026-09-07): the first combined run stopped at
   `TestProcessTieCampaignStorageFailuresRecoverWithoutFalseAdvance/observer_confirmation_after_link`
   because the expected confirmation marker was absent. Five isolated repetitions

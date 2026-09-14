@@ -709,8 +709,18 @@ evidence directory must be disjoint. `StorageRoots` is inspection, not a lease
 or physical-identity proof. These checks neither fence copied pairs nor establish
 physical failure-domain independence.
 
-Only exact initial receipts are accepted; a renewal under an old key cannot skip
-lineage/assignment review. The managed adapter shares full archive replay and
+The original mode accepts only exact initial receipts; a renewal under an old key
+cannot skip lineage/assignment review. Separate `ExecuteArchiveWithLineage` requires
+a distinct protected policy ID and full canonical prefixes from each pinned initial
+receipt to the exact selected request receipt. Reconstructed assignments bind the
+manifest, custody policy and auditor set; every sequence, predecessor, challenge,
+sample batch, proof and renewal is verified at its signed historical response time.
+The aggregate cap (1,024 entries and 256 MiB encoded evidence) is checked before
+large buffer copies. All accepted evidence slices are detached, and all live
+authority guards remain held through verification and the final effect/result.
+This is neither a latest-head/durability proof nor a journal activation path;
+historical verification never substitutes for live freshness or authority.
+The managed adapter shares full archive replay and
 fresh wall-clock checks with the legacy gate, but matches every retained floor
 field before publication, preserves original request VerifiedAt and samples again
 inside the prepared deletion batch after storage-intent I/O. Errors after Started

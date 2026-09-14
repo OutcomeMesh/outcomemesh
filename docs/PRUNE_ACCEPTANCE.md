@@ -33,9 +33,49 @@ and replicas fail; supplying only one executor guard is insufficient. The operat
 still chooses independently operated replicas; this does not discover every real
 deployment or prove failure-domain independence.
 
-Only exact version-0 **initial receipts** are eligible. A renewal signed by the
-same key is not enough: verified receipt/journal lineage and its runtime acceptance
-remain open. Another generation cannot substitute merely because keys match.
+The original `ExecuteArchive` accepts only exact version-0 **initial receipts**.
+It still rejects renewals. Another generation cannot substitute merely because
+keys match. Renewal acceptance uses the distinct mode below.
+
+## Explicit renewal-prefix mode
+
+`ExecuteArchiveWithLineage` requires `ArchivePrunePolicy.LineageID()` from protected
+configuration. Its domain is `OMESH/custody-prune/archive-lineage-policy/v0`; it
+commits the original policy ID plus the local aggregate evidence budgets. The
+initial-only policy pin is not valid for this mode, or vice versa. The retained
+request already fixes the selected availability bundle and receipt IDs; each
+renewal receipt commits its predecessor and signed custody proof. No request,
+signature, journal, terminal or consensus encoding changes.
+
+Supply exactly one `CustodyReceiptLineage` per selected assignment, in any order.
+Each contains the assignment ID, original initial receipt, exact custody policy,
+existing canonical manifest bytes and the complete existing canonical journal-entry
+prefix from sequence one. An initial selected receipt uses an empty prefix. The
+verifier reconstructs the assignment's archive/receipt/policy/auditor bindings,
+checks every sequence, entry hash, predecessor receipt, challenge, sample bytes,
+proof and renewal, and requires the exact selected terminal receipt. It uses each
+record's signed response time for historical verification, never as live freshness.
+
+Across all assignments, this mode accepts at most 1,024 entries and 256 MiB of
+encoded manifests plus entries. Existing per-manifest/per-entry codec bounds
+also apply; metadata remains separately bounded by member/replica limits. The
+aggregate check runs before copying large buffers. Accepted manifest, entry and
+auditor slices are detached before waiting on coordinators. Callers must not
+mutate inputs concurrently during entry/copying. Verification checks cancellation
+between bounded entries and keeps all current authority guards through archive
+replay, evidence publication, the final live-time storage check and result.
+
+This is a historical prefix verifier, not proof of the latest or uniquely retained
+journal head, independent storage durability, absence of forks, or live permission.
+It does not prove historical Audit-ticket admission: managed audit/serve acceptance
+remains a separate gate. The held current tickets authorize this Prune operation.
+It opens/repairs no journal and never activates historical-only evidence. There
+is no evidence extraction/publication CLI, new portable evidence format or new
+automatic recovery. Prepare and retain the exact bounded evidence independently;
+operator evidence/inventory tooling remains open.
+The unchanged primary effect record alone does not certify use of this lineage
+mode. Historical recovery does not retroactively verify it; protected inventory
+for later policy/operation provenance review remains a separate requirement.
 
 ## One synchronous execution
 
@@ -104,8 +144,11 @@ replay/start/effect/result confirmation, and cover reversed lock order, detached
 inputs, Stopping drain and cancellation before/after Started. Six process kills
 span pre-replay, post-evidence, Started/no effect, committed effect, pending result
 confirmation and confirmed result. Reopening twice never advances execution.
+The renewal mode adds seven process kills, including after full lineage
+verification, alongside gap/substitution/policy/budget rejection, cancellation,
+input detachment and real deletion with multiple renewals on two replicas.
 
-Still required: renewal lineage, protected policy/operation inventory and secondary
+Still required: bounded lineage evidence preparation, protected policy/operation inventory and secondary
 terminal adapters, supervised operator ownership handoff, actual managed audit/serve
 paths, cross-host/partition acceptance, copied-owner and physical-storage fencing,
 exhaustion/power-loss/long-soak campaigns, independent review and public testnet.

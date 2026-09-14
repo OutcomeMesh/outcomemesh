@@ -36,7 +36,7 @@ This is why another signed retirement file, by itself, is not a global fence.
 | Raw/record-backed sessions and signing helpers | Signature, binding and timing checks; no journal retirement guard | Remain ineligible for managed cutover or require the same authority protocol; no silent fallback |
 | `CustodySession.Audit` live result acceptance | Rechecks returned renewal at current time under static keys | Hold a current assignment decision through durable acceptance, not just transport identity |
 | `workarchive.PruneCanonicalPrefix` destructive maintenance | Full replica replay, static trusted keys, immutable evidence and final in-batch time/cancellation check | Hold current assignment authorization through storage transition; reject retired receipt keys regardless of their signatures |
-| Opt-in `PruneExecutor.ExecuteArchive` | Pinned local policy, exact initial-receipt assignment coverage, all original coordinator guards through replay/deletion/result and position-pinned WorkChain | Renewal lineage, retained policy/operation inventory, secondary terminal tooling, supervised multi-owner handoff and cross-host/copy fencing |
+| Opt-in `PruneExecutor.ExecuteArchive` / `ExecuteArchiveWithLineage` | Pinned local policy, exact initial receipts or separately pinned complete renewal prefixes, all original coordinator guards through replay/deletion/result and position-pinned WorkChain | Bounded lineage evidence preparation, retained policy/operation inventory, secondary terminal tooling, supervised multi-owner handoff and cross-host/copy fencing |
 | `workchain.Store.PruneCanonicalPrefix` low-level primitive | Chain ancestry, retained-depth policy and atomic persistence | Remain a trusted internal primitive; never expose it as a command bypassing archive/authority policy |
 | Codecs, journal replay, pinned backups, historical application | Canonical signatures and exact historical links; explicit observation times where applicable | Keep historical verification independent of live authority so retirement does not destroy auditability |
 
@@ -131,10 +131,12 @@ assignment's pending ticket is not authorization for every replica in a quorum.
 A separate [colocated archive acceptance adapter](PRUNE_ACCEPTANCE.md) now supplies
 full replica verification and the final live-time check while holding every selected
 assignment's original coordinator guard. It requires an independently pinned policy,
-exact initial receipts and both executor/storage pairs. This does not change the
+exact initial receipts (or a separately pinned complete renewal-prefix mode) and
+both executor/storage pairs. This does not change the
 one-assignment Execute primitive, expose an operator effect command or complete any
-authority ticket. Renewal lineage, secondary terminal adapters and audit/serve
-integration remain open.
+authority ticket. Historical prefix verification reconstructs the exact assignment
+and custody policy; it is not a latest-head or durability proof. Evidence preparation,
+secondary terminal adapters and audit/serve integration remain open.
 
 `PruneRequest` commits the assignment, consumer control key and exact requested
 floor, without a ticket. `CreatePruneExecutor` retains it in a new protected root;

@@ -20,8 +20,8 @@ var ErrPruneArchivePolicy = errors.New("prune requires exact independently pinne
 // ArchivePrunePolicy is protected local configuration, not a signed grant. Every
 // selected replica must have exactly one independently pinned assignment; IDs
 // cannot be discovered from peers or a mutable authority snapshot. Assignments
-// are ordered by replica key. This first adapter accepts exact INITIAL receipts
-// only: a renewal requires verified lineage, not the old key alone.
+// are ordered by replica key. ExecuteArchive accepts exact INITIAL receipts only;
+// the separate lineage mode requires its own policy pin and complete evidence.
 type ArchivePrunePolicy struct {
 	RequestID, ExecutorBindingID, StoragePairID types.Hash
 	Checkpoint                                  workarchive.Checkpoint
@@ -75,6 +75,14 @@ func (executor *PruneExecutor) ExecuteArchive(ctx context.Context, chain *workch
 	policy ArchivePrunePolicy, expectedPolicyID types.Hash, operations []RequiredOperation,
 	replicas []workarchive.Replica, availabilityPath string, base workchain.Base, parameters workblock.Parameters, limits workarchive.Limits,
 ) (workchain.CanonicalPruneCommit, error) {
+	return executor.executeArchive(ctx, chain, policy, expectedPolicyID, operations, replicas, nil, false, availabilityPath, base, parameters, limits)
+}
+
+func (executor *PruneExecutor) executeArchive(ctx context.Context, chain *workchain.Store,
+	policy ArchivePrunePolicy, expectedPolicyID types.Hash, operations []RequiredOperation,
+	replicas []workarchive.Replica, lineages []workarchive.CustodyReceiptLineage, requireLineage bool,
+	availabilityPath string, base workchain.Base, parameters workblock.Parameters, limits workarchive.Limits,
+) (workchain.CanonicalPruneCommit, error) {
 	if executor == nil {
 		return workchain.CanonicalPruneCommit{}, ErrClosed
 	}
@@ -102,6 +110,9 @@ func (executor *PruneExecutor) ExecuteArchive(ctx context.Context, chain *workch
 	operations = append([]RequiredOperation(nil), operations...)
 	replicas = append([]workarchive.Replica(nil), replicas...)
 	id, err := policy.ID()
+	if requireLineage {
+		id, err = policy.LineageID()
+	}
 	if err != nil || expectedPolicyID.IsZero() || id != expectedPolicyID || policy.RequestID != executor.id || executor.pins == nil ||
 		executor.request.StorageID.IsZero() || policy.ExecutorBindingID != executor.pins.binding {
 		return workchain.CanonicalPruneCommit{}, errors.Join(ErrPruneArchivePolicy, err)
@@ -114,6 +125,12 @@ func (executor *PruneExecutor) ExecuteArchive(ctx context.Context, chain *workch
 	if executor.stage != PruneAdmitted {
 		return workchain.CanonicalPruneCommit{}, ErrPruneStage
 	}
+	if requireLineage {
+		lineages, err = detachArchiveLineages(ctx, lineages, policy.Assignments)
+		if err != nil {
+			return workchain.CanonicalPruneCommit{}, err
+		}
+	}
 	primary, err := pruneAdmissionBinding(executor.assignment, executor.request, *executor.admission)
 	if err != nil || len(operations) != len(policy.Assignments) || len(replicas) != len(policy.Assignments) {
 		return workchain.CanonicalPruneCommit{}, errors.Join(ErrPruneArchivePolicy, err)
@@ -125,7 +142,8 @@ func (executor *PruneExecutor) ExecuteArchive(ctx context.Context, chain *workch
 		matches := 0
 		for _, replica := range replicas {
 			receiptID, err := replica.Receipt.ID()
-			if err == nil && replica.Receipt.Version == workarchive.ReplicaReceiptVersion0 && receiptID == assignment.InitialReceiptID && replica.Receipt.ReplicaPublicKey == assignment.ReplicaPublicKey {
+			initial := replica.Receipt.Version == workarchive.ReplicaReceiptVersion0 && receiptID == assignment.InitialReceiptID
+			if err == nil && (initial || requireLineage) && replica.Receipt.ReplicaPublicKey == assignment.ReplicaPublicKey {
 				matches++
 			}
 		}
@@ -185,6 +203,20 @@ func (executor *PruneExecutor) ExecuteArchive(ctx context.Context, chain *workch
 		}
 		if err := executor.hooks.reach("archive-before-verification"); err != nil {
 			return err
+		}
+		if requireLineage {
+			for i, assignment := range policy.Assignments {
+				for _, replica := range replicas {
+					if replica.Receipt.ReplicaPublicKey == assignment.ReplicaPublicKey {
+						if err := workarchive.VerifyCustodyReceiptLineage(ctx, lineages[i], assignment, lineages[i].AssignmentID, replica.Receipt); err != nil {
+							return err
+						}
+					}
+				}
+			}
+			if err := executor.hooks.reach("archive-after-lineage"); err != nil {
+				return err
+			}
 		}
 		verified, err := workarchive.VerifyCanonicalPruneRequest(ctx, chain, replicas, availabilityPath,
 			policy.Checkpoint, policy.CheckpointPolicy, policy.ReplicaPolicy, base, parameters, limits, executor.request.Boundary)

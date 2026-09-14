@@ -125,9 +125,10 @@ Neither path executes pruning or supplies live authorization.
 A separate opt-in [local archive-prune library adapter](docs/PRUNE_ACCEPTANCE.md)
 now replays all selected replicas and holds each assignment's original permission
 guard through deletion and confirmed result. It requires exact policy and storage
-pair pins and accepts only initial receipts. It is not a new CLI effect command;
-renewal lineage, secondary terminal tooling, managed audit/serve and cross-host
-enforcement remain open.
+pair pins. The original mode accepts only initial receipts; a separately pinned
+mode verifies complete renewal prefixes under the same current authority guards.
+Neither is a new CLI effect command. Lineage evidence preparation, secondary
+terminal tooling, managed audit/serve and cross-host enforcement remain open.
 
 ## Build and run
 
