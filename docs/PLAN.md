@@ -512,9 +512,18 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
                         bindings; do not infer live admission or execution from
                         the package. Keep lineage bodies and runtime ownership
                         outside this preparation-only format.
-                      - [ ] Protected runtime binding of prepared inventory to
-                        actual execution provenance, bounded lineage evidence
-                        preparation, secondary admission/terminal tooling and reviewed
+                      - [x] Colocated prepared-archive execution and retained
+                        start binding: require the exact package/tickets/receipts,
+                        keep all guards through archive/lineage replay and package
+                        re-sync, and bind its ID in version-1 Started records in
+                        both executor journals before effects. Refuse pre-existing
+                        results and preserve binding through exact pending recovery.
+                        Provide read-only local inspection without relabelling old
+                        starts/results, pending state or unknown work as success.
+                        Cover both modes, one-root downgrade and 19 process kills.
+                        This is not a remote certificate or copy-fencing mechanism.
+                      - [ ] Bounded lineage evidence preparation, secondary
+                        admission/terminal tooling and reviewed
                         multi-owner runtime/CLI handoff. Integrate managed audit/serve
                         paths; test remote partitions and physical/copy fencing
                         before activation. Library acceptance alone does not close

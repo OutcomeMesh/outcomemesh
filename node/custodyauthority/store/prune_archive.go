@@ -75,13 +75,14 @@ func (executor *PruneExecutor) ExecuteArchive(ctx context.Context, chain *workch
 	policy ArchivePrunePolicy, expectedPolicyID types.Hash, operations []RequiredOperation,
 	replicas []workarchive.Replica, availabilityPath string, base workchain.Base, parameters workblock.Parameters, limits workarchive.Limits,
 ) (workchain.CanonicalPruneCommit, error) {
-	return executor.executeArchive(ctx, chain, policy, expectedPolicyID, operations, replicas, nil, false, availabilityPath, base, parameters, limits)
+	return executor.executeArchive(ctx, chain, policy, expectedPolicyID, operations, replicas, nil, false, availabilityPath, base, parameters, limits, nil)
 }
 
 func (executor *PruneExecutor) executeArchive(ctx context.Context, chain *workchain.Store,
 	policy ArchivePrunePolicy, expectedPolicyID types.Hash, operations []RequiredOperation,
 	replicas []workarchive.Replica, lineages []workarchive.CustodyReceiptLineage, requireLineage bool,
 	availabilityPath string, base workchain.Base, parameters workblock.Parameters, limits workarchive.Limits,
+	inventory *archiveInventoryInput,
 ) (workchain.CanonicalPruneCommit, error) {
 	if executor == nil {
 		return workchain.CanonicalPruneCommit{}, ErrClosed
@@ -124,6 +125,11 @@ func (executor *PruneExecutor) executeArchive(ctx context.Context, chain *workch
 	}
 	if executor.stage != PruneAdmitted {
 		return workchain.CanonicalPruneCommit{}, ErrPruneStage
+	}
+	if inventory != nil {
+		if err := inventory.checkOperations(executor, operations, replicas); err != nil {
+			return workchain.CanonicalPruneCommit{}, err
+		}
 	}
 	if requireLineage {
 		lineages, err = detachArchiveLineages(ctx, lineages, policy.Assignments)
@@ -180,6 +186,9 @@ func (executor *PruneExecutor) executeArchive(ctx context.Context, chain *workch
 			return errors.Join(ErrPruneArchivePolicy, err)
 		}
 		roots := []string{executor.path, executor.pins.path, databasePath, storagePinsPath, filepath.Dir(availabilityPath)}
+		if inventory != nil {
+			roots = append(roots, filepath.Dir(inventory.path))
+		}
 		for _, operation := range operations {
 			roots = append(roots, operation.Coordinator.authority.path, operation.Coordinator.journal.path)
 		}
@@ -200,6 +209,11 @@ func (executor *PruneExecutor) executeArchive(ctx context.Context, chain *workch
 		}
 		if err := chain.VerifyContext(executor.assignment.NetworkID, executor.assignment.ActivationHeight, executor.assignment.BaseID); err != nil {
 			return err
+		}
+		if inventory != nil {
+			if err := requireNoInventoryEffect(chain, primary.TicketID); err != nil {
+				return err
+			}
 		}
 		if err := executor.hooks.reach("archive-before-verification"); err != nil {
 			return err
@@ -226,10 +240,26 @@ func (executor *PruneExecutor) executeArchive(ctx context.Context, chain *workch
 		if err := executor.hooks.reach("archive-before-start"); err != nil {
 			return err
 		}
+		var inventoryID types.Hash
+		if inventory != nil {
+			if err := requireNoInventoryEffect(chain, primary.TicketID); err != nil {
+				return err
+			}
+			// Re-sync the already retained exact package under every owner guard.
+			// A missing file is not reconstructed from cached bytes. Final live
+			// freshness is checked AFTER this potentially slow publication fence.
+			if err := syncArchivePruneInventory(inventory.path, inventory.encoded, storeHooks{}); err != nil {
+				return err
+			}
+			if err := executor.hooks.reach("archive-inventory-synced"); err != nil {
+				return err
+			}
+			inventoryID = inventory.id
+		}
 		if _, err := verified.Authorize(); err != nil {
 			return err
 		}
-		result, err = executor.executeGuarded(ctx, chain, primary, verified.Authorize)
+		result, err = executor.executeGuardedInventory(ctx, chain, primary, verified.Authorize, inventoryID)
 		return err
 	})
 	if err != nil {

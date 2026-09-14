@@ -24,8 +24,9 @@ outer runtime policy domain is `OMESH/custody-prune/archive-acceptance-policy/v0
 These are local configuration hashes, not signature or consensus domains. The
 expected outer ID must come from independently reviewed protected configuration,
 not from whatever configuration the runtime happens to read. The preparation-only
-inventory below can retain exact configuration and historical admissions. No policy
-bootstrap, migration, hot-reload or inventory execution command is provided.
+inventory below can retain exact configuration and historical admissions. The
+opt-in prepared execution method binds it to a retained start. No policy bootstrap,
+migration, hot-reload or inventory execution command is provided.
 Retain the configuration and its external pins for later operator review.
 
 Every receipt used in the request's availability bundle must have exactly one
@@ -75,9 +76,9 @@ is no evidence extraction/publication CLI, new portable lineage-body format or n
 automatic recovery. Prepare and retain the exact bounded evidence independently;
 operator evidence preparation and runtime-bound inventory tooling remain open.
 The unchanged primary effect record alone does not certify use of this lineage
-mode. Historical recovery does not retroactively verify it; protected inventory
-bound to actual execution remains a separate requirement. The preparation package
-below must never be relabelled as evidence that these checks ran.
+mode. Historical recovery does not retroactively verify it. Only the explicit
+inventory-bound start path below records that link; merely supplying the
+preparation package later is not evidence that these checks ran.
 
 ## Prepared policy and operation inventory
 
@@ -122,8 +123,9 @@ appropriate existing initial/lineage policy ID must be independently reviewed an
 retained outside the package. Computing expected pins from an untrusted package
 does not protect it. The frozen two-replica test vector has inventory ID
 `e70f23ce82f121c5c8df04d35bf27e67b036b70516fa57083fd5397ae7175fc1`.
-This is an operator artifact format, not a change to consensus, existing requests,
+This preparation-only format does not change consensus, existing requests,
 signatures, authority/executor journals, storage effects or terminal records.
+The separate opt-in execution method below adds a versioned start record.
 
 `SaveArchivePruneInventoryFile` validates both pins before publication, requires an
 existing dedicated operator-controlled parent, syncs a private temporary file and
@@ -144,11 +146,76 @@ does not mean that the co-signed entries were durably admitted at any time.
 
 The directory must remain controlled and inputs must not be concurrently mutated.
 Content pins and fsync do not prove independent failure domains, latest-owner state,
-physical durability, copy fencing or a unique approved inventory. Runtime binding
-of this package to the actual guarded execution, bounded lineage-body preparation,
-secondary admission/terminal tooling and reviewed multi-owner CLI handoff remain
-open. No existing Execute, Recover, completion or network path consumes the package
-as a grant; all live checks remain mandatory in the existing library adapter.
+physical durability, copy fencing or a unique approved inventory. Colocated
+execution binding is described below. Bounded lineage-body preparation, secondary
+admission/terminal tooling and reviewed multi-owner CLI handoff remain open. No
+Execute, Recover, completion or network path treats the package as a grant; all
+live checks remain mandatory.
+
+## Inventory-bound execution and local inspection
+
+`PruneExecutor.ExecutePreparedArchive` loads the already retained package using
+both external pins. It accepts the existing local owners and replica directories;
+the package's mode selects full initial-only or full lineage verification. In
+initial mode, supplied lineage evidence is rejected rather than ignored. In
+lineage mode, complete bounded prefixes are still mandatory, including empty
+prefixes with their initial manifest/receipt/policy where appropriate.
+
+Every live `RequiredOperation` must match the **exact ticket ID** of the package's
+co-signed admission, not just its assignment/request/consumer. A different signed
+candidate cannot borrow a real current ticket. Replica receipts must match the
+package's exact bundle. Caller ordering of owners/replicas is irrelevant; strict
+retained package ordering remains unchanged. The executor's original primary
+admission and both storage-pair pins must still match.
+
+All original authority guards remain held through complete archive/lineage replay,
+availability publication, re-sync of the exact retained package, final live-time
+checks, start, effect and result confirmation. The inventory has its own existing
+parent, disjoint from every owner, database, replica and availability-evidence
+root. Re-sync does not reconstruct a missing package from cached input. Changed
+or missing content fails before start. A pre-existing database effect under the
+ticket is rejected before replay and checked again before start; a cached
+`Applied=false` primitive result is never returned as new prepared execution.
+
+After verification, the new path publishes `OMCPSTRT`, version u16 **1**, followed
+by the fixed request ID, primary ticket ID and inventory ID: 106 bytes total.
+The normal pin-intent → executor record → pin-confirmation protocol covers those
+exact bytes before any effect. Existing position hashes consequently commit the
+inventory ID without a new hash domain. Only this verified opt-in path supplies a
+nonzero inventory ID. Ordinary Execute/ExecuteArchive/ExecuteArchiveWithLineage
+keep their exact 74-byte version-0 start format. Raw or storage-unbound journals
+cannot accept an inventory-bound start. Old readers reject version 1; downgrade,
+rewriting old records or attaching provenance to an old result is unsupported.
+Requests, package format, authority signatures, database effects, completion
+records and consensus encodings remain unchanged.
+The start commits the package's mode, policy, selected receipts and tickets; it
+does not embed or publish the supplied lineage bodies. Retain those independently
+for later full verification. Bounded lineage-body preparation remains a next step.
+
+`PruneExecution.ArchiveInventoryID` exposes the retained binding. A start intent
+can be pending while the executor still reports Admitted; raw Snapshot diagnostics
+must not be mistaken for confirmed provenance. `InspectArchiveInventory` loads
+the externally pinned package and checks a fully confirmed local executor prefix
+and its pair binding. It refuses pending transitions and old unbound starts/results.
+It returns **Started** for an unresolved attempt and **Succeeded** only with the
+confirmed exact executor effect record. Repeated inspection does not query or
+modify the database, replay evidence, refresh time or change an authority.
+
+Existing explicit recovery retains the original version-1 bytes: resuming a
+pending start leaves Started and never executes; positive effect recovery may
+retain an already committed matching result while preserving the inventory ID.
+Absence remains unknown. Neither recovery nor completion can retrofit a binding
+into a version-0 start. No authority ticket, including a secondary one, is
+automatically completed.
+
+This is **local journal provenance under the existing trusted, exclusive-owner
+contract**, not a portable certificate that arbitrary software verified the
+archive, or proof of the current database/replica state. Keep the package and its
+independent pins alongside the independently protected owner roots. No raw owner
+or copied executor/database may concurrently produce effects outside the managed
+runtime. Shared rollback, malicious local file rewriting, copied owners and
+physical failure-domain independence remain outside this guarantee. Supervised
+operator handoff, remote acceptance, secondary tooling and activation remain gated.
 
 ## One synchronous execution
 
@@ -204,7 +271,7 @@ presenting cached historical evidence as live acceptance.
 **No authority ticket is automatically completed**, including secondary assignments.
 Existing atomic effect/terminal formats identify the primary request and ticket;
 they are not portable certificates of every secondary permission. Typed secondary
-admission/completion tooling, executed-policy inventory binding and reviewed
+admission/completion tooling and reviewed
 multi-owner handoff remain open. Raw signed Complete is not a substitute for the
 missing secondary terminal adapter.
 
@@ -224,9 +291,14 @@ The preparation package adds both-mode roundtrips, a frozen codec vector,
 substitution/framing/pin rejection, equal/conflicting publication races and five
 process kills around file sync/link/directory sync. Its historical readability
 never bypasses a completed secondary ticket at the existing live adapter.
+Inventory-bound execution adds exact-ticket/receipt matching, old-result refusal,
+package re-sync under all guards, cancellation, retained intent recovery and
+one-root downgrade rejection. Nineteen process kills (nine initial, ten lineage)
+cover the existing stages plus package re-sync and both sides of start publication;
+repeated reopen/inspection does not promote pending or unknown state.
 
-Still required: bounded lineage evidence preparation, protected inventory binding
-to execution and secondary terminal adapters, supervised operator ownership handoff, actual managed audit/serve
+Still required: bounded lineage evidence preparation and secondary terminal
+adapters, supervised operator ownership handoff, actual managed audit/serve
 paths, cross-host/partition acceptance, copied-owner and physical-storage fencing,
 exhaustion/power-loss/long-soak campaigns, independent review and public testnet.
 Older raw library APIs and experimental CLI are not silently upgraded into this

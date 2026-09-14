@@ -528,6 +528,7 @@ func FuzzPrunePinTransitions(f *testing.F) {
 		f.Fatal(err)
 	}
 	f.Add(a, b, c)
+	f.Add(a, pruneInventoryStartedBytes(id, ticket, testHash(92)), c)
 	cancellation, _ := (PruneCancellation{AssignmentID: r.AssignmentID, RequestID: id, TicketID: ticket, BindingID: testHash(91)}).CanonicalBytes()
 	f.Add(a, cancellation, []byte{})
 	f.Add([]byte{}, []byte{}, []byte{})
@@ -546,7 +547,7 @@ func FuzzPrunePinTransitions(f *testing.F) {
 			case PruneStarted:
 				retainedTicket, ticketErr := next.Admission.ID()
 				err = ticketErr
-				canonical = pruneStartedBytes(id, retainedTicket)
+				canonical = pruneInventoryStartedBytes(id, retainedTicket, next.ArchiveInventoryID)
 			case PruneSucceeded:
 				canonical, err = next.Effect.CanonicalBytes()
 			case PruneCancelled:

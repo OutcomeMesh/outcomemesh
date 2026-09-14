@@ -188,7 +188,7 @@ func loadPrunePinJournal(path string, lock *os.File, assignment custodyauthority
 		if name != pruneRecordName(index, next.Stage) {
 			return nil, ErrPrunePin
 		}
-		if err := checkCancellationBinding(next, binding); err != nil {
+		if err := checkPruneExecutionBinding(next, binding); err != nil {
 			return nil, err
 		}
 		position := nextPrunePosition(pins.position, encoded)
@@ -359,7 +359,7 @@ func (pins *prunePinJournal) prepare(ctx context.Context, encoded []byte) error 
 	if err != nil {
 		return err
 	}
-	if err := checkCancellationBinding(next, pins.binding); err != nil {
+	if err := checkPruneExecutionBinding(next, pins.binding); err != nil {
 		return err
 	}
 	index := pruneRecordCount(pins.position.Stage)

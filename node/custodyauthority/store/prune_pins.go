@@ -62,8 +62,12 @@ func advancePruneExecution(assignment custodyauthority.Assignment, current Prune
 			return next, nil
 		}
 		ticket, err := current.Admission.ID()
-		if err != nil || !bytes.Equal(encoded, pruneStartedBytes(current.RequestID, ticket)) {
+		if err != nil {
 			return PruneExecution{}, ErrPruneStage
+		}
+		next.ArchiveInventoryID, err = decodePruneInventoryStart(encoded, current.RequestID, ticket)
+		if err != nil {
+			return PruneExecution{}, err
 		}
 	case PruneStarted:
 		if current.Admission == nil {

@@ -19,13 +19,15 @@ import (
 )
 
 type archivePruneFixture struct {
-	f          *pruneFixture
-	policy     ArchivePrunePolicy
-	policyID   types.Hash
-	replicas   []workarchive.Replica
-	operations []RequiredOperation
-	path       string
-	lineages   []workarchive.CustodyReceiptLineage
+	f             *pruneFixture
+	policy        ArchivePrunePolicy
+	policyID      types.Hash
+	replicas      []workarchive.Replica
+	operations    []RequiredOperation
+	path          string
+	lineages      []workarchive.CustodyReceiptLineage
+	inventoryPath string
+	inventoryID   types.Hash
 }
 
 func newArchivePruneFixture(t testing.TB) *archivePruneFixture {
@@ -165,6 +167,10 @@ func newArchivePruneFixtureWithRenewals(t testing.TB, renewals []int) *archivePr
 }
 
 func (p *archivePruneFixture) execute(ctx context.Context) (workchain.CanonicalPruneCommit, error) {
+	if p.inventoryPath != "" {
+		return p.f.executor.ExecutePreparedArchive(ctx, p.f.chain, p.inventoryPath, p.inventoryID, p.policyID, p.operations, p.replicas, p.lineages, p.path,
+			p.f.base, p.f.parameters, workarchive.DefaultLimits())
+	}
 	if p.lineages != nil {
 		return p.f.executor.ExecuteArchiveWithLineage(ctx, p.f.chain, p.policy, p.policyID, p.operations, p.replicas, p.lineages, p.path,
 			p.f.base, p.f.parameters, workarchive.DefaultLimits())

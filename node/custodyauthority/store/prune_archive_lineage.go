@@ -40,7 +40,7 @@ func (executor *PruneExecutor) ExecuteArchiveWithLineage(ctx context.Context, ch
 	replicas []workarchive.Replica, lineages []workarchive.CustodyReceiptLineage,
 	availabilityPath string, base workchain.Base, parameters workblock.Parameters, limits workarchive.Limits,
 ) (workchain.CanonicalPruneCommit, error) {
-	return executor.executeArchive(ctx, chain, policy, expectedPolicyID, operations, replicas, lineages, true, availabilityPath, base, parameters, limits)
+	return executor.executeArchive(ctx, chain, policy, expectedPolicyID, operations, replicas, lineages, true, availabilityPath, base, parameters, limits, nil)
 }
 
 // Check a single aggregate budget before copying any large caller buffers.

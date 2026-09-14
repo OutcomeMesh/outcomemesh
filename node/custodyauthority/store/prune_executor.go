@@ -42,6 +42,9 @@ type PruneExecution struct {
 	Admission    *custodyauthority.Entry
 	Effect       *workchain.CanonicalPruneEffect
 	Cancellation *PruneCancellation
+	// ArchiveInventoryID is nonzero only after a version-1 archive-bound start.
+	// Started is still an unresolved attempt, not proof of a committed effect.
+	ArchiveInventoryID types.Hash
 	// Protection is nil for raw version-0 journals. With independent pins, Stage
 	// may be one exact unconfirmed transition ahead of Protection.Confirmed.
 	Protection *PruneProtection
@@ -54,20 +57,21 @@ type PruneExecution struct {
 // requests. Neither mode provides physical identity, shared-rollback protection
 // or networking.
 type PruneExecutor struct {
-	mu           sync.Mutex
-	path         string
-	lock         *os.File
-	identity     map[string]os.FileInfo
-	assignment   custodyauthority.Assignment
-	request      PruneRequest
-	id           types.Hash
-	stage        PruneStage
-	admission    *custodyauthority.Entry
-	effect       *workchain.CanonicalPruneEffect
-	cancellation *PruneCancellation
-	failed       bool
-	hooks        storeHooks
-	pins         *prunePinJournal
+	mu                 sync.Mutex
+	path               string
+	lock               *os.File
+	identity           map[string]os.FileInfo
+	assignment         custodyauthority.Assignment
+	request            PruneRequest
+	id                 types.Hash
+	stage              PruneStage
+	admission          *custodyauthority.Entry
+	effect             *workchain.CanonicalPruneEffect
+	cancellation       *PruneCancellation
+	archiveInventoryID types.Hash
+	failed             bool
+	hooks              storeHooks
+	pins               *prunePinJournal
 }
 
 func pruneReadyBytes(id types.Hash) []byte { return append([]byte("OMCPINIT\x00\x00"), id[:]...) }
@@ -249,7 +253,7 @@ func loadPruneExecutor(path string, lock *os.File, assignment custodyauthority.A
 		if name != pruneRecordName(index, next.Stage) {
 			return nil, ErrPruneStage
 		}
-		if err := checkCancellationBinding(next, binding); err != nil {
+		if err := checkPruneExecutionBinding(next, binding); err != nil {
 			return nil, err
 		}
 		executor.installExecution(next)
@@ -322,12 +326,14 @@ func (executor *PruneExecutor) operationCheck() error {
 
 // execution is an internal view, only used while the executor is locked.
 func (executor *PruneExecutor) execution() PruneExecution {
-	return PruneExecution{RequestID: executor.id, Request: executor.request, Stage: executor.stage, Admission: executor.admission, Effect: executor.effect, Cancellation: executor.cancellation}
+	return PruneExecution{RequestID: executor.id, Request: executor.request, Stage: executor.stage, Admission: executor.admission, Effect: executor.effect, Cancellation: executor.cancellation,
+		ArchiveInventoryID: executor.archiveInventoryID}
 }
 
 func (executor *PruneExecutor) installExecution(next PruneExecution) {
 	executor.stage, executor.admission, executor.effect = next.Stage, next.Admission, next.Effect
 	executor.cancellation = next.Cancellation
+	executor.archiveInventoryID = next.ArchiveInventoryID
 }
 func (executor *PruneExecutor) poison(err error) error {
 	executor.failed = true
@@ -345,7 +351,7 @@ func (executor *PruneExecutor) Snapshot() (PruneExecution, error) {
 	}
 	r, _ := executor.request.CanonicalBytes()
 	request, _ := DecodePruneRequest(r)
-	result := PruneExecution{RequestID: executor.id, Request: request, Stage: executor.stage}
+	result := PruneExecution{RequestID: executor.id, Request: request, Stage: executor.stage, ArchiveInventoryID: executor.archiveInventoryID}
 	if executor.admission != nil {
 		entry := *executor.admission
 		result.Admission = &entry
@@ -483,10 +489,18 @@ func (executor *PruneExecutor) Execute(ctx context.Context, coordinator *Coordin
 // with all binding/storage/archive preflight complete. It never acquires another
 // authority mutex. Keep those guards through independently confirmed result.
 func (executor *PruneExecutor) executeGuarded(ctx context.Context, chain *workchain.Store, binding OperationBinding, authorize func() (uint64, error)) (workchain.CanonicalPruneCommit, error) {
-	if err := executor.publish(ctx, 1, pruneStartedBytes(executor.id, binding.TicketID), "prune-start"); err != nil {
+	return executor.executeGuardedInventory(ctx, chain, binding, authorize, types.Hash{})
+}
+
+// Nonzero inventory IDs are supplied only by the fully verified prepared-archive
+// path. The existing two-root intent/record/confirmation protocol retains the ID
+// before any effect. No recovery path supplies or retrofits an inventory ID.
+func (executor *PruneExecutor) executeGuardedInventory(ctx context.Context, chain *workchain.Store, binding OperationBinding, authorize func() (uint64, error), inventoryID types.Hash) (workchain.CanonicalPruneCommit, error) {
+	if err := executor.publish(ctx, 1, pruneInventoryStartedBytes(executor.id, binding.TicketID, inventoryID), "prune-start"); err != nil {
 		return workchain.CanonicalPruneCommit{}, err
 	}
 	executor.stage = PruneStarted
+	executor.archiveInventoryID = inventoryID
 	if err := executor.applied("prune-start"); err != nil {
 		return workchain.CanonicalPruneCommit{}, err
 	}
@@ -504,6 +518,11 @@ func (executor *PruneExecutor) executeGuarded(ctx context.Context, chain *workch
 	})
 	if err != nil {
 		return workchain.CanonicalPruneCommit{}, errors.Join(ErrPruneOutcome, err)
+	}
+	if !inventoryID.IsZero() && !commit.Applied {
+		// A cached primitive result cannot certify that this invocation applied
+		// an effect. Concurrent raw access is outside the guarded-owner contract.
+		return workchain.CanonicalPruneCommit{}, ErrPruneOutcome
 	}
 	if err := executor.hooks.reach("prune-after-effect"); err != nil {
 		return workchain.CanonicalPruneCommit{}, errors.Join(ErrPruneOutcome, err)
@@ -613,7 +632,7 @@ func (executor *PruneExecutor) publishRecord(ctx context.Context, index int, enc
 	if executor.pins != nil {
 		binding = executor.pins.binding
 	}
-	if err := checkCancellationBinding(next, binding); err != nil {
+	if err := checkPruneExecutionBinding(next, binding); err != nil {
 		return err
 	}
 	count, err := inspectSizedPending(executor.path, workchain.MaximumCanonicalPruneEffectBytes)

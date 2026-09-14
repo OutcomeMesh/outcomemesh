@@ -1393,6 +1393,54 @@ Implemented in an isolated, not-yet-activated consensus package:
   successful maintenance invocation. Native `omd help` exited successfully and
   listed the existing maintenance commands. Cross-builds are not Linux/Windows runtime
   or physical-storage evidence; no new CLI or live Windows stdin support is added.
+  Inventory-bound execution follow-up (2026-09-14): ExecutePreparedArchive now
+  loads the independently pinned retained package, matches every exact selected
+  admission ticket and replica receipt, and runs the existing initial/lineage
+  verifiers with every original authority guard held. It re-syncs the unchanged
+  package before final live-time authorization; no missing package is recreated.
+  A pre-existing database effect is rejected before replay and again before start.
+  Version-1 Started records retain the inventory ID in both executor journals;
+  version-0 starts remain unchanged, and older readers reject the new version.
+  Raw/storage-unbound journals cannot accept bound starts. Requests, package codec,
+  authority signatures, database effects, terminal and consensus formats are unchanged.
+  Snapshot exposes ArchiveInventoryID; InspectArchiveInventory verifies the pinned
+  package against a fully confirmed local executor prefix. It rejects pending or
+  old unbound history and distinguishes unresolved Started from Succeeded with its
+  exact confirmed effect. It never queries/mutates the database or refreshes live
+  authority. Explicit pending-start/result recovery preserves the original ID and
+  never re-executes or uses absence to settle unknown work. No automatic completion
+  or retroactive provenance is added. This remains trusted exclusive-owner local
+  history, not a remote certificate or protection from copied/raw concurrent owners.
+  Both modes have real two-replica deletion, exact-ticket substitution rejection,
+  package mutation/missing-file fences, cancellation, pending recovery, cached-effect
+  rejection and one-root downgrade coverage. Nineteen process kills add nine
+  initial and ten lineage cases; Makefile keeps these in a separate two-minute
+  group so the old runtime/recovery/archive gate is not given a larger timeout.
+  Bounded lineage-body preparation, secondary tooling, supervised multi-owner CLI
+  handoff, managed audit/serve and physical/remote acceptance remain open. Full-plan
+  production readiness stays approximately 40/100.
+  Bound-execution verification: the initial combined focused race/integration run
+  passed in 63.481 seconds, including 19 new process kills. After adding explicit
+  pre-existing-effect fences and one-root downgrade coverage, the final focused
+  race tests passed in 31.137 seconds. The full final `go test -race ./...` passed:
+  store 533.197 seconds, cmd/omd 47.010, with unchanged packages cached. These are
+  test-run durations, not performance benchmarks. Full vet and integration-tag
+  store vet passed. No production or public-testnet credit is claimed.
+  The complete final `make test-process` gate passed all eleven groups, using the
+  existing individual timeouts plus a separate two-minute prepared-archive group.
+  Group times in Makefile order were 2.123, 5.745, 65.796, 30.873, 17.030,
+  205.052, 17.654, 19.240, 15.542, 41.644 and 16.110 seconds. The last group
+  includes all 19 new process kills; the previous ten groups passed afresh.
+  The updated FuzzPrunePinTransitions smoke passed with both start versions:
+  955 reported executions, two workers, ten-second budget (11.865 seconds total).
+  This is bounded smoke coverage, not a long fuzz campaign. CGO-disabled trimpath
+  omd builds passed for macOS arm64, Linux amd64 and Windows amd64; integration-tag
+  cmd/omd and store test binaries compiled for Linux and Windows. Native `omd help`
+  exited successfully. Final full vet and integration-tag cmd/omd/store vet passed;
+  formatting and diff checks were clean. The full normal suite was not separately
+  rerun; the full race suite and all process groups above are fresh final runs.
+  Cross-builds do not establish Linux/Windows runtime or physical-storage behavior,
+  and native Windows live stdin maintenance remains disabled.
   Process-gate observation (2026-09-07): the first combined run stopped at
   `TestProcessTieCampaignStorageFailuresRecoverWithoutFalseAdvance/observer_confirmation_after_link`
   because the expected confirmation marker was absent. Five isolated repetitions
