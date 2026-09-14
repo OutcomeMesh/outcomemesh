@@ -23,9 +23,10 @@ The inner archive policy domain is `OMESH/workgraph/archive/prune-policy/v0`; th
 outer runtime policy domain is `OMESH/custody-prune/archive-acceptance-policy/v0`.
 These are local configuration hashes, not signature or consensus domains. The
 expected outer ID must come from independently reviewed protected configuration,
-not from whatever configuration the runtime happens to read. No policy bootstrap,
-persistence, migration or hot-reload command is provided. Retain that configuration
-and its external pin for later operator review.
+not from whatever configuration the runtime happens to read. The preparation-only
+inventory below can retain exact configuration and historical admissions. No policy
+bootstrap, migration, hot-reload or inventory execution command is provided.
+Retain the configuration and its external pins for later operator review.
 
 Every receipt used in the request's availability bundle must have exactly one
 selected assignment and admitted operation. Missing, extra or repeated owners
@@ -70,12 +71,84 @@ journal head, independent storage durability, absence of forks, or live permissi
 It does not prove historical Audit-ticket admission: managed audit/serve acceptance
 remains a separate gate. The held current tickets authorize this Prune operation.
 It opens/repairs no journal and never activates historical-only evidence. There
-is no evidence extraction/publication CLI, new portable evidence format or new
+is no evidence extraction/publication CLI, new portable lineage-body format or new
 automatic recovery. Prepare and retain the exact bounded evidence independently;
-operator evidence/inventory tooling remains open.
+operator evidence preparation and runtime-bound inventory tooling remain open.
 The unchanged primary effect record alone does not certify use of this lineage
 mode. Historical recovery does not retroactively verify it; protected inventory
-for later policy/operation provenance review remains a separate requirement.
+bound to actual execution remains a separate requirement. The preparation package
+below must never be relabelled as evidence that these checks ran.
+
+## Prepared policy and operation inventory
+
+`ArchivePruneInventory` is an offline preparation package, **not an authorization
+or execution certificate**. It retains the full `ArchivePrunePolicy`, original
+storage-bound `PruneRequest`, exact selected `AvailabilityBundle` and one original
+co-signed Admit entry per selected assignment. The explicit mode is initial-only
+or complete-lineage-required. It contains no private keys, local paths, live owner
+handles, lineage bodies, storage effects or terminal acknowledgements.
+
+Canonical validation requires every assignment, receipt and admission to share
+the same strict replica-key ordering. It verifies checkpoint/receipt/command/
+authority signatures, local trust/quorum policy, exact primary assignment and
+consumer membership with Prune permission in **every** selected assignment.
+Secondary admissions must name their own assignment, the original primary request
+ID and its consumer; the request is not rewritten to derive a secondary operation
+ID. The complete retained floor must match the checkpoint and availability bundle,
+including the minimum receipt retention term. Availability is checked at the
+request's retained `VerifiedAt`, not against a newly sampled clock.
+
+Initial mode accepts only the assigned initial version-0 receipts. Lineage mode
+declares the requirement to supply complete bounded prefixes separately; a renewed
+receipt's signature is not a substitute for those proofs. Even in lineage mode,
+a selected version-0 receipt must equal its assignment's initial receipt.
+
+Format version 0 has a 1 MiB whole-package ceiling and existing nested codec bounds:
+
+- magic `OMCPINVT`, version u16, mode u16 (0 initial, 1 lineage);
+- length-prefixed canonical request, three fixed policy request/executor/storage
+  pair IDs, length-prefixed canonical checkpoint;
+- attestor quorum u16 and key list; replica quorum u16, maximum receipt age u64,
+  minimum remaining term u64 and key list;
+- assignment count and interleaved length-prefixed canonical assignment/Admit
+  entries, followed by a length-prefixed canonical availability bundle.
+
+Integers and minimal-varint lengths use the existing canonical codec. Key and
+assignment lists are capped at 64 before allocation; truncated, overlong and
+trailing input fails. The checkpoint statement supplies its already-validated
+policy binding. The inventory ID domain is
+`OMESH/custody-prune/prepared-inventory/id/v0`. Both the inventory ID and the
+appropriate existing initial/lineage policy ID must be independently reviewed and
+retained outside the package. Computing expected pins from an untrusted package
+does not protect it. The frozen two-replica test vector has inventory ID
+`e70f23ce82f121c5c8df04d35bf27e67b036b70516fa57083fd5397ae7175fc1`.
+This is an operator artifact format, not a change to consensus, existing requests,
+signatures, authority/executor journals, storage effects or terminal records.
+
+`SaveArchivePruneInventoryFile` validates both pins before publication, requires an
+existing dedicated operator-controlled parent, syncs a private temporary file and
+uses a no-replace hard link. Exact retries verify the same opened regular inode's
+bytes and sync the file and parent. A conflicting package, corrupt/truncated file,
+symlink or missing parent fails without replacement. Concurrent equal publishers
+converge; different publishers cannot both claim the same name. An interruption
+after linking can leave a complete destination with unconfirmed durability; retry
+only the exact prepared package and pins. Process kills can leave orphan temporary
+names; the loader never promotes or interprets them, and no broad cleanup runs.
+
+`LoadArchivePruneInventoryFile` is bounded and read-only. It checks the independently
+expected inventory ID before decoding and the mode-specific policy ID afterwards.
+Neither save nor load opens or changes an executor, authority, database or replica.
+A historical package may still load after a ticket has completed or receipts have
+expired. This does not make those tickets pending again or receipts fresh, and
+does not mean that the co-signed entries were durably admitted at any time.
+
+The directory must remain controlled and inputs must not be concurrently mutated.
+Content pins and fsync do not prove independent failure domains, latest-owner state,
+physical durability, copy fencing or a unique approved inventory. Runtime binding
+of this package to the actual guarded execution, bounded lineage-body preparation,
+secondary admission/terminal tooling and reviewed multi-owner CLI handoff remain
+open. No existing Execute, Recover, completion or network path consumes the package
+as a grant; all live checks remain mandatory in the existing library adapter.
 
 ## One synchronous execution
 
@@ -131,7 +204,7 @@ presenting cached historical evidence as live acceptance.
 **No authority ticket is automatically completed**, including secondary assignments.
 Existing atomic effect/terminal formats identify the primary request and ticket;
 they are not portable certificates of every secondary permission. Typed secondary
-admission/completion tooling, retained policy-to-operation inventory and reviewed
+admission/completion tooling, executed-policy inventory binding and reviewed
 multi-owner handoff remain open. Raw signed Complete is not a substitute for the
 missing secondary terminal adapter.
 
@@ -147,9 +220,13 @@ confirmation and confirmed result. Reopening twice never advances execution.
 The renewal mode adds seven process kills, including after full lineage
 verification, alongside gap/substitution/policy/budget rejection, cancellation,
 input detachment and real deletion with multiple renewals on two replicas.
+The preparation package adds both-mode roundtrips, a frozen codec vector,
+substitution/framing/pin rejection, equal/conflicting publication races and five
+process kills around file sync/link/directory sync. Its historical readability
+never bypasses a completed secondary ticket at the existing live adapter.
 
-Still required: bounded lineage evidence preparation, protected policy/operation inventory and secondary
-terminal adapters, supervised operator ownership handoff, actual managed audit/serve
+Still required: bounded lineage evidence preparation, protected inventory binding
+to execution and secondary terminal adapters, supervised operator ownership handoff, actual managed audit/serve
 paths, cross-host/partition acceptance, copied-owner and physical-storage fencing,
 exhaustion/power-loss/long-soak campaigns, independent review and public testnet.
 Older raw library APIs and experimental CLI are not silently upgraded into this

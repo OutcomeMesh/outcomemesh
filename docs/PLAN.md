@@ -502,8 +502,19 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
                         Reject gaps, substitutions and stale mode pins; preserve
                         unknown starts and cover seven process-kill boundaries.
                         This is not a latest-head proof or journal activation.
-                      - [ ] Retained policy/operation inventory, bounded lineage
-                        evidence preparation, secondary admission/terminal tooling and reviewed
+                      - [x] Bounded, externally pin-checked prepared inventory:
+                        retain exact initial/lineage mode, full policy/checkpoint,
+                        storage pairs, original request, selected receipt bundle
+                        and one co-signed admission per assignment. Canonical
+                        codec, immutable publication, exact retries, bounded load,
+                        fixed vector and five process-kill boundaries. Verify
+                        historical request-time consistency and all secondary
+                        bindings; do not infer live admission or execution from
+                        the package. Keep lineage bodies and runtime ownership
+                        outside this preparation-only format.
+                      - [ ] Protected runtime binding of prepared inventory to
+                        actual execution provenance, bounded lineage evidence
+                        preparation, secondary admission/terminal tooling and reviewed
                         multi-owner runtime/CLI handoff. Integrate managed audit/serve
                         paths; test remote partitions and physical/copy fencing
                         before activation. Library acceptance alone does not close

@@ -1,6 +1,6 @@
 # Implementation status
 
-Updated: 2026-09-13
+Updated: 2026-09-14
 
 This file records evidence against `PLAN.md`. A milestone remains open until all
 of its exit gates pass; implementing most deliverables does not close it.
@@ -1352,6 +1352,47 @@ Implemented in an isolated, not-yet-activated consensus package:
   Bounded evidence preparation, retained policy/operation inventory, secondary
   admission/completion tooling, supervised multi-owner handoff and managed
   audit/serve remain open. Full-plan production readiness stays approximately 40/100.
+  Prepared-inventory follow-up (2026-09-14): a separate bounded operator artifact
+  now retains the exact initial/lineage mode, full policy/checkpoint and pair IDs,
+  original storage-bound request, selected receipt bundle and one co-signed Admit
+  per assignment. Canonical verification checks all signatures, strict aligned
+  replica ordering, exact retained floor and the common original request/consumer
+  across every primary and secondary admission. Availability is checked at the
+  retained request time, not inferred as fresh now. Both inventory and mode-policy
+  IDs must be independently retained. The 1 MiB codec rejects oversized, malformed,
+  truncated and trailing input and has a frozen vector and a dedicated fuzz target.
+  No-replace save and bounded read-only load preserve conflicting destinations,
+  reject symlinks and allow only exact retries; equal concurrent publishers
+  converge while differing packages cannot both claim the same name. Five
+  process-kill boundaries cover file sync, publication and directory confirmation;
+  orphan temporary files cannot become committed packages on load.
+  This is preparation, not executed-policy provenance, historical Audit admission,
+  latest pending state, lineage verification or independent physical durability.
+  A completed secondary ticket does not invalidate historical reading of a
+  package, but the existing live adapter still rejects execution. No executor,
+  authority or database state is advanced by saving/loading; no command or network
+  surface is added, and old journal/request/effect/terminal formats are unchanged.
+  Full runtime binding, bounded lineage-body preparation, secondary tooling and
+  supervised multi-owner handoff remain open. Readiness stays approximately 40/100.
+  Verification: the initial focused race/integration run passed in 11.042 seconds,
+  including the five new process kills. The final fixed-seed decoder fuzz smoke
+  passed with two workers and a ten-second budget (11.836 seconds total); its
+  ten reported executions are smoke evidence only, not broad fuzz coverage.
+  The full `go test -race ./...` passed: store 365.832 seconds, cmd/omd 35.178,
+  with unchanged packages cached. A final extra input-buffer detachment assertion
+  was then added and passed together with all inventory tests, fuzz seeds and the
+  expanded runtime/maintenance/recovery/archive process group under race in
+  80.992 seconds, within the unchanged two-minute process-group timeout.
+  Full vet and integration-tag store vet passed. The other nine standalone
+  process-gate groups and the full normal suite were not rerun in this pass;
+  earlier full-gate results remain recorded above, not claimed as fresh runs.
+  CGO-disabled, trimpath omd builds passed for macOS arm64, Linux amd64 and
+  Windows amd64; integration-tag store test binaries compiled for Linux/Windows.
+  File headers confirm the intended architectures. The command-specific `-h`
+  probe returned the existing `flag: help requested` error (exit 1), not a
+  successful maintenance invocation. Native `omd help` exited successfully and
+  listed the existing maintenance commands. Cross-builds are not Linux/Windows runtime
+  or physical-storage evidence; no new CLI or live Windows stdin support is added.
   Process-gate observation (2026-09-07): the first combined run stopped at
   `TestProcessTieCampaignStorageFailuresRecoverWithoutFalseAdvance/observer_confirmation_after_link`
   because the expected confirmation marker was absent. Five isolated repetitions

@@ -14,7 +14,7 @@ step does not earn an automatic percentage increase.
 | --- | ---: | ---: | --- |
 | v0 specification, deterministic kernel, ledger and PoW (M0–3) | 20 | 20 | Repository exit gates recorded complete; this does not imply external security approval. |
 | Devnet and WorkGraph (M4–5) | 20 | 12 | M4 complete; M5 experimental implementation/research exists, but activation, independent review and calibration gates remain open. |
-| Protected storage and operator lifecycle (part of M5) | 15 | 8 | Pinned journals, delivery, preparation, maintenance, exact recovery and local archive acceptance with explicit renewal-prefix verification exist; full operator/audit/serve integration and physical-storage acceptance remain open. |
+| Protected storage and operator lifecycle (part of M5) | 15 | 8 | Pinned journals, delivery, preparation, maintenance, exact recovery, local archive acceptance with explicit renewal-prefix verification and a preparation-only policy/admission inventory exist; executed-policy provenance, full operator/audit/serve integration and physical-storage acceptance remain open. |
 | Committee/application/privacy/proving scope (M6–8) | 15 | 0 | Not integrated; still gated by M5. |
 | Independent verification and security audits (M9–10) | 10 | 0 | No completed independent consensus verifier or external audit evidence satisfying the plan. |
 | Sustained adversarial public testnet (M9) | 10 | 0 | Local process tests are not a public testnet; the required six-month consensus stability gate is not met. |
@@ -64,3 +64,10 @@ feeds local archive pruning under all original authority guards. The score stays
 40/100: evidence preparation, retained inventory, secondary completion and the full
 operator/storage lifecycle remain open. No independent-audit, public-testnet or
 physical-storage acceptance credit is claimed.
+
+2026-09-14 inventory follow-up: the bounded canonical preparation package now
+retains exact policy, request, selected receipts and historical signed admissions
+under independent inventory/mode-policy pins, with no-replace publication and
+read-only loading. It does not certify actual use of that policy, current pending
+authority, verified lineage bodies or physical durability. Runtime-bound inventory
+and the wider lifecycle gate remain open; the score stays 40/100.
