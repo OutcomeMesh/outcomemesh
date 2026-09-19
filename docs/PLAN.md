@@ -531,7 +531,18 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
                         mixed/empty prefixes, frozen vector, fuzz smoke and five
                         publication process kills. This does not export a live
                         journal, grant authority or bind the file ID into Started.
-                      - [ ] Secondary admission/terminal tooling and reviewed
+                      - [x] Explicit colocated secondary admission from retained
+                        inventory: submit one exact co-signed candidate against the
+                        original primary request ID. Require confirmed executor
+                        admission and live primary permission before the first
+                        secondary intent; retain all three guards through exact
+                        package sync, intent, decision and confirmation. Reconcile
+                        only exact retained attempts/history after primary drain;
+                        never infer execution or completion. Cover both modes,
+                        concurrent retries, 21 publication faults and 13 process
+                        kills. No format, signing, transport or CLI changes.
+                      - [ ] Secondary terminal tooling, reviewed live-journal
+                        evidence extraction and supervised
                         multi-owner runtime/CLI handoff. Integrate managed audit/serve
                         paths; test remote partitions and physical/copy fencing
                         before activation. Library acceptance alone does not close

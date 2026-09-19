@@ -35,6 +35,10 @@ func newArchivePruneFixture(t testing.TB) *archivePruneFixture {
 }
 
 func newArchivePruneFixtureWithRenewals(t testing.TB, renewals []int) *archivePruneFixture {
+	return newArchivePruneFixtureWithAdmissions(t, renewals, true)
+}
+
+func newArchivePruneFixtureWithAdmissions(t testing.TB, renewals []int, admitSecondary bool) *archivePruneFixture {
 	t.Helper()
 	f := newPruneFixtureWithStoragePositions(t, testHash(91), true)
 	_ = f.executor.Close()
@@ -147,9 +151,12 @@ func newArchivePruneFixtureWithRenewals(t testing.TB, renewals []int) *archivePr
 		if err != nil {
 			t.Fatal(err)
 		}
-		commit := appendCoordinated(t, coordinator, entry)
+		ticket, _ := entry.ID()
+		if i == 0 || admitSecondary {
+			appendCoordinated(t, coordinator, entry)
+		}
 		p.operations = append(p.operations, RequiredOperation{Coordinator: coordinator, Binding: OperationBinding{
-			AssignmentID: id, TicketID: commit.EntryID, ConsumerPublicKey: testPublic(4), OperationID: f.id, Purpose: custodyauthority.Prune}})
+			AssignmentID: id, TicketID: ticket, ConsumerPublicKey: testPublic(4), OperationID: f.id, Purpose: custodyauthority.Prune}})
 		if i == 0 {
 			f.coordinator, f.authorityPath, f.pinsPath, f.admission = coordinator, authorityPath, pinsPath, entry
 			if err := f.executor.BindAdmission(t.Context(), coordinator, entry); err != nil {

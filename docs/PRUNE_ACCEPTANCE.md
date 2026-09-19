@@ -148,10 +148,57 @@ does not mean that the co-signed entries were durably admitted at any time.
 The directory must remain controlled and inputs must not be concurrently mutated.
 Content pins and fsync do not prove independent failure domains, latest-owner state,
 physical durability, copy fencing or a unique approved inventory. Colocated
-execution binding is described below. Bounded lineage-body preparation, secondary
-admission/terminal tooling and reviewed multi-owner CLI handoff remain open. No
+execution binding, historical lineage retention and colocated secondary admission
+are described below. Secondary terminal tooling and reviewed multi-owner CLI
+handoff remain open. No
 Execute, Recover, completion or network path treats the package as a grant; all
 live checks remain mandatory.
+
+## Explicit secondary admission
+
+`PruneExecutor.AdmitPreparedArchiveSecondary(ctx, primary, secondary, inventoryPath,
+inventoryID, policyID, entry)` submits **one** already co-signed secondary candidate
+from the retained package. It requires a storage-bound pinned executor with its
+primary admission already independently confirmed, the exact original primary
+coordinator, and one original selected secondary coordinator. The supplied entry
+must equal that secondary's packaged entry byte-for-byte. Its OperationID stays
+the **original primary request ID**; rewriting PruneRequest.AssignmentID would
+create a different operation and is rejected. The package may be prepared before
+the secondary is actually admitted: signed candidates alone are not permissions.
+
+For the first secondary intent, the executor must still be PruneAdmitted and the
+primary's exact ticket must be pending under its live guard. A primary already
+Stopping may drain that admitted work; this does not bypass the secondary's own
+phase/head checks. The method locks executor first, then the two coordinators in
+immutable assignment-ID order, and holds all three through inventory re-sync,
+secondary intent, authority decision and independent confirmation. The existing
+dedicated inventory parent and all six owner roots must be disjoint. Missing or
+changed inventory is not reconstructed. No secondary write precedes this check.
+An unrelated retained secondary attempt blocks the call; there is no head refresh,
+resigning, bootstrap, batch admission or automatic fallback.
+
+An exact retained secondary intent can be explicitly resumed even after primary
+drain or executor cancellation/success; a confirmed decision can be retried as
+history after secondary completion/retirement. These branches do not create a
+different signed attempt or authorize execution. `Commit.Appended` can still be
+true when an old retained intent had not reached the authority decision before
+the crash. False identifies an exact historical decision, not current permission.
+Pending executor transitions must be recovered separately before either branch.
+If the executor already has an inventory-bound start, only that exact inventory
+is eligible; a different package cannot retroactively relabel it. Neither branch
+proves that the old admission originally passed through this API.
+
+There is no atomic all-secondary admission: earlier successful calls remain
+retained if a later target fails. Keep each exact attempt and its independent
+owner journal; do not delete/replace partially completed preparation. The method
+never changes executor history, queries WorkChain, verifies live archive freshness,
+opens replicas/lineages, executes deletion, or completes any ticket. Successful
+admission only supplies one prerequisite to `ExecutePreparedArchive`, which still
+checks the full assignment set, all original owners, storage pair, placement,
+lineage/replay and final live policy. Other secondary roots and physical/copy
+fencing are not owned or established by this two-coordinator call. Trusted exclusive
+local ownership remains mandatory. No command/server/delivery route is silently
+upgraded; secondary signing/transport/CLI and terminal workflow remain gated.
 
 ## Inventory-bound execution and local inspection
 
@@ -326,8 +373,8 @@ presenting cached historical evidence as live acceptance.
 
 **No authority ticket is automatically completed**, including secondary assignments.
 Existing atomic effect/terminal formats identify the primary request and ticket;
-they are not portable certificates of every secondary permission. Typed secondary
-admission/completion tooling and reviewed
+they are not portable certificates of every secondary permission. Colocated
+secondary admission is available above; secondary completion tooling and reviewed
 multi-owner handoff remain open. Raw signed Complete is not a substitute for the
 missing secondary terminal adapter.
 
@@ -358,8 +405,16 @@ buffers, wrong-pin/body/framing/budget rejection, equal/conflicting publishers,
 cancellation, a frozen canonical vector and five publication process kills.
 Loading retained bodies never bypasses a completed secondary admission.
 
-Still required: reviewed live-journal extraction and secondary admission/terminal
-adapters, supervised operator ownership handoff, actual managed audit/serve
+Secondary admission adds real initial/lineage-mode execution after admission,
+first-intent rejection after primary drain, exact recovery across cancellation,
+historical retry after retirement, concurrent duplicate suppression, guarded
+publication, inventory re-sync rejection and unchanged executor/database checks.
+Fault injection spans all 21 intent/authority/confirmation publication boundaries.
+Thirteen process kills cover eight first-attempt and five retained-retry boundaries;
+opening twice never submits or confirms the secondary attempt.
+
+Still required: reviewed live-journal extraction, secondary terminal adapters and
+operator signing/delivery, supervised ownership handoff, actual managed audit/serve
 paths, cross-host/partition acceptance, copied-owner and physical-storage fencing,
 exhaustion/power-loss/long-soak campaigns, independent review and public testnet.
 Older raw library APIs and experimental CLI are not silently upgraded into this

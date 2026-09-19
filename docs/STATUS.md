@@ -1,6 +1,6 @@
 # Implementation status
 
-Updated: 2026-09-14
+Updated: 2026-09-19
 
 This file records evidence against `PLAN.md`. A milestone remains open until all
 of its exit gates pass; implementing most deliverables does not close it.
@@ -1481,6 +1481,52 @@ Implemented in an isolated, not-yet-activated consensus package:
   integration-tag store test binaries compiled for Linux/Windows, and native
   `omd help` exited successfully. Formatting/diff checks are clean. Cross-builds
   are not Linux/Windows runtime, physical-storage, audit or public-testnet evidence.
+  Colocated secondary admission follow-up (2026-09-19): the explicit
+  AdmitPreparedArchiveSecondary method now submits one exact co-signed packaged
+  candidate without rewriting the primary request ID. The executor must have a
+  confirmed storage-bound primary admission; a first secondary intent additionally
+  requires its live primary ticket and pre-start executor stage. Executor plus
+  both original coordinator guards remain held in canonical lock order through
+  exact inventory re-sync and secondary intent/decision/confirmation. No executor
+  history, database or replica content is changed. Independent pins, disjoint placement,
+  exact tickets, pending attempts and the secondary's own phase/head checks remain
+  mandatory. An already inventory-bound start cannot be relabelled by retry.
+  Exact retained secondary attempts/history remain reconcilable after primary
+  cancellation/drain or secondary retirement; acknowledgements are never execution
+  permission. A retained intent may still append its original authority decision
+  during explicit recovery. Unrelated secondary intents and pending executor
+  transitions cannot be resumed by this method. There is no batch admission,
+  signing, head refresh, remote route, completion or format/consensus change.
+  Tests cover both modes through actual guarded deletion, primary Stopping drain,
+  eight concurrent retries with one decision, first-intent rejection after terminal
+  state or primary drain, exact retained recovery, inventory mutation/missing-file
+  fences, owner/pin/ticket/scope/placement checks and guards through confirmation.
+  All 21 publication fault boundaries are exercised. Thirteen process kills cover
+  eight initial and five retained-retry boundaries; repeated open is non-submitting
+  and history/effect checks confirm admission did not execute work. The new process
+  group has its own two-minute timeout; existing groups/timeouts are unchanged.
+  Secondary terminal handling, reviewed journal extraction, operator signing/
+  delivery/CLI, managed audit/serve and physical/remote acceptance remain open.
+  The full planned production readiness estimate remains approximately 40/100.
+  Secondary-admission verification: focused race/integration tests passed in
+  72.767 seconds, including all 13 new process kills. Additional Stopping/concurrent
+  retry and pending-executor/closed-owner tests then passed under race in 4.485
+  seconds. The full final `go test -race ./...` passed: store 588.879 seconds,
+  cmd/omd 95.239, workarchive 311.384 and workgraphmodel 539.821. These are test-run
+  durations, not benchmarks; no timeout was increased. Final standalone process
+  groups passed: the existing prepared-execution/lineage-retention group (24 kills)
+  in 16.893 seconds, and the new secondary-admission group (13 kills) in 10.371.
+  The other ten process groups and the full normal suite were not rerun in this
+  pass; earlier results above are not claimed as fresh checks. Full vet and
+  integration-tag cmd/omd/store vet passed. The unchanged inventory decoder fuzz
+  smoke passed with three seeds, two workers and a ten-second budget: only five
+  reported executions, 12.182 seconds total. This is minimal smoke evidence,
+  not broad fuzz coverage or a new codec campaign.
+  CGO-disabled trimpath omd builds passed for macOS arm64, Linux amd64 and Windows
+  amd64. Integration-tag store test binaries compiled for Linux/Windows; native
+  `omd help` exited successfully. Formatting and diff checks are clean. These
+  cross-builds do not establish Linux/Windows runtime or physical-storage behavior;
+  no new CLI command or native Windows live stdin support is added.
   Process-gate observation (2026-09-07): the first combined run stopped at
   `TestProcessTieCampaignStorageFailuresRecoverWithoutFalseAdvance/observer_confirmation_after_link`
   because the expected confirmation marker was absent. Five isolated repetitions

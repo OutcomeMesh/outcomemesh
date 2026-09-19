@@ -1,6 +1,6 @@
 # Production readiness baseline
 
-Assessment date: 2026-09-14. **Approximately 40/100 toward the full planned launch.**
+Assessment date: 2026-09-19. **Approximately 40/100 toward the full planned launch.**
 Status remains research/pre-alpha: do not secure real value with this code.
 
 This is a coarse, judgment-based engineering estimate, not an externally audited
@@ -86,3 +86,10 @@ executor, but its start does not commit the evidence file ID. Live-journal extra
 secondary admission/completion, CLI ownership and physical/remote acceptance remain
 open. This closes a preparation substep, not the weighted lifecycle criterion;
 the score stays 40/100 and no audit or public-testnet credit is added.
+
+2026-09-19 secondary-admission follow-up: one exact packaged secondary candidate
+can now be submitted locally under the executor and both original coordinator
+guards, preserving the primary request ID and existing publication/recovery rules.
+This closes the colocated admission substep, not terminal handling, operator
+signing/delivery/CLI, the wider lifecycle or physical/remote acceptance. No audit
+or public-testnet gate is satisfied; the weighted score remains 40/100.
