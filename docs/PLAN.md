@@ -541,8 +541,20 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
                         never infer execution or completion. Cover both modes,
                         concurrent retries, 21 publication faults and 13 process
                         kills. No format, signing, transport or CLI changes.
-                      - [ ] Secondary terminal tooling, reviewed live-journal
-                        evidence extraction and supervised
+                      - [x] Explicit colocated secondary completion from the
+                        independently confirmed primary outcome: match the exact
+                        packaged and actually admitted secondary operation, then
+                        retain both guards through package sync and completion
+                        intent/decision/confirmation. Success requires the original
+                        inventory-bound start/result; pre-start cancellation uses
+                        its original request/ticket/executor binding. Support exact
+                        retained recovery and historical retry after retirement,
+                        preserve unknown starts and require separate executor
+                        recovery. Cover both outcomes/modes, concurrent retries,
+                        42 publication faults and 26 process-kill scenarios.
+                        No automatic completion, new terminal format or
+                        remote certificate; operator signing/delivery remains open.
+                      - [ ] Reviewed live-journal evidence extraction and supervised
                         multi-owner runtime/CLI handoff. Integrate managed audit/serve
                         paths; test remote partitions and physical/copy fencing
                         before activation. Library acceptance alone does not close

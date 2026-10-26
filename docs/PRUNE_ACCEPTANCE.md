@@ -149,10 +149,9 @@ The directory must remain controlled and inputs must not be concurrently mutated
 Content pins and fsync do not prove independent failure domains, latest-owner state,
 physical durability, copy fencing or a unique approved inventory. Colocated
 execution binding, historical lineage retention and colocated secondary admission
-are described below. Secondary terminal tooling and reviewed multi-owner CLI
-handoff remain open. No
-Execute, Recover, completion or network path treats the package as a grant; all
-live checks remain mandatory.
+are described below. Explicit secondary completion is also available locally;
+reviewed multi-owner CLI handoff remains open. Execute, Recover, completion and
+network paths retain their own live/outcome checks; the package alone is no grant.
 
 ## Explicit secondary admission
 
@@ -198,7 +197,60 @@ checks the full assignment set, all original owners, storage pair, placement,
 lineage/replay and final live policy. Other secondary roots and physical/copy
 fencing are not owned or established by this two-coordinator call. Trusted exclusive
 local ownership remains mandatory. No command/server/delivery route is silently
-upgraded; secondary signing/transport/CLI and terminal workflow remain gated.
+upgraded; secondary signing/transport/CLI remain gated.
+
+## Explicit secondary completion
+
+`PruneExecutor.CompletePreparedArchiveSecondary(ctx, secondary, inventoryPath,
+inventoryID, policyID, entry)` submits one externally consumer-signed and
+authority-co-signed Complete entry. The exact target admission must be selected
+by the independently pinned inventory and present as a full operation in the
+target's actual history: assignment, ticket, consumer, original primary request
+ID and Prune purpose. A packaged candidate that was never admitted cannot drain.
+The submitted entry must use that consumer, authority and ticket and the retained
+primary outcome's ID as EvidenceID. Completed operations accept only the exact
+historical completion and evidence. The target's compare-and-append checks still
+decide current, retained, conflicting and historical requests.
+
+The pinned storage-bound executor must have independently confirmed its terminal
+record before this call. Success requires the **exact inventory ID retained in
+the original version-1 Started record** and the matching effect. Supplying an
+inventory after a version-0 success cannot add that provenance. Unresolved Started,
+missing outcomes and pending executor transitions are rejected; use the separate
+reviewed executor recovery first. Neither a database query nor absence of an
+effect can substitute for this terminal history.
+
+A confirmed pre-start cancellation uses its original primary request ID, primary
+ticket and executor-pair binding. Cancellation records do not contain an inventory
+ID: the supplied pinned inventory selects the secondary ticket to drain, and the
+method does not certify that this inventory was used before cancellation. An
+actually admitted secondary can be completed even if its exact retained admission
+was reconciled after cancellation. This follows the existing trusted exclusive
+executor contract; it does not assert global absence of effects from copied owners.
+
+The method locks executor then target coordinator and retains both guards while
+checking history, placement, exact package re-sync and the completion's durable
+intent, authority decision and independent confirmation. The inventory parent
+and all four owner roots must be disjoint. Missing/changed inventory is never
+recreated. The primary coordinator and other secondary owners may be closed or
+already drained: each completion is explicit and concerns only its own target.
+Stopping targets may drain, and exact historical retries remain readable after
+retirement. Unrelated retained target attempts require separate recovery.
+
+An error may leave the same retained completion attempt or decision. Preserve
+the entry and retry exactly after required reopen/recovery; a later open submits
+nothing. Cancellation before the authority decision preserves uncertainty as
+appropriate; once a decision is durable the existing coordinator completes its
+independent confirmation. Each target is completed separately, so earlier results
+survive a later target failure. There is no atomic whole-set completion.
+
+Completion keeps executor history and database/replica contents unchanged. It
+does not replay archive bodies, refresh receipt time, sign commands, choose a
+new head, query WorkChain or re-execute deletion. Existing request, inventory,
+start, authority, effect, cancellation and terminal encodings stay unchanged.
+Retain independently protected owner roots, package and pins; the local journal
+outcome is not a portable remote certificate. Operator signing/delivery and CLI
+ownership remain separate plan gates.
 
 ## Inventory-bound execution and local inspection
 
@@ -374,9 +426,8 @@ presenting cached historical evidence as live acceptance.
 **No authority ticket is automatically completed**, including secondary assignments.
 Existing atomic effect/terminal formats identify the primary request and ticket;
 they are not portable certificates of every secondary permission. Colocated
-secondary admission is available above; secondary completion tooling and reviewed
-multi-owner handoff remain open. Raw signed Complete is not a substitute for the
-missing secondary terminal adapter.
+secondary admission and explicit completion are available above. Operator signing,
+delivery and reviewed multi-owner handoff remain open.
 
 ## Evidence and remaining gates
 
@@ -413,8 +464,17 @@ Fault injection spans all 21 intent/authority/confirmation publication boundarie
 Thirteen process kills cover eight first-attempt and five retained-retry boundaries;
 opening twice never submits or confirms the secondary attempt.
 
-Still required: reviewed live-journal extraction, secondary terminal adapters and
-operator signing/delivery, supervised ownership handoff, actual managed audit/serve
+Secondary completion covers both outcomes and both initial/lineage modes,
+completion with primary/database closed, target Stopping/Retired history, signed
+scope and actual-admission checks, legacy/unresolved/pending executor rejection,
+package mutation, eight concurrent retries and exact admission reconciliation
+after primary cancellation. Fault injection covers all 21 publication stages for
+each outcome (42 cases). Twenty-six process kills cover eight first-attempt and
+five retained-retry boundaries for each outcome; repeated opens preserve the
+executor, primary, database history/effect and exact secondary uncertainty.
+
+Still required: reviewed live-journal extraction, operator signing/delivery,
+supervised ownership handoff, actual managed audit/serve
 paths, cross-host/partition acceptance, copied-owner and physical-storage fencing,
 exhaustion/power-loss/long-soak campaigns, independent review and public testnet.
 Older raw library APIs and experimental CLI are not silently upgraded into this

@@ -1,6 +1,6 @@
 # Implementation status
 
-Updated: 2026-09-19
+Updated: 2026-10-26
 
 This file records evidence against `PLAN.md`. A milestone remains open until all
 of its exit gates pass; implementing most deliverables does not close it.
@@ -1527,6 +1527,71 @@ Implemented in an isolated, not-yet-activated consensus package:
   `omd help` exited successfully. Formatting and diff checks are clean. These
   cross-builds do not establish Linux/Windows runtime or physical-storage behavior;
   no new CLI command or native Windows live stdin support is added.
+  Secondary-completion follow-up (2026-10-26): CompletePreparedArchiveSecondary
+  now submits one explicit co-signed Complete entry against the executor's
+  independently confirmed terminal outcome. The target operation must actually
+  exist with the exact packaged admission ticket, original primary request ID,
+  consumer and Prune purpose. Success requires the original inventory-bound
+  version-1 start and matching effect; an old unbound result cannot gain that
+  provenance later. Pre-start cancellation instead checks its original request,
+  primary ticket and executor pair. Cancellation has no inventory field and does
+  not certify inventory use or secondary admission before the cancellation.
+  Both guards remain held through exact package re-sync and the coordinator's
+  intent, decision and independent confirmation. Missing/changed inventory,
+  unrelated pending attempts, pending executor transitions and unresolved starts
+  are rejected. The original primary and other secondary owners need not be open.
+  Exact retained attempts and historical completions remain recoverable after
+  retirement; each target drains separately. No automatic completion, new signing,
+  command transport, terminal encoding, WorkChain query or repeated deletion is
+  introduced. This preserves the trusted exclusive-owner scope and leaves copied
+  owners, physical failure domains and remote certificates outside the guarantee.
+  Operator signing/delivery/CLI, reviewed journal extraction, managed audit/serve
+  and physical/remote acceptance remain open. Production readiness stays 40/100.
+  Tests cover both initial/lineage modes and success/cancellation, primary and
+  database closed during completion, target Stopping/Retired history, exact signed
+  binding checks, never-admitted candidates, unresolved and legacy results,
+  pending executor/authority work, inventory mutation/missing-file fences and
+  eight concurrent retries. All 21 publication stages are fault-injected for
+  each outcome (42 cases). Twenty-six process kills cover eight initial and five
+  retained-retry stages per outcome, with two non-submitting reopens and unchanged
+  executor/primary/database checks. Same-request cancellation can select a newly
+  reviewed inventory without claiming earlier inventory use; success cannot swap
+  its retained binding. A retained secondary admission reconciled after primary
+  cancellation can then be explicitly drained with the same cancellation evidence.
+  Race-gate sizing follow-up: the first unpartitioned custodyauthority race run
+  reached Go's cumulative ten-minute package limit while the existing
+  TestPinnedPruneExecutorPublicationFailures was reopening its database. No
+  assertion failure or blocked mutex was reported at that point. The larger
+  suite now runs in two complementary invocations of make test-race: all
+  TestArchive-prefixed tests, then every remaining test/example/fuzz seed with
+  that prefix skipped. The current store list is 32 plus 189 (221 total), with
+  no overlap or omission. Each invocation retains Go's default timeout; the
+  process-group timeouts are unchanged. This is an aggregate test-run budget
+  adjustment, not performance or physical-storage acceptance evidence.
+  Secondary-completion verification: the initial focused race/integration run
+  exercised the new recovery cases but failed two new signed-binding test fixtures
+  that retained the old actor key while changing signer. The fixtures were fixed;
+  the complete signed-binding test then passed under race in 4.438 seconds.
+  The final full make test-race passed both complementary groups across all
+  packages. Store times were 233.663 seconds for the 32 archive tests and 496.627
+  seconds for the remaining 189 tests/fuzz seeds; second-group cmd/omd was 81.641,
+  workarchive 314.975 and workgraphmodel 573.750. These are test-run durations,
+  not benchmarks. The earlier unpartitioned timeout is retained above rather than
+  represented as a passing run. No test or process timeout was extended.
+  Full vet and integration-tag cmd/omd/store vet passed. CGO-disabled trimpath omd
+  builds passed for macOS arm64, Linux amd64 and Windows amd64; integration-tag
+  store test binaries compiled for Linux/Windows, and native omd help succeeded.
+  Cross-builds do not establish Linux/Windows runtime or physical-storage behavior.
+  Existing fuzz seeds ran in the full race gate; no new decoder/format or separate
+  fuzz campaign is introduced. The full normal suite is not claimed as a separate
+  run. Operator CLI and native Windows live stdin support remain unchanged.
+  Final standalone process groups passed with unchanged two-minute timeouts:
+  prepared-execution/lineage retention (24 kills) in 17.441 seconds, secondary
+  admission (13 kills) in 12.697, and new secondary completion (26 kills) in
+  22.834. All 63 scenarios passed afresh. The other ten process groups were not
+  rerun in this pass; their earlier results are not claimed as fresh checks.
+  Formatting and diff checks are clean. No production, audit or public-testnet
+  acceptance credit is added.
   Process-gate observation (2026-09-07): the first combined run stopped at
   `TestProcessTieCampaignStorageFailuresRecoverWithoutFalseAdvance/observer_confirmation_after_link`
   because the expected confirmation marker was absent. Five isolated repetitions

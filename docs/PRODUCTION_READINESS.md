@@ -1,6 +1,6 @@
 # Production readiness baseline
 
-Assessment date: 2026-09-19. **Approximately 40/100 toward the full planned launch.**
+Assessment date: 2026-10-26. **Approximately 40/100 toward the full planned launch.**
 Status remains research/pre-alpha: do not secure real value with this code.
 
 This is a coarse, judgment-based engineering estimate, not an externally audited
@@ -93,3 +93,11 @@ guards, preserving the primary request ID and existing publication/recovery rule
 This closes the colocated admission substep, not terminal handling, operator
 signing/delivery/CLI, the wider lifecycle or physical/remote acceptance. No audit
 or public-testnet gate is satisfied; the weighted score remains 40/100.
+
+2026-10-26 secondary-completion follow-up: an explicit local adapter can now drain
+one actually admitted secondary ticket using the executor's independently confirmed
+success or pre-start cancellation. Success requires its original inventory-bound
+start; cancellation retains its original request/ticket/executor scope. Exact
+retained recovery and historical retries preserve the terminal evidence. Operator
+signing/delivery/CLI, managed audit/serve, physical/remote acceptance and the wider
+lifecycle remain open; the weighted score stays 40/100.
