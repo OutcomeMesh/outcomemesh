@@ -141,8 +141,12 @@ commands over the existing QUIC protocols under independently pinned inventory
 and peer identities. Select `admit`, `complete` or `both`; stop and drain admission
 before a separate offline effect, then reopen completion without primary owners.
 No mode executes pruning or automatically resumes retained work.
-Managed audit/serve, reviewed effect handoff and physical/cross-host enforcement
-remain open; see the acceptance runbook for the exact local boundaries.
+A separate [owned archive-effect library runtime](docs/PRUNE_EFFECT_RUNTIME.md)
+opens the pinned executor, every original coordinator and position-pinned
+WorkChain after command owners close. It keeps them through explicit local review,
+exact reviewed execution and Close; it neither resumes Started work nor completes
+tickets. Operator CLI handoff, managed audit/serve and physical/cross-host
+enforcement remain open; see the acceptance runbook for the exact local boundaries.
 
 ## Build and run
 

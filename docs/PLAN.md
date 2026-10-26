@@ -617,6 +617,21 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
                         paths; test remote partitions and physical/copy fencing
                         before activation. Library acceptance alone does not close
                         this parent gate.
+                        - [x] Explicit owned prepared-archive effect service:
+                          open the original pinned executor, every selected
+                          coordinator in assignment-ID order and position-pinned
+                          WorkChain without recovery. Keep these owners from
+                          local review through exact guarded execution and Close;
+                          bind paths, content pins, execution configuration and
+                          confirmed positions in the comparison ID. Recheck under
+                          all original guards before replay and final live-time
+                          authorization. Cover initial/lineage modes, stale scope,
+                          uncertainty, concurrent calls and real process death.
+                          This is a separate colocated library lifetime, not
+                          a command-service transfer or managed Audit/Serve.
+                        - [ ] Operator CLI and supervised command/effect handoff,
+                          managed audit/serve acceptance, real remote partitions
+                          and independently enforced physical/copy fencing.
   - [ ] Filesystem-full, inode-exhaustion, power-loss, and long-running retention
     campaigns before deployment claims.
   - [x] Isolate the 2026-09-07 custody sibling-rejection deadline race: force the

@@ -154,3 +154,13 @@ that digest, and verify works with the original sources offline. No current
 permission or effect is granted. Supervised effect handoff, managed audit/serve,
 physical/cross-host enforcement and the wider release gates remain open. This
 closes the operator preparation substep; weighted readiness remains 40/100.
+
+2026-10-26 owned-effect follow-up: an opt-in library service now owns the pinned
+executor, every required original coordinator and position-pinned WorkChain across
+explicit local review and exact guarded execution. Scope/state comparison occurs
+under all original guards, including after retained evidence fences before final
+authorization. It neither resumes uncertain starts nor completes tickets. This
+closes a local ownership substep; operator CLI command/effect transfer, managed
+Audit/Serve, remote partitions, physical/copy fencing and the wider launch gates
+remain open. Weighted readiness stays 40/100; no audit or public-testnet credit
+is added.

@@ -1838,6 +1838,56 @@ Implemented in an isolated, not-yet-activated consensus package:
   A separate full normal suite, other process groups and standalone fuzz
   campaigns were not rerun. Existing codec seed evidence remains in the race
   gate; no evidence or wire encoding was changed. Formatting/diff checks are clean.
+  Owned archive-effect follow-up (2026-10-26): the opt-in
+  OpenPruneArchiveEffectService now opens the original pinned executor, every
+  original coordinator selected by a retained inventory and the exact
+  position-pinned WorkChain. Complete pairwise placement validation precedes
+  ownership; pins precede writers, coordinators open in assignment-ID order and
+  partial failure releases acquired owners in reverse. Replica receipts and
+  original tickets are derived only from independently pinned inventory content.
+  Initial mode rejects lineage inputs; lineage mode requires a separately pinned
+  retained evidence file. Activation state, cumulative-work/timestamp slices,
+  root lists and configuration are detached from callers.
+  Explicit Review captures confirmed executor, all-authority and storage
+  positions under the original guards. Its local comparison ID also binds every
+  content pin, canonical input/output path, base/parameters, storage policy and
+  archive limits. Execute compares that exact ID under the same all-owner
+  guards before archive replay and again after inventory/lineage fences before
+  final live authorization. Lost lineage evidence cannot be reconstructed from
+  cached bodies; its exact file and parent are rechecked and synced before start.
+  The lifecycle mutex retains all owners through the independently confirmed
+  result; Close waits for a running effect. No raw handle, network endpoint,
+  operator CLI, automatic recovery, Started retry or completion is exposed.
+  Command owners must separately drain/close before this service opens.
+  New unit tests passed normally with Go 1.26.7 in 24.444 seconds, with an
+  additional real partial-open lock/cleanup test passing in 2.447 seconds.
+  Initial, mixed-prefix and renewed-lineage fixtures perform real pruning.
+  Tests cover placement/pin errors, stale Stop-head reviews, evidence loss even
+  after archive replay, pending/Started/terminal rejection, detached inputs,
+  eight concurrent Execute callers applying one effect and Close drain.
+  Fourteen real process kills across both modes passed in 14.290 seconds.
+  Ownership is checked while paused after Review, inventory sync, pending start,
+  before/after atomic effect, pending result and returned success. Two subsequent
+  runtime/raw reopens preserve exact stages, pending pins, inventory binding,
+  database result and every original pending authority ticket without recovery.
+  Consensus, wire, signature and retained journal/effect formats are unchanged.
+  See PRUNE_EFFECT_RUNTIME.md for the exact lifecycle and recovery boundary.
+  Operator command/effect handoff, managed Audit/Serve, remote partitions,
+  physical/copy fencing and the parent M5 gate remain open; readiness stays 40/100.
+  Full final Go 1.26.7 make test-all passed: formatting, full vet and both
+  complementary race groups. Store runs took 235.496 and 501.182 seconds;
+  workarchive took 13.786 and 233.653; cmd/omd took 4.139 and 89.359. New
+  service unit tests ran in the second race group. These are test durations,
+  not performance benchmarks. CGO-disabled trimpath omd builds passed for
+  macOS arm64, Linux amd64 and Windows amd64. Cross-builds establish compilation,
+  not foreign-OS runtime, physical storage or public-network acceptance.
+  The strengthened process group also passed with race detection in 28.895
+  seconds, requiring successful service reopen at all fourteen checkpoints
+  rather than ignoring open errors. Integration-tag store vet passed and the
+  native CGO-disabled binary's help command ran successfully. The new process
+  group is included in Makefile with a separate unchanged two-minute bound.
+  Other process groups and standalone fuzz campaigns were not rerun this pass;
+  existing codec seeds ran in the full race gate. No new decoder was added.
   Process-gate observation (2026-09-07): the first combined run stopped at
   `TestProcessTieCampaignStorageFailuresRecoverWithoutFalseAdvance/observer_confirmation_after_link`
   because the expected confirmation marker was absent. Five isolated repetitions

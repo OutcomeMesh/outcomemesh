@@ -613,7 +613,18 @@ displays the effective scope. Extract rechecks it before immutable publication;
 verify needs no original journal or source metadata. See the preparation runbook
 for flags, source JSON and failed-output recovery.
 
-Still required: supervised effect handoff,
+A separate [owned prepared-archive effect runtime](PRUNE_EFFECT_RUNTIME.md)
+now acquires the original pinned executor, every selected original coordinator
+and position-pinned WorkChain. It retains their process ownership across explicit
+Review, exact reviewed Execute and Close. Review binds paths, content pins,
+activation/storage/replay configuration and all confirmed positions; the ID is
+recompared under every original guard before archive verification and immediately
+before final live authorization. Lineage mode rereads retained evidence and
+rechecks/syncs its exact file before Started. No raw owner, automatic recovery,
+ticket completion, network execution or CLI action is added. The preceding
+command owners must separately drain and close before opening this service.
+
+Still required: operator CLI and supervised command/effect handoff,
 actual managed audit/serve
 paths, cross-host/partition acceptance, copied-owner and physical-storage fencing,
 exhaustion/power-loss/long-soak campaigns, independent review and public testnet.

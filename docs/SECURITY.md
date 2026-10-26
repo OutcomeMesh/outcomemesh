@@ -772,9 +772,27 @@ authority and does not change the retained evidence format. Output failures
 preserve published evidence for exact retry or explicit verify. No signing key,
 current authority/executor/database owner, checkpoint capture or effect is added.
 
-Audit/serve acceptance, reviewed effect handoff and physical/cross-host
+An opt-in owned prepared-archive effect service now opens the original protected
+executor, all selected original coordinator pairs and position-pinned WorkChain
+after preceding command owners have drained and closed. Canonical disjoint
+placement is checked before acquiring owners; pins precede writers, coordinators
+open in assignment-ID order, and partial failure releases in reverse. Its private
+lifecycle holds every owner across explicit review and guarded effect/result,
+with Close waiting for accepted synchronous execution. Caller configuration and
+review slices are detached. The local comparison ID commits all paths, content
+pins, activation/storage/replay configuration, tickets and confirmed positions.
+It is rechecked under executor/all-coordinator guards before archive replay and
+again after evidence fences, before the existing final live-time authorization.
+Lineage bodies are reloaded, and the exact retained file is rechecked and synced
+before start; cached bytes cannot replace missing evidence. Pending, Started and
+terminal states cannot become new execution candidates. No raw owner, arbitrary
+callback, automatic recovery, completion, new effect encoding or network endpoint
+is exposed. This local lifetime does not certify current authority to a remote
+consumer or fence copied owners, keys, databases or pin journals.
+
+Operator CLI command/effect handoff, Audit/Serve acceptance and physical/cross-host
 enforcement remain open. This is not a CLI or remotely exposed effect path; see
-`PRUNE_ACCEPTANCE.md` for the current preparation/command boundaries.
+`PRUNE_EFFECT_RUNTIME.md` and `PRUNE_ACCEPTANCE.md` for the exact boundaries.
 
 The opt-in storage-incarnation mode adds a narrower local guarantee. A fresh
 caller-selected ID is atomically bound to a new schema-6 WorkChain database;

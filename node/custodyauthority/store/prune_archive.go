@@ -214,6 +214,11 @@ func (executor *PruneExecutor) executeArchive(ctx context.Context, chain *workch
 			if err := requireNoInventoryEffect(chain, primary.TicketID); err != nil {
 				return err
 			}
+			if inventory.reviewCheck != nil {
+				if err := inventory.reviewCheck(); err != nil {
+					return err
+				}
+			}
 		}
 		if err := executor.hooks.reach("archive-before-verification"); err != nil {
 			return err
@@ -255,6 +260,11 @@ func (executor *PruneExecutor) executeArchive(ctx context.Context, chain *workch
 				return err
 			}
 			inventoryID = inventory.id
+			if inventory.beforeStartCheck != nil {
+				if err := inventory.beforeStartCheck(); err != nil {
+					return err
+				}
+			}
 		}
 		if _, err := verified.Authorize(); err != nil {
 			return err

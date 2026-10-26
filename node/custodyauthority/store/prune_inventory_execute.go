@@ -17,6 +17,11 @@ type archiveInventoryInput struct {
 	id       types.Hash
 	encoded  []byte
 	prepared ArchivePruneInventory
+	// Owned effect runtimes compare a detached local review while the executor
+	// and every original coordinator are held. These callbacks are private,
+	// synchronous and may not re-enter any owner.
+	reviewCheck      func() error
+	beforeStartCheck func() error
 }
 
 func requireNoInventoryEffect(chain *workchain.Store, ticketID types.Hash) error {

@@ -114,6 +114,7 @@ test-process:
 	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestAdmissionOutboxProcessCrashAtomicity$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestPrune((CommandRuntime|Maintenance|Recovery|Archive(Lineage)?)ProcessRecovery|InventoryProcessCrashAtomicity)$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestPrune(PreparedArchiveProcessRecovery|LineageEvidenceProcessCrashAtomicity)$$' -count=1 -timeout=2m
+	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestPruneArchiveEffectServiceProcessRecovery$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestArchiveSecondaryAdmissionProcessRecovery$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestArchiveSecondaryCompletionProcessRecovery$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestArchiveSecondaryQUICProcessRecovery$$' -count=1 -timeout=2m
