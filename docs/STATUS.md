@@ -1888,6 +1888,56 @@ Implemented in an isolated, not-yet-activated consensus package:
   group is included in Makefile with a separate unchanged two-minute bound.
   Other process groups and standalone fuzz campaigns were not rerun this pass;
   existing codec seeds ran in the full race gate. No new decoder was added.
+  Supervised effect CLI follow-up (2026-10-26): work-prune-archive-effect now
+  defaults to non-executing review and offers explicit control on macOS/Linux.
+  The bounded strict root metadata names exactly all original assignments and
+  replica directories; externally pinned inventory selects their tickets and
+  receipts. Duplicate/unknown/case-changed/null/wrong-type fields, invalid UTF-8,
+  noncanonical IDs, count/byte bounds, repeated flags and placement aliases fail.
+  Activation configuration is derived from existing canonical genesis/profile
+  and the exact legacy activation parent, through a new existing-read-only
+  Pebble opener. Missing/empty/LOCKless/incomplete sources are rejected without
+  initialization; its Commit is refused before batch work. Source ownership
+  closes before the effect runtime opens. One-shot review releases every effect
+  owner before any output, and reports that fact explicitly.
+  Supervised control adopts inherited dedicated input/output pipes into
+  interruptible nonblocking I/O before long-lived effect owners open. Its bounded
+  LF commands are review, execute with the exact same-session reported ID, and
+  close. No token becomes usable until its complete readable scope is written.
+  A separate terminal-error channel lets EOF cancel an in-flight action even
+  with a queued command; extra pipelining fails closed. Close drains accepted
+  work; signals, channel failures and partial input preserve retained uncertainty.
+  The scope displays sorted labelled paths, hex positions, full activation-base
+  fields, effective parameters/storage policy and replay limits. Successful
+  terminal bytes feed the existing separate reviewed Complete-signing pipeline;
+  neither Execute nor restart completes a ticket. Lost stdout after the result
+  preserves the independently confirmed atomic effect and blocks blind reruns.
+  Unit/control tests passed in 18.797 seconds; final readable-scope assertions
+  passed in 5.001. Metadata/config tests passed in 3.685 seconds and 5.759 with
+  race detection. A three-second, two-worker metadata fuzz campaign passed
+  3,421 executions. New existing-read-only storage tests passed in 1.658 seconds
+  and 2.846 with race detection, including sixteen unchanged-tree negative cases.
+  Real native CLI process tests cover initial and lineage modes, original command
+  service stop/drain/close -> reviewed effect -> command-service reopen, duplicate
+  ownership refusal, EOF/SIGTERM/kill, broken readiness and lost result output.
+  A full native output pipe is interrupted by Close. Combined unit and process
+  coverage passed with race/integration tags in 39.625 seconds. No test claims
+  physical power-loss, copied-owner fencing or remote acceptance.
+  Full final Go 1.26.7 make test-all passed: formatting, full vet and both
+  complementary race groups. Fresh cmd/omd runs took 2.329 and 86.028 seconds;
+  storage/pebble took 1.550 and 4.420. Unchanged store/workarchive/simulation
+  packages used valid cached gate results. Durations are test evidence, not
+  benchmarks. Makefile includes the new metadata fuzz target and a separate
+  two-minute CLI process group; existing process groups/timeouts are unchanged.
+  Managed Audit/Serve, in-place command-owner transfer, remote partitions and
+  independent physical/copy fencing remain open. Weighted readiness stays 40/100.
+  Final native process-only coverage passed with race detection in 35.100
+  seconds; integration-tag cmd/omd vet passed. CGO-disabled trimpath omd builds
+  passed for macOS arm64, Linux amd64 and Windows amd64, and native help lists
+  the new command. Integration-tag cmd test binaries compiled for Linux/Windows
+  after reclaiming temporary build/cache space. Cross-compilation establishes
+  no foreign-OS runtime or physical-storage acceptance. Other process groups
+  were not rerun; existing native library crash evidence remains unchanged.
   Process-gate observation (2026-09-07): the first combined run stopped at
   `TestProcessTieCampaignStorageFailuresRecoverWithoutFalseAdvance/observer_confirmation_after_link`
   because the expected confirmation marker was absent. Five isolated repetitions

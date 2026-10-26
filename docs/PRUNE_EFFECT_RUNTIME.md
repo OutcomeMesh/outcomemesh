@@ -1,6 +1,6 @@
 # Owned prepared-archive effect runtime
 
-Status: opt-in colocated library tooling, not an activated network service.
+Status: opt-in colocated library and operator CLI, not an activated network service.
 The broader M5 operator/acceptance gate remains open in [PLAN.md](PLAN.md).
 
 `OpenPruneArchiveEffectService` owns one already prepared archive-prune operation.
@@ -9,7 +9,8 @@ selected by the independently pinned inventory, and one position-pinned WorkChai
 It exposes `Review`, `Execute` and `Close`; no raw owners or generic callbacks are
 available to callers. Existing command services must stop, drain and close before
 this separate owner opens their roots. This is not an in-place transfer from the
-one-assignment command service, a CLI command or a remote execution endpoint.
+one-assignment command service or a remote execution endpoint. The explicit CLI
+below uses this same ownership lifetime.
 
 ## Inputs and ownership
 
@@ -99,17 +100,146 @@ permission to rerun. A lost return value likewise does not imply non-commit.
 
 ## Compatibility and evidence
 
+### Operator command
+
+`omd work-prune-archive-effect` defaults to `--mode review`. It opens existing
+owners, computes a detached local review, **closes every owner**, and only then
+prints the header and readable scope. No output failure can keep those owners
+behind a blocked one-shot report. Review remains available without live control
+support, including on Windows.
+
+The opt-in `--mode control` requires dedicated native stdin and stdout pipes on
+macOS/Linux. Both inherited endpoints are adopted into interruptible nonblocking
+I/O before long-lived effect owners open. Native terminals, regular files and
+sockets are rejected for control. This transfers the entire dedicated endpoints;
+do not attach another reader/writer to them. The command creates no listener.
+
+Every invocation requires these explicit inputs:
+
+```text
+omd work-prune-archive-effect --mode review
+  --inventory /operator/inventory/prepared.ompi
+  --inventory-id <independently-retained-inventory-id>
+  --policy-id <independently-retained-mode-policy-id>
+  --data /operator/activation-source
+  --roots /operator/metadata/roots.json
+  --executor /operator/executor --executor-pins /operator/executor-pins
+  --chain /operator/chain --chain-pins /operator/chain-pins
+  --availability-out /operator/availability/verified.omav
+  --canonical-retention <reviewed-nonzero-tip-distance>
+```
+
+The example is an argument list, not a ready-to-run configuration. All roots,
+inputs and artifact parents must already exist and satisfy the library placement
+rules. `--data` is a separately prepared, existing activation source: genesis,
+activation profile and the complete legacy ledger containing the exact activation
+parent. Its writer must be stopped; use a verified consistent source, not a live
+filesystem copy. This source directory must be disjoint from all effect-owned
+roots, replica and artifact directories. `--chain` names the original protected
+WorkChain directly; the command never discovers or creates a default work tree.
+
+`--data` is read through `pebblestore.OpenExistingReadOnly`: existing directory and
+original regular `LOCK`, `ReadOnly`/`ErrorIfNotExists`, exact genesis/schema/state
+checks and no initializer. Missing, empty, incomplete or mismatched history fails
+without being bootstrapped. The detached activation base is verified against the
+inventory binding, and the source is closed before effect ownership begins.
+This local source check does not prove current remote authority or physical copy
+fencing; paths must remain immutable/operator-controlled during open and use.
+
+The root metadata is bounded to 256 KiB, with exactly these fields:
+
+```json
+{
+  "authorities": [
+    {"assignment_id": "<original-assignment-id>", "authority": "../authority-a", "authority_pins": "../authority-a-pins"}
+  ],
+  "replicas": [
+    {"assignment_id": "<same-original-assignment-id>", "directory": "../replica-a"}
+  ]
+}
+```
+
+Supply exactly every selected original assignment, up to 64 in each array, with
+one authority pair and replica directory per ID. IDs use canonical lowercase
+64-digit hex; relative paths resolve against the metadata file's parent.
+Duplicate/unknown/case-changed/missing fields, nulls, wrong types, duplicate IDs,
+invalid UTF-8 and trailing values fail. Metadata cannot live inside an owned,
+replica or output tree; it may share a retained immutable-input parent.
+
+Lineage mode additionally requires `--lineage-evidence` and
+`--lineage-evidence-id`. Initial mode rejects these flags even with empty values.
+The mode itself comes only from the externally pinned inventory. Replay bounds
+are `--max-archive-blocks`, `--max-archive-chunks`, `--max-archive-bytes`. Storage
+controls are `--max-history-bytes`, `--fork-retention`, `--checkpoint-every`,
+`--checkpoint-keep`, `--canonical-retention`. History budget defaults to the
+activation profile; other defaults follow the existing storage/replay policies.
+Canonical retention is disabled by default and must be explicitly nonzero.
+Actual effective values are displayed and bound in the library review ID.
+Repeated flags and positional arguments are rejected.
+
+### Supervised control protocol
+
+After readiness, the controlling process keeps both pipes open and exchanges
+these complete LF-terminated commands, each at most 96 bytes including LF:
+
+```text
+review
+execute <review-id-reported-by-this-session>
+close
+```
+
+Send one command and consume its response before the next. A review response
+starts with `work_prune_archive_effect_review`, then readable JSON showing
+canonical paths, labelled owner positions, complete activation-base/configuration
+fields and hex IDs, and ends with `work_prune_archive_effect_scope_end`.
+Only a completely written review response enables Execute in that same session.
+An ID from a different invocation alone is insufficient. No automatic refresh or
+retry occurs. Queuing is bounded to one command; extra pipelining fails closed.
+The terminal read/error channel is independent of that queue, so a queued command
+cannot hide EOF while verification or execution is running.
+
+EOF, partial/oversized framing, signal/context cancellation, read failure or
+output failure cancels ongoing work and drains the owned service before return.
+Complete command syntax is checked in order: an invalid queued command ends the
+session after the preceding accepted action drains, without executing that
+invalid command. Keep stdin open until the requested result is observed. An explicit
+queued `close` is ordered after the preceding action and drains it. Control does
+not recover uncertainty. A process kill releases OS ownership but preserves the
+retained pending/start/result distinctions for separate review/recovery.
+
+A successful result line starts with `work_prune_archive_effect_executed` and
+includes the canonical terminal bytes as `canonical_hex`, their ID and the exact
+inventory/policy pins. These bytes feed the existing independently reviewed
+Complete-signing pipeline; the command never signs or submits Complete itself.
+Owners remain retained after the result until Close/EOF/failure. Lost stdout may
+follow a durable effect: preserve all roots and inspect the retained exact result
+instead of treating missing output as permission to execute again.
+
+The original primary command service must stop/drain/close before this effect
+command opens; busy roots fail. Close the effect session before reopening command
+delivery, including completion-only secondary service. This explicit stop/reopen
+workflow is tested in real processes. It does not perform an in-place ownership
+transfer, automatically stop another process or add network effect requests.
+
+### Validation boundary
+
 The new service is opt-in. Consensus rules, requests, signed commands, authority
 and executor journals, wire formats and atomic effect formats are unchanged.
 Existing direct prepared-archive execution retains its previous behavior; the two
 new comparison callbacks are private synchronous checks used only by this owner.
-No decoder or interpreter surface is added.
+The library-only path adds no decoder or interpreter surface. The operator CLI
+adds the bounded local metadata decoder described above, with dedicated fuzz
+coverage; it does not change a network or consensus decoder.
 
 Unit tests cover actual initial/lineage pruning, mixed renewal prefixes, ownership
 and partial-open cleanup, stale review and artifact loss, pending/Started/terminal
 rejection, detached configuration, concurrent execution and Close drain. The
 integration process test kills real service owners at seven boundaries in each
 mode and reopens twice without automatic journal progress or ticket completion.
-These are process-crash checks, not power-loss, physical-device or cross-host
-acceptance evidence. Operator CLI integration, managed Audit/Serve enforcement,
-remote partition handling and independent physical/copy fencing remain open.
+The CLI additionally tests real initial/lineage activation sources, default
+read-only review, command/effect/command process handoff, SIGTERM/kill/EOF, lost
+readiness/result output, interruptible full native output pipes and bounded strict
+metadata decoding with fuzz seeds. These are process and local-I/O checks, not
+power-loss, physical-device or cross-host acceptance evidence. Managed Audit/Serve
+enforcement, in-place owner transfer, remote partition handling and independent
+physical/copy fencing remain open.

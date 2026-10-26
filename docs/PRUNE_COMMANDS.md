@@ -250,12 +250,16 @@ opens only stopped owners, without listening, signing or automatic recovery.
 Its separate recovery-review/recover modes require an exact confirmed/observed
 state digest and explicit action, and can settle only one eligible retained
 transition. They never fill an admission-binding gap or create a new Complete.
-Any local chain effect still requires a separate guarded ownership handoff; there is no
-CLI effect API. Live archive-policy checks, all-required-assignment
-enforcement, reviewed ownership handoff, protected physical storage/pins,
-copied-owner fencing and active cross-host cutover remain separate open gates.
-The separate [local archive acceptance library](PRUNE_ACCEPTANCE.md)
-does not add an effect command or transfer ownership out of this service.
+Local chain effects use the separate
+[owned archive-effect CLI](PRUNE_EFFECT_RUNTIME.md). First stop, drain and close
+all command owners. Its default review opens existing protected roots and closes
+them before output; supervised control retains the original executor, every
+selected coordinator and position-pinned WorkChain through explicit reviewed
+execution. Close that session before reopening command delivery. Neither server
+transfers owners in place or exposes a network effect request. The original
+maintenance input grammar remains unchanged and cannot Execute.
+Managed Audit/Serve acceptance, protected physical storage/pins, copied-owner
+fencing and active cross-host cutover remain separate open gates.
 
 ## Verification scope
 

@@ -164,3 +164,13 @@ closes a local ownership substep; operator CLI command/effect transfer, managed
 Audit/Serve, remote partitions, physical/copy fencing and the wider launch gates
 remain open. Weighted readiness stays 40/100; no audit or public-testnet credit
 is added.
+
+2026-10-26 effect-CLI follow-up: the owned effect runtime now has an explicit
+operator command, default non-executing review and supervised macOS/Linux control
+pipes retaining every original owner through the result. Existing read-only
+activation history cannot be initialized, and input/output cancellation and lost
+result handling preserve retained uncertainty. Real local processes exercise
+command drain/close, effect and command reopen. This closes the colocated CLI
+workflow, not managed Audit/Serve, in-place transfer, remote/partition acceptance,
+physical/copy fencing, independent review or public-testnet duration. Weighted
+readiness remains 40/100; no launch gate is bypassed.

@@ -56,6 +56,7 @@ type Store struct {
 	policy       Policy
 	historyBytes uint64
 	closed       bool
+	readOnly     bool
 	commitHook   func(commitStage) error
 }
 
@@ -465,6 +466,9 @@ func (store *Store) Commit(parent storage.Tip, candidate block.Block, postState 
 	defer store.mu.Unlock()
 	if store.closed {
 		return storage.Tip{}, storage.ErrClosed
+	}
+	if store.readOnly {
+		return storage.Tip{}, pebble.ErrReadOnly
 	}
 	storedParent, err := store.tipByIDUnlocked(parent.ID)
 	if err != nil {

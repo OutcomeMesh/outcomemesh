@@ -790,8 +790,28 @@ callback, automatic recovery, completion, new effect encoding or network endpoin
 is exposed. This local lifetime does not certify current authority to a remote
 consumer or fence copied owners, keys, databases or pin journals.
 
-Operator CLI command/effect handoff, Audit/Serve acceptance and physical/cross-host
-enforcement remain open. This is not a CLI or remotely exposed effect path; see
+The explicit archive-effect CLI now uses this lifetime after prior command
+owners stop/drain/close. Review is non-executing by default and releases every
+owner before output. Control on macOS/Linux adopts dedicated inherited stdin
+and stdout endpoints into nonblocking pollable I/O before long-lived owners open.
+A successfully written same-session review is required before one explicit
+Execute. Input is LF-framed and bounded, with one queued command and a separate
+terminal-error channel so EOF cannot wait behind work. Overflow fails closed.
+Signals, EOF and I/O failure cancel work; Close drains it before releasing owners.
+Canonical terminal bytes may be printed after a durable result, so failed stdout
+is not evidence of no effect and cannot authorize a repeated action.
+
+Activation history uses the new existing-read-only legacy opener: the original
+directory/LOCK must exist, Pebble ReadOnly/ErrorIfNotExists are required and
+genesis/schema/state are verified without initialize. The handle rejects Commit
+before any batch work; it closes before effect ownership. Missing/incomplete
+source data is never initialized. Sources/metadata are bounded and placement-
+checked; exact selected assignments and receipts still come from external
+inventory/policy pins, not the metadata's self-assertions. This source API assumes
+immutable operator-controlled paths and does not fence privileged replacement.
+
+In-place command-owner transfer, managed Audit/Serve acceptance and physical/
+cross-host enforcement remain open. There is no remote effect endpoint; see
 `PRUNE_EFFECT_RUNTIME.md` and `PRUNE_ACCEPTANCE.md` for the exact boundaries.
 
 The opt-in storage-incarnation mode adds a narrower local guarantee. A fresh

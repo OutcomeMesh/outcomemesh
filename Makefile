@@ -22,6 +22,7 @@ test-race:
 	$(GO) test -race ./... -skip '^TestArchive'
 
 test-fuzz-smoke:
+	$(GO) test ./cmd/omd -run '^$$' -fuzz '^FuzzDecodePruneEffectRootsNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./core/codec -run '^$$' -fuzz '^FuzzDecoderNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./core/outcome -run '^$$' -fuzz '^FuzzDecodeTransactionNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./core/resource -run '^$$' -fuzz '^FuzzDecodeNeverPanics$$' -fuzztime=$(FUZZTIME)
@@ -100,6 +101,7 @@ test-fuzz-smoke:
 	$(GO) test ./sim/workgraphmodel -run '^$$' -fuzz '^FuzzRunSelfishStrategiesNeverBreakAccounting$$' -fuzztime=$(FUZZTIME)
 
 test-process:
+	$(GO) test -tags=integration ./cmd/omd -run '^(TestProcessPruneArchiveEffect|TestPruneEffectNativeOutput)' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessPrunePreparation(RoundTrip|BrokenPipe)$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessPruneSecondarySigning(RoundTrip|BrokenPipe)$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessPruneLineageExtraction(RoundTrip|BrokenPipe)$$' -count=1 -timeout=2m

@@ -621,11 +621,21 @@ activation/storage/replay configuration and all confirmed positions; the ID is
 recompared under every original guard before archive verification and immediately
 before final live authorization. Lineage mode rereads retained evidence and
 rechecks/syncs its exact file before Started. No raw owner, automatic recovery,
-ticket completion, network execution or CLI action is added. The preceding
+ticket completion or network execution is added. The preceding
 command owners must separately drain and close before opening this service.
 
-Still required: operator CLI and supervised command/effect handoff,
-actual managed audit/serve
+The explicit `work-prune-archive-effect` operator command now exposes that
+lifetime. Default review closes all owners before printing. Supervised control
+uses dedicated macOS/Linux pipes and requires a fully reported same-session
+review ID before Execute. Strict externally pinned root mappings and an existing
+read-only activation source precede effect ownership. EOF/errors cancel and
+drain; lost result output preserves the canonical committed effect for separate
+inspection/recovery and independently reviewed completion. Actual process tests
+cover command-service drain/close, effect and command-service reopen. See
+[PRUNE_EFFECT_RUNTIME.md](PRUNE_EFFECT_RUNTIME.md) for flags and the control
+protocol; no in-place transfer, signing or automatic recovery is added.
+
+Still required: actual managed audit/serve
 paths, cross-host/partition acceptance, copied-owner and physical-storage fencing,
 exhaustion/power-loss/long-soak campaigns, independent review and public testnet.
 Older raw library APIs and experimental CLI are not silently upgraded into this

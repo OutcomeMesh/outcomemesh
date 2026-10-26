@@ -129,7 +129,7 @@ now replays all selected replicas and holds each assignment's original permissio
 guard through deletion and confirmed result. It requires exact policy and storage
 pair pins. The original mode accepts only initial receipts; a separately pinned
 mode verifies complete renewal prefixes under the same current authority guards.
-Neither is a new CLI effect command. Bounded lineage retention, reviewed extraction
+Bounded lineage retention, reviewed extraction
 from existing journals, inventory-bound execution history and explicit local
 secondary admission/completion are implemented. Source extraction requires exact
 independently pinned journal checkpoints and leaves their histories unchanged.
@@ -145,8 +145,13 @@ A separate [owned archive-effect library runtime](docs/PRUNE_EFFECT_RUNTIME.md)
 opens the pinned executor, every original coordinator and position-pinned
 WorkChain after command owners close. It keeps them through explicit local review,
 exact reviewed execution and Close; it neither resumes Started work nor completes
-tickets. Operator CLI handoff, managed audit/serve and physical/cross-host
-enforcement remain open; see the acceptance runbook for the exact local boundaries.
+tickets. The explicit `work-prune-archive-effect` CLI defaults to review and
+offers a supervised control mode on macOS/Linux with dedicated stdin/stdout
+pipes. It requires a reported same-session review before execution and keeps
+every owner until close; existing command services must drain/close beforehand.
+Activation history is opened as an existing read-only source, never initialized.
+Managed audit/serve, in-place owner transfer and physical/cross-host enforcement
+remain open; see the effect and acceptance runbooks for the exact boundaries.
 
 ## Build and run
 

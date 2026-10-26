@@ -629,9 +629,20 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
                           uncertainty, concurrent calls and real process death.
                           This is a separate colocated library lifetime, not
                           a command-service transfer or managed Audit/Serve.
-                        - [ ] Operator CLI and supervised command/effect handoff,
-                          managed audit/serve acceptance, real remote partitions
-                          and independently enforced physical/copy fencing.
+                        - [x] Explicit operator CLI with non-executing review
+                          by default and opt-in supervised control pipes. Load
+                          exact bounded root mappings and existing read-only
+                          activation history without initialization. Require a
+                          successfully reported same-session review before
+                          Execute; cancel on EOF, channel failure or signal and
+                          retain owners until the effect drains. Export canonical
+                          terminal bytes without completing tickets. Cover actual
+                          command-service drain/close, effect and command reopen,
+                          lost stdout, killed processes and blocked pipe writes.
+                        - [ ] Managed audit/serve acceptance, real remote
+                          partitions and independently enforced physical/copy
+                          fencing. In-place command-owner transfer is not added
+                          by the explicit stop/close/reopen CLI workflow.
   - [ ] Filesystem-full, inode-exhaustion, power-loss, and long-running retention
     campaigns before deployment claims.
   - [x] Isolate the 2026-09-07 custody sibling-rejection deadline race: force the
