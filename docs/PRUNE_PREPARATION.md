@@ -328,6 +328,9 @@ checking a server. **The current primary command server cannot receive secondary
 operations.** No new secondary server/delivery endpoint is installed by signing
 or outbox preparation; retain these artifacts for the later reviewed handoff.
 The original primary signing commands continue to reject secondary-only flags.
+Developers can explicitly install the caller-owned fixed-secondary library
+sessions described in [PRUNE_ACCEPTANCE.md](PRUNE_ACCEPTANCE.md); the installed
+primary command CLI is not a multi-owner or secondary service.
 
 ## Verification boundary
 

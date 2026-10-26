@@ -725,11 +725,15 @@ fresh wall-clock checks with the legacy gate, but matches every retained floor
 field before publication, preserves original request VerifiedAt and samples again
 inside the prepared deletion batch after storage-intent I/O. Errors after Started
 remain unresolved; absence does not authorize no-effect completion or retry.
-All authority tickets, including secondary ones, stay pending. No command/effect/
-terminal/journal format changes or portable all-assignment certificate is implied.
-Secondary terminal adapters, policy/operation inventory, audit/serve acceptance,
-supervised operator handoff and cross-host enforcement remain open. This is not a
-CLI or remotely exposed effect path; see `PRUNE_ACCEPTANCE.md`.
+Archive execution leaves all authority tickets, including secondary ones, pending.
+Explicit local completion adapters can separately drain each actually admitted
+secondary from a confirmed primary success or pre-start cancellation. Success
+requires the original retained inventory binding; cancellation retains its original
+request/ticket/executor scope. Prepared inventory and lineage retention are also
+implemented. These local records are not portable all-assignment certificates.
+Audit/serve acceptance, supervised operator handoff and physical/cross-host
+enforcement remain open. This is not a CLI or remotely exposed effect path; see
+`PRUNE_ACCEPTANCE.md` for the current preparation/command boundaries.
 
 The opt-in storage-incarnation mode adds a narrower local guarantee. A fresh
 caller-selected ID is atomically bound to a new schema-6 WorkChain database;

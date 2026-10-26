@@ -3,6 +3,15 @@
 Assessment date: 2026-10-26. **Approximately 40/100 toward the full planned launch.**
 Status remains research/pre-alpha: do not secure real value with this code.
 
+The requested target is **mainnet with real value on 2026-11-01**, recorded on
+2026-10-26. That leaves six days and does not satisfy the current launch plan.
+In particular, the six-month adversarial public-testnet stability gate has no
+completed qualifying evidence, and independent verification/external audits
+remain open. No release date is certified or gate waived by this target.
+WorkGraph also still requires the conjunctive [ER-2–ER-7 activation evidence](ACTIVATION_REVIEW.md),
+including 30 continuous days of public calibration. See the hard blockers below;
+the source/local preview capabilities in README are not mainnet acceptance.
+
 This is a coarse, judgment-based engineering estimate, not an externally audited
 measurement, success probability, ETA, percentage of lines written or completed
 checkboxes. The denominator is milestones 0–10 in [PLAN.md](PLAN.md); narrowing
@@ -109,3 +118,11 @@ are independently pinned; historical terminal checks remain separate from live
 executor validation. Typed outbox preparation retains these entries, while the
 secondary server/delivery and supervised ownership handoff are still open. The
 weighted lifecycle criterion remains incomplete; readiness stays 40/100.
+
+2026-10-26 secondary-network follow-up: explicit library sessions can receive one
+selected secondary's existing Admit/Complete exchanges under pinned inventory,
+policy and peer identities, while preserving guarded confirmation and exact
+outbox recovery. They do not own/open hosts or journals or add a supervised CLI
+service. Mainnet's requested 2026-11-01 target still lacks the mandatory temporal,
+independent-review and operator/physical evidence; no launch gate is closed by a
+local network test. The weighted score remains 40/100.

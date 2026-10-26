@@ -198,8 +198,8 @@ lineage/replay and final live policy. Other secondary roots and physical/copy
 fencing are not owned or established by this two-coordinator call. Trusted exclusive
 local ownership remains mandatory. No command/server/delivery route is silently
 upgraded. Explicit offline secondary signing is described in
-[PRUNE_PREPARATION.md](PRUNE_PREPARATION.md); secondary transport and supervised
-multi-owner CLI handoff remain gated.
+[PRUNE_PREPARATION.md](PRUNE_PREPARATION.md). Fixed-secondary library sessions are
+described below; supervised multi-owner CLI handoff remains gated.
 
 ## Explicit secondary completion
 
@@ -253,6 +253,56 @@ start, authority, effect, cancellation and terminal encodings stay unchanged.
 Retain independently protected owner roots, package and pins; the local journal
 outcome is not a portable remote certificate. Offline operator signing now has
 its own reviewed commands; secondary delivery and CLI ownership remain gated.
+
+## Fixed-secondary network sessions
+
+`NewPreparedArchiveSecondaryAdmissionServer(executor, primary, secondary, config)`
+and `NewPreparedArchiveSecondaryCompletionServer(executor, secondary, config)`
+explicitly select the corresponding guarded secondary adapter. They return the
+existing session types and reuse the existing Admit/Complete wire encodings.
+Default primary constructors and the installed primary CLI/server remain unchanged.
+No request can choose its own inventory, file path, policy or target.
+
+`PreparedArchiveSecondaryCommandConfig` fixes the existing InventoryPath,
+independently retained InventoryID and PolicyID, selected secondary AssignmentID,
+both ServerPeerID and ClientPeerID, and bounded Timeout. Construction checks
+the retained package, original request/executor pair, selected target and healthy
+owner snapshots. Both transport pins must be distinct, nonzero and separate from
+every assignment's authority/consumer/replica/auditor keys, plus the pinned
+checkpoint-attestor and replica trust keys. A package matching at construction
+does not become a cached execution or completion permission.
+
+Constructors perform no signing, owner bootstrap, journal advancement, listener
+creation or automatic recovery. They accept healthy pre-terminal and retained
+pending states so a caller can install both handlers before a result exists.
+Each Serve independently re-loads the exact inventory/policy pins and calls the
+existing concrete guarded method after a canonical request **and EOF** arrive.
+Those methods recheck actual stage, ticket, owners and placement and re-sync the
+package before a target write. Completion cannot act on an unresolved or
+unconfirmed outcome. The primary owner is needed for admission; it need not
+remain open for completion.
+
+The ACK retains the existing fresh nonce and exact signed entry ID and follows
+independent target confirmation. It reports history, not execution permission.
+Lost/partial replies remain unresolved for the client; preserve the original
+typed outbox and retry its same signed entry. A durable checked local receipt
+can later be read with the server offline. Opening journals or outboxes alone
+does not submit or confirm a retained attempt. No new negative disposition,
+retry loop, pruning/cancellation endpoint or wire format is introduced.
+
+These are **caller-owned library sessions**, not a managed secondary daemon.
+The caller must verify actual `host.ID() == config.ServerPeerID`, install handlers
+using the authenticated transport peer rather than request data, and keep the
+original owners alive until accepted handlers have drained. Check both configured
+peer pins independently before creating the host. One host provides one handler
+per existing protocol: registering a different target replaces the old handler.
+Use one selected secondary per host; there is no primary/all-secondary router or
+whole-set transaction. A local poisoned owner still requires explicit close and
+reviewed recovery. Existing generic outboxes/delivery can reach an explicitly
+installed matching session; their target-only role check does not replace the
+server constructor's full inventory role separation. Supervised multi-owner
+ownership, operator CLI, remote/physical fencing and audit/serve integration remain
+open. A session ACK does not attest independent failure domains or a remote effect.
 
 ## Inventory-bound execution and local inspection
 
@@ -475,6 +525,15 @@ after primary cancellation. Fault injection covers all 21 publication stages for
 each outcome (42 cases). Twenty-six process kills cover eight first-attempt and
 five retained-retry boundaries for each outcome; repeated opens preserve the
 executor, primary, database history/effect and exact secondary uncertainty.
+
+Fixed-secondary sessions add real QUIC delivery through original typed outboxes
+for both modes and terminal outcomes, pre-result handler installation, closed
+primary completion, unchanged executor history, exact retired/cached retries,
+copied config, all-assignment/archive-trust peer separation, EOF/target rejection
+and per-request inventory re-verification. Lost/partial replies retain the exact
+decision for reviewed retry. Eighteen process kills cover request acceptance,
+intent, decision, confirmation and reply for Admit and both Complete outcomes;
+the same outbox survives restart and repeated owner opens do not advance state.
 
 Still required: reviewed live-journal extraction, secondary operator delivery,
 supervised ownership handoff, actual managed audit/serve

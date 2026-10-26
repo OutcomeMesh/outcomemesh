@@ -111,7 +111,9 @@ They require independently prepared and pinned inputs; they do not sign commands
 initialize journals or execute pruning. Six separate
 [offline preparation commands](docs/PRUNE_PREPARATION.md) now provide explicit
 new-root bootstrap, reviewed consumer/authority signing and typed outbox
-preparation. Review is the default; neither preparation nor delivery authorizes
+preparation. Two additional explicit offline commands sign secondary operations
+against the unchanged primary request and both pinned assignments. Review is
+the default; neither preparation nor delivery authorizes
 a live prune. See the
 [prune command runbook](docs/PRUNE_COMMANDS.md) for flags, shutdown, recovery and
 the remaining live-authorization gates.
@@ -127,8 +129,13 @@ now replays all selected replicas and holds each assignment's original permissio
 guard through deletion and confirmed result. It requires exact policy and storage
 pair pins. The original mode accepts only initial receipts; a separately pinned
 mode verifies complete renewal prefixes under the same current authority guards.
-Neither is a new CLI effect command. Lineage evidence preparation, secondary
-terminal tooling, managed audit/serve and cross-host enforcement remain open.
+Neither is a new CLI effect command. Bounded lineage retention, inventory-bound
+execution history and explicit local secondary admission/completion are implemented.
+Explicit library sessions can also receive one selected secondary's signed
+commands over the existing QUIC protocols under independently pinned inventory
+and peer identities; the installed primary CLI is still a separate single-owner path.
+Managed audit/serve, supervised ownership handoff and physical/cross-host enforcement
+remain open; see the acceptance runbook for the exact local boundaries.
 
 ## Build and run
 

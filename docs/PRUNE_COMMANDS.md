@@ -41,8 +41,10 @@ head refresh or automatic signature renewal in the transport entry points.
 The separate offline secondary signing commands can prepare canonical entries
 and typed outboxes for selected secondary assignments. This server still owns
 only its original primary executor/coordinator pair. It does not accept those
-secondary operations; the reviewed secondary server/delivery handoff remains a
-separate implementation gate. See the secondary section of
+secondary operations. Separate caller-owned fixed-secondary library sessions
+can now receive them when explicitly installed with the pinned inventory and
+matching host identity; supervised secondary CLI/service ownership remains a
+separate gate. See the secondary section of
 [PRUNE_PREPARATION.md](PRUNE_PREPARATION.md) for the preparation boundary.
 
 An assignment file is bounded to 8 KiB and canonically decoded. A `--key` file

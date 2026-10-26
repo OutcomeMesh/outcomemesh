@@ -9,8 +9,9 @@ import (
 	"github.com/outcomemesh/outcomemesh/node/custodyauthority/completionwire"
 )
 
-// PruneCompletionServer exposes only the explicit local terminal-completion
-// adapter for one pinned executor and one independently configured transport
+// PruneCompletionServer exposes only the local terminal-completion adapter
+// selected by its explicit primary or prepared-secondary constructor, for one
+// pinned executor and one independently configured transport
 // identity. Transport identity never substitutes for either command signature.
 // The host must supply the authenticated peer, never a peer ID from the request.
 // Ownership of executor/coordinator remains with the caller through all handlers.
@@ -19,6 +20,7 @@ type PruneCompletionServer struct {
 	coordinator *Coordinator
 	peer        types.Hash
 	timeout     time.Duration
+	prepared    *preparedArchiveSecondarySession
 	hooks       storeHooks
 }
 
@@ -67,7 +69,14 @@ func (server *PruneCompletionServer) Serve(ctx context.Context, authenticatedPee
 	if err := server.hooks.reach("completion-request"); err != nil {
 		return Commit{}, err
 	}
-	result, err := server.executor.Complete(bounded, server.coordinator, request.Entry)
+	var result Commit
+	if server.prepared == nil {
+		result, err = server.executor.Complete(bounded, server.coordinator, request.Entry)
+	} else {
+		config := server.prepared.config
+		result, err = server.executor.CompletePreparedArchiveSecondary(bounded, server.coordinator,
+			config.InventoryPath, config.InventoryID, config.PolicyID, request.Entry)
+	}
 	if err != nil {
 		return Commit{}, err
 	}

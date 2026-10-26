@@ -566,6 +566,19 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
                         outboxes without claiming live admission or terminal state.
                         No inventory/signature cycle or new format; secondary
                         delivery/server ownership remains a separate gate.
+                      - [x] Explicit fixed-secondary network sessions: reuse
+                        Admit/Complete framing with pinned inventory, policy,
+                        target and transport identities. Require exact request
+                        plus EOF before the concrete guarded adapter; acknowledge
+                        only independently confirmed target decisions. Re-read
+                        content pins per request, preserve exact pending recovery
+                        and original client outboxes after lost replies. Separate
+                        transport keys from all selected roles and archive trust
+                        keys; keep default primary sessions unchanged. One target
+                        per host and caller-owned owner/host lifetime; no new CLI,
+                        multiplexing, execution endpoint or automatic recovery.
+                        Cover real QUIC/outbox flows in both modes/outcomes,
+                        role/pin/EOF rejection, lost replies and 18 process kills.
                       - [ ] Reviewed live-journal evidence extraction and supervised
                         multi-owner runtime/CLI handoff. Integrate managed audit/serve
                         paths; test remote partitions and physical/copy fencing

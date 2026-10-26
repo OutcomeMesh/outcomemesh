@@ -1637,6 +1637,49 @@ Implemented in an isolated, not-yet-activated consensus package:
   omd help succeeded and lists both explicit secondary signing commands.
   Formatting and diff checks are clean. Cross-builds are not Linux/Windows runtime
   or physical-storage evidence; native Windows live stdin remains unchanged.
+  Fixed-secondary network follow-up (2026-10-26): explicit admission/completion
+  session constructors now fix one target, inventory/policy pins and both peer
+  identities. They reuse existing canonical request/EOF/deadline/ACK handling and
+  privately dispatch to the concrete guarded secondary adapters. Default primary
+  construction remains unchanged. Each request re-loads exact content pins;
+  target writes and replies still wait for independent confirmation. No wire,
+  journal or receipt format changes, generic callback or execution endpoint is
+  added. Construction checks healthy retained owner diagnostics and static scope,
+  while stage, pending attempts, actual admission and terminal checks stay live
+  under the guarded operation. Completion handlers can be installed before the
+  result exists and need no live primary owner after it drains.
+  Transport pins are separated from all inventory assignments' roles plus pinned
+  checkpoint-attestor and replica trust keys, including unselected trusted replicas.
+  The caller must match actual host.ID to the configured server pin, supply the
+  authenticated peer and retain owners until handlers drain. One target per host
+  is explicit: registering another handler for the same protocol replaces it.
+  Generic typed outboxes retain the original signed intent across lost/partial
+  responses, restart and exact retry; cached ACKs remain historical observations.
+  No supervised secondary daemon/CLI ownership or all-target multiplexing is added.
+  The requested mainnet date is 2026-11-01, six days after this assessment. The
+  existing 30-day public calibration, six-month stability, independent review,
+  audit and release/operator gates are still unfulfilled. The target date does
+  not waive them or change the 40/100 production-readiness estimate.
+  Secondary-network verification: focused new race/integration tests passed in
+  55.718 seconds, including all 18 real-QUIC child-process kills. Existing primary
+  admission/completion unit sessions then passed under race in 15.328 seconds.
+  Standalone new secondary process recovery passed in 17.381 seconds, and existing
+  primary admission/completion QUIC process crash coverage passed in 25.256;
+  all retained their original two-minute process-group bounds. The new process
+  group is separate in Makefile; no older group or timeout was removed.
+  Full final make test-race passed across both complementary groups: fresh store
+  runs took 224.277 and 371.984 seconds, and fresh cmd/omd runs took 1.685 and
+  43.268. Unchanged packages used valid cached results from the preceding gate.
+  These are test-run durations, not performance benchmarks. Full vet and
+  integration-tag store/cmd vet passed. CGO-disabled trimpath omd builds passed
+  for macOS arm64, Linux amd64 and Windows amd64; integration-tag store test
+  binaries compiled for Linux/Windows, and native omd help succeeded.
+  The other process groups and a separate full normal suite were not rerun in
+  this pass; their earlier evidence is not claimed as fresh. Existing fuzz seeds
+  ran in the race gate; no new codec or separate fuzz campaign is introduced.
+  Cross-builds establish compilation, not foreign-OS runtime, physical-storage,
+  independent audit, public calibration or mainnet acceptance. Formatting and
+  diff checks are clean; no production-readiness credit is added.
   Process-gate observation (2026-09-07): the first combined run stopped at
   `TestProcessTieCampaignStorageFailuresRecoverWithoutFalseAdvance/observer_confirmation_after_link`
   because the expected confirmation marker was absent. Five isolated repetitions

@@ -114,6 +114,7 @@ test-process:
 	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestPrune(PreparedArchiveProcessRecovery|LineageEvidenceProcessCrashAtomicity)$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestArchiveSecondaryAdmissionProcessRecovery$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestArchiveSecondaryCompletionProcessRecovery$$' -count=1 -timeout=2m
+	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestArchiveSecondaryQUICProcessRecovery$$' -count=1 -timeout=2m
 
 test-work-rollover-soak:
 	OUTCOMEMESH_WORK_ROLLOVER_SOAK_CYCLES=$(WORKROLLOVERCYCLES) $(GO) test ./cmd/omd -run '^TestMultiNodeWorkRolloverConvergesAcrossClockSkewChurnAndRelayLoss$$' -count=1 -timeout=5m
