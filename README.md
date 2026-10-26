@@ -131,10 +131,12 @@ pair pins. The original mode accepts only initial receipts; a separately pinned
 mode verifies complete renewal prefixes under the same current authority guards.
 Neither is a new CLI effect command. Bounded lineage retention, inventory-bound
 execution history and explicit local secondary admission/completion are implemented.
-Explicit library sessions can also receive one selected secondary's signed
+An explicit owned secondary service/CLI can receive one selected secondary's signed
 commands over the existing QUIC protocols under independently pinned inventory
-and peer identities; the installed primary CLI is still a separate single-owner path.
-Managed audit/serve, supervised ownership handoff and physical/cross-host enforcement
+and peer identities. Select `admit`, `complete` or `both`; stop and drain admission
+before a separate offline effect, then reopen completion without primary owners.
+No mode executes pruning or automatically resumes retained work.
+Managed audit/serve, reviewed effect handoff and physical/cross-host enforcement
 remain open; see the acceptance runbook for the exact local boundaries.
 
 ## Build and run

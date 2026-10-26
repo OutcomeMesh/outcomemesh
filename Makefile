@@ -102,6 +102,7 @@ test-fuzz-smoke:
 test-process:
 	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessPrunePreparation(RoundTrip|BrokenPipe)$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessPruneSecondarySigning(RoundTrip|BrokenPipe)$$' -count=1 -timeout=2m
+	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessPruneSecondaryCLI(Recovery|BrokenOutput)$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessPrune(CommandCLI(Recovery|BrokenPipe)|MaintenanceCLI(Lifetime|BrokenPipe|Recovery))$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./cmd/omd -run '^TestProcess(QUICRestartSoak|WorkGraphActivationQUICRestart|Archive(ObjectQUICMaterializesAndRecoversAcrossRestart|Custody(QUICSurvivesReplicaRestart|JournalRunsTwoRestartedCycles|(Checkpoint|Backup)RestoresPendingCycle|PinsTrackLatestBackup|ReconciliationKeepsStaleEvidenceReadOnly|RebaselineProposesWithoutCutover))|ControlledTieProducerRecoversWaitingState|TiePair(QUICReachesIndependentV2ObserversAndRecoversAck|CompletionWaitsForCoordinatorEOF)|TieCampaign.*)$$' -count=1 -timeout=10m
 	$(GO) test -tags=integration ./node/workchain -run '^Test(Pebble|BoundStorage|PositionStorage)ProcessCrashAtomicity$$' -count=1 -timeout=3m

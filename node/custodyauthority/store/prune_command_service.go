@@ -42,6 +42,7 @@ type PruneCommandService struct {
 	executor                   *PruneExecutor
 	admission                  *PruneAdmissionServer
 	completion                 *PruneCompletionServer
+	preparedSecondary          *preparedSecondaryService
 	serverPeerID, clientPeerID types.Hash
 	timeout                    time.Duration
 	host                       *libp2ptransport.Host
@@ -92,7 +93,8 @@ func OpenPruneCommandService(config PruneCommandServiceConfig) (_ *PruneCommandS
 		timeout: config.Timeout, done: make(chan struct{})}, nil
 }
 
-// Start explicitly creates the owned transport and enables both command handlers.
+// Start explicitly creates the owned transport and enables the selected command
+// handlers (both for the original primary service).
 // It neither submits retained attempts nor performs work. A second Start is an
 // error, including when the first server's context has been cancelled; reopen
 // existing roots in a new service after Done. Failed startup does not release
@@ -118,15 +120,31 @@ func (service *PruneCommandService) Start(ctx context.Context, key ed25519.Priva
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	admission, err := NewPruneAdmissionServer(service.executor, service.coordinator, service.clientPeerID, service.timeout)
+	var admission *PruneAdmissionServer
+	var completion *PruneCompletionServer
+	var err error
+	if scope := service.preparedSecondary; scope != nil {
+		if scope.mode != PruneSecondaryCompletion {
+			admission, err = NewPreparedArchiveSecondaryAdmissionServer(service.executor, scope.primary, service.coordinator, scope.config)
+		}
+		if err == nil && scope.mode != PruneSecondaryAdmission {
+			completion, err = NewPreparedArchiveSecondaryCompletionServer(service.executor, service.coordinator, scope.config)
+		}
+	} else {
+		admission, err = NewPruneAdmissionServer(service.executor, service.coordinator, service.clientPeerID, service.timeout)
+		if err == nil {
+			completion, err = NewPruneCompletionServer(service.executor, service.coordinator, service.clientPeerID, service.timeout)
+		}
+	}
 	if err != nil {
 		return err
 	}
-	completion, err := NewPruneCompletionServer(service.executor, service.coordinator, service.clientPeerID, service.timeout)
-	if err != nil {
-		return err
+	if admission != nil {
+		admission.hooks = service.hooks
 	}
-	admission.hooks, completion.hooks = service.hooks, service.hooks
+	if completion != nil {
+		completion.hooks = service.hooks
+	}
 	runContext, cancel := context.WithCancel(ctx)
 	host, err := newPruneRuntimeHost(runContext, service.executor.assignment, service.serverPeerID, service.clientPeerID, key, config)
 	if err != nil {
@@ -137,15 +155,19 @@ func (service *PruneCommandService) Start(ctx context.Context, key ed25519.Priva
 		cancel()
 		return errors.Join(err, host.Close())
 	}
-	if err := host.SetPruneAdmissionHandler(service.clientPeerID, func(ctx context.Context, peer types.Hash, stream network.Stream) {
-		service.handle(ctx, peer, stream, true)
-	}); err != nil {
-		return fail(err)
+	if admission != nil {
+		if err := host.SetPruneAdmissionHandler(service.clientPeerID, func(ctx context.Context, peer types.Hash, stream network.Stream) {
+			service.handle(ctx, peer, stream, true)
+		}); err != nil {
+			return fail(err)
+		}
 	}
-	if err := host.SetPruneCompletionHandler(service.clientPeerID, func(ctx context.Context, peer types.Hash, stream network.Stream) {
-		service.handle(ctx, peer, stream, false)
-	}); err != nil {
-		return fail(err)
+	if completion != nil {
+		if err := host.SetPruneCompletionHandler(service.clientPeerID, func(ctx context.Context, peer types.Hash, stream network.Stream) {
+			service.handle(ctx, peer, stream, false)
+		}); err != nil {
+			return fail(err)
+		}
 	}
 	if err := ctx.Err(); err != nil {
 		return fail(err)
@@ -218,7 +240,8 @@ func (service *PruneCommandService) Done() <-chan struct{} {
 }
 
 // Close prevents new handler admission, interrupts network I/O, waits for all
-// accepted handlers, then closes executor and coordinator in ownership order.
+// accepted handlers, then closes every original owner in reverse acquisition
+// order for the secondary wrapper (the primary service keeps its existing order).
 // It does not forcibly release locks during fsync or roll back retained work.
 // Concurrent/repeated Close calls return the same final result.
 func (service *PruneCommandService) Close() error {
@@ -247,7 +270,14 @@ func (service *PruneCommandService) Close() error {
 	service.gate.Lock()
 	err = errors.Join(err, service.failure, service.quiesceErr)
 	service.gate.Unlock()
-	err = errors.Join(err, service.executor.Close(), service.coordinator.Close())
+	if prepared := service.preparedSecondary; prepared != nil {
+		for i := len(prepared.owners) - 1; i >= 0; i-- {
+			err = errors.Join(err, prepared.owners[i].Close())
+		}
+		err = errors.Join(err, service.executor.Close())
+	} else {
+		err = errors.Join(err, service.executor.Close(), service.coordinator.Close())
+	}
 	service.closeErr, service.closed = err, true
 	if service.done != nil {
 		close(service.done)

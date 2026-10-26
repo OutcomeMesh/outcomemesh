@@ -126,3 +126,12 @@ outbox recovery. They do not own/open hosts or journals or add a supervised CLI
 service. Mainnet's requested 2026-11-01 target still lacks the mandatory temporal,
 independent-review and operator/physical evidence; no launch gate is closed by a
 local network test. The weighted score remains 40/100.
+
+2026-10-26 secondary-service follow-up: an explicit owned service/CLI now opens
+one pinned executor and selected target, plus the primary only for admission.
+Its selected handlers drain before every journal lock is released; completion-only
+does not open the primary. Stop/drain, separate offline work and explicit reopen
+remain distinct steps. This closes command-service ownership, while reviewed
+effect handoff, managed audit/serve, live-journal extraction and physical/remote
+acceptance remain open. No audit or public-testnet credit is added; the weighted
+score stays 40/100.

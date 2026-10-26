@@ -52,6 +52,9 @@ func runPruneCommandIO(ctx context.Context, arguments []string, input io.ReadClo
 		return err
 	}
 	name := arguments[0]
+	if name == pruneSecondaryServeCommand {
+		return runPruneSecondaryCommand(ctx, arguments, output)
+	}
 	serving := name == pruneServeCommand
 	if !serving && name != pruneAdmissionCommand && name != pruneCompletionCommand {
 		return errors.New("unsupported prune command; signing and execution are not exposed")

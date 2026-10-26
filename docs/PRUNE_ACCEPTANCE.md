@@ -149,8 +149,8 @@ The directory must remain controlled and inputs must not be concurrently mutated
 Content pins and fsync do not prove independent failure domains, latest-owner state,
 physical durability, copy fencing or a unique approved inventory. Colocated
 execution binding, historical lineage retention and colocated secondary admission
-are described below. Explicit secondary completion is also available locally;
-reviewed multi-owner CLI handoff remains open. Execute, Recover, completion and
+are described below. Explicit secondary completion and an owned command CLI are
+also available; reviewed multi-owner effect handoff remains open. Execute, Recover, completion and
 network paths retain their own live/outcome checks; the package alone is no grant.
 
 ## Explicit secondary admission
@@ -198,8 +198,8 @@ lineage/replay and final live policy. Other secondary roots and physical/copy
 fencing are not owned or established by this two-coordinator call. Trusted exclusive
 local ownership remains mandatory. No command/server/delivery route is silently
 upgraded. Explicit offline secondary signing is described in
-[PRUNE_PREPARATION.md](PRUNE_PREPARATION.md). Fixed-secondary library sessions are
-described below; supervised multi-owner CLI handoff remains gated.
+[PRUNE_PREPARATION.md](PRUNE_PREPARATION.md). Fixed-secondary library sessions and
+their owned command service are described below; reviewed effect handoff remains gated.
 
 ## Explicit secondary completion
 
@@ -251,8 +251,9 @@ does not replay archive bodies, refresh receipt time, sign commands, choose a
 new head, query WorkChain or re-execute deletion. Existing request, inventory,
 start, authority, effect, cancellation and terminal encodings stay unchanged.
 Retain independently protected owner roots, package and pins; the local journal
-outcome is not a portable remote certificate. Offline operator signing now has
-its own reviewed commands; secondary delivery and CLI ownership remain gated.
+outcome is not a portable remote certificate. Offline operator signing has its
+own reviewed commands; the explicit owned command CLI can deliver these entries
+without exposing an effect or maintenance API.
 
 ## Fixed-secondary network sessions
 
@@ -300,9 +301,13 @@ Use one selected secondary per host; there is no primary/all-secondary router or
 whole-set transaction. A local poisoned owner still requires explicit close and
 reviewed recovery. Existing generic outboxes/delivery can reach an explicitly
 installed matching session; their target-only role check does not replace the
-server constructor's full inventory role separation. Supervised multi-owner
-ownership, operator CLI, remote/physical fencing and audit/serve integration remain
-open. A session ACK does not attest independent failure domains or a remote effect.
+server constructor's full inventory role separation. For owned command lifetime,
+use `OpenPruneSecondaryCommandService` or the explicit CLI in
+[PRUNE_COMMANDS.md](PRUNE_COMMANDS.md): these check actual host identity and drain
+accepted handlers before releasing all selected owners. They expose no maintenance
+capability or effect. Reviewed effect handoff, remote/physical fencing and
+audit/serve integration remain open. A session ACK does not attest independent
+failure domains or a remote effect.
 
 ## Inventory-bound execution and local inspection
 
@@ -367,7 +372,8 @@ independent pins alongside the independently protected owner roots. No raw owner
 or copied executor/database may concurrently produce effects outside the managed
 runtime. Shared rollback, malicious local file rewriting, copied owners and
 physical failure-domain independence remain outside this guarantee. Supervised
-operator handoff, remote acceptance, secondary tooling and activation remain gated.
+reviewed effect handoff, managed audit/serve, remote acceptance and activation
+remain gated.
 
 ## Retained historical lineage bodies
 
@@ -479,8 +485,10 @@ presenting cached historical evidence as live acceptance.
 Existing atomic effect/terminal formats identify the primary request and ticket;
 they are not portable certificates of every secondary permission. Colocated
 secondary admission and explicit completion are available above. Offline signing
-has explicit review/sign commands; delivery and reviewed multi-owner handoff remain
-open.
+has explicit review/sign commands. The owned fixed-secondary command service
+provides delivery with explicit admit/complete/both modes; it never executes an
+effect. Stop and drain it before separate offline work, then reopen complete-only
+without primary owners. Reviewed multi-owner effect handoff remains open.
 
 ## Evidence and remaining gates
 
@@ -535,8 +543,17 @@ decision for reviewed retry. Eighteen process kills cover request acceptance,
 intent, decision, confirmation and reply for Admit and both Complete outcomes;
 the same outbox survives restart and repeated owner opens do not advance state.
 
-Still required: reviewed live-journal extraction, secondary operator delivery,
-supervised ownership handoff, actual managed audit/serve
+The owned secondary service/CLI derives both assignments from the externally
+pinned inventory and opens only existing, pairwise disjoint owner roots. It
+checks package/role/path scope before reading the transport seed and rechecks
+content pins before listening. Selected handlers share the primary runtime's
+admission gate and drain ordering; a private wrapper exposes no maintenance or
+raw owner handle. Completion-only opens neither primary journal. Opening never
+submits or resumes an attempt, and no mode executes pruning. The CLI is documented
+in [PRUNE_COMMANDS.md](PRUNE_COMMANDS.md).
+
+Still required: reviewed live-journal extraction, supervised effect handoff,
+actual managed audit/serve
 paths, cross-host/partition acceptance, copied-owner and physical-storage fencing,
 exhaustion/power-loss/long-soak campaigns, independent review and public testnet.
 Older raw library APIs and experimental CLI are not silently upgraded into this

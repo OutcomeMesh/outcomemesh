@@ -63,6 +63,9 @@ func (service *PruneCommandService) EnterMaintenance(ctx context.Context) (*Prun
 	if service.closed || service.executor == nil || service.coordinator == nil {
 		return nil, ErrClosed
 	}
+	if service.preparedSecondary != nil {
+		return nil, ErrPruneRuntime
+	}
 	if ctx == nil {
 		return nil, ErrPruneRuntime
 	}
@@ -119,6 +122,9 @@ func (owner *PruneMaintenance) withOwners(ctx context.Context, action func(*Prun
 	defer s.mu.Unlock()
 	if s.closed || !s.quiesced || s.maintenance != owner || s.executor == nil || s.coordinator == nil {
 		return ErrClosed
+	}
+	if s.preparedSecondary != nil {
+		return ErrPruneRuntime
 	}
 	if s.quiesceErr != nil {
 		return s.quiesceErr

@@ -1680,6 +1680,62 @@ Implemented in an isolated, not-yet-activated consensus package:
   Cross-builds establish compilation, not foreign-OS runtime, physical-storage,
   independent audit, public calibration or mainnet acceptance. Formatting and
   diff checks are clean; no production-readiness credit is added.
+  Owned secondary-service follow-up (2026-10-26):
+  OpenPruneSecondaryCommandService now owns one original pinned executor and
+  selected secondary coordinator, plus the primary coordinator for admission.
+  It derives both assignments and the request from the externally pinned
+  inventory, checks full inventory peer-role separation and all selected root/
+  inventory-parent placement before acquiring owners, then opens existing pins
+  before writers and coordinators in immutable assignment-ID order. Partial
+  failure releases acquired owners in reverse. Complete-only rejects primary
+  roots and neither opens nor requires that coordinator.
+  A private wrapper reuses the original runtime gate, wait group, context and
+  shutdown ordering; no raw owner or primary maintenance capability escapes.
+  Start repeats static content checks, verifies the actual transport-key pin
+  and installs only the explicit admit/complete/both handlers. No mode resumes
+  work or produces an outcome. Close/cancellation stops new handlers, interrupts
+  transport, drains accepted handlers and only then releases every selected
+  journal owner. Storage uncertainty stops the service and retains the original
+  error/attempt for explicit recovery. The primary service keeps its existing
+  public behavior, with a defensive secondary rejection in maintenance paths.
+  The separate work-prune-secondary-command-serve-quic CLI validates scope and
+  owners before reading its transport seed, shares the signal/SIGPIPE lifetime,
+  and reports command-only readiness with both content pins and selected mode.
+  Complete rejects even empty primary-root flags. Generic delivery/outbox
+  formats remain unchanged. Stop/drain admission, perform separately owned
+  offline work, close those owners and reopen complete-only; both is not an
+  execution or cancellation surface. Completion can run with primary roots
+  absent or held separately. Managed audit/serve, reviewed effect handoff,
+  live-journal extraction and physical/cross-host fencing remain open.
+  Initial secondary-service verification: seven new store tests passed under
+  race/integration in 13.776 seconds. They exercise real initial/lineage replay,
+  success/cancellation, typed QUIC outboxes, disabled protocols, missing/busy
+  primary completion, key/role/path/pin failures, partial-open cleanup, corrected
+  Start, concurrent Close/context cancellation, uncertainty without autoresume,
+  and paused-handler ownership through drain. CLI integration unit tests passed
+  in 3.587 seconds. A separate process group passed in 3.575 seconds with
+  SIGTERM/kill, duplicate owner refusal, stopped-owner offline cancellation,
+  completion-only delivery and closed readiness/delivery stdout. Exact cached
+  receipts survive restart. These CLI fixtures use no WorkChain; they do not
+  claim a remotely exposed archive effect or production storage acceptance.
+  Full final make test-race passed across both complementary groups: fresh store
+  runs took 249.329 and 357.682 seconds, and fresh cmd/omd runs took 2.320 and
+  47.999. Other unchanged packages used valid cached evidence; these are test
+  durations, not benchmarks. Full vet and integration-tag store/cmd vet passed.
+  CGO-disabled trimpath omd builds passed for macOS arm64, Linux amd64 and
+  Windows amd64. Integration-tag store and cmd test binaries compiled for Linux
+  and Windows, and native help lists the new command. Formatting/diff checks
+  are clean. Cross-compilation establishes no foreign-OS runtime or physical
+  acceptance, and the weighted readiness score stays 40/100.
+  Combined new CLI unit/process coverage also passed under race/integration in
+  28.183 seconds, preserving the original two-minute group bound. The new
+  separate CLI process group is added to Makefile without changing older groups
+  or timeouts.
+  Existing primary command/maintenance CLI process coverage passed in 6.231
+  seconds; original runtime/maintenance/recovery process coverage passed in
+  28.996, with the same two-minute bounds. A separate full normal suite, all
+  other process groups and a standalone fuzz campaign were not rerun this pass.
+  Existing fuzz seeds ran in the race gate; no codec or wire format was added.
   Process-gate observation (2026-09-07): the first combined run stopped at
   `TestProcessTieCampaignStorageFailuresRecoverWithoutFalseAdvance/observer_confirmation_after_link`
   because the expected confirmation marker was absent. Five isolated repetitions

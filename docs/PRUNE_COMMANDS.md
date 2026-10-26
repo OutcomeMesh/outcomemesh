@@ -1,10 +1,11 @@
 # Command-only prune transport
 
 Status: opt-in pre-alpha operator commands for the original colocated pinned
-executor/coordinator and their existing client outboxes. These commands deliver
-already signed Admit/Complete entries. They do not validate archive availability,
-open WorkChain, sign entries, prepare requests, execute pruning, remotely cancel work,
-stop/retire an assignment or implement all-assignment authorization.
+executor/coordinator, one explicitly selected secondary and existing client
+outboxes. These commands deliver already signed Admit/Complete entries. They do
+not validate live archive availability, open WorkChain, sign entries, prepare
+requests, execute pruning, remotely cancel work, stop/retire an assignment or
+implement all-assignment authorization.
 
 The lifecycle and trust boundaries are specified in
 [CUSTODY_AUTHORITY.md](CUSTODY_AUTHORITY.md). This runbook does not make the
@@ -38,13 +39,11 @@ library workflow. None of those steps is inferred by these transport commands:
 there is no `--init`, `--sign`, `--resume`, `--execute`, missing-root fallback,
 head refresh or automatic signature renewal in the transport entry points.
 
-The separate offline secondary signing commands can prepare canonical entries
-and typed outboxes for selected secondary assignments. This server still owns
-only its original primary executor/coordinator pair. It does not accept those
-secondary operations. Separate caller-owned fixed-secondary library sessions
-can now receive them when explicitly installed with the pinned inventory and
-matching host identity; supervised secondary CLI/service ownership remains a
-separate gate. See the secondary section of
+The separate offline secondary signing commands prepare canonical entries and
+typed outboxes for selected secondary assignments. The original primary server
+continues to accept only its own assignment. The separate fixed-secondary
+service below owns the original executor and the selected secondary, plus the
+primary coordinator when admission is enabled. See the secondary section of
 [PRUNE_PREPARATION.md](PRUNE_PREPARATION.md) for the preparation boundary.
 
 An assignment file is bounded to 8 KiB and canonically decoded. A `--key` file
@@ -60,7 +59,7 @@ The paths below are illustrative. Different names are not evidence of separate
 physical failure domains. Independently protect all pin/outbox roots and keep
 the original writers fenced before handing their ownership to this service.
 
-## Start the command service
+## Start the primary command service
 
 ```sh
 omd work-prune-command-serve-quic \
@@ -101,6 +100,92 @@ timeout. Storage uncertainty stops the service without reopening or submitting
 anything automatically. Malformed or stale commands do not stop a healthy
 service merely because their delivery failed.
 
+## Start one fixed-secondary command service
+
+The secondary service requires an existing canonical prepared inventory, its
+independently retained inventory and policy IDs, and the independently selected
+secondary assignment ID. It derives both assignments and the unchanged primary
+request from that pinned package. It accepts no `--assignment`,
+`--primary-assignment` or `--request-id` substitute. Creating or reviewing the
+inventory remains a separate guarded library workflow; startup does not assemble
+it, discover its trusted IDs or renew the packaged admissions.
+
+Admission example:
+
+```sh
+omd work-prune-secondary-command-serve-quic \
+  --mode admit \
+  --inventory /srv/om-inventory/prepared.ompi \
+  --inventory-id <independently-retained-inventory-id> \
+  --policy-id <independently-retained-policy-id> \
+  --assignment-id <independently-selected-secondary-assignment-id> \
+  --key /srv/om-keys/secondary-command-server.key \
+  --server-peer-id <pinned-secondary-server-transport-id> \
+  --client-peer-id <pinned-client-transport-id> \
+  --executor /srv/om-prune-executor \
+  --executor-pins /srv/om-prune-pins \
+  --authority /srv/om-secondary-authority \
+  --authority-pins /srv/om-secondary-authority-pins \
+  --primary-authority /srv/om-primary-authority \
+  --primary-authority-pins /srv/om-primary-authority-pins \
+  --listen /ip4/127.0.0.1/udp/0/quic-v1 \
+  --timeout 10s
+```
+
+`--mode` is required and accepts exactly `admit`, `complete` or `both`:
+
+- `admit` installs only the admission receiver and requires all six existing
+  owner roots shown above. Each command must equal the selected packaged
+  admission; a first target intent also requires the original primary's confirmed
+  live guard. Exact retained retries keep the existing recovery/history rules.
+- `complete` installs only the completion receiver. Supply the four original
+  executor/target roots and omit both primary authority flags. Supplying either
+  primary flag is an error, including an empty value. This mode does not open
+  the primary coordinator and can receive completion while a separate owner
+  retains that primary. It still requires the original executor's independently
+  confirmed terminal state and the exact actual secondary admission.
+- `both` installs both receivers and requires the same six roots as `admit`.
+  It does not create a terminal outcome or execute any work between the two
+  command types.
+
+All selected owner roots and the inventory's dedicated parent directory must
+be pairwise disjoint, including aliases and containment. All must already
+exist; startup initializes or repairs none of them. The two package pins, target
+selection, executor binding, retained owner states and peer separation are
+checked before the transport seed is read. Server/client transport identities
+must differ from every assignment's authority, consumer, replica and auditor
+keys and from all trusted checkpoint attestor and replica keys in the package,
+including trusted keys outside the selected target. Start then checks the
+actual host identity against the explicit server pin. The same protected
+32-byte seed format, loopback listener default and timeout bounds apply.
+
+Readiness is a `serving_work_prune_secondary_commands` line containing `mode`,
+server/client pins, selected assignment ID, both inventory pins and the actual
+`listen` route. It also reports `command_only=true execution_enabled=false
+automatic_resume=false`. Failed readiness output, Ctrl-C/SIGTERM and retained
+storage failure use the owned drain path before releasing any owner. A second
+service cannot share these live roots. The service owns no signer or WorkChain
+handle and accepts no stdin maintenance, initialization, execution or recovery
+flags.
+
+Use an explicit ownership handoff between admission and the local outcome:
+
+1. Deliver the selected secondary Admit through its existing typed outbox.
+2. Stop the command service and wait for successful shutdown/drain before any
+   offline owner opens the same roots. For library callers, finish `Close` and
+   observe `Done`; preserve any returned storage/shutdown error for review.
+3. Use the separate guarded local workflow for an effect or reviewed pre-start
+   cancellation. Complete signing/outbox preparation remains separate as well.
+4. Close those offline owners, then reopen the fixed-secondary service with
+   `--mode complete`, the same inventory/pins/target and the four original
+   executor/target roots. Deliver the retained secondary Complete outbox.
+
+Keeping `both` running cannot perform step 3: it retains the executor owner and
+exposes no effect/cancellation API. Reopening in either mode advances nothing
+by itself and is not recovery of a retained attempt. The library wrapper exposes
+only `Start`, `Addresses`, `Done` and `Close`; it does not export the owned
+coordinators, executor or the primary service's stdin maintenance boundary.
+
 ## Deliver one retained command
 
 Admission:
@@ -122,6 +207,13 @@ The two outbox types cannot substitute for one another. The route is not a
 source of trust: authentication must match the server pin retained in the
 outbox. All IDs must be nonzero. Positional arguments, unknown flags and repeated
 flags are rejected, including repetitions with the same value.
+
+These same two delivery commands carry secondary entries unchanged. Supply the
+selected secondary's canonical assignment and independent ID, its typed outbox,
+and the fixed-secondary service route. The server derives its trusted scope
+from the pinned inventory; the client's assignment file does not select or
+replace that scope. There is no separate secondary delivery format or automatic
+multi-target routing.
 
 Each invocation owns the existing outbox and performs at most one exact
 exchange. The default timeout is 10 seconds; accepted values are 100ms through
@@ -150,7 +242,7 @@ not reopen an admission or repeat a chain effect. A cached ACK is a local
 historical channel observation, not a signed portable certificate or current
 authorization. Changing a route does not change either peer pin.
 
-An explicitly configured local stdin pipe can now enter the
+For the original primary server, an explicitly configured local stdin pipe can enter the
 [one-way maintenance boundary](PRUNE_MAINTENANCE.md) without releasing the
 original locks. It permits only review and exact reviewed pre-start cancellation,
 not Execute. The default service still ignores stdin. A separate offline command
@@ -180,3 +272,14 @@ Additional regressions require a storage-triggered service stop to return its
 retained error and exercise genuinely closed stdout pipes for readiness and both
 delivery commands. Delivery receipts survive the failed output and can be read
 offline without another exchange.
+
+Fixed-secondary tests additionally cover all explicit modes, external package
+pins, target selection, peer/key separation, disjoint paths, scope validation
+before key reads, failed startup cleanup and refusal of primary flags in
+completion mode. Real CLI processes deliver the secondary Admit, stop/drain,
+perform a separate offline pre-start cancellation, then reopen completion-only
+and deliver Complete while the primary remains separately owned. SIGTERM,
+forced termination and broken readiness/delivery stdout preserve owner history
+and exact offline receipts. These command tests open no WorkChain database and
+do not establish live all-assignment authorization, an archive effect,
+cross-host ownership transfer or production readiness.

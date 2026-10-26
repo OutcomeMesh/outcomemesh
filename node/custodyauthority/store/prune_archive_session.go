@@ -7,6 +7,7 @@ import (
 	"github.com/outcomemesh/outcomemesh/node/custodyauthority/admissionwire"
 	"github.com/outcomemesh/outcomemesh/node/custodyauthority/completionwire"
 	"github.com/outcomemesh/outcomemesh/node/transport"
+	"github.com/outcomemesh/outcomemesh/node/workarchive"
 )
 
 // PreparedArchiveSecondaryCommandConfig fixes ONE selected secondary and both
@@ -119,17 +120,9 @@ func validatePreparedArchiveSecondarySession(executor *PruneExecutor, secondary 
 		if state.Admission != nil && inventory.Admissions[i] == *state.Admission {
 			primaryMatches = true
 		}
-		if err := validatePruneRuntimePeers(assignment, config.ServerPeerID, config.ClientPeerID); err != nil {
-			return PreparedArchiveSecondaryCommandConfig{}, types.Hash{}, err
-		}
 	}
-	for _, keys := range [][][32]byte{inventory.Policy.CheckpointPolicy.TrustedAttestors, inventory.Policy.ReplicaPolicy.TrustedReplicas} {
-		for _, key := range keys {
-			id, err := transport.PeerIDFromPublicKey(key[:])
-			if err != nil || id == config.ServerPeerID || id == config.ClientPeerID {
-				return PreparedArchiveSecondaryCommandConfig{}, types.Hash{}, ErrPruneRuntime
-			}
-		}
+	if err := validatePreparedArchiveSecondaryPeers(inventory, config); err != nil {
+		return PreparedArchiveSecondaryCommandConfig{}, types.Hash{}, err
 	}
 	if !targetFound || !primaryMatches || secondary.assignmentID != config.AssignmentID {
 		return PreparedArchiveSecondaryCommandConfig{}, types.Hash{}, ErrPruneInventory
@@ -142,4 +135,24 @@ func validatePreparedArchiveSecondarySession(executor *PruneExecutor, secondary 
 		return PreparedArchiveSecondaryCommandConfig{}, types.Hash{}, ErrPruneInventory
 	}
 	return config, state.Request.AssignmentID, nil
+}
+
+func validatePreparedArchiveSecondaryPeers(inventory ArchivePruneInventory, config PreparedArchiveSecondaryCommandConfig) error {
+	if len(inventory.Policy.Assignments) == 0 || len(inventory.Policy.Assignments) > workarchive.MaximumReplicas {
+		return ErrPruneInventory
+	}
+	for _, assignment := range inventory.Policy.Assignments {
+		if err := validatePruneRuntimePeers(assignment, config.ServerPeerID, config.ClientPeerID); err != nil {
+			return err
+		}
+	}
+	for _, keys := range [][][32]byte{inventory.Policy.CheckpointPolicy.TrustedAttestors, inventory.Policy.ReplicaPolicy.TrustedReplicas} {
+		for _, key := range keys {
+			id, err := transport.PeerIDFromPublicKey(key[:])
+			if err != nil || id == config.ServerPeerID || id == config.ClientPeerID {
+				return ErrPruneRuntime
+			}
+		}
+	}
+	return nil
 }

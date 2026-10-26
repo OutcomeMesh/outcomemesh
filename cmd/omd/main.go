@@ -146,7 +146,7 @@ func run(arguments []string) error {
 		return runWorkArchiveCustodyApplyHistory(arguments[1:])
 	case "work-archive-custody-rebaseline":
 		return runWorkArchiveCustodyRebaseline(arguments[1:])
-	case pruneServeCommand, pruneAdmissionCommand, pruneCompletionCommand:
+	case pruneServeCommand, pruneSecondaryServeCommand, pruneAdmissionCommand, pruneCompletionCommand:
 		return runPruneCommandCLI(arguments)
 	case pruneAuthorityBootstrapCommand, pruneExecutorPrepareCommand, pruneSigningCommand, pruneCosigningCommand, pruneSecondarySigningCommand, pruneSecondaryCosigningCommand, pruneAdmissionPrepareCommand, pruneCompletionPrepareCommand, pruneMaintenanceCommand:
 		return runPruneOfflineCLI(arguments)
@@ -1583,6 +1583,7 @@ func defaultDevelopmentAddress() types.Address {
 func printUsage() {
 	fmt.Println("OutcomeMesh standalone development node")
 	fmt.Printf("optional command-only custody transport: omd <%s|%s|%s> [flags]\n", pruneServeCommand, pruneAdmissionCommand, pruneCompletionCommand)
+	fmt.Printf("pinned secondary custody command transport: omd %s --mode <admit|complete|both> [flags]\n", pruneSecondaryServeCommand)
 	fmt.Printf("explicit offline custody preparation: omd <%s|%s|%s|%s|%s|%s> [flags]\n", pruneAuthorityBootstrapCommand, pruneExecutorPrepareCommand, pruneSigningCommand, pruneCosigningCommand, pruneAdmissionPrepareCommand, pruneCompletionPrepareCommand)
 	fmt.Printf("offline secondary custody signing: omd <%s|%s> [flags]\n", pruneSecondarySigningCommand, pruneSecondaryCosigningCommand)
 	fmt.Printf("reviewed local custody maintenance: omd %s [flags]; command server optionally accepts --maintenance-control stdin\n", pruneMaintenanceCommand)

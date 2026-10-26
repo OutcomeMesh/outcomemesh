@@ -553,8 +553,8 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
                         recovery. Cover both outcomes/modes, concurrent retries,
                         42 publication faults and 26 process-kill scenarios.
                         No automatic completion, new terminal format or
-                        remote certificate; operator delivery remains open and
-                        offline signing is covered by the following substep.
+                        remote certificate; operator signing and delivery are
+                        covered by the following substeps.
                       - [x] Explicit offline secondary signing and co-signing:
                         independently pin original primary and selected secondary
                         assignments, keep the primary request bytes/ID unchanged,
@@ -565,7 +565,8 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
                         signature domains and immutable publication; prepare typed
                         outboxes without claiming live admission or terminal state.
                         No inventory/signature cycle or new format; secondary
-                        delivery/server ownership remains a separate gate.
+                        delivery/server ownership is covered by the following
+                        network/service substeps.
                       - [x] Explicit fixed-secondary network sessions: reuse
                         Admit/Complete framing with pinned inventory, policy,
                         target and transport identities. Require exact request
@@ -579,8 +580,26 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
                         multiplexing, execution endpoint or automatic recovery.
                         Cover real QUIC/outbox flows in both modes/outcomes,
                         role/pin/EOF rejection, lost replies and 18 process kills.
-                      - [ ] Reviewed live-journal evidence extraction and supervised
-                        multi-owner runtime/CLI handoff. Integrate managed audit/serve
+                      - [x] Owned fixed-secondary command service and explicit CLI:
+                        derive the original executor and selected target from the
+                        pinned inventory, require disjoint existing owner roots,
+                        and select admit/complete/both without automatic recovery.
+                        Reuse the runtime admission gate and handler drain before
+                        releasing owners; expose no maintenance or effect API.
+                        Completion-only opens no primary owner. Stop/drain before
+                        separate offline effects, then reopen for exact outbox
+                        delivery. Cover startup cleanup, shutdown ownership,
+                        context cancellation, uncertainty and real CLI restarts.
+                      - [ ] Reviewed live-journal evidence extraction: require
+                        explicit source checkpoints and pinned inventory scope,
+                        retain source ownership while reading exact canonical
+                        prefixes, reject changed/incomplete sources and bound
+                        the aggregate before copying. Preserve detached historical
+                        bytes without creating or repairing journals. Extraction
+                        must not imply current Audit permission or a unique head.
+                      - [ ] Supervised multi-owner effect/runtime handoff with
+                        every required original owner retained through explicit
+                        review and guarded execution. Integrate managed audit/serve
                         paths; test remote partitions and physical/copy fencing
                         before activation. Library acceptance alone does not close
                         this parent gate.

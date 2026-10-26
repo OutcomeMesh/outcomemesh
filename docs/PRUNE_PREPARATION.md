@@ -8,9 +8,10 @@ or signing. Nothing here is a service-startup or recovery fallback.
 
 Two additional offline secondary signing commands bind an original primary
 request to a selected secondary assignment, as described below. Their outputs
-can enter a prepared inventory or typed outbox. The current command server still
-accepts only its original primary assignment; secondary remote delivery and
-supervised multi-owner CLI ownership remain separate gates.
+can enter a prepared inventory or typed outbox. The original primary command
+server accepts only its own assignment. A separate fixed-secondary command
+service now receives one explicitly selected secondary through that inventory;
+its owned startup/handoff procedure is in [PRUNE_COMMANDS.md](PRUNE_COMMANDS.md).
 
 The assignment, storage-bound request and independent IDs must already exist.
 Request construction and validation against the actual protected database remain
@@ -324,13 +325,42 @@ The generic admission/completion preparation commands accept these canonical
 secondary entries with the secondary assignment and its independent ID. They
 can review/create/verify the corresponding typed outbox using separately pinned
 transport peers. This retains a delivery intent without opening a socket or
-checking a server. **The current primary command server cannot receive secondary
-operations.** No new secondary server/delivery endpoint is installed by signing
-or outbox preparation; retain these artifacts for the later reviewed handoff.
+checking a server. **The original primary command server cannot receive
+secondary operations.** Signing or outbox preparation starts no receiver.
 The original primary signing commands continue to reject secondary-only flags.
 Developers can explicitly install the caller-owned fixed-secondary library
-sessions described in [PRUNE_ACCEPTANCE.md](PRUNE_ACCEPTANCE.md); the installed
-primary command CLI is not a multi-owner or secondary service.
+sessions described in [PRUNE_ACCEPTANCE.md](PRUNE_ACCEPTANCE.md), or use the
+separate owned service in the [transport runbook](PRUNE_COMMANDS.md).
+
+`work-prune-secondary-command-serve-quic` requires an explicit
+`--mode admit|complete|both`, an existing `--inventory`, independent
+`--inventory-id` / `--policy-id`, and the selected secondary `--assignment-id`.
+It derives the original primary request and both trusted assignments from that
+package; no assignment/request file is supplied to this server. Prepare and
+independently protect the full inventory after signing the admissions. Neither
+the artifact's own contents nor startup output replaces the external pins.
+
+The server requires the four existing original executor/target authority roots
+and a separate existing transport seed with both peer pins. Admission/both also
+require the two existing primary authority roots. All selected roots and the
+dedicated inventory parent must be pairwise disjoint; transport keys must remain
+separate from every declared assignment role and all pinned checkpoint/replica
+trust keys. Package/pin/owner checks precede the seed read, and Start verifies
+the actual host identity. There is no bootstrap or missing-root repair.
+
+Deliver the retained secondary Admit using the unchanged generic admission
+delivery command. Stop and finish the service's drain (`Close` / `Done` for
+library callers), then perform the separate guarded offline effect or reviewed
+pre-start cancellation with those original owners. After closing the offline
+owners and preparing the signed Complete/outbox, reopen with `--mode complete`
+and deliver it through the generic completion command. Completion mode opens no
+primary coordinator and rejects either primary-root flag even with an empty
+value. `both` merely enables both receivers; it executes nothing and cannot
+manufacture the terminal outcome while retaining the executor lock. There is
+no stdin maintenance, automatic retry/recovery, remote cancellation or effect
+entry point in the fixed-secondary service. Preparing an inventory, enforcing
+the complete live required set, proving physical fencing and transferring
+ownership across hosts remain separate gates.
 
 ## Verification boundary
 
@@ -348,5 +378,10 @@ signers, target vs primary admission/terminal separation, re-pinned archive/role
 substitutions and immutable typed outboxes. Three separate-process phases cover
 Admit and success/cancellation Complete. Nine closed-stdout cases retain their
 consumer command, authority entry or outbox and recover through exact retry or
-explicit verify. No secondary network delivery or live terminal acceptance is
-claimed by this offline process coverage.
+explicit verify. Those offline tests make no network or live terminal claim.
+Separate command-service tests now exercise real secondary delivery across
+admission, stopped-owner cancellation and completion-only restart, including a
+separately owned primary, forced/graceful termination and closed stdout. They
+verify the original executor's retained cancellation and exact historical
+receipts without a WorkChain database; they do not establish a live archive
+prune pipeline or mainnet readiness.

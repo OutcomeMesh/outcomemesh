@@ -640,6 +640,19 @@ Printed/cached ACKs remain historical, not live execution grants. The input
 reader does not establish OS owner/ACL protection, physical isolation or memory
 zeroization. The operator boundary is documented in `PRUNE_COMMANDS.md`.
 
+The explicit fixed-secondary service/CLI derives original primary and selected
+target assignments from a bounded, independently pinned inventory. It checks
+role separation across every assignment and archive trust key, and disjoint
+existing owner roots plus the inventory parent before acquisition. Admit/both
+own the executor and both coordinators; complete owns only executor and target.
+Static content checks repeat before listening and each request keeps its existing
+guarded live checks. Only selected protocols are installed. Ordered shutdown
+stops new handlers, interrupts network I/O, waits for accepted handlers and then
+releases all selected journal owners. Its private wrapper exposes no maintenance,
+raw owners, signer or WorkChain. Stop/drain before separately owned offline work,
+then explicitly reopen completion; no mode performs work or automatic recovery.
+This is command ownership, not reviewed effect handoff or copied-owner fencing.
+
 Offline preparation is a separate explicit boundary, not a transport fallback.
 Bootstrap requires two absent, disjoint roots and holds pins before the writer;
 it never reinitializes partial data or attaches fresh pins to an old authority.
@@ -731,7 +744,7 @@ secondary from a confirmed primary success or pre-start cancellation. Success
 requires the original retained inventory binding; cancellation retains its original
 request/ticket/executor scope. Prepared inventory and lineage retention are also
 implemented. These local records are not portable all-assignment certificates.
-Audit/serve acceptance, supervised operator handoff and physical/cross-host
+Audit/serve acceptance, reviewed effect handoff and physical/cross-host
 enforcement remain open. This is not a CLI or remotely exposed effect path; see
 `PRUNE_ACCEPTANCE.md` for the current preparation/command boundaries.
 
