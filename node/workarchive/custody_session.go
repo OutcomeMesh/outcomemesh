@@ -177,7 +177,7 @@ func NewJournalCustodyReplicaSession(
 	store *ObjectStore,
 	replicaPrivateKey ed25519.PrivateKey,
 	config CustodySessionConfig,
-) (*CustodySession, error) {
+) (openedSession *CustodySession, returnErr error) {
 	if journal == nil {
 		return nil, ErrCustodySession
 	}
@@ -188,7 +188,12 @@ func NewJournalCustodyReplicaSession(
 	if err != nil {
 		return nil, err
 	}
-	defer decision.Close()
+	defer func() {
+		if closeErr := decision.Close(); closeErr != nil {
+			openedSession = nil
+			returnErr = errors.Join(returnErr, closeErr)
+		}
+	}()
 	head, exists, err := decision.Head()
 	if err != nil {
 		return nil, err
@@ -299,6 +304,18 @@ func (session *CustodySession) Audit(
 	for _, object := range batch.Objects {
 		report.ReceivedBytes += uint64(len(object.Encoded))
 	}
+	// On duplex transports, acknowledge verification with a write-side FIN,
+	// then wait for the replica to drain before full Close cancels our reads.
+	// Full Close here alone can cancel the replica's first Close on QUIC.
+	// Simple finite streams (including net.Pipe) retain their Close/EOF path.
+	if half, ok := stream.(interface{ CloseWrite() error }); ok {
+		if err := half.CloseWrite(); err != nil {
+			return CustodyResponse{}, CustodyAuditReport{}, errors.Join(ErrCustodySession, err)
+		}
+		if err := session.awaitReplicaClose(ctx, stream); err != nil {
+			return CustodyResponse{}, CustodyAuditReport{}, err
+		}
+	}
 	return CustodyResponse{Batch: batch, Proof: proof, RenewedReceipt: renewed}, report, nil
 }
 
@@ -308,6 +325,31 @@ func (session *CustodySession) Serve(
 	ctx context.Context,
 	stream CustodySessionStream,
 ) (CustodyServeReport, error) {
+	return session.serve(ctx, stream, types.Hash{})
+}
+
+// ServeExpected accepts only the exact challenge selected by its caller. The
+// binding is checked before journal access, cached delivery, or fresh signing.
+// It does not itself establish live authority for that operation.
+func (session *CustodySession) ServeExpected(
+	ctx context.Context,
+	stream CustodySessionStream,
+	expectedChallengeID types.Hash,
+) (CustodyServeReport, error) {
+	if expectedChallengeID.IsZero() {
+		if stream != nil {
+			_ = stream.Close()
+		}
+		return CustodyServeReport{}, ErrCustodySession
+	}
+	return session.serve(ctx, stream, expectedChallengeID)
+}
+
+func (session *CustodySession) serve(
+	ctx context.Context,
+	stream CustodySessionStream,
+	expectedChallengeID types.Hash,
+) (report CustodyServeReport, returnErr error) {
 	if session == nil || ctx == nil || stream == nil || session.store == nil ||
 		len(session.replicaPrivateKey) != ed25519.PrivateKeySize ||
 		session.config.Validate() != nil {
@@ -329,6 +371,9 @@ func (session *CustodySession) Serve(
 	if err != nil {
 		return CustodyServeReport{}, err
 	}
+	if !expectedChallengeID.IsZero() && challengeID != expectedChallengeID {
+		return CustodyServeReport{}, ErrCustodySession
+	}
 	session.serveMu.Lock()
 	defer session.serveMu.Unlock()
 	if err := ctx.Err(); err != nil {
@@ -341,7 +386,13 @@ func (session *CustodySession) Serve(
 		if err != nil {
 			return CustodyServeReport{}, err
 		}
-		defer func() { _ = stream.Close(); _ = decision.Close() }()
+		defer func() {
+			_ = stream.Close()
+			if closeErr := decision.Close(); closeErr != nil {
+				report = CustodyServeReport{}
+				returnErr = errors.Join(returnErr, closeErr)
+			}
+		}()
 		if err := ctx.Err(); err != nil {
 			return CustodyServeReport{}, err
 		}
@@ -504,7 +555,8 @@ func (session *CustodySession) writeResponse(
 
 // awaitAuditorClose is the transport-level completion acknowledgement. It adds
 // no fifth protocol message: after validating all three response frames, Audit
-// closes its stream and Serve observes EOF before a one-shot host may exit.
+// closes its write side (or the finite stream), and Serve observes EOF before a
+// one-shot host may exit. Duplex Audit then waits for the replica's own EOF.
 // The final response write already installed a bounded deadline. Do not reset
 // it after that write: a fast auditor may already have closed, and net.Pipe can
 // reject SetDeadline with ErrClosedPipe even though Read would yield valid EOF.
@@ -522,6 +574,23 @@ func (session *CustodySession) awaitAuditorClose(
 	}
 	if err == nil {
 		err = errors.New("auditor sent data after custody response")
+	}
+	return errors.Join(ErrCustodySession, err)
+}
+
+func (session *CustodySession) awaitReplicaClose(ctx context.Context, stream CustodySessionStream) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	// The final frame read installed a bounded deadline. A fast replica may
+	// already have closed, so do not reset the deadline before observing EOF.
+	var unexpected [1]byte
+	read, err := stream.Read(unexpected[:])
+	if read == 0 && errors.Is(err, io.EOF) {
+		return nil
+	}
+	if err == nil {
+		err = errors.New("replica sent data after custody response")
 	}
 	return errors.Join(ErrCustodySession, err)
 }

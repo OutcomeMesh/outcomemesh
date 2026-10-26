@@ -67,6 +67,15 @@ type ObjectMaterializeReport struct {
 	Bytes      uint64
 }
 
+// Directory returns the immutable object-store root configured when it was
+// opened. It conveys placement only, not permission to read or remove objects.
+func (store *ObjectStore) Directory() string {
+	if store == nil {
+		return ""
+	}
+	return store.path
+}
+
 func OpenObjectStore(path string, policy ObjectStorePolicy) (*ObjectStore, error) {
 	if path == "" || policy.Validate() != nil {
 		return nil, ErrObjectStore

@@ -150,8 +150,12 @@ offers a supervised control mode on macOS/Linux with dedicated stdin/stdout
 pipes. It requires a reported same-session review before execution and keeps
 every owner until close; existing command services must drain/close beforehand.
 Activation history is opened as an existing read-only source, never initialized.
-Managed audit/serve, in-place owner transfer and physical/cross-host enforcement
-remain open; see the effect and acceptance runbooks for the exact boundaries.
+An opt-in [managed Serve library](docs/CUSTODY_SERVE_ACCEPTANCE.md) binds one
+already admitted challenge to its original coordinator and existing journal.
+Its guard spans signing, exact cached/recovered delivery, EOF and stream cleanup;
+successful delivery does not complete the authority ticket. Managed Audit,
+owned serving runtime/CLI, in-place owner transfer and physical/cross-host
+enforcement remain open; see the acceptance runbooks for the exact boundaries.
 
 ## Build and run
 

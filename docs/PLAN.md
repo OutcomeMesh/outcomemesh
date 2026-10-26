@@ -639,10 +639,22 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
                           terminal bytes without completing tickets. Cover actual
                           command-service drain/close, effect and command reopen,
                           lost stdout, killed processes and blocked pipe writes.
-                        - [ ] Managed audit/serve acceptance, real remote
-                          partitions and independently enforced physical/copy
-                          fencing. In-place command-owner transfer is not added
-                          by the explicit stop/close/reopen CLI workflow.
+                        - [x] Opt-in journal-backed managed Serve library:
+                          pin the exact admitted challenge and authenticated
+                          peer, open only the existing active journal, and retain
+                          the original coordinator guard through fresh, cached
+                          and recovered response delivery, EOF, actual stream
+                          close and cancellation drain. Cover stop/complete,
+                          stale authority, real QUIC and five process-death
+                          checkpoints without implicitly completing a ticket.
+                        - [ ] Managed Audit from durable intent through challenge
+                          publication and recovered acceptance, including a
+                          paired Audit/Serve owner/lock design that cannot wait
+                          on the same non-reentrant coordinator; owned serving
+                          runtime/CLI with handler drain, real remote partitions
+                          and independently enforced physical/copy fencing.
+                          In-place command-owner transfer is not added by the
+                          explicit stop/close/reopen CLI workflow.
   - [ ] Filesystem-full, inode-exhaustion, power-loss, and long-running retention
     campaigns before deployment claims.
   - [x] Isolate the 2026-09-07 custody sibling-rejection deadline race: force the

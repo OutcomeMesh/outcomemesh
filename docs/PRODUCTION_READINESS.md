@@ -174,3 +174,13 @@ command drain/close, effect and command reopen. This closes the colocated CLI
 workflow, not managed Audit/Serve, in-place transfer, remote/partition acceptance,
 physical/copy fencing, independent review or public-testnet duration. Weighted
 readiness remains 40/100; no launch gate is bypassed.
+
+2026-10-26 managed-Serve follow-up: an explicit journal-backed library adapter
+now binds a pre-existing signed Serve admission to the exact challenge and
+authenticated peer. The original coordinator guard covers fresh signing, exact
+cached/recovered delivery, auditor EOF, stream Close and cancellation drain.
+Existing-only journal opening cannot initialize or repair evidence; no exchange
+implicitly completes a ticket. Managed Audit, owned serving runtime/CLI, remote
+partitions and physical/copy fencing remain open. Local library/QUIC/crash
+coverage adds no independent-audit or public-testnet-duration credit. The
+weighted lifecycle criterion remains incomplete; readiness stays 40/100.

@@ -8,8 +8,13 @@ executor journal, optional independent stage pins and coordinator guard. An
 explicit local completion adapter binds externally signed completion to retained
 terminal evidence. An opt-in colocated archive-prune library adapter now enforces
 every selected replica assignment through replay and deletion, using pinned policy
-and position-pinned storage. Existing CLI and audit/serve paths, network authority
-and active rebaseline are not upgraded by this adapter.
+and position-pinned storage. The separate owned effect runtime and explicit
+operator CLI retain these owners across reviewed execution. An opt-in managed
+Serve library now binds an exact admitted challenge to the original coordinator
+through existing-journal response delivery and stream cleanup. Managed Audit,
+owned serving runtime/CLI, network authority and active rebaseline remain open.
+See [managed Serve acceptance](CUSTODY_SERVE_ACCEPTANCE.md) and the
+[effect runtime](PRUNE_EFFECT_RUNTIME.md) for their separate ownership scopes.
 
 An opt-in, completion-only QUIC endpoint now delivers an already co-signed
 command to that original colocated executor/coordinator. It does not distribute
@@ -33,6 +38,7 @@ This is why another signed retirement file, by itself, is not a global fence.
 | --- | --- | --- |
 | Auditor challenge creation, result publication, journal append and artifact recovery | CLI holds artifact lock then active journal decision scope for the whole cycle | Bind the whole live operation to the current assignment; recovery must not promote historical validity to current acceptance |
 | Replica fresh, cached and restart-recovered responses | Journal-backed sessions hold their current decision scope through response and stream retirement | Reject retired assignments even with copied keys/journals; drain operations admitted before retirement |
+| Opt-in `ManagedCustodyServeSession` | Exact signed Serve ticket, challenge ID, independent authenticated peer pin and existing active journal; original coordinator guard through fresh/cached/recovered response, EOF, stream Close and cancellation drain | Owned host/handler drain and operator CLI; independently enforced remote/copy fencing; no implicit ticket completion |
 | Raw/record-backed sessions and signing helpers | Signature, binding and timing checks; no journal retirement guard | Remain ineligible for managed cutover or require the same authority protocol; no silent fallback |
 | `CustodySession.Audit` live result acceptance | Rechecks returned renewal at current time under static keys | Hold a current assignment decision through durable acceptance, not just transport identity |
 | `workarchive.PruneCanonicalPrefix` destructive maintenance | Full replica replay, static trusted keys, immutable evidence and final in-batch time/cancellation check | Hold current assignment authorization through storage transition; reject retired receipt keys regardless of their signatures |
@@ -55,7 +61,8 @@ including its initial `VerifiedAt`. The requested floor must not already contain
 a `PruneTicketID`. These unsigned fields are caller-provided bindings, **not an
 admission proof**. The method does not contact the authority, verify a signed
 ticket, retain a consumer's pre-execution intent, or close an authority operation.
-No existing CLI calls it. The opt-in local ExecuteArchive adapter now composes
+The ordinary archive CLI does not call it directly. The explicit effect CLI uses
+the owned runtime and opt-in ExecuteArchive adapter, which compose
 this primitive with all selected original coordinator guards and full archive
 verification; the primitive itself remains a trusted internal API.
 

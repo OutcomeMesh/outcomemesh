@@ -1938,6 +1938,53 @@ Implemented in an isolated, not-yet-activated consensus package:
   after reclaiming temporary build/cache space. Cross-compilation establishes
   no foreign-OS runtime or physical-storage acceptance. Other process groups
   were not rerun; existing native library crash evidence remains unchanged.
+  Managed Serve follow-up (2026-10-26): the opt-in library adapter binds one
+  externally signed pending Serve ticket to the exact signed challenge ID and
+  independently authenticated auditor peer. It rederives the pinned assignment
+  from the original coordinator's retained bootstrap scope and opens only an
+  existing active version-0 custody journal; missing, damaged, historical,
+  retired or overlapping roots cannot initialize or repair evidence. The
+  private session retains detached scope/key configuration. The original
+  coordinator and object-store owners remain the caller's responsibility.
+  Every call holds the original coordinator guard through fresh signing and
+  journal publication, exact cached/recovered delivery, final auditor EOF,
+  actual once-only stream Close and cancellation callback drain. Stop/Complete
+  wait for accepted calls; Stopping allows a pending admission to drain and
+  invalid/completed/retired/uncertain authority rejects before stream input.
+  Wrong challenges fail before session/journal locks or any cached response.
+  Delivery, failure and restart do not complete tickets or refresh proof time.
+  Duplex Audit now acknowledges verified frames with CloseWrite, waits for
+  replica EOF, then fully closes. This preserves the existing four-frame
+  protocol while avoiding QUIC cancellation of the replica's graceful close;
+  finite streams without half-close retain their Close/EOF path. Journal
+  decision-close errors suppress constructor/Serve success and cleanup errors
+  remain visible. The journal's existing bounded contention wait is retained;
+  this does not claim instant cancellation of synchronous filesystem work.
+  Real QUIC covers fresh, cached and reconstructed sessions, exact persisted
+  responses and refusal after ticket completion. Five process-death checkpoints
+  cover construction, first write, final EOF, actual close and returned success.
+  Each reopens twice under the same admission, completing an uncommitted original
+  exchange or replaying the exact committed response without authority changes.
+  Makefile includes the new process group under its own two-minute bound.
+  Managed Audit, owned serving runtime/CLI and handler drain, remote partitions,
+  independent physical/copy fencing and the parent M5 gate remain open. No message
+  encoding, signature, consensus or retained journal format changes. See
+  CUSTODY_SERVE_ACCEPTANCE.md for the ownership and recovery contract.
+  Targeted Go 1.26.7 managed Serve unit/QUIC/process coverage passed with race
+  detection and integration tags in 29.909 seconds. Separate native QUIC and
+  five-checkpoint process runs passed in 3.236 and 10.297 seconds. Existing-only
+  opening/expected-ID and raw QUIC compatibility tests passed in 1.983 seconds;
+  focused duplex-close validation passed in 1.547. These are test durations,
+  not benchmarks. Weighted readiness remains 40/100.
+  Integration-tag store vet passed. A CGO-disabled trimpath native omd build
+  passed and its help command ran successfully. Other process groups, standalone
+  fuzz campaigns and foreign-OS builds were not rerun in this pass; existing
+  decoder seeds run in the full race gate. No new untrusted decoder was added.
+  Full final Go 1.26.7 make test-all passed: formatting, full vet and both
+  complementary race groups. Store runs took 235.243 and 496.804 seconds;
+  workarchive took 13.454 and 241.593; cmd/omd took 1.701 and 156.093. These
+  durations are validation evidence, not performance measurements. The new
+  managed Serve and duplex-close unit tests ran in the second race group.
   Process-gate observation (2026-09-07): the first combined run stopped at
   `TestProcessTieCampaignStorageFailuresRecoverWithoutFalseAdvance/observer_confirmation_after_link`
   because the expected confirmation marker was absent. Five isolated repetitions

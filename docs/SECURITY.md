@@ -436,8 +436,9 @@ or protection against shared rollback of both roots. Its unsigned local pin
 envelopes and diagnostic snapshots are not execution permits or remote freshness
 proofs. Callers must not turn an exact retry into duplicate consumer execution.
 Process-kill tests are not physical power-loss or multi-host partition evidence.
-There is still no authority transport or installed live acceptance integration.
-All old runtime acceptance paths remain under their existing policies until
+There is still no distributed current-authority service or default installed
+acceptance integration. Explicit opt-in adapters below add narrower local paths.
+Old runtime acceptance paths remain under their existing policies until
 explicitly integrated. No authority entry is accepted as a replica receipt,
 challenge, availability bundle or rebaseline proposal.
 
@@ -457,7 +458,8 @@ last effect drains. An effect lookup is local evidence, not a remote permission
 or a durable consumer terminal decision. In particular, absent results in a
 freshly created, replaced or rolled-back database cannot justify retry or no-effect
 completion.
-The new primitive is not used by the live archive CLI or raw custody sessions.
+The primitive is not used directly by the ordinary archive CLI or raw custody
+sessions; the explicit effect CLI reaches it through the owned guarded runtime.
 Canonical record recovery checks shape/accounting and local floor/ancestry
 consistency, not historical external availability or trusted-owner tampering.
 
@@ -884,8 +886,9 @@ auditor transport identities before charging its independent rate window. One
 finite stream carries exactly challenge, batch, proof, and renewed receipt,
 each with a deadline and a type-specific pre-allocation bound. Transport keys
 and portable auditor/replica signing keys are deliberately separate. After
-verification the auditor closes the stream; the replica waits for that bounded
-EOF before a one-shot process exits, avoiding loss of the final QUIC frames
+verification a duplex auditor closes its write side, waits for the replica EOF,
+then closes the stream. The replica waits for the auditor's bounded EOF before
+closing; streams without half-close retain finite Close/EOF. This avoids loss of final QUIC frames
 without introducing another application message. A valid
 exchange proves that the trusted replica key returned those sampled bytes at
 that time; it does not prove physical storage, prevent proxy retrieval, establish
@@ -901,6 +904,30 @@ signed outcome and a different challenge cannot create a sibling even across a
 process crash. The auditor similarly persists its challenge before dialing and
 its verified response before publishing the renewed receipt. Corrupt,
 conflicting, symlink, and partial records fail closed.
+
+The opt-in managed Serve adapter adds a current local authority boundary to
+the journal-backed path. Its signed pending Serve ticket must name the exact
+challenge ID, independently pinned assignment and consumer; the authenticated
+auditor transport ID is pinned separately from authority and evidence keys.
+Construction rederives the assignment from the original coordinator's retained
+bootstrap scope and opens only the exact existing active version-0 journal.
+Missing roots/locks/headers, historical or retired journals and overlapping
+owner/evidence/object roots are rejected without initialization or repair.
+Every call holds the original coordinator guard through signing/publication,
+cached or restart-recovered delivery, final EOF, actual stream Close and
+cancellation cleanup. Stopping admits no new tickets but lets an already
+admitted operation drain. Completed tickets, retired assignments and unconfirmed
+authority attempts fail before stream input. No delivery or disconnect completes
+the ticket. Cleanup failures
+remain errors. Exact retries cannot refresh proof time or extend a different
+journal head. The caller retains the original coordinator/object owner and
+must drain all handlers before releasing them; this library owns no host or CLI.
+Journal acquisition retains its existing bounded wait, including up to 30 seconds
+of lock contention; cancellation is not claimed to interrupt every filesystem
+call immediately. Original roots and lock inodes remain owner-controlled:
+opening checks placement/identity, but does not fence later malicious replacement,
+copied signing keys/journals, an old binary or remote acceptance. Managed Audit
+and owned serving lifetime remain open. See `CUSTODY_SERVE_ACCEPTANCE.md`.
 
 Journal mode fixes the manifest, original receipt, and complete custody-policy
 digest in an immutable header. Replay verifies every slot, content ID,
