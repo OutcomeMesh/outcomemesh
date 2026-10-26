@@ -184,3 +184,13 @@ implicitly completes a ticket. Managed Audit, owned serving runtime/CLI, remote
 partitions and physical/copy fencing remain open. Local library/QUIC/crash
 coverage adds no independent-audit or public-testnet-duration credit. The
 weighted lifecycle criterion remains incomplete; readiness stays 40/100.
+
+2026-10-26 managed-runtime follow-up: Audit now binds a retained unsigned intent
+before challenge signing and holds the original guard through response validation,
+actual stream retirement, journal acceptance, output publication and exact recovery.
+A local pair checks both pending tickets under that owner once and drains both
+private participants; the separate owned Serve host/CLI drains handlers before
+owner release. Audit operator tooling, owned paired hosting, remote partitions,
+physical/copy fencing and the wider release gates remain open. Local process and
+QUIC checks add no independent-audit or public-testnet-duration credit. The
+weighted lifecycle criterion is still incomplete; readiness remains 40/100.

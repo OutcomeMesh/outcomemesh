@@ -6,9 +6,10 @@ the original local `Coordinator`, an exact signed admission, an independently
 selected challenge ID and an authenticated transport peer. It creates no host,
 listener, CLI mode, admission, completion or retirement command.
 
-This closes a bounded local Serve path. It does not make auditor challenge
-creation, auditor artifact publication or live audit-result acceptance managed.
-It does not activate cross-host cutover. The broader boundaries remain in
+This adapter closes a bounded local Serve path. Separate managed Audit, local
+paired execution and owned Serve host/CLI adapters are documented in
+[CUSTODY_MANAGED_RUNTIME.md](CUSTODY_MANAGED_RUNTIME.md). This library session
+alone owns no host and does not activate cross-host cutover. Broader boundaries remain in
 [CUSTODY_AUTHORITY.md](CUSTODY_AUTHORITY.md).
 
 ## Construction and immutable scope
@@ -229,18 +230,17 @@ participants that retain old authority. It adds no distributed current-authority
 protocol, cross-host retirement fence, managed Audit lifecycle, default daemon
 handler, owned host, CLI acceptance command or automatic ticket completion.
 
-Managed Audit needs a separate reviewed durable intent known before challenge
-signing: the existing `challenge.omcc` already contains a signed random nonce.
-Using that file as a pre-admission intent would leave signing outside the
-authority guard. The future Audit ticket must bind the intent through challenge
-publication and exact recovery; the Serve ticket can then bind the resulting
-signed challenge ID. This adapter adds no such intent format or recovery path.
+The separate managed Audit adapter now binds a reviewed unsigned intent before
+challenge signing. The old `challenge.omcc` is already signed and cannot serve
+as that pre-admission intent. Audit binds the new intent through publication and
+exact recovery; Serve binds the resulting signed challenge ID. This Serve
+session does not itself prepare intents, sign audit challenges or recover audit
+artifacts.
 
-The shared original-owner lifecycle also needs an explicit paired execution
-design. `Coordinator.WithOperation` is non-reentrant: an Audit that holds that
+`Coordinator.WithOperation` remains non-reentrant: an Audit that holds that
 guard while waiting on a Serve that needs the same original coordinator would
 deadlock. Different consumers do not create independent authority owners, and
 copying roots or opening another coordinator cannot resolve this ordering.
-Guarded challenge preparation can be developed separately; it must not be
-presented as paired managed Audit/Serve acceptance. Journal/artifact ownership
-and the full paired lock order remain part of that open gate.
+The explicit local pair acquires that owner once, validates both pending tickets
+and runs the private participants against separate journals. Its caller retains
+the transport lifetime; distributed authority and owned paired hosting remain open.

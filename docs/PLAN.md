@@ -647,12 +647,32 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
                           close and cancellation drain. Cover stop/complete,
                           stale authority, real QUIC and five process-death
                           checkpoints without implicitly completing a ticket.
-                        - [ ] Managed Audit from durable intent through challenge
-                          publication and recovered acceptance, including a
-                          paired Audit/Serve owner/lock design that cannot wait
-                          on the same non-reentrant coordinator; owned serving
-                          runtime/CLI with handler drain, real remote partitions
-                          and independently enforced physical/copy fencing.
+                        - [x] Managed Audit library from an unsigned, externally
+                          pinned durable intent through deterministic challenge
+                          publication, verified response acceptance and exact
+                          prior+1 recovery. Hold the original Audit guard through
+                          actual stream cleanup, journal commit and artifact
+                          publication; reject uncertain/completed authority,
+                          stale/foreign heads and missing evidence. Cover five
+                          real process-death checkpoints without completing tickets.
+                        - [x] Explicit local Audit/Serve pair under one original
+                          coordinator guard. Check both exact pending tickets,
+                          challenge, separate transport identities and disjoint
+                          participant roots before application I/O; concurrently
+                          run private participants and drain both on any failure.
+                          Cover fresh/cache/reopen/Stopping, blocked Close and
+                          pinned real QUIC without recursive owner acquisition.
+                        - [x] Owned Serve host and operator CLI: default review
+                          releases owners before output; opt-in serving uses
+                          dedicated interruptible control pipes. Open existing
+                          objects/journal/authority only, bind both seed identities
+                          to external pins and drain handlers before owner Close.
+                          Cover native process restart/kill, EOF/SIGTERM, broken
+                          readiness and malformed control without auto-completion.
+                        - [ ] Audit operator CLI and owned paired host lifecycle,
+                          real remote partitions and independently enforced
+                          physical/copy fencing. Local paired library acceptance
+                          does not establish distributed current authority.
                           In-place command-owner transfer is not added by the
                           explicit stop/close/reopen CLI workflow.
   - [ ] Filesystem-full, inode-exhaustion, power-loss, and long-running retention

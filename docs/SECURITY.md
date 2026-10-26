@@ -926,8 +926,36 @@ Journal acquisition retains its existing bounded wait, including up to 30 second
 of lock contention; cancellation is not claimed to interrupt every filesystem
 call immediately. Original roots and lock inodes remain owner-controlled:
 opening checks placement/identity, but does not fence later malicious replacement,
-copied signing keys/journals, an old binary or remote acceptance. Managed Audit
-and owned serving lifetime remain open. See `CUSTODY_SERVE_ACCEPTANCE.md`.
+copied signing keys/journals, an old binary or remote acceptance. See
+`CUSTODY_SERVE_ACCEPTANCE.md` for this session's exact scope.
+
+The separate managed Audit adapter binds a 268-byte unsigned version-0 intent
+before challenge signing. Its distinct hash domain commits the assignment,
+consumer and auditor keys, replica transport pin, exact predecessor sequence/
+head/receipt, nonce, times and sample count. Retaining an intent grants no
+permission; a co-signed current Audit admission must name its independently
+pinned ID. Original coordinator -> existing artifact lock -> auditor journal
+decision covers deterministic signing, exact challenge publication, network
+verification, actual stream cleanup, journal acceptance and output publication.
+The journal commits before record/receipt outputs; a failed output therefore
+can leave accepted durable evidence. Recovery requires the exact prior+1 entry,
+predecessor and selected challenge, rejects advanced/foreign/stale heads, and
+does not promote record-only artifacts or refresh proof time. Completed or
+uncertain authority cannot use recovery as a live signing/acceptance bypass.
+
+Local paired execution acquires the original coordinator once and checks both
+Audit/Serve tickets before application I/O. The private participants use distinct
+journals and disjoint artifact/intent/object roots; both streams and cancellation
+callbacks drain before that guard exits. Peer pins must also differ from each
+other. Recursively calling the public Audit and Serve adapters under the same
+owner would deadlock and is not the pair implementation. It owns no host or
+remote authority broker. The separate Serve service owns its host, gates accepted
+handlers and drains them before coordinator closure. Its CLI opens only existing
+objects/evidence, defaults to non-listening review, and explicitly serves under
+dedicated interruptible control pipes. Neither success nor shutdown completes
+tickets or appends Stop/Retire. Audit operator tooling, owned paired hosting,
+cross-host partitions and independent physical/copy fencing remain open; see
+`CUSTODY_MANAGED_RUNTIME.md`.
 
 Journal mode fixes the manifest, original receipt, and complete custody-policy
 digest in an immutable header. Replay verifies every slot, content ID,

@@ -1985,6 +1985,72 @@ Implemented in an isolated, not-yet-activated consensus package:
   workarchive took 13.454 and 241.593; cmd/omd took 1.701 and 156.093. These
   durations are validation evidence, not performance measurements. The new
   managed Serve and duplex-close unit tests ran in the second race group.
+  Managed Audit and server follow-up (2026-10-26): a new fixed 268-byte unsigned
+  version-0 intent commits the exact assignment, consumer/auditor keys, replica
+  peer, predecessor sequence/head/receipt, nonce, times and samples. Its separate
+  domain-hashed ID is retained and admitted before any challenge signature. The
+  managed Audit library holds the original coordinator through deterministic
+  challenge publication, verified network response, actual stream retirement,
+  auditor-journal commit and immutable record/receipt publication. Existing-only
+  construction signs and repairs nothing. Explicit recovery requires the exact
+  prior+1 committed tuple and current authority/freshness; it does not promote a
+  standalone record, search a newer head or refresh request/proof time. An output
+  error after journal commit preserves uncertainty and leaves the ticket pending.
+  The local Audit/Serve pair acquires the same original coordinator once, checks
+  both exact tickets, challenge, distinct transport identities and disjoint
+  participant roots, then concurrently runs private sessions. Both streams and
+  cancellation callbacks drain before that guard exits. Fresh, cached, fully
+  reopened and Stopping calls preserve identical signed records in two separate
+  journals. Completed tickets fail before either input; a blocked Close cannot
+  prevent the other stream closing or release the owner before both drain.
+  A separate owned Serve service opens existing objects/journal/authority,
+  validates all manifest objects, explicitly starts pinned QUIC and drains its
+  accepted handlers before closing the original coordinator. The new
+  work-archive-custody-managed-serve-quic command defaults to review, closing
+  owners before readable scope output. Explicit serve adopts interruptible
+  macOS/Linux control pipes before owner opening; close/EOF/signal/malformed input
+  and failed readiness stop and drain. It requires independently pinned ticket,
+  challenge, assignment and peer identities, with separate existing transport
+  and proof seed files. Static public checks precede seed reads. No mode admits,
+  completes, retires, imports missing objects or initializes missing journals.
+  New native tests cover pinned Audit-only and paired real QUIC, exact retries,
+  original-owner exclusion, server process restart/kill, EOF/SIGTERM and broken
+  readiness. Five real audit-process checkpoints cover constructor, prepared
+  challenge, verified transport before append, actual output publication denial
+  after journal commit, and returned success. Two subsequent reopens preserve
+  exact challenge/result bytes and original authority; uncommitted cycles may
+  finish only their original operation. No physical power-loss claim is made.
+  Targeted Go 1.26.7 race/integration store coverage passed in 60.987 seconds;
+  all five audit process cases passed, including the permission-denial case.
+  The separate CLI race/integration group passed in 21.740 seconds. Native
+  pinned Audit/paired QUIC tests passed in 3.709 seconds; server process checks
+  passed in 4.377. Intent golden/validation passed in 0.647 seconds and a short
+  two-worker fuzz campaign completed 508 executions. Test durations are not
+  performance benchmarks. Makefile includes the intent fuzz and both new process
+  groups under separate two-minute bounds; existing bounds are unchanged.
+  Audit operator CLI, owned paired transport lifetime, remote partitions,
+  independently enforced physical/copy fencing and the broader launch gates
+  remain open. This adds a local preparation format; existing network messages,
+  challenge/proof/receipt encodings, journal history and consensus are unchanged.
+  See CUSTODY_MANAGED_RUNTIME.md. Weighted readiness remains 40/100.
+  The initial full Go 1.26.7 make test-all passed formatting, full vet and both
+  race groups: store took 236.211 and 595.566 seconds, workarchive 16.229 and
+  257.084, cmd/omd 4.550 and 160.363. The expanded store group finished within
+  five seconds of its unchanged ten-minute timeout. The race target now uses
+  three disjoint groups: archive tests, remaining tests excluding managed
+  custody, and managed custody tests. All tests and decoder seeds remain covered
+  exactly once per gate; no timeout is extended or test skipped from coverage.
+  Integration-tag cmd/omd and store vet passed. A native omd build and its help
+  command passed, including the new managed Serve command. Other process groups
+  and foreign-OS builds were not rerun; the only standalone fuzz campaign this
+  pass targeted the new intent decoder.
+  Final Go 1.26.7 make test-all passed the three-group gate: formatting, full
+  vet, cached valid archive results, the remaining group and managed custody.
+  Fresh remaining runs took 464.045 seconds for store, 232.592 for workarchive
+  and 145.529 for cmd/omd. The separate managed group took 91.889 seconds for
+  store and 16.626 for cmd/omd. These are test durations, not benchmarks. The
+  unchanged ten-minute bounds now retain headroom while preserving all standard
+  test/subtest coverage and fuzz seeds. Integration process gates remain separate.
   Process-gate observation (2026-09-07): the first combined run stopped at
   `TestProcessTieCampaignStorageFailuresRecoverWithoutFalseAdvance/observer_confirmation_after_link`
   because the expected confirmation marker was absent. Five isolated repetitions

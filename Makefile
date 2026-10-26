@@ -17,9 +17,10 @@ test:
 	$(GO) test ./...
 
 test-race:
-	# The archive and remaining groups cover all tests without extending timeouts.
+	# Three disjoint groups cover all tests without extending timeouts.
 	$(GO) test -race ./... -run '^TestArchive'
-	$(GO) test -race ./... -skip '^TestArchive'
+	$(GO) test -race ./... -skip '^(TestArchive|TestManagedCustody)'
+	$(GO) test -race ./... -run '^TestManagedCustody'
 
 test-fuzz-smoke:
 	$(GO) test ./cmd/omd -run '^$$' -fuzz '^FuzzDecodePruneEffectRootsNeverPanics$$' -fuzztime=$(FUZZTIME)
@@ -76,6 +77,7 @@ test-fuzz-smoke:
 	$(GO) test ./node/workarchive -run '^$$' -fuzz '^FuzzDecodeCustodyRecordNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/workarchive -run '^$$' -fuzz '^FuzzDecodeCustodyJournalHeaderNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/workarchive -run '^$$' -fuzz '^FuzzDecodeCustodyJournalEntryNeverPanics$$' -fuzztime=$(FUZZTIME)
+	$(GO) test ./node/workarchive -run '^$$' -fuzz '^FuzzDecodeCustodyAuditIntent$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/workarchive -run '^$$' -fuzz '^FuzzDecodeCustodyJournalSlotNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/workarchive -run '^$$' -fuzz '^FuzzDecodeCustodyCheckpointNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/workarchive -run '^$$' -fuzz '^FuzzDecodeCustodyBackupPinNeverPanics$$' -fuzztime=$(FUZZTIME)
@@ -101,6 +103,7 @@ test-fuzz-smoke:
 	$(GO) test ./sim/workgraphmodel -run '^$$' -fuzz '^FuzzRunSelfishStrategiesNeverBreakAccounting$$' -fuzztime=$(FUZZTIME)
 
 test-process:
+	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessManagedCustodyServe' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./cmd/omd -run '^(TestProcessPruneArchiveEffect|TestPruneEffectNativeOutput)' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessPrunePreparation(RoundTrip|BrokenPipe)$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessPruneSecondarySigning(RoundTrip|BrokenPipe)$$' -count=1 -timeout=2m
@@ -118,6 +121,7 @@ test-process:
 	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestPrune(PreparedArchiveProcessRecovery|LineageEvidenceProcessCrashAtomicity)$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestPruneArchiveEffectServiceProcessRecovery$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestManagedCustodyServeProcessRecovery$$' -count=1 -timeout=2m
+	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestManagedCustodyAuditProcessRecovery$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestArchiveSecondaryAdmissionProcessRecovery$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestArchiveSecondaryCompletionProcessRecovery$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestArchiveSecondaryQUICProcessRecovery$$' -count=1 -timeout=2m

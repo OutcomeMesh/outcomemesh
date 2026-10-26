@@ -11,10 +11,14 @@ every selected replica assignment through replay and deletion, using pinned poli
 and position-pinned storage. The separate owned effect runtime and explicit
 operator CLI retain these owners across reviewed execution. An opt-in managed
 Serve library now binds an exact admitted challenge to the original coordinator
-through existing-journal response delivery and stream cleanup. Managed Audit,
-owned serving runtime/CLI, network authority and active rebaseline remain open.
+through existing-journal response delivery and stream cleanup. A separate managed
+Audit library now retains unsigned intent before signing and guards acceptance
+and exact recovery. An explicit local pair shares the original coordinator once;
+an owned Serve host/CLI drains handlers before releasing it. Audit operator
+tooling, owned paired hosting, distributed authority and active rebaseline remain open.
 See [managed Serve acceptance](CUSTODY_SERVE_ACCEPTANCE.md) and the
-[effect runtime](PRUNE_EFFECT_RUNTIME.md) for their separate ownership scopes.
+[managed runtime](CUSTODY_MANAGED_RUNTIME.md) and [effect runtime](PRUNE_EFFECT_RUNTIME.md)
+for their separate ownership scopes.
 
 An opt-in, completion-only QUIC endpoint now delivers an already co-signed
 command to that original colocated executor/coordinator. It does not distribute
@@ -38,7 +42,10 @@ This is why another signed retirement file, by itself, is not a global fence.
 | --- | --- | --- |
 | Auditor challenge creation, result publication, journal append and artifact recovery | CLI holds artifact lock then active journal decision scope for the whole cycle | Bind the whole live operation to the current assignment; recovery must not promote historical validity to current acceptance |
 | Replica fresh, cached and restart-recovered responses | Journal-backed sessions hold their current decision scope through response and stream retirement | Reject retired assignments even with copied keys/journals; drain operations admitted before retirement |
-| Opt-in `ManagedCustodyServeSession` | Exact signed Serve ticket, challenge ID, independent authenticated peer pin and existing active journal; original coordinator guard through fresh/cached/recovered response, EOF, stream Close and cancellation drain | Owned host/handler drain and operator CLI; independently enforced remote/copy fencing; no implicit ticket completion |
+| Opt-in `ManagedCustodyServeSession` | Exact signed Serve ticket, challenge ID, independent authenticated peer pin and existing active journal; original coordinator guard through fresh/cached/recovered response, EOF, stream Close and cancellation drain | Independently enforced remote/copy fencing; no implicit ticket completion |
+| Opt-in `ManagedCustodyAuditSession` | Retained unsigned intent before signing; original Audit guard through challenge publication, actual stream Close, journal acceptance, artifact publication and exact prior+1 recovery | Operator Audit CLI and owned paired transport; distributed current authority and physical/copy fencing |
+| Local `ManagedCustodyAuditServePair` | Same original coordinator acquired once for both pending tickets, exact challenge and distinct participant roots; private participants run concurrently and both drain before guard release | Owned paired host/operator lifecycle and real remote/copy enforcement; never use recursive public adapters on the same owner |
+| Owned `ManagedCustodyServeService` / managed Serve CLI | Existing-only object/journal/authority opening, pinned transport, explicit listener, gate and accepted-handler drain before original owner release; CLI defaults to review | Audit client/operator integration and remote/copy enforcement; no automatic authority Stop/Complete/Retire |
 | Raw/record-backed sessions and signing helpers | Signature, binding and timing checks; no journal retirement guard | Remain ineligible for managed cutover or require the same authority protocol; no silent fallback |
 | `CustodySession.Audit` live result acceptance | Rechecks returned renewal at current time under static keys | Hold a current assignment decision through durable acceptance, not just transport identity |
 | `workarchive.PruneCanonicalPrefix` destructive maintenance | Full replica replay, static trusted keys, immutable evidence and final in-batch time/cancellation check | Hold current assignment authorization through storage transition; reject retired receipt keys regardless of their signatures |
