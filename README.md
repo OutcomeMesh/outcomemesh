@@ -133,6 +133,9 @@ Neither is a new CLI effect command. Bounded lineage retention, reviewed extract
 from existing journals, inventory-bound execution history and explicit local
 secondary admission/completion are implemented. Source extraction requires exact
 independently pinned journal checkpoints and leaves their histories unchanged.
+The offline `work-prune-lineage-extract` command provides source review, exact
+reviewed publication and independent retained-file verification; see the
+[preparation runbook](docs/PRUNE_PREPARATION.md).
 An explicit owned secondary service/CLI can receive one selected secondary's signed
 commands over the existing QUIC protocols under independently pinned inventory
 and peer identities. Select `admit`, `complete` or `both`; stop and drain admission

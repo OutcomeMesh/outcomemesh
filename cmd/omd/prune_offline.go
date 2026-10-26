@@ -42,6 +42,8 @@ func runPruneOffline(ctx context.Context, arguments []string, output io.Writer) 
 		return runPruneOutboxPrepare(ctx, arguments, output)
 	case pruneMaintenanceCommand:
 		return runPruneMaintenance(ctx, arguments, output)
+	case pruneLineageExtractCommand:
+		return runPruneLineageExtract(ctx, arguments, output)
 	default:
 		return errors.New("unsupported offline prune command")
 	}

@@ -1787,6 +1787,57 @@ Implemented in an isolated, not-yet-activated consensus package:
   under its original two-minute bound. No new persistent source transition was
   added. Other process groups, a separate full normal suite and a standalone
   fuzz campaign were not rerun; existing fuzz seeds ran in the full race gate.
+  Operator lineage-extraction follow-up (2026-10-26): the explicit offline
+  work-prune-lineage-extract command now provides review/extract/verify. Review
+  and extract read a bounded strict source-path JSON array and existing canonical
+  inventory, checkpoint, manifest and initial-receipt files. Every descriptor
+  must contain exactly the nine scalar fields; duplicate/unknown/case-changed
+  keys, null/wrong types, missing fields, trailing data and cap violations fail.
+  Relative source paths are anchored to the metadata parent. Assignments,
+  selected receipts and auditor keys come solely from the externally pinned
+  lineage inventory. Source sets are exact and ordered by that inventory.
+  Placement and aggregate manifest/checkpoint bounds precede owner acquisition;
+  actual reads retain the same aggregate budget. The concrete output parent
+  must already exist outside every source journal/input file, with final
+  symlinks and output/input inode aliases rejected before extraction.
+  Review performs real guarded extraction and computes a local digest over
+  content pins, canonical inventory/metadata/input/journal/output paths and
+  resulting evidence ID. Its stable first result header is followed by readable
+  scope JSON with source pins and timing policy. Extract requires the retained
+  expected review ID, recomputes it and calls the existing immutable publisher.
+  Exact retries keep the original file/inode; changed scope cannot publish under
+  an older review. Source locks release before publication or any stdout write.
+  Verify requires the independent evidence pin, forbids source/review flags and
+  opens only retained inventory/evidence content. Source journals, metadata and
+  input artifacts can be offline. It does not repeat publication placement review.
+  The original envelope/evidence ID is unchanged; source review pins stay
+  separate. The command adds no keys, host, current authority/executor/WorkChain,
+  checkpoint capture, repair, automatic recovery or effect surface. Signal and
+  SIGPIPE handling reuse the offline command lifetime; failed stdout preserves
+  published evidence for explicit verify/retry.
+  Initial operator verification: seven new unit tests passed normally with
+  integration tags in 2.964 seconds. The new separate-process group passed in
+  1.909 seconds, including review/extract/verify, frozen byte/ID compatibility,
+  exact same-inode retry, changed source/scope rejection before publication,
+  offline original inputs and closed stdout in all three modes. Unit barriers
+  additionally cover cancelled partial-lock acquisition and second-write scope
+  output failure, including canonical paths with spaces/equal signs. No new
+  database/effect fixture or physical maximum-sized campaign is claimed.
+  Full final make test-race passed in both complementary groups: changed cmd/omd
+  ran in 2.442 and 47.767 seconds. Unchanged store/workarchive and other packages
+  used valid cached results from the previous gate. Full vet and integration-tag
+  cmd vet passed. CGO-disabled trimpath omd builds passed for macOS arm64, Linux
+  amd64 and Windows amd64; native help lists the new command. Durations are test
+  evidence, not benchmarks, and cross-compilation does not establish foreign-OS
+  runtime or physical-storage acceptance. The weighted readiness stays 40/100.
+  Combined new unit/process coverage also passed under race/integration in
+  28.528 seconds with the original two-minute group bound. Existing primary
+  preparation and secondary-signing process groups passed together in 4.577.
+  Integration-tag cmd test binaries compiled for Linux/Windows. The new CLI
+  process group is separate in Makefile; older groups/timeouts remain intact.
+  A separate full normal suite, other process groups and standalone fuzz
+  campaigns were not rerun. Existing codec seed evidence remains in the race
+  gate; no evidence or wire encoding was changed. Formatting/diff checks are clean.
   Process-gate observation (2026-09-07): the first combined run stopped at
   `TestProcessTieCampaignStorageFailuresRecoverWithoutFalseAdvance/observer_confirmation_after_link`
   because the expected confirmation marker was absent. Five isolated repetitions

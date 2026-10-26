@@ -148,7 +148,7 @@ func run(arguments []string) error {
 		return runWorkArchiveCustodyRebaseline(arguments[1:])
 	case pruneServeCommand, pruneSecondaryServeCommand, pruneAdmissionCommand, pruneCompletionCommand:
 		return runPruneCommandCLI(arguments)
-	case pruneAuthorityBootstrapCommand, pruneExecutorPrepareCommand, pruneSigningCommand, pruneCosigningCommand, pruneSecondarySigningCommand, pruneSecondaryCosigningCommand, pruneAdmissionPrepareCommand, pruneCompletionPrepareCommand, pruneMaintenanceCommand:
+	case pruneAuthorityBootstrapCommand, pruneExecutorPrepareCommand, pruneSigningCommand, pruneCosigningCommand, pruneSecondarySigningCommand, pruneSecondaryCosigningCommand, pruneAdmissionPrepareCommand, pruneCompletionPrepareCommand, pruneMaintenanceCommand, pruneLineageExtractCommand:
 		return runPruneOfflineCLI(arguments)
 	case "work-telemetry-policy":
 		return runWorkTelemetryPolicy(arguments[1:])
@@ -1586,6 +1586,7 @@ func printUsage() {
 	fmt.Printf("pinned secondary custody command transport: omd %s --mode <admit|complete|both> [flags]\n", pruneSecondaryServeCommand)
 	fmt.Printf("explicit offline custody preparation: omd <%s|%s|%s|%s|%s|%s> [flags]\n", pruneAuthorityBootstrapCommand, pruneExecutorPrepareCommand, pruneSigningCommand, pruneCosigningCommand, pruneAdmissionPrepareCommand, pruneCompletionPrepareCommand)
 	fmt.Printf("offline secondary custody signing: omd <%s|%s> [flags]\n", pruneSecondarySigningCommand, pruneSecondaryCosigningCommand)
+	fmt.Printf("reviewed historical custody extraction: omd %s --mode <review|extract|verify> [flags]\n", pruneLineageExtractCommand)
 	fmt.Printf("reviewed local custody maintenance: omd %s [flags]; command server optionally accepts --maintenance-control stdin\n", pruneMaintenanceCommand)
 	fmt.Println("usage: omd <keygen|init|status|balance|transfer|mine|verify|serve|sync|peers|snapshot-check|serve-quic|sync-quic|peers-quic|auto-sync-quic|work-enable|work-status|work-balance|work-verify|work-mine|work-mine-quic|work-serve-quic|work-sync-quic|work-archive-object-serve-quic|work-archive-object-fetch-quic|work-archive-custody-serve-quic|work-archive-custody-challenge-quic|work-archive-custody-checkpoint|work-archive-custody-verify-checkpoint|work-archive-custody-backup|work-archive-custody-verify-backup|work-archive-custody-pin-backup|work-archive-custody-pin-head|work-archive-custody-verify-pinned-backup|work-archive-custody-reconcile|work-archive-custody-transfer|work-archive-custody-apply-history|work-archive-custody-rebaseline|work-telemetry-policy|work-telemetry-tie-plan|work-telemetry-tie-produce|work-telemetry-tie-campaign|work-telemetry-tie-campaign-publish|work-telemetry-tie-campaign-audit|work-telemetry-tie-campaign-recover|work-telemetry-tie-campaign-receive-quic|work-telemetry-tie-pair-create|work-telemetry-tie-pair-checkpoint|work-telemetry-tie-pair-admit|work-telemetry-tie-pair-receive-quic|work-telemetry-tie-pair-send-quic> [flags]")
 }

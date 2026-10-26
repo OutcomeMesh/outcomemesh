@@ -759,6 +759,19 @@ is a historical snapshot, not Audit admission, current permission, a unique-head
 proof, repair, activation or an effect. Later evidence publication occurs after
 source locks have released. See `PRUNE_ACCEPTANCE.md` for the exact boundary.
 
+The offline lineage extraction command reads bounded strict source-path JSON
+and existing canonical artifacts under independent inventory/checkpoint pins.
+Assignments, selected receipts and auditor trust keys come from that inventory.
+Review displays canonical scope and computes a local digest over its pins,
+ordered source/input paths, output destination and resulting evidence ID. Extract
+recomputes it before the existing no-replace publisher; the parent must exist
+outside every source journal and input file. Verify is a separate content/pin
+check and opens no source, so retained artifacts remain verifiable after journal
+advance or removal. This local digest is neither a signature nor execution
+authority and does not change the retained evidence format. Output failures
+preserve published evidence for exact retry or explicit verify. No signing key,
+current authority/executor/database owner, checkpoint capture or effect is added.
+
 Audit/serve acceptance, reviewed effect handoff and physical/cross-host
 enforcement remain open. This is not a CLI or remotely exposed effect path; see
 `PRUNE_ACCEPTANCE.md` for the current preparation/command boundaries.

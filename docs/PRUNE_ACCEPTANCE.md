@@ -429,7 +429,7 @@ The file proves neither latest/unique journal head, historical Audit admission,
 current pending authority, physical durability, successful execution nor cutover.
 It remains historically readable after a ticket completes; it cannot authorize a
 new execution in that state. Reviewed source extraction is described below;
-there is no extraction CLI or activation path.
+its operator CLI is documented in [PRUNE_PREPARATION.md](PRUNE_PREPARATION.md).
 
 ## Reviewed source-journal extraction
 
@@ -605,7 +605,15 @@ raw owner handle. Completion-only opens neither primary journal. Opening never
 submits or resumes an attempt, and no mode executes pruning. The CLI is documented
 in [PRUNE_COMMANDS.md](PRUNE_COMMANDS.md).
 
-Still required: operator extraction tooling, supervised effect handoff,
+The offline extraction command now exposes source review, exact reviewed
+publication and retained-file verification. Its local review digest additionally
+binds canonical input/source/output paths and ordered checkpoint IDs; that digest
+is not part of the unchanged evidence envelope or a live permission. Review
+displays the effective scope. Extract rechecks it before immutable publication;
+verify needs no original journal or source metadata. See the preparation runbook
+for flags, source JSON and failed-output recovery.
+
+Still required: supervised effect handoff,
 actual managed audit/serve
 paths, cross-host/partition acceptance, copied-owner and physical-storage fencing,
 exhaustion/power-loss/long-soak campaigns, independent review and public testnet.

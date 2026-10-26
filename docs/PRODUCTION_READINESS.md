@@ -145,3 +145,12 @@ current authority. Operator extraction tooling, supervised effect handoff,
 managed audit/serve and physical/remote acceptance remain open. This closes a
 library preparation step, not the weighted lifecycle criterion; readiness stays
 40/100, with no independent-audit or public-testnet credit added.
+
+2026-10-26 operator-extraction follow-up: explicit review/extract/verify modes
+now expose the historical source extractor, immutable publisher and retained-file
+loader. Review displays canonical scope and binds source/output paths, external
+checkpoint pins and evidence ID in a local comparison digest; extract rechecks
+that digest, and verify works with the original sources offline. No current
+permission or effect is granted. Supervised effect handoff, managed audit/serve,
+physical/cross-host enforcement and the wider release gates remain open. This
+closes the operator preparation substep; weighted readiness remains 40/100.

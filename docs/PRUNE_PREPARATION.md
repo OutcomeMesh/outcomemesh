@@ -13,6 +13,11 @@ server accepts only its own assignment. A separate fixed-secondary command
 service now receives one explicitly selected secondary through that inventory;
 its owned startup/handoff procedure is in [PRUNE_COMMANDS.md](PRUNE_COMMANDS.md).
 
+A separate `work-prune-lineage-extract` command reviews, extracts or verifies
+historical renewal evidence. It uses a pinned inventory and explicit source
+checkpoint files, with no signing key. Its source and publication boundary is
+described below.
+
 The assignment, storage-bound request and independent IDs must already exist.
 Request construction and validation against the actual protected database remain
 separate guarded library workflows. A structurally valid request file is not
@@ -20,9 +25,9 @@ evidence that a database exists, is current or may be pruned.
 
 ## Inputs and trust
 
-Every command needs `--assignment` and `--assignment-id`. The assignment is a
-bounded canonical binary artifact, not JSON; the ID must come from the separately
-reviewed assignment. Bootstrap/signing of an executor command also requires
+Bootstrap, signing and outbox commands need `--assignment` and `--assignment-id`.
+The assignment is a bounded canonical binary artifact, not JSON; its ID must come
+from the separately reviewed assignment. Bootstrap/signing of an executor command also requires
 `--request` and its independent `--request-id`. The request must match the
 assignment's archive scope and declared prune consumer, and have a nonzero
 storage-incarnation ID. Do not invent a replacement ID for lost storage.
@@ -361,6 +366,104 @@ no stdin maintenance, automatic retry/recovery, remote cancellation or effect
 entry point in the fixed-secondary service. Preparing an inventory, enforcing
 the complete live required set, proving physical fencing and transferring
 ownership across hosts remain separate gates.
+
+## Reviewed lineage extraction
+
+`work-prune-lineage-extract` has three modes: `review` (the default), `extract`
+and `verify`. All require an existing canonical `--inventory`, independently
+retained `--inventory-id` / `--policy-id`, and a concrete `--out` path. Only a
+lineage-mode inventory is accepted. The command does not construct requests,
+capture or refresh checkpoints, read signing keys or open WorkChain/authority/
+executor owners. See [PRUNE_ACCEPTANCE.md](PRUNE_ACCEPTANCE.md) for the library's
+source-lock and historical verification rules.
+
+For review/extract, `--sources` names a strict JSON array of at most 64 source
+descriptors, with a 256 KiB file limit. One descriptor looks like this; supply
+the entire exact assignment set and the custody timing values from its original
+reviewed policy:
+
+```json
+[
+  {
+    "assignment_id": "<independently-retained-assignment-id>",
+    "journal": "/srv/om-replica-a/custody",
+    "checkpoint": "a/checkpoint.omcc",
+    "checkpoint_id": "<independently-retained-checkpoint-id>",
+    "manifest": "a/manifest.omam",
+    "initial_receipt": "a/initial.omrr",
+    "maximum_challenge_lifetime": 120,
+    "maximum_proof_age": 60,
+    "maximum_renewal_term": 86400
+  }
+]
+```
+
+Relative descriptor paths resolve against the sources file's directory; CLI
+paths resolve from the working directory. The checkpoint is an existing canonical
+journal-only checkpoint, with an external ID, and must match the exact current
+source tree and selected receipt. Manifest and initial receipt use their existing
+canonical binary formats. Assignment, selected terminal receipt and trusted
+auditors come from the verified inventory. JSON cannot replace those trust keys.
+Duplicate/unknown fields, missing fields, wrong types, extra JSON, oversized
+metadata and duplicate/missing assignments are rejected.
+
+Review the sources and independently retained pins, then run:
+
+```sh
+omd work-prune-lineage-extract \
+  --inventory /srv/om-inventory/prepared.ompi \
+  --inventory-id <independently-retained-inventory-id> \
+  --policy-id <independently-retained-lineage-policy-id> \
+  --sources /srv/om-lineage-inputs/sources.json \
+  --out /srv/om-lineage-evidence/export.omple
+```
+
+Review runs the actual guarded extraction and returns the existing evidence ID
+plus a local `review_id`. This binds the inventory/policy, canonical input and
+source paths, the assignment-ordered checkpoint IDs, output path and resulting
+evidence ID. JSON whitespace or source ordering does not change the reviewed
+meaning; a different source/destination or pin requires a new review. The digest
+is a local comparison value, not a signature or live execution permission.
+Retain the reviewed ID independently; review publishes nothing.
+The first output line is the stable result header. Review then prints a `scope:`
+JSON block showing canonical paths, ordered source pins and timing parameters;
+inspect that scope before approving the digest. Header parsers must read the
+first line rather than interpret paths inside the human scope as result fields.
+
+With those same inputs, add `--mode extract --expected-review-id <review-id>`.
+Extraction repeats source verification and checks the exact review ID before
+calling the existing immutable publisher. The output parent must already exist,
+be dedicated, and be disjoint from every source journal and input file. Final
+symlinks and output aliases to input inodes are rejected. Source locks are released
+before publication; the output is their detached historical snapshot. Exact
+retries verify and sync the existing same file. Different bytes never replace it.
+
+Verify the retained artifact without opening any original journal:
+
+```sh
+omd work-prune-lineage-extract --mode verify \
+  --inventory /srv/om-inventory/prepared.ompi \
+  --inventory-id <independently-retained-inventory-id> \
+  --policy-id <independently-retained-lineage-policy-id> \
+  --out /srv/om-lineage-evidence/export.omple \
+  --evidence-id <independently-retained-evidence-id>
+```
+
+Verify rejects `--sources` and `--expected-review-id`, even with empty values.
+It only uses the pinned inventory and retained evidence; source journals may
+have advanced or be offline. Review/extract reject `--evidence-id`, and review
+rejects `--expected-review-id`. Scope flags never silently switch modes.
+Verify checks retained content and pins at its existing regular path. The source
+and dedicated publication-parent placement review belongs to review/extract.
+
+The `work_prune_lineage_extraction` result reports mode, IDs and whether this
+invocation published or verified a file, with `owners_closed=true`,
+`historical_only=true` and `execution_authorized=false`. A stdout failure after
+publication preserves the file for explicit verify or exact retry. No automatic
+retry, checkpoint renewal, repair, replacement, journal cleanup or effect follows
+any result. Preserve source review pins separately: the unchanged evidence ID
+does not commit source paths or checkpoint IDs. Physical/copy fencing, managed
+audit/serve and supervised effect handoff remain separate gates.
 
 ## Verification boundary
 

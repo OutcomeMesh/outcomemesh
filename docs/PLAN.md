@@ -600,13 +600,17 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
                         Cover rotated/losing bodies, alias rejection, cancellation,
                         source ownership and reuse in the existing guarded effect.
                         Extraction does not imply current Audit permission or a
-                        unique head; no operator extraction CLI is introduced.
-                      - [ ] Operator extraction review/publication/verification:
+                        unique head; operator tooling is covered below.
+                      - [x] Operator extraction review/publication/verification:
                         read bounded source metadata and existing canonical
                         files under external inventory/checkpoint pins, require
                         an exact reviewed scope before extraction, and reuse the
-                        immutable evidence publisher and loader. No automatic
-                        checkpoint capture, source repair, signing or execution.
+                        immutable evidence publisher and loader. Display the
+                        canonical reviewed scope and bind source/output paths in
+                        the local review ID. Verify retained bytes with sources
+                        offline; preserve exact retries and stdout failures.
+                        No automatic checkpoint capture, source repair,
+                        signing or execution.
                       - [ ] Supervised multi-owner effect/runtime handoff with
                         every required original owner retained through explicit
                         review and guarded execution. Integrate managed audit/serve
