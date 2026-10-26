@@ -2,6 +2,7 @@ package workarchive
 
 import (
 	"bytes"
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/hex"
@@ -711,7 +712,14 @@ func initializeCustodyJournal(path string, header CustodyJournalHeader, limits C
 }
 
 func (journal *CustodyJournal) scan() (CustodyJournalState, error) {
-	if _, err := inventoryCustodyJournal(journal.path); err != nil {
+	return journal.scanContext(context.Background())
+}
+
+func (journal *CustodyJournal) scanContext(ctx context.Context) (CustodyJournalState, error) {
+	if ctx == nil {
+		return CustodyJournalState{}, ErrCustodyJournal
+	}
+	if _, err := inventoryCustodyJournalBoundedContext(ctx, journal.path, MaximumCustodyJournalPaths); err != nil {
 		return CustodyJournalState{}, err
 	}
 	headerBytes, err := readRegularArchiveFile(
@@ -740,18 +748,21 @@ func (journal *CustodyJournal) scan() (CustodyJournalState, error) {
 		filepath.Join(journal.path, custodyJournalSlotsName),
 		filepath.Join(journal.path, custodyJournalPendingName),
 	} {
+		if err := ctx.Err(); err != nil {
+			return CustodyJournalState{}, err
+		}
 		if err := requireCustodyJournalDirectory(directory); err != nil {
 			return CustodyJournalState{}, err
 		}
 	}
-	if err := journal.validateLayout(); err != nil {
+	if err := journal.validateLayoutContext(ctx); err != nil {
 		return CustodyJournalState{}, err
 	}
-	bodies, err := journal.scanBodyPaths()
+	bodies, err := journal.scanBodyPathsContext(ctx)
 	if err != nil {
 		return CustodyJournalState{}, err
 	}
-	slots, err := journal.scanSlots()
+	slots, err := journal.scanSlotsContext(ctx)
 	if err != nil {
 		return CustodyJournalState{}, err
 	}
@@ -760,6 +771,9 @@ func (journal *CustodyJournal) scan() (CustodyJournalState, error) {
 	}
 	referenced := make(map[types.Hash]struct{}, len(slots))
 	for index, slot := range slots {
+		if err := ctx.Err(); err != nil {
+			return CustodyJournalState{}, err
+		}
 		expectedSequence := uint64(index) + 1
 		if slot.Sequence != expectedSequence {
 			return CustodyJournalState{}, ErrCustodyJournal
@@ -768,7 +782,7 @@ func (journal *CustodyJournal) scan() (CustodyJournalState, error) {
 		if !exists {
 			return CustodyJournalState{}, ErrCustodyJournal
 		}
-		encoded, err := loadCustodyJournalBodyPaths(slot.EntryID, paths)
+		encoded, err := loadCustodyJournalBodyPathsContext(ctx, slot.EntryID, paths)
 		if err != nil {
 			return CustodyJournalState{}, err
 		}
@@ -792,20 +806,30 @@ func (journal *CustodyJournal) scan() (CustodyJournalState, error) {
 	// be canonical and content-addressed. Validate them one at a time so replay
 	// memory is bounded by one entry rather than total journal history.
 	for entryID, paths := range bodies {
+		if err := ctx.Err(); err != nil {
+			return CustodyJournalState{}, err
+		}
 		if _, exists := referenced[entryID]; exists {
 			continue
 		}
-		if _, err := loadCustodyJournalBodyPaths(entryID, paths); err != nil {
+		if _, err := loadCustodyJournalBodyPathsContext(ctx, entryID, paths); err != nil {
 			return CustodyJournalState{}, err
 		}
 	}
-	if err := verifyCustodyRetirementJournal(journal.path, header, headerBytes, state); err != nil {
+	if err := verifyCustodyRetirementJournalContext(ctx, journal.path, header, headerBytes, state); err != nil {
 		return CustodyJournalState{}, err
 	}
 	return state, nil
 }
 
 func (journal *CustodyJournal) validateLayout() error {
+	return journal.validateLayoutContext(context.Background())
+}
+
+func (journal *CustodyJournal) validateLayoutContext(ctx context.Context) error {
+	if ctx == nil {
+		return ErrCustodyJournal
+	}
 	rootEntries, err := os.ReadDir(journal.path)
 	if err != nil {
 		return errors.Join(ErrCustodyJournal, err)
@@ -818,6 +842,9 @@ func (journal *CustodyJournal) validateLayout() error {
 		custodyJournalPendingName: true,
 	}
 	for _, entry := range rootEntries {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if entry.Name() == custodyRetirementFileName {
 			if entry.Type()&os.ModeSymlink != 0 || entry.IsDir() {
 				return ErrCustodyRetirement
@@ -842,6 +869,9 @@ func (journal *CustodyJournal) validateLayout() error {
 		custodyJournalActiveName: {}, custodyJournalSegmentsName: {},
 	}
 	for _, entry := range objectEntries {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if _, exists := expectedObjects[entry.Name()]; !exists || !entry.IsDir() ||
 			entry.Type()&os.ModeSymlink != 0 {
 			return ErrCustodyJournal
@@ -856,6 +886,9 @@ func (journal *CustodyJournal) validateLayout() error {
 		return errors.Join(ErrCustodyJournal, err)
 	}
 	for _, entry := range pendingEntries {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if !strings.HasPrefix(entry.Name(), ".outcomemesh-custody-journal-") ||
 			entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
 			return ErrCustodyJournal
@@ -869,6 +902,13 @@ func (journal *CustodyJournal) validateLayout() error {
 }
 
 func (journal *CustodyJournal) scanBodyPaths() (map[types.Hash][]string, error) {
+	return journal.scanBodyPathsContext(context.Background())
+}
+
+func (journal *CustodyJournal) scanBodyPathsContext(ctx context.Context) (map[types.Hash][]string, error) {
+	if ctx == nil {
+		return nil, ErrCustodyJournal
+	}
 	result := make(map[types.Hash][]string)
 	directories := []string{journal.activePath()}
 	segments, err := os.ReadDir(journal.segmentsPath())
@@ -876,6 +916,9 @@ func (journal *CustodyJournal) scanBodyPaths() (map[types.Hash][]string, error) 
 		return nil, errors.Join(ErrCustodyJournal, err)
 	}
 	for _, segment := range segments {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if !segment.IsDir() || !validCustodyJournalSegmentName(segment.Name()) ||
 			segment.Type()&os.ModeSymlink != 0 {
 			return nil, ErrCustodyJournal
@@ -883,6 +926,9 @@ func (journal *CustodyJournal) scanBodyPaths() (map[types.Hash][]string, error) 
 		directories = append(directories, filepath.Join(journal.segmentsPath(), segment.Name()))
 	}
 	for _, directory := range directories {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if err := requireCustodyJournalDirectory(directory); err != nil {
 			return nil, err
 		}
@@ -891,6 +937,9 @@ func (journal *CustodyJournal) scanBodyPaths() (map[types.Hash][]string, error) 
 			return nil, errors.Join(ErrCustodyJournal, err)
 		}
 		for _, item := range entries {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 			entryID, ok := custodyJournalBodyNameID(item.Name())
 			if !ok || item.IsDir() || item.Type()&os.ModeSymlink != 0 {
 				return nil, ErrCustodyJournal
@@ -911,11 +960,21 @@ func (journal *CustodyJournal) scanBodyPaths() (map[types.Hash][]string, error) 
 }
 
 func loadCustodyJournalBodyPaths(entryID types.Hash, paths []string) ([]byte, error) {
+	return loadCustodyJournalBodyPathsContext(context.Background(), entryID, paths)
+}
+
+func loadCustodyJournalBodyPathsContext(ctx context.Context, entryID types.Hash, paths []string) ([]byte, error) {
+	if ctx == nil {
+		return nil, ErrCustodyJournal
+	}
 	if entryID.IsZero() || len(paths) == 0 {
 		return nil, ErrCustodyJournal
 	}
 	var result []byte
 	for _, path := range paths {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		encoded, err := readRegularArchiveFile(path, MaximumCustodyJournalEntryBytes)
 		if err != nil {
 			return nil, errors.Join(ErrCustodyJournal, err)
@@ -935,6 +994,13 @@ func loadCustodyJournalBodyPaths(entryID types.Hash, paths []string) ([]byte, er
 }
 
 func (journal *CustodyJournal) scanSlots() ([]custodyJournalSlot, error) {
+	return journal.scanSlotsContext(context.Background())
+}
+
+func (journal *CustodyJournal) scanSlotsContext(ctx context.Context) ([]custodyJournalSlot, error) {
+	if ctx == nil {
+		return nil, ErrCustodyJournal
+	}
 	root := filepath.Join(journal.path, custodyJournalSlotsName)
 	buckets, err := os.ReadDir(root)
 	if err != nil {
@@ -943,6 +1009,9 @@ func (journal *CustodyJournal) scanSlots() ([]custodyJournalSlot, error) {
 	var slots []custodyJournalSlot
 	seen := make(map[uint64]struct{})
 	for _, bucket := range buckets {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		bucketIndex, ok := custodyJournalBucketNameIndex(bucket.Name())
 		if !ok || !bucket.IsDir() || bucket.Type()&os.ModeSymlink != 0 {
 			return nil, ErrCustodyJournal
@@ -956,6 +1025,9 @@ func (journal *CustodyJournal) scanSlots() ([]custodyJournalSlot, error) {
 			return nil, errors.Join(ErrCustodyJournal, err)
 		}
 		for _, item := range items {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 			sequence, ok := custodyJournalSlotNameSequence(item.Name())
 			if !ok || item.IsDir() || item.Type()&os.ModeSymlink != 0 ||
 				(sequence-1)/custodyJournalSlotsPerBucket != bucketIndex {

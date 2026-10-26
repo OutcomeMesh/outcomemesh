@@ -1736,6 +1736,57 @@ Implemented in an isolated, not-yet-activated consensus package:
   28.996, with the same two-minute bounds. A separate full normal suite, all
   other process groups and a standalone fuzz campaign were not rerun this pass.
   Existing fuzz seeds ran in the race gate; no codec or wire format was added.
+  Reviewed source-extraction follow-up (2026-10-26):
+  ExtractCustodyReceiptLineages now reads a batch of existing journal-only
+  checkpoint sources. All external checkpoint/assignment/selected-receipt pins,
+  aggregate entry counts and manifest lengths are checked before filesystem
+  access. Full cryptographic scope checks precede ownership. Canonical root
+  order, disjoint paths and distinct lock inodes avoid duplicate acquisition;
+  existing permanent locks remain held together through exact tree/replay
+  checks, all winning-body size checks, detached copies and final tree hashes.
+  Only canonical sequence-slot winners become entries; valid losing bodies and
+  identical rotated copies remain source history. Changed heads, tree layout,
+  incomplete bodies or source pins fail without creation, repair or cleanup.
+  Context-aware private lock/inventory/replay/retirement helpers preserve the
+  old Background entry points and check cancellation between bounded operations
+  and streaming chunks. Individual filesystem syncs and bounded signature/
+  decoding calls are synchronous. Reverse lock cleanup preserves Close errors
+  and no partial result escapes. Valid retired history remains non-active.
+  ExtractArchivePruneLineageEvidence derives assignments and selected receipts
+  only from the verified lineage inventory, orders the exact source set and
+  transfers detached output to the existing opaque evidence value without a
+  second full body copy. The envelope, frozen format and evidence ID are
+  unchanged; source checkpoint IDs/path mapping must be retained separately.
+  Source locks release before later artifact publication. No executor, current
+  authority, WorkChain, CLI extraction, signing or execution surface is added.
+  Focused normal tests passed: seven workarchive tests in 5.446 seconds and
+  three store tests in 5.803. They cover mixed/empty prefixes, rotation and
+  losing bodies, scope before filesystem access, source mutations, canonical
+  path/lock aliases, aggregate entry preflight, waiting/copy cancellation,
+  partial-lock cleanup and all-source ownership against append/rotation or
+  retirement-marker publication. The retirement barrier uses a valid tombstone
+  under the original lock, not a new end-to-end rebaseline workflow.
+  Store roundtrips preserve exact existing evidence bytes/IDs and independent
+  owner/database snapshots, then feed separate guarded real pruning. Newly
+  extracted history still cannot bypass a completed secondary permission.
+  A valid physical 256 MiB threshold/stress fixture was not generated; byte
+  preallocation follows reviewed aggregate winning-size checks and existing
+  evidence-budget tests. No physical-storage or public-testnet credit is added;
+  the weighted readiness estimate remains 40/100.
+  Full final make test-race passed in both complementary groups. Fresh store
+  runs took 246.045 and 400.663 seconds; workarchive took 12.570 and 232.182;
+  cmd/omd took 1.718 and 59.460. New extraction tests ran with race detection
+  in the second group. Unchanged packages used valid cached results; these
+  durations are test-run evidence, not performance benchmarks. Full vet and
+  integration-tag workarchive/store/cmd vet passed. CGO-disabled trimpath omd
+  builds passed for macOS arm64, Linux amd64 and Windows amd64. Integration-tag
+  workarchive and store test binaries compiled for Linux/Windows. Formatting
+  and diff checks are clean. These builds do not establish foreign-OS runtime,
+  physical-storage acceptance or production activation.
+  Existing journal/retirement process crash coverage passed in 7.220 seconds
+  under its original two-minute bound. No new persistent source transition was
+  added. Other process groups, a separate full normal suite and a standalone
+  fuzz campaign were not rerun; existing fuzz seeds ran in the full race gate.
   Process-gate observation (2026-09-07): the first combined run stopped at
   `TestProcessTieCampaignStorageFailuresRecoverWithoutFalseAdvance/observer_confirmation_after_link`
   because the expected confirmation marker was absent. Five isolated repetitions

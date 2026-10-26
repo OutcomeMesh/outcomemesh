@@ -744,6 +744,21 @@ secondary from a confirmed primary success or pre-start cancellation. Success
 requires the original retained inventory binding; cancellation retains its original
 request/ticket/executor scope. Prepared inventory and lineage retention are also
 implemented. These local records are not portable all-assignment certificates.
+
+Reviewed lineage extraction now reads existing journals under every selected
+source's permanent lock, with exact independently pinned journal-only checkpoints.
+It verifies canonical scope, full tree and replayed state, budgets all selected
+winning bodies before output allocation, copies detached bytes and rechecks the
+trees before releasing ownership. Context-aware private helpers cancel lock
+waiting, traversal, replay and streaming reads; existing callers keep their prior
+behavior. Individual filesystem syncs and bounded verification remain synchronous.
+The inventory wrapper derives assignments/selected receipts solely from external
+inventory/policy pins. Source checkpoint IDs are retained separately: the unchanged
+evidence envelope does not commit them or the source paths. Successful extraction
+is a historical snapshot, not Audit admission, current permission, a unique-head
+proof, repair, activation or an effect. Later evidence publication occurs after
+source locks have released. See `PRUNE_ACCEPTANCE.md` for the exact boundary.
+
 Audit/serve acceptance, reviewed effect handoff and physical/cross-host
 enforcement remain open. This is not a CLI or remotely exposed effect path; see
 `PRUNE_ACCEPTANCE.md` for the current preparation/command boundaries.

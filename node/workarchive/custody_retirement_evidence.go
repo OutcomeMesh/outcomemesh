@@ -27,6 +27,16 @@ func loadCustodyRetirement(root string) (CustodyParticipantRetirement, bool, err
 }
 
 func verifyCustodyRetirementJournal(root string, header CustodyJournalHeader, headerBytes []byte, state CustodyJournalState) error {
+	return verifyCustodyRetirementJournalContext(context.Background(), root, header, headerBytes, state)
+}
+
+func verifyCustodyRetirementJournalContext(ctx context.Context, root string, header CustodyJournalHeader, headerBytes []byte, state CustodyJournalState) error {
+	if ctx == nil {
+		return ErrCustodyRetirement
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	retirement, exists, err := loadCustodyRetirement(root)
 	if err != nil || !exists {
 		return err
@@ -37,7 +47,7 @@ func verifyCustodyRetirementJournal(root string, header CustodyJournalHeader, he
 		retirement.Before.Sequence != state.Sequence || retirement.Before.HeadEntryID != state.HeadEntryID || retirement.Before.ReceiptID != receiptID {
 		return ErrCustodyRetirement
 	}
-	tree, err := walkCustodyEvidenceTreeExceptRetirement(context.Background(), root, "", MaximumCustodyJournalBytes, MaximumCustodyJournalPaths, true)
+	tree, err := walkCustodyEvidenceTreeExceptRetirement(ctx, root, "", MaximumCustodyJournalBytes, MaximumCustodyJournalPaths, true)
 	if err != nil || tree != retirement.Before.Journal {
 		return errors.Join(ErrCustodyRetirement, err)
 	}

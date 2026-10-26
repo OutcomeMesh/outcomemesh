@@ -129,8 +129,10 @@ now replays all selected replicas and holds each assignment's original permissio
 guard through deletion and confirmed result. It requires exact policy and storage
 pair pins. The original mode accepts only initial receipts; a separately pinned
 mode verifies complete renewal prefixes under the same current authority guards.
-Neither is a new CLI effect command. Bounded lineage retention, inventory-bound
-execution history and explicit local secondary admission/completion are implemented.
+Neither is a new CLI effect command. Bounded lineage retention, reviewed extraction
+from existing journals, inventory-bound execution history and explicit local
+secondary admission/completion are implemented. Source extraction requires exact
+independently pinned journal checkpoints and leaves their histories unchanged.
 An explicit owned secondary service/CLI can receive one selected secondary's signed
 commands over the existing QUIC protocols under independently pinned inventory
 and peer identities. Select `admit`, `complete` or `both`; stop and drain admission

@@ -135,3 +135,13 @@ remain distinct steps. This closes command-service ownership, while reviewed
 effect handoff, managed audit/serve, live-journal extraction and physical/remote
 acceptance remain open. No audit or public-testnet credit is added; the weighted
 score stays 40/100.
+
+2026-10-26 source-extraction follow-up: a reviewed library batch now extracts
+exact historical renewal prefixes from existing journal checkpoints into the
+unchanged retained evidence format. All source locks remain held through replay,
+bounded copying and revalidation. Inventory integration derives assignments and
+selected receipts from external content pins; historical exports do not grant
+current authority. Operator extraction tooling, supervised effect handoff,
+managed audit/serve and physical/remote acceptance remain open. This closes a
+library preparation step, not the weighted lifecycle criterion; readiness stays
+40/100, with no independent-audit or public-testnet credit added.

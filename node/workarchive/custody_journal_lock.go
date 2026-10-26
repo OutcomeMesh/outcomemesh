@@ -1,6 +1,7 @@
 package workarchive
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -31,6 +32,16 @@ func AcquireCustodyArtifacts(root string) (*os.File, error) {
 const custodyArtifactsLockName = "custody.lock"
 
 func acquireCustodyEvidenceLock(root, name string, create bool) (*os.File, error) {
+	return acquireCustodyEvidenceLockContext(context.Background(), root, name, create)
+}
+
+func acquireCustodyEvidenceLockContext(ctx context.Context, root, name string, create bool) (*os.File, error) {
+	if ctx == nil {
+		return nil, ErrCustodyJournal
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if err := requireCustodyJournalDirectory(root); err != nil {
 		return nil, err
 	}
@@ -61,6 +72,9 @@ func acquireCustodyEvidenceLock(root, name string, create bool) (*os.File, error
 	}()
 	deadline := time.Now().Add(30 * time.Second)
 	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		locked, err := tryLockCustodyJournalFile(file)
 		if err != nil {
 			return nil, err
@@ -71,7 +85,13 @@ func acquireCustodyEvidenceLock(root, name string, create bool) (*os.File, error
 		if !time.Now().Before(deadline) {
 			return nil, ErrCustodyJournalBusy
 		}
-		time.Sleep(10 * time.Millisecond)
+		timer := time.NewTimer(10 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
 	}
 	opened, err := file.Stat()
 	if err != nil {
@@ -86,6 +106,9 @@ func acquireCustodyEvidenceLock(root, name string, create bool) (*os.File, error
 		return nil, err
 	}
 	if err := syncDirectory(root); err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	failed = false

@@ -1,6 +1,7 @@
 package workarchive
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -90,10 +91,20 @@ func inventoryCustodyJournal(root string) (CustodyJournalUsage, error) {
 }
 
 func inventoryCustodyJournalBounded(root string, maximumPaths uint64) (CustodyJournalUsage, error) {
+	return inventoryCustodyJournalBoundedContext(context.Background(), root, maximumPaths)
+}
+
+func inventoryCustodyJournalBoundedContext(ctx context.Context, root string, maximumPaths uint64) (CustodyJournalUsage, error) {
+	if ctx == nil {
+		return CustodyJournalUsage{}, ErrCustodyJournal
+	}
 	root = filepath.Clean(root)
 	var usage CustodyJournalUsage
 	var visit func(string, int) error
 	visit = func(path string, depth int) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		info, err := os.Lstat(path)
 		if err != nil || (!info.IsDir() && !info.Mode().IsRegular()) {
 			return errors.Join(ErrCustodyJournal, err)

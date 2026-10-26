@@ -590,13 +590,23 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
                         separate offline effects, then reopen for exact outbox
                         delivery. Cover startup cleanup, shutdown ownership,
                         context cancellation, uncertainty and real CLI restarts.
-                      - [ ] Reviewed live-journal evidence extraction: require
+                      - [x] Reviewed live-journal evidence extraction: require
                         explicit source checkpoints and pinned inventory scope,
                         retain source ownership while reading exact canonical
                         prefixes, reject changed/incomplete sources and bound
                         the aggregate before copying. Preserve detached historical
-                        bytes without creating or repairing journals. Extraction
-                        must not imply current Audit permission or a unique head.
+                        bytes without creating or repairing journals. Keep source
+                        review pins separate from the unchanged evidence file ID.
+                        Cover rotated/losing bodies, alias rejection, cancellation,
+                        source ownership and reuse in the existing guarded effect.
+                        Extraction does not imply current Audit permission or a
+                        unique head; no operator extraction CLI is introduced.
+                      - [ ] Operator extraction review/publication/verification:
+                        read bounded source metadata and existing canonical
+                        files under external inventory/checkpoint pins, require
+                        an exact reviewed scope before extraction, and reuse the
+                        immutable evidence publisher and loader. No automatic
+                        checkpoint capture, source repair, signing or execution.
                       - [ ] Supervised multi-owner effect/runtime handoff with
                         every required original owner retained through explicit
                         review and guarded execution. Integrate managed audit/serve

@@ -428,7 +428,60 @@ No inventory, request, start, effect, authority or consensus encoding changes.
 The file proves neither latest/unique journal head, historical Audit admission,
 current pending authority, physical durability, successful execution nor cutover.
 It remains historically readable after a ticket completes; it cannot authorize a
-new execution in that state. No journal extraction, CLI or activation is added.
+new execution in that state. Reviewed source extraction is described below;
+there is no extraction CLI or activation path.
+
+## Reviewed source-journal extraction
+
+`workarchive.ExtractCustodyReceiptLineages(ctx, sources)` reads complete historical
+prefixes from existing journals. Each `CustodyReceiptLineageSource` provides the
+source JournalPath, independently reviewed Checkpoint and CheckpointID, canonical
+Manifest bytes, InitialReceipt, custody Policy, Assignment and AssignmentID, and
+the exact SelectedReceipt. The checkpoint must be journal-only: Artifacts is zero.
+An auditor's artifact-bearing checkpoint cannot be silently stripped or reused as
+that journal-only review. This export concerns completed renewal history, not
+outstanding auditor artifacts or historical Audit admission.
+
+The batch validates every source pin and assignment scope, the aggregate entry
+count and manifest budget before acquiring source locks. It requires distinct,
+disjoint source roots, acquires their existing permanent locks in deterministic
+path order and retains all of them through source verification and body copying.
+It creates no directory, lock, header, journal record or recovery artifact. The
+exact tree and replayed state must match the reviewed checkpoint; a valid newer
+head, changed rotation layout or changed pending/losing body is a mismatch too.
+Valid retired or imported historical journals remain historical sources.
+
+Only the canonical bodies selected by sequence slots 1..Checkpoint.Sequence are
+exported. Accepted losing bodies and identical copies in active/rotated segments
+remain in the source tree but do not become extra lineage entries. The exact
+terminal receipt must equal SelectedReceipt, including an empty prefix when the
+selected receipt is the initial one. Every prefix is fully verified. A single
+1,024-entry / 256 MiB body budget covers all sources, including manifests, and
+winning body lengths are checked before retaining output copies. Returned
+manifest, entry and trusted-auditor buffers are detached. Cancellation is checked
+while waiting for locks, enumerating, replaying and hashing; a filesystem sync or
+one bounded verification is not an interruptible storage deadline. Source writers
+must honor the same locks, and mutation outside that ownership model is unsupported.
+
+`store.ExtractArchivePruneLineageEvidence(ctx, inventory, inventoryID, policyID,
+sources)` adds the independently pinned **lineage-mode** inventory. Its
+`ArchivePruneLineageSource` contains only AssignmentID, journal path/checkpoint
+pins, manifest, initial receipt and custody policy. The assignment and selected
+receipt come exclusively from the verified inventory. The exact source set is
+required and reordered into inventory order; supplied source order is irrelevant.
+Extraction transfers newly detached buffers directly into the existing opaque
+evidence value, without a second full body copy. Use its `ID()` and the existing
+`SaveArchivePruneLineageEvidenceFile` / pinned loader for separate publication.
+Source locks have been released when extraction returns; later publication uses
+that immutable historical snapshot.
+
+The retained envelope and evidence ID are unchanged: they commit the exact
+lineages and inventory/policy IDs, **not source paths or checkpoint IDs**. Retain
+the reviewed source checkpoints and their independent IDs separately. A matching
+export does not certify a latest/unique head, physical durability, live assignment
+permission or execution. The executor still rechecks all required live owners,
+replicas and freshness. Completed authority tickets cannot be reopened by newly
+extracted historical bytes. Supervised effect handoff remains a separate gate.
 
 ## One synchronous execution
 
@@ -552,7 +605,7 @@ raw owner handle. Completion-only opens neither primary journal. Opening never
 submits or resumes an attempt, and no mode executes pruning. The CLI is documented
 in [PRUNE_COMMANDS.md](PRUNE_COMMANDS.md).
 
-Still required: reviewed live-journal extraction, supervised effect handoff,
+Still required: operator extraction tooling, supervised effect handoff,
 actual managed audit/serve
 paths, cross-host/partition acceptance, copied-owner and physical-storage fencing,
 exhaustion/power-loss/long-soak campaigns, independent review and public testnet.
