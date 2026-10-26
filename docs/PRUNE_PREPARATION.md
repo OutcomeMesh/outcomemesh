@@ -1,10 +1,16 @@
 # Explicit offline prune preparation
 
-Status: opt-in pre-alpha tooling. These six commands prepare the inputs for the
+Status: opt-in pre-alpha tooling. Six primary commands prepare the inputs for the
 [command-only transport](PRUNE_COMMANDS.md). They do not open WorkChain, validate
 live archive availability, execute or cancel pruning, stop/retire assignments,
 or enforce all-required-assignment policy. Review is the default, not creation
 or signing. Nothing here is a service-startup or recovery fallback.
+
+Two additional offline secondary signing commands bind an original primary
+request to a selected secondary assignment, as described below. Their outputs
+can enter a prepared inventory or typed outbox. The current command server still
+accepts only its original primary assignment; secondary remote delivery and
+supervised multi-owner CLI ownership remain separate gates.
 
 The assignment, storage-bound request and independent IDs must already exist.
 Request construction and validation against the actual protected database remain
@@ -239,6 +245,90 @@ Finally use the [transport runbook](PRUNE_COMMANDS.md) to start the explicitly
 configured service and deliver a retained outbox. Preparation does not select
 or perform a live effect, even after an admission receipt has arrived.
 
+## 5. Review and sign secondary commands
+
+Use `work-prune-secondary-command-sign` for the consumer signature and
+`work-prune-secondary-command-cosign` for the authority co-signature. They share
+the review/sign modes, role-specific seed inputs, independent review ID and
+immutable publication behavior above. They read no owner journal or database.
+
+Each command requires `--assignment` / `--assignment-id` for the selected
+secondary and additionally `--primary-assignment` / `--primary-assignment-id`
+for the original primary. Both assignments must be independently reviewed,
+have different IDs and replica public keys, share network/genesis/activation/
+base/manifest/statement, and allow the original request consumer to Prune.
+Initial receipts, custody policies, generations and auditor sets may differ
+between these independently selected replicas. These checks do not establish
+the complete required set or current live permission.
+
+`--request` and `--request-id` always name the **unchanged primary request**.
+Changing its AssignmentID to the secondary would create a different operation.
+The Admit draft uses the secondary AssignmentID and the original primary
+request ID as OperationID. The sequence/head refer to the secondary's explicitly
+reviewed history. Initial admission review, for example:
+
+```sh
+omd work-prune-secondary-command-sign \
+  --primary-assignment /srv/om-trust/primary.omcaa \
+  --primary-assignment-id <reviewed-primary-assignment-id> \
+  --assignment /srv/om-trust/secondary.omcaa \
+  --assignment-id <reviewed-secondary-assignment-id> \
+  --request /srv/om-trust/primary-request.omcpr \
+  --request-id <reviewed-original-primary-request-id> \
+  --kind admit \
+  --expected-sequence 0 \
+  --expected-head <reviewed-secondary-assignment-id>
+```
+
+After independent review, add the same consumer-key / expected-review-id / out
+flags from section 2. Authority review uses the secondary co-signing command,
+the same scope/position flags and the consumer `--command`; after independent
+review add authority-key / expected-review-id / out as in section 3. Keys are
+read only after all scope, artifact and review-ID checks succeed.
+
+No inventory is required at signing time: inventory already contains the
+co-signed admissions, so requiring it to create their first signatures would
+be circular. Assemble and independently pin the complete inventory afterwards
+using the existing library preparation. A signature or typed outbox alone
+cannot substitute for the live primary guard used by secondary admission.
+
+For secondary Complete, set `--kind complete` and supply six evidence flags:
+
+```text
+--admission /srv/om-artifacts/secondary-admit.entry
+--admission-id <reviewed-secondary-admission-id>
+--primary-admission /srv/om-artifacts/primary-admit.entry
+--primary-admission-id <reviewed-primary-admission-id>
+--terminal /srv/om-artifacts/primary-terminal.bin
+--terminal-id <reviewed-primary-terminal-evidence-id>
+```
+
+Each admission must match its own pinned assignment/authority and the same
+original request ID/consumer. Sequence/head checks use the **secondary admission**;
+the Complete draft closes that secondary ticket. Terminal validation uses the
+**primary admission**: effect/cancellation bytes must match the original primary
+request and primary ticket, and successful effects also match its storage ID
+and exact boundary. A secondary ticket cannot be substituted into those bytes.
+Admit forbids all six completion evidence flags, even with empty values.
+
+Secondary output adds `secondary=true`, `primary_assignment_id` and
+`primary_admission_id` (zero for Admit) to the existing scope report. The existing
+command/entry signature-message review hashes, canonical encodings and signature
+domains are reused. Offline terminal validation remains historical:
+`terminal_durability_proven=false execution_authorized=false`. Supplied effect
+bytes do not prove an inventory-bound start. The live secondary completion
+adapter must still require its own confirmed executor outcome and exact actual
+secondary admission before submitting Complete.
+
+The generic admission/completion preparation commands accept these canonical
+secondary entries with the secondary assignment and its independent ID. They
+can review/create/verify the corresponding typed outbox using separately pinned
+transport peers. This retains a delivery intent without opening a socket or
+checking a server. **The current primary command server cannot receive secondary
+operations.** No new secondary server/delivery endpoint is installed by signing
+or outbox preparation; retain these artifacts for the later reviewed handoff.
+The original primary signing commands continue to reject secondary-only flags.
+
 ## Verification boundary
 
 Tests cover separate review/sign domains, exact artifact pins, immutable
@@ -249,3 +339,11 @@ existing guarded library API, then signs/prepares/delivers Complete. Real broken
 stdout tests preserve new roots and signed artifacts for exact recovery.
 The fixture has no WorkChain database. These tests establish neither a live
 prune pipeline nor physical fencing, power-loss behavior or testnet readiness.
+
+Secondary tests additionally cover the original primary request across both
+signers, target vs primary admission/terminal separation, re-pinned archive/role
+substitutions and immutable typed outboxes. Three separate-process phases cover
+Admit and success/cancellation Complete. Nine closed-stdout cases retain their
+consumer command, authority entry or outbox and recover through exact retry or
+explicit verify. No secondary network delivery or live terminal acceptance is
+claimed by this offline process coverage.

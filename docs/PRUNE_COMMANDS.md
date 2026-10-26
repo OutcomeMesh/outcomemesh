@@ -38,6 +38,13 @@ library workflow. None of those steps is inferred by these transport commands:
 there is no `--init`, `--sign`, `--resume`, `--execute`, missing-root fallback,
 head refresh or automatic signature renewal in the transport entry points.
 
+The separate offline secondary signing commands can prepare canonical entries
+and typed outboxes for selected secondary assignments. This server still owns
+only its original primary executor/coordinator pair. It does not accept those
+secondary operations; the reviewed secondary server/delivery handoff remains a
+separate implementation gate. See the secondary section of
+[PRUNE_PREPARATION.md](PRUNE_PREPARATION.md) for the preparation boundary.
+
 An assignment file is bounded to 8 KiB and canonically decoded. A `--key` file
 contains exactly 32 raw Ed25519 seed bytes, not hex or a 64-byte private key.
 Both use the existing bounded regular-artifact reader, which rejects final-path

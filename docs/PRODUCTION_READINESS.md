@@ -101,3 +101,11 @@ start; cancellation retains its original request/ticket/executor scope. Exact
 retained recovery and historical retries preserve the terminal evidence. Operator
 signing/delivery/CLI, managed audit/serve, physical/remote acceptance and the wider
 lifecycle remain open; the weighted score stays 40/100.
+
+2026-10-26 secondary-signing follow-up: explicit offline consumer/authority
+commands can now prepare secondary admissions and completions against the
+unchanged primary request. Both assignments and, for completion, both admissions
+are independently pinned; historical terminal checks remain separate from live
+executor validation. Typed outbox preparation retains these entries, while the
+secondary server/delivery and supervised ownership handoff are still open. The
+weighted lifecycle criterion remains incomplete; readiness stays 40/100.

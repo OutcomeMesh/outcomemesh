@@ -23,7 +23,7 @@ func TestPruneOfflineDispatchBoundary(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	for _, name := range []string{pruneAuthorityBootstrapCommand, pruneExecutorPrepareCommand, pruneSigningCommand, pruneCosigningCommand, pruneAdmissionPrepareCommand, pruneCompletionPrepareCommand} {
+	for _, name := range []string{pruneAuthorityBootstrapCommand, pruneExecutorPrepareCommand, pruneSigningCommand, pruneCosigningCommand, pruneSecondarySigningCommand, pruneSecondaryCosigningCommand, pruneAdmissionPrepareCommand, pruneCompletionPrepareCommand} {
 		if err := runPruneOffline(ctx, []string{name}, io.Discard); !errors.Is(err, context.Canceled) {
 			t.Fatal("cancelled command inspected inputs", name, err)
 		}

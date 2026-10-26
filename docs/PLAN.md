@@ -553,7 +553,19 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
                         recovery. Cover both outcomes/modes, concurrent retries,
                         42 publication faults and 26 process-kill scenarios.
                         No automatic completion, new terminal format or
-                        remote certificate; operator signing/delivery remains open.
+                        remote certificate; operator delivery remains open and
+                        offline signing is covered by the following substep.
+                      - [x] Explicit offline secondary signing and co-signing:
+                        independently pin original primary and selected secondary
+                        assignments, keep the primary request bytes/ID unchanged,
+                        and require distinct replicas with the same archive scope
+                        and allowed consumer. For completion, pin both admissions,
+                        validate terminal evidence against the primary ticket and
+                        position against the secondary history. Reuse reviewed
+                        signature domains and immutable publication; prepare typed
+                        outboxes without claiming live admission or terminal state.
+                        No inventory/signature cycle or new format; secondary
+                        delivery/server ownership remains a separate gate.
                       - [ ] Reviewed live-journal evidence extraction and supervised
                         multi-owner runtime/CLI handoff. Integrate managed audit/serve
                         paths; test remote partitions and physical/copy fencing

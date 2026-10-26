@@ -36,7 +36,7 @@ func runPruneOffline(ctx context.Context, arguments []string, output io.Writer) 
 	switch arguments[0] {
 	case pruneAuthorityBootstrapCommand, pruneExecutorPrepareCommand:
 		return runPruneBootstrap(ctx, arguments, output)
-	case pruneSigningCommand, pruneCosigningCommand:
+	case pruneSigningCommand, pruneCosigningCommand, pruneSecondarySigningCommand, pruneSecondaryCosigningCommand:
 		return runPruneSigning(ctx, arguments, output)
 	case pruneAdmissionPrepareCommand, pruneCompletionPrepareCommand:
 		return runPruneOutboxPrepare(ctx, arguments, output)

@@ -1592,6 +1592,51 @@ Implemented in an isolated, not-yet-activated consensus package:
   rerun in this pass; their earlier results are not claimed as fresh checks.
   Formatting and diff checks are clean. No production, audit or public-testnet
   acceptance credit is added.
+  Secondary offline signing follow-up (2026-10-26): two explicit commands now
+  review/sign and review/co-sign secondary Admit/Complete without rewriting the
+  original primary request. Both original primary and selected secondary
+  assignments are independently pinned; distinct replica keys, exact shared
+  network/genesis/activation/base/manifest/statement and consumer Prune permission
+  are checked before key access. Receipt/policy/generation/auditor fields may
+  legitimately differ across replicas. Signing precedes inventory construction,
+  avoiding a circular requirement for already co-signed admissions.
+  Complete separately pins primary and target admissions, checks the primary
+  terminal bytes against the primary ticket and original request/storage/boundary,
+  and uses the target ticket/history in the signed completion. Existing review
+  hashes, signature domains, canonical encodings and immutable publication are
+  reused. The original primary command flag/output surface remains unchanged;
+  new flags and scope fields belong only to the two explicit secondary commands.
+  All artifact/scope/review checks precede the role key read. No live owner,
+  WorkChain or network is opened, and historical terminal validation does not
+  establish executor confirmation or an inventory-bound start. Generic typed
+  outbox review/create/verify can retain the signed secondary entries and transport
+  pins without delivery. The current primary command server still cannot accept
+  secondary operations; server/delivery and supervised multi-owner handoff remain
+  open. No production, audit or public-testnet credit is added; readiness stays 40/100.
+  Secondary-signing verification: combined old/new offline unit and process tests
+  passed under race/integration in 105.600 seconds. They cover initial Admit and
+  both terminal kinds through actual CLI review, consumer signing, authority
+  co-signing, exact publication retries and typed outbox creation/verification.
+  Nine new closed-stdout cases preserve consumer commands, authority entries and
+  outboxes for exact recovery across all three phases. Negative coverage includes
+  independently re-pinned archive scope changes, same-replica substitutions,
+  consumer permission, rewritten request, primary/secondary admission or terminal
+  confusion, stale target positions, role keys, review-before-key ordering and
+  immutable output conflicts. No owner/network initialization is inferred.
+  Full final make test-race passed: changed cmd/omd groups ran in 1.700 and 31.683
+  seconds; unchanged packages, including both store groups, used valid cached
+  results from the preceding gate. Full vet and integration-tag cmd/omd vet passed.
+  Final standalone process groups passed with unchanged two-minute limits:
+  original preparation 2.914 seconds, new secondary signing 2.287, and existing
+  command/maintenance lifecycle 7.398. The other eleven process groups and a
+  separate full normal suite were not rerun; earlier results are not claimed as
+  fresh checks. Existing fuzz seeds ran in the race gate; no new decoder or
+  separate fuzz campaign is introduced by these commands.
+  CGO-disabled trimpath omd builds passed for macOS arm64, Linux amd64 and Windows
+  amd64; integration-tag cmd/omd test binaries compiled for Linux/Windows. Native
+  omd help succeeded and lists both explicit secondary signing commands.
+  Formatting and diff checks are clean. Cross-builds are not Linux/Windows runtime
+  or physical-storage evidence; native Windows live stdin remains unchanged.
   Process-gate observation (2026-09-07): the first combined run stopped at
   `TestProcessTieCampaignStorageFailuresRecoverWithoutFalseAdvance/observer_confirmation_after_link`
   because the expected confirmation marker was absent. Five isolated repetitions

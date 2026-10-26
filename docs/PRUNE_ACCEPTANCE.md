@@ -197,7 +197,9 @@ checks the full assignment set, all original owners, storage pair, placement,
 lineage/replay and final live policy. Other secondary roots and physical/copy
 fencing are not owned or established by this two-coordinator call. Trusted exclusive
 local ownership remains mandatory. No command/server/delivery route is silently
-upgraded; secondary signing/transport/CLI remain gated.
+upgraded. Explicit offline secondary signing is described in
+[PRUNE_PREPARATION.md](PRUNE_PREPARATION.md); secondary transport and supervised
+multi-owner CLI handoff remain gated.
 
 ## Explicit secondary completion
 
@@ -249,8 +251,8 @@ does not replay archive bodies, refresh receipt time, sign commands, choose a
 new head, query WorkChain or re-execute deletion. Existing request, inventory,
 start, authority, effect, cancellation and terminal encodings stay unchanged.
 Retain independently protected owner roots, package and pins; the local journal
-outcome is not a portable remote certificate. Operator signing/delivery and CLI
-ownership remain separate plan gates.
+outcome is not a portable remote certificate. Offline operator signing now has
+its own reviewed commands; secondary delivery and CLI ownership remain gated.
 
 ## Inventory-bound execution and local inspection
 
@@ -426,8 +428,9 @@ presenting cached historical evidence as live acceptance.
 **No authority ticket is automatically completed**, including secondary assignments.
 Existing atomic effect/terminal formats identify the primary request and ticket;
 they are not portable certificates of every secondary permission. Colocated
-secondary admission and explicit completion are available above. Operator signing,
-delivery and reviewed multi-owner handoff remain open.
+secondary admission and explicit completion are available above. Offline signing
+has explicit review/sign commands; delivery and reviewed multi-owner handoff remain
+open.
 
 ## Evidence and remaining gates
 
@@ -473,7 +476,7 @@ each outcome (42 cases). Twenty-six process kills cover eight first-attempt and
 five retained-retry boundaries for each outcome; repeated opens preserve the
 executor, primary, database history/effect and exact secondary uncertainty.
 
-Still required: reviewed live-journal extraction, operator signing/delivery,
+Still required: reviewed live-journal extraction, secondary operator delivery,
 supervised ownership handoff, actual managed audit/serve
 paths, cross-host/partition acceptance, copied-owner and physical-storage fencing,
 exhaustion/power-loss/long-soak campaigns, independent review and public testnet.

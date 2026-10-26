@@ -16,8 +16,10 @@ import (
 )
 
 const (
-	pruneSigningCommand   = "work-prune-command-sign"
-	pruneCosigningCommand = "work-prune-command-cosign"
+	pruneSigningCommand            = "work-prune-command-sign"
+	pruneCosigningCommand          = "work-prune-command-cosign"
+	pruneSecondarySigningCommand   = "work-prune-secondary-command-sign"
+	pruneSecondaryCosigningCommand = "work-prune-secondary-command-cosign"
 )
 
 // runPruneSigning only reads explicitly pinned historical artifacts and signs
@@ -31,8 +33,9 @@ func runPruneSigning(ctx context.Context, arguments []string, output io.Writer) 
 		return err
 	}
 	name := arguments[0]
-	cosigning := name == pruneCosigningCommand
-	if !cosigning && name != pruneSigningCommand {
+	secondary := name == pruneSecondarySigningCommand || name == pruneSecondaryCosigningCommand
+	cosigning := name == pruneCosigningCommand || name == pruneSecondaryCosigningCommand
+	if !cosigning && name != pruneSigningCommand && !secondary {
 		return errors.New("unsupported prune signing command")
 	}
 	flags := flag.NewFlagSet(name, flag.ContinueOnError)
@@ -49,6 +52,13 @@ func runPruneSigning(ctx context.Context, arguments []string, output io.Writer) 
 	admissionText := flags.String("admission-id", "", "Complete only: independently retained admission entry ID")
 	terminalPath := flags.String("terminal", "", "Complete only: canonical cancellation or effect")
 	terminalText := flags.String("terminal-id", "", "Complete only: independently retained evidence ID")
+	var primaryAssignmentPath, primaryAssignmentText, primaryAdmissionPath, primaryAdmissionText string
+	if secondary {
+		flags.StringVar(&primaryAssignmentPath, "primary-assignment", "", "original primary canonical assignment file")
+		flags.StringVar(&primaryAssignmentText, "primary-assignment-id", "", "independently retained original primary assignment ID")
+		flags.StringVar(&primaryAdmissionPath, "primary-admission", "", "Complete only: original primary co-signed admission")
+		flags.StringVar(&primaryAdmissionText, "primary-admission-id", "", "Complete only: independently retained primary admission ID")
+	}
 	expectedReviewText := flags.String("expected-review-id", "", "sign mode only: independently reviewed signature message ID")
 	outPath := flags.String("out", "", "sign mode only: immutable canonical output artifact")
 	keyName := "consumer-key"
@@ -105,16 +115,34 @@ func runPruneSigning(ctx context.Context, arguments []string, output io.Writer) 
 	if err != nil {
 		return err
 	}
-	if err := validatePruneOfflineRequest(assignment, request, requestID); err != nil {
+	primaryAssignment := assignment
+	primaryAssignmentID := assignmentID
+	if secondary {
+		primaryAssignmentID, err = pruneExternalID("primary-assignment-id", primaryAssignmentText)
+		if err != nil {
+			return err
+		}
+		if primaryAssignmentPath == "" {
+			return errors.New("secondary signing requires an independently pinned original primary assignment")
+		}
+		primaryAssignment, err = loadPruneOfflineAssignment(primaryAssignmentPath, primaryAssignmentID)
+		if err != nil {
+			return err
+		}
+		if err := validatePruneSecondarySigningScope(primaryAssignment, assignment, request, requestID); err != nil {
+			return err
+		}
+	} else if err := validatePruneOfflineRequest(assignment, request, requestID); err != nil {
 		return err
 	}
 	draft := custodyauthority.Command{Version: custodyauthority.Version0, AssignmentID: assignmentID,
 		ExpectedSequence: sequence, ExpectedHead: headID, ActorPublicKey: request.ConsumerPublicKey}
 	terminalKind := "none"
 	var terminalBinding types.Hash
+	var primaryAdmissionID types.Hash
 	switch *kindText {
 	case "admit":
-		for _, name := range []string{"admission", "admission-id", "terminal", "terminal-id"} {
+		for _, name := range []string{"admission", "admission-id", "terminal", "terminal-id", "primary-admission", "primary-admission-id"} {
 			if present[name] {
 				return errors.New("admit forbids completion evidence flags, including empty values")
 			}
@@ -140,8 +168,33 @@ func runPruneSigning(ctx context.Context, arguments []string, output io.Writer) 
 		if err != nil {
 			return err
 		}
-		if err := validatePruneSigningAdmission(assignment, request, requestID, admission, admissionID); err != nil {
-			return err
+		if secondary {
+			if err := validatePruneSecondarySigningAdmission(assignment, request, requestID, admission, admissionID); err != nil {
+				return err
+			}
+			primaryAdmissionID, err = pruneExternalID("primary-admission-id", primaryAdmissionText)
+			if err != nil {
+				return err
+			}
+			if primaryAdmissionPath == "" {
+				return errors.New("secondary completion requires the independently pinned original primary admission")
+			}
+			primaryBytes, err := readRegularArtifact(primaryAdmissionPath, custodyauthority.MaximumEntryBytes)
+			if err != nil {
+				return err
+			}
+			primaryAdmission, err := custodyauthority.DecodeEntry(primaryBytes)
+			if err != nil {
+				return err
+			}
+			if err := validatePruneSigningAdmission(primaryAssignment, request, requestID, primaryAdmission, primaryAdmissionID); err != nil {
+				return err
+			}
+		} else {
+			if err := validatePruneSigningAdmission(assignment, request, requestID, admission, admissionID); err != nil {
+				return err
+			}
+			primaryAdmissionID = admissionID
 		}
 		// If this completion immediately follows its admission, only that
 		// ticket can be the head. A later sequence cannot reuse the old head.
@@ -153,7 +206,7 @@ func runPruneSigning(ctx context.Context, arguments []string, output io.Writer) 
 		if err != nil {
 			return err
 		}
-		terminalKind, terminalBinding, err = validatePruneSigningTerminal(request, requestID, admissionID, terminalID, terminalBytes)
+		terminalKind, terminalBinding, err = validatePruneSigningTerminal(request, requestID, primaryAdmissionID, terminalID, terminalBytes)
 		if err != nil {
 			return err
 		}
@@ -233,9 +286,13 @@ func runPruneSigning(ctx context.Context, arguments []string, output io.Writer) 
 	}
 	// An output error after publication never erases the artifact or signs a
 	// replacement. Repeating this exact review can recover identical bytes.
-	_, err = fmt.Fprintf(output, "work_prune_signing command=%s mode=%s kind=%s assignment_id=%s request_id=%s storage_id=%s expected_sequence=%d expected_head=%s purpose=%d operation_id=%s ticket_id=%s evidence_id=%s actor_public_key=%x authority_public_key=%x terminal_kind=%s terminal_binding_id=%s command_review_id=%s review_id=%s entry_id=%s artifact_published=%t historical_only=true terminal_durability_proven=false execution_authorized=false\n",
+	scopeFields := ""
+	if secondary {
+		scopeFields = fmt.Sprintf(" secondary=true primary_assignment_id=%s primary_admission_id=%s", primaryAssignmentID, primaryAdmissionID)
+	}
+	_, err = fmt.Fprintf(output, "work_prune_signing command=%s mode=%s kind=%s assignment_id=%s request_id=%s storage_id=%s expected_sequence=%d expected_head=%s purpose=%d operation_id=%s ticket_id=%s evidence_id=%s actor_public_key=%x authority_public_key=%x terminal_kind=%s terminal_binding_id=%s command_review_id=%s review_id=%s entry_id=%s artifact_published=%t historical_only=true terminal_durability_proven=false execution_authorized=false%s\n",
 		name, *mode, *kindText, assignmentID, requestID, request.StorageID, sequence, headID, draft.Purpose, draft.OperationID, draft.TicketID,
-		draft.EvidenceID, draft.ActorPublicKey, assignment.AuthorityPublicKey, terminalKind, terminalBinding, commandReviewID, reviewID, entryID, *mode == "sign")
+		draft.EvidenceID, draft.ActorPublicKey, assignment.AuthorityPublicKey, terminalKind, terminalBinding, commandReviewID, reviewID, entryID, *mode == "sign", scopeFields)
 	return err
 }
 
