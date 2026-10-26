@@ -205,3 +205,15 @@ Reviewed Audit/Serve admission/terminal tooling, remote partitions, independentl
 enforced physical/copy fencing and the wider launch evidence remain open. Local
 tests add no independent-audit or public-testnet-duration credit; weighted
 readiness remains 40/100.
+
+2026-10-27 ticket-workflow follow-up: reviewed consumer signing and authority
+co-signing now retain exact fixed positions; local owned application admits and
+completes Audit/Serve against the original source journal. A canonical terminal
+commits the signed admission, intent and complete current-head journal result.
+Capture publication and append/confirmation hold both original guards. Uncertain
+attempts require explicit reviewed Resume; exact confirmed retries preserve the
+entry ID while reporting current state. The complete local process lifecycle
+starts at position zero and closes both tickets independently. This closes the
+first current-head local tooling slice, not remote partitions, independently
+enforced physical/copy fencing, independent review or the public-testnet stability
+period. Weighted readiness remains 40/100.

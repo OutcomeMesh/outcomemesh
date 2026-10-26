@@ -690,8 +690,16 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
                           under the joint guard before signing/application I/O.
                           Cover stale review, blocked Close, native process kill,
                           EOF/signals and lost stdout without implicit completion.
-                        - [ ] Reviewed Audit/Serve admission and terminal tooling,
-                          real remote partitions and independently enforced
+                        - [x] Reviewed Audit/Serve signing/co-signing and local
+                          application of exact-position Admit/Complete commands.
+                          Capture a canonical terminal envelope from the selected
+                          original pending ticket and committed current journal
+                          head. Hold original coordinator and source decision
+                          through publication or append plus confirmation; never
+                          resume implicitly. Test the complete process workflow
+                          from position zero, lost output, independent completions
+                          and exact retry after the other ticket closes.
+                        - [ ] Real remote partitions and independently enforced
                           physical/copy fencing. Local paired acceptance does not
                           establish distributed current authority. In-place owner
                           transfer is not added by the explicit stop/close/reopen

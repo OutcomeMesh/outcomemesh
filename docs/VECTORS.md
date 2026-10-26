@@ -203,3 +203,19 @@ Canonical header bytes:
 ```text
 000100000000004d0000000000000001c03ea83b20b7f068ecf378fe3dde1662213fb410c87757e466b0314b05a0c14a000000006553f100007fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffde688a7e3502cfc2ce9c832eee98e4cd3d107e0aafd1c5253a273e74f217f650ace6904f805047b8675a3129f84d0916fa60cfc9516bfca85033202e1a3852a7052626f83be9e4801476397dd982d7deebdc46ea2557d9dbfb3bd366d4bf6c4c0000000000000000e4c1265c23e8244ab55cbcaba33ab962f964a57ca1a5efa845230bfe4543825da86672452e301a6893e2060f6cfa5f57379e4496a03b4d78aff11ae014e60852a84a725e151beb9dd0fba579c14cc511895301f6a632142e7294f88f783891222531199c8b262bb18f7820ba0f7c1156b81940f52cebb9c205c946f2e7b57ca020d44be30322640c368aff4cf516cd220bf70227f9f1558f65166116387cdd61ae0000000000000000
 ```
+
+## Local custody terminal version 0
+
+`TestCustodyTerminalCanonicalGoldenAndBounds` retains the full canonical wire
+vector in `node/custodyauthority/store/custody_terminal_test.go`. It commits the
+signed admission, unsigned intent and complete journal result. The ID domain is
+`OMESH/custody-authority/custody-terminal/id/v0`; this local envelope changes no
+consensus, receipt, journal or network encoding. Historical signatures do not
+make this value a current execution grant.
+
+```text
+magic         = 4f4d434154524d30
+version       = 0
+terminal_bytes = 3252
+terminal_id   = 7e2c187517a864f52745f742671eea0ecd87df89fe0289c012e7cae8fd8cd9cc
+```

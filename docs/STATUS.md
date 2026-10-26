@@ -1,6 +1,6 @@
 # Implementation status
 
-Updated: 2026-10-26
+Updated: 2026-10-27
 
 This file records evidence against `PLAN.md`. A milestone remains open until all
 of its exit gates pass; implementing most deliverables does not close it.
@@ -2097,6 +2097,62 @@ Implemented in an isolated, not-yet-activated consensus package:
   benchmarks. Integration-tag cmd/omd and store vet passed. A native omd build
   and help command passed with all three new operator commands listed; no foreign
   runtime/build or independent physical/public-network evidence is claimed.
+  Reviewed custody ticket follow-up (2026-10-27): four explicit commands now
+  prepare consumer signatures, authority co-signatures, terminal capture and
+  local application of Audit/Serve Admit/Complete. Static signing takes fixed
+  sequence/head and independently pinned inputs; it opens no authority owner,
+  reads no seed during review and reuses exact published signatures before a
+  seed read. The existing signature domains and authority codecs are unchanged.
+  Owned application retains one original coordinator and an active existing
+  journal decision through append and independent confirmation. Open/Review
+  never resume; Apply rejects every retained pending attempt, and separately
+  reviewed Resume requires the exact retained entry and current source.
+
+  A bounded canonical version-0 terminal envelope commits the selected signed
+  admission, retained intent and full committed journal entry. Its ID becomes
+  Complete EvidenceID. Capture requires the original pending ticket and exact
+  immediate-result CURRENT head, retaining both guards through no-replace
+  publication and sync. Historical verification preserves original RespondedAt.
+  Advanced journals are rejected rather than searched for an older result.
+  Audit and Serve close independently; exact confirmed retries preserve EntryID
+  with Appended=false while Snapshot reports current authority, including later
+  independent commands. Admit retries still require the original predecessor;
+  Complete retries require the selected terminal at the current source head.
+
+  A real-process CLI workflow begins at a newly bootstrapped position zero,
+  reviews/signs/co-signs/applies Audit Admit, prepares its signed challenge,
+  admits Serve, performs the owned paired QUIC exchange, captures both terminals,
+  and independently completes Audit then Serve. It retries the first Complete
+  after the second closes without appending. A separate real closed-output test
+  verifies that a lost result retains the admission for exact reviewed retry.
+  Eight real process kills cover Audit/Serve Admit/Complete after durable intent
+  and after authority write before confirmation. Double read-only reopen retains
+  both observed and confirmed positions; stale tokens and normal Apply fail,
+  while a fresh explicit Resume confirms only the exact retained entry. Source
+  decisions block competing access through the boundary and permanent ownership
+  lock inodes survive process death. The focused non-race process run passed in
+  9.641 seconds. This is process-death evidence, not physical power-loss coverage.
+  The new terminal codec has a fixed canonical golden and decoder fuzz target;
+  no consensus, network, receipt or journal format changes. The first local
+  current-head ticket tooling slice is complete. Remote/partition enforcement,
+  independent physical/copy fencing, independent audit and public-testnet duration
+  remain launch gates. See CUSTODY_TICKET_WORKFLOW.md. Readiness remains 40/100.
+  Final placement review replaced string-only overlap checks with existing inode
+  ancestry checks, including case-insensitive macOS aliases. Regressions verify
+  rejected metadata/capture placement leaves protected roots unchanged. Exact
+  retained signing retries now compare and sync before allocating any temporary
+  file; both role signatures can be reused with deleted seeds and a non-writable
+  output directory. This does not claim physical device-exhaustion coverage.
+  Final Go 1.26.7 CLI unit/process coverage passed with race/integration tags in
+  54.442 seconds; focused evidence/owned-service/process coverage passed in
+  72.858 seconds. Terminal decoder fuzzing passed 2,506 executions in its bounded
+  three-second run. Full make test-all passed formatting, full vet and all three
+  disjoint race groups, with no timeout changes. Store runs took 238.516, 484.634
+  and 164.742 seconds; corresponding cmd/omd runs took 3.505, 171.055 and 89.583.
+  These are validation durations, not benchmarks. Integration-tag vet for cmd/omd
+  and store passed. A native trimmed-path build and help command passed with all
+  four new commands listed. No foreign-runtime, independent-audit, public-network
+  or physical-media acceptance is claimed.
   Process-gate observation (2026-09-07): the first combined run stopped at
   `TestProcessTieCampaignStorageFailuresRecoverWithoutFalseAdvance/observer_confirmation_after_link`
   because the expected confirmation marker was absent. Five isolated repetitions

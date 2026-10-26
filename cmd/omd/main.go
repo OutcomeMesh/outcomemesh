@@ -132,6 +132,8 @@ func run(arguments []string) error {
 		return runManagedCustodyIntentCLI(arguments)
 	case managedCustodyPairCommand:
 		return runManagedCustodyPairCLI(arguments)
+	case custodyCommandSignCommand, custodyCommandCosignCommand, custodyTerminalCommand, custodyCommandApplyCommand:
+		return runCustodyCommandCLI(arguments)
 	case "work-archive-custody-checkpoint":
 		return runWorkArchiveCustodyCheckpoint(arguments[1:], false)
 	case "work-archive-custody-verify-checkpoint":
@@ -1602,6 +1604,8 @@ func printUsage() {
 	fmt.Printf("managed custody audit: omd %s --mode <review|control> [flags]; control uses dedicated stdin/stdout pipes\n", managedCustodyAuditCommand)
 	fmt.Printf("unsigned custody intent: omd %s --mode <review|publish|verify> [flags]\n", managedCustodyIntentCommand)
 	fmt.Printf("managed local custody pair: omd %s --mode <review|control> [flags]; control uses dedicated stdin/stdout pipes\n", managedCustodyPairCommand)
+	fmt.Printf("reviewed custody commands: omd <%s|%s> --mode <review|sign> [flags]\n", custodyCommandSignCommand, custodyCommandCosignCommand)
+	fmt.Printf("reviewed custody terminal/application: omd <%s|%s> --mode <review|control> [flags]\n", custodyTerminalCommand, custodyCommandApplyCommand)
 	fmt.Printf("reviewed local custody maintenance: omd %s [flags]; command server optionally accepts --maintenance-control stdin\n", pruneMaintenanceCommand)
 	fmt.Println("usage: omd <keygen|init|status|balance|transfer|mine|verify|serve|sync|peers|snapshot-check|serve-quic|sync-quic|peers-quic|auto-sync-quic|work-enable|work-status|work-balance|work-verify|work-mine|work-mine-quic|work-serve-quic|work-sync-quic|work-archive-object-serve-quic|work-archive-object-fetch-quic|work-archive-custody-serve-quic|work-archive-custody-challenge-quic|work-archive-custody-checkpoint|work-archive-custody-verify-checkpoint|work-archive-custody-backup|work-archive-custody-verify-backup|work-archive-custody-pin-backup|work-archive-custody-pin-head|work-archive-custody-verify-pinned-backup|work-archive-custody-reconcile|work-archive-custody-transfer|work-archive-custody-apply-history|work-archive-custody-rebaseline|work-telemetry-policy|work-telemetry-tie-plan|work-telemetry-tie-produce|work-telemetry-tie-campaign|work-telemetry-tie-campaign-publish|work-telemetry-tie-campaign-audit|work-telemetry-tie-campaign-recover|work-telemetry-tie-campaign-receive-quic|work-telemetry-tie-pair-create|work-telemetry-tie-pair-checkpoint|work-telemetry-tie-pair-admit|work-telemetry-tie-pair-receive-quic|work-telemetry-tie-pair-send-quic> [flags]")
 }

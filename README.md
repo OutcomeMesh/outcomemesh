@@ -163,9 +163,12 @@ The [operator commands](docs/CUSTODY_OPERATOR_CLI.md) now prepare unsigned
 intents, supervise reviewed Audit preparation/recovery/network exchanges and
 run both local participants through one owned paired QUIC runtime. Review
 tokens are consumed and checked again under the original guard; each paired
-exchange drains both hosts and callbacks before owner release. Audit/Serve
-admission and terminal tooling, in-place transfer and physical/cross-host
-enforcement remain open.
+exchange drains both hosts and callbacks before owner release. The separate
+[ticket workflow](docs/CUSTODY_TICKET_WORKFLOW.md) prepares exact-position
+consumer commands and authority co-signatures, captures the committed current
+journal result, and explicitly applies Audit/Serve admissions and completions.
+Uncertain attempts require a separately reviewed resume. In-place transfer and
+physical/cross-host enforcement remain open.
 
 ## Build and run
 

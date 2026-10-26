@@ -6,6 +6,8 @@ recovery are explicit library calls. Owned Audit/paired runtimes and separate
 operator commands now supervise those effects and their hosts; the Serve CLI
 owns a serving host for one already admitted challenge. None completes tickets
 automatically. See [CUSTODY_OPERATOR_CLI.md](CUSTODY_OPERATOR_CLI.md) for commands.
+The separate [ticket workflow](CUSTODY_TICKET_WORKFLOW.md) prepares and applies
+reviewed admissions and completions against the selected original source.
 
 These are local enforcement boundaries. They do not establish distributed
 revocation, cross-host authority freshness, copied-key fencing, physical storage

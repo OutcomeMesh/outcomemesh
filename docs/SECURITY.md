@@ -979,8 +979,34 @@ active Close cancels the action and retains cleanup failures for repeated Close.
 Lost stdout may follow committed evidence; reviewed retry/recovery must preserve
 the exact nonce, times and response. No operator command silently completes a
 ticket, creates missing owners, resumes uncertain authority or distributes a
-current-authority lease. Audit/Serve admission and terminal tooling remain a
-separate reviewed step. See `CUSTODY_OPERATOR_CLI.md`.
+current-authority lease. See `CUSTODY_OPERATOR_CLI.md`.
+
+The separate reviewed Audit/Serve ticket workflow signs only an explicitly fixed
+authority sequence/head; review reads no private seed and queries no latest
+position. Consumer and authority signatures retain their existing domains.
+Existing canonical output is compared and synced before an exact retry can skip
+the seed read. Signing and co-signing confer no current execution permission.
+
+The version-0 terminal envelope commits the exact signed admission, unsigned
+intent and complete committed journal entry. Complete EvidenceID is this envelope
+ID, never a bare receipt ID. Full historical proof validation uses the original
+RespondedAt without refreshing its clock or signatures. Capture requires the
+selected original pending ticket and active journal decision; publication and
+directory sync remain inside both guards. This first adapter accepts only the
+intent's immediate result at the CURRENT source head, not an older entry found
+after the journal has advanced.
+
+Owned apply holds the original coordinator and source decision through append
+and independent intent confirmation. A retained uncertain attempt blocks Apply;
+only a separately reviewed Resume can submit that exact retained entry. Source
+roots/lock identities and bounded input bytes are rechecked. An exact confirmed
+retry returns the retained EntryID with Appended=false, while its Snapshot is the
+CURRENT authority, potentially including later commands. Audit and Serve complete
+independently; completing one never requires the other ticket to remain pending.
+Admit retry requires the original predecessor still current; Complete retry
+requires the selected terminal still at the current head. These checks rely on
+owner-controlled local directories and do not fence privileged copies or remote
+signers. See `CUSTODY_TICKET_WORKFLOW.md`.
 
 Journal mode fixes the manifest, original receipt, and complete custody-policy
 digest in an immutable header. Replay verifies every slot, content ID,

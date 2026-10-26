@@ -16,6 +16,11 @@ The commands do not create authority tickets or append Stop/Complete/Retire.
 They do not initialize missing authority roots, journals, artifact locks or
 object stores. A successful exchange leaves both tickets pending.
 
+The separate [ticket workflow](CUSTODY_TICKET_WORKFLOW.md) now provides reviewed
+consumer signing, authority co-signing, terminal capture and explicit local
+application of Audit/Serve Admit/Complete. It uses the exact existing owner and
+source journal; it does not make completion part of a network exchange.
+
 This is a local operator boundary. Distributed current-authority enforcement,
 remote partitions, copied-key fencing and independent physical storage remain
 separate deployment gates.

@@ -95,6 +95,7 @@ test-fuzz-smoke:
 	$(GO) test ./node/custodyauthority/store -run '^$$' -fuzz '^FuzzDecodePruneLineageEvidence$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyauthority/store -run '^$$' -fuzz '^FuzzPrunePinTransitions$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyauthority/store -run '^$$' -fuzz '^FuzzDecodePruneCancellation$$' -fuzztime=$(FUZZTIME)
+	$(GO) test ./node/custodyauthority/store -run '^$$' -fuzz '^FuzzDecodeCustodyTerminal$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyauthority/completionwire -run '^$$' -fuzz '^FuzzCompletionFrames$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyauthority/store -run '^$$' -fuzz '^FuzzCompletionOutboxRecords$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyauthority/admissionwire -run '^$$' -fuzz '^FuzzAdmissionFrames$$' -fuzztime=$(FUZZTIME)
@@ -103,6 +104,8 @@ test-fuzz-smoke:
 	$(GO) test ./sim/workgraphmodel -run '^$$' -fuzz '^FuzzRunSelfishStrategiesNeverBreakAccounting$$' -fuzztime=$(FUZZTIME)
 
 test-process:
+	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessCustodyCommand' -count=1 -timeout=2m
+	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestManagedCustodyCommandProcessRecovery$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessManagedCustody(AuditOperator|PairOperator|PairLostResult|Operator)' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessManagedCustodyServe' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./cmd/omd -run '^(TestProcessPruneArchiveEffect|TestPruneEffectNativeOutput)' -count=1 -timeout=2m
