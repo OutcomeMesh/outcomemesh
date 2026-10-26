@@ -243,4 +243,5 @@ deadlock. Different consumers do not create independent authority owners, and
 copying roots or opening another coordinator cannot resolve this ordering.
 The explicit local pair acquires that owner once, validates both pending tickets
 and runs the private participants against separate journals. Its caller retains
-the transport lifetime; distributed authority and owned paired hosting remain open.
+the transport lifetime; the separate owned paired runtime and operator CLI now
+provide that lifetime. Distributed authority and physical/copy fencing remain open.

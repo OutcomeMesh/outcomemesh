@@ -14,8 +14,10 @@ Serve library now binds an exact admitted challenge to the original coordinator
 through existing-journal response delivery and stream cleanup. A separate managed
 Audit library now retains unsigned intent before signing and guards acceptance
 and exact recovery. An explicit local pair shares the original coordinator once;
-an owned Serve host/CLI drains handlers before releasing it. Audit operator
-tooling, owned paired hosting, distributed authority and active rebaseline remain open.
+an owned Serve host/CLI drains handlers before releasing it. Separate owned Audit
+and paired QUIC runtimes now expose reviewed operator control with action/host
+drain. Audit/Serve admission and terminal tooling, distributed authority and active
+rebaseline remain open. See the [operator commands](CUSTODY_OPERATOR_CLI.md).
 See [managed Serve acceptance](CUSTODY_SERVE_ACCEPTANCE.md) and the
 [managed runtime](CUSTODY_MANAGED_RUNTIME.md) and [effect runtime](PRUNE_EFFECT_RUNTIME.md)
 for their separate ownership scopes.
@@ -43,8 +45,9 @@ This is why another signed retirement file, by itself, is not a global fence.
 | Auditor challenge creation, result publication, journal append and artifact recovery | CLI holds artifact lock then active journal decision scope for the whole cycle | Bind the whole live operation to the current assignment; recovery must not promote historical validity to current acceptance |
 | Replica fresh, cached and restart-recovered responses | Journal-backed sessions hold their current decision scope through response and stream retirement | Reject retired assignments even with copied keys/journals; drain operations admitted before retirement |
 | Opt-in `ManagedCustodyServeSession` | Exact signed Serve ticket, challenge ID, independent authenticated peer pin and existing active journal; original coordinator guard through fresh/cached/recovered response, EOF, stream Close and cancellation drain | Independently enforced remote/copy fencing; no implicit ticket completion |
-| Opt-in `ManagedCustodyAuditSession` | Retained unsigned intent before signing; original Audit guard through challenge publication, actual stream Close, journal acceptance, artifact publication and exact prior+1 recovery | Operator Audit CLI and owned paired transport; distributed current authority and physical/copy fencing |
-| Local `ManagedCustodyAuditServePair` | Same original coordinator acquired once for both pending tickets, exact challenge and distinct participant roots; private participants run concurrently and both drain before guard release | Owned paired host/operator lifecycle and real remote/copy enforcement; never use recursive public adapters on the same owner |
+| Opt-in `ManagedCustodyAuditSession` | Retained unsigned intent before signing; original Audit guard through challenge publication, actual stream Close, journal acceptance, artifact publication and exact prior+1 recovery | Distributed current authority and physical/copy fencing; operator wrappers do not create/complete admissions |
+| Local `ManagedCustodyAuditServePair` | Same original coordinator acquired once for both pending tickets, exact challenge and distinct participant roots; private participants run concurrently and both drain before guard release | Real remote/copy enforcement; never use recursive public adapters on the same owner |
+| Owned Audit and paired runtimes / operator CLI | Existing original owners, fully reported local scope, consumed review token and comparison under the original guard; owned network hosts and accepted callbacks drain before owner Close | Reviewed Audit/Serve admission/terminal tooling and independently enforced remote/copy fencing; comparison IDs are not current-authority grants |
 | Owned `ManagedCustodyServeService` / managed Serve CLI | Existing-only object/journal/authority opening, pinned transport, explicit listener, gate and accepted-handler drain before original owner release; CLI defaults to review | Audit client/operator integration and remote/copy enforcement; no automatic authority Stop/Complete/Retire |
 | Raw/record-backed sessions and signing helpers | Signature, binding and timing checks; no journal retirement guard | Remain ineligible for managed cutover or require the same authority protocol; no silent fallback |
 | `CustodySession.Audit` live result acceptance | Rechecks returned renewal at current time under static keys | Hold a current assignment decision through durable acceptance, not just transport identity |

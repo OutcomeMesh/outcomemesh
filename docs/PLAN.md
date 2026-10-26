@@ -669,12 +669,33 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
                           to external pins and drain handlers before owner Close.
                           Cover native process restart/kill, EOF/SIGTERM, broken
                           readiness and malformed control without auto-completion.
-                        - [ ] Audit operator CLI and owned paired host lifecycle,
+                        - [x] Unsigned intent operator review/publish/verify:
+                          require fixed predecessor/times/samples and an existing
+                          separate nonce file. Publish only against the reviewed
+                          content ID, without new randomness, signing or admission;
+                          preserve exact retry and lost-output evidence.
+                        - [x] Owned Audit runtime and operator CLI: review is
+                          non-executing and closes owners before output. Explicit
+                          supervised control requires a fully reported same-session
+                          scope before prepare, recover or pinned network Audit.
+                          Compare current owner/journal positions under the
+                          original guard immediately before effects, consume the
+                          token, and drain actions/hosts before owner release.
+                        - [x] Owned local paired QUIC runtime and operator CLI:
+                          retain one original coordinator, both private sessions
+                          and existing evidence/objects. Each reviewed exchange
+                          owns two pinned hosts, stops callback admission and
+                          drains accepted callbacks, streams and cancellation
+                          before releasing the owner. Recheck the local comparison
+                          under the joint guard before signing/application I/O.
+                          Cover stale review, blocked Close, native process kill,
+                          EOF/signals and lost stdout without implicit completion.
+                        - [ ] Reviewed Audit/Serve admission and terminal tooling,
                           real remote partitions and independently enforced
-                          physical/copy fencing. Local paired library acceptance
-                          does not establish distributed current authority.
-                          In-place command-owner transfer is not added by the
-                          explicit stop/close/reopen CLI workflow.
+                          physical/copy fencing. Local paired acceptance does not
+                          establish distributed current authority. In-place owner
+                          transfer is not added by the explicit stop/close/reopen
+                          operator workflow.
   - [ ] Filesystem-full, inode-exhaustion, power-loss, and long-running retention
     campaigns before deployment claims.
   - [x] Isolate the 2026-09-07 custody sibling-rejection deadline race: force the

@@ -47,6 +47,15 @@ func (pair *ManagedCustodyAuditServePair) Exchange(ctx context.Context,
 	authenticatedReplica, authenticatedAuditor types.Hash,
 	auditorStream, replicaStream workarchive.CustodySessionStream,
 ) (result ManagedCustodyAuditServeResult, returnErr error) {
+	return pair.exchange(ctx, authenticatedReplica, authenticatedAuditor, auditorStream, replicaStream, nil)
+}
+
+// exchange composes an optional local comparison inside the original authority
+// guard. It is private so a checked snapshot cannot become a reusable permit.
+func (pair *ManagedCustodyAuditServePair) exchange(ctx context.Context,
+	authenticatedReplica, authenticatedAuditor types.Hash,
+	auditorStream, replicaStream workarchive.CustodySessionStream, before func() error,
+) (result ManagedCustodyAuditServeResult, returnErr error) {
 	if auditorStream == nil || replicaStream == nil {
 		return result, errors.Join(ErrManagedCustodyPair, closeManagedCustodyPairStreams(auditorStream, replicaStream))
 	}
@@ -90,6 +99,11 @@ func (pair *ManagedCustodyAuditServePair) Exchange(ctx context.Context,
 		}
 		if err := pair.validateRoots(); err != nil {
 			return err
+		}
+		if before != nil {
+			if err := before(); err != nil {
+				return err
+			}
 		}
 		challenge, err := pair.audit.cycle.PrepareChallenge(runContext)
 		if err != nil {

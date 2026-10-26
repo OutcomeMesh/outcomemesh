@@ -953,9 +953,34 @@ remote authority broker. The separate Serve service owns its host, gates accepte
 handlers and drains them before coordinator closure. Its CLI opens only existing
 objects/evidence, defaults to non-listening review, and explicitly serves under
 dedicated interruptible control pipes. Neither success nor shutdown completes
-tickets or appends Stop/Retire. Audit operator tooling, owned paired hosting,
-cross-host partitions and independent physical/copy fencing remain open; see
-`CUSTODY_MANAGED_RUNTIME.md`.
+tickets or appends Stop/Retire. The separate Audit/paired operator runtimes now
+provide owned host lifetimes; cross-host partitions and independent physical/copy
+fencing remain open. See `CUSTODY_MANAGED_RUNTIME.md`.
+
+The unsigned intent CLI requires fixed predecessor, time, sample and nonce-file
+inputs; it generates neither a nonce nor a timestamp during publication/retry.
+Publishing requires the externally retained intent ID and uses exact no-replace
+publication. Review/verify do not sign or admit. Raw nonce and private seed bytes
+are omitted from reports. This preparation file is not a live authority grant.
+
+Audit/paired control modes adopt interruptible native pipes before original
+owners open. A fully reported same-session scope is required before each action,
+and its token is consumed before execution. Runtime comparison binds original
+paths, content/peer pins, limits and confirmed authority/journal positions; the
+CLI also binds its fixed route/listen options. The comparison is repeated under
+the original guard immediately before signing/application I/O. Detached review
+objects are local diagnostics, never permissions. EOF with a partial command
+remains a protocol error rather than being treated as clean EOF.
+
+Each explicit network action owns its hosts. Paired execution gates accepted
+callbacks before shutdown, closes both hosts and drains every accepted callback
+and cancellation scope before releasing the single original coordinator. An
+active Close cancels the action and retains cleanup failures for repeated Close.
+Lost stdout may follow committed evidence; reviewed retry/recovery must preserve
+the exact nonce, times and response. No operator command silently completes a
+ticket, creates missing owners, resumes uncertain authority or distributes a
+current-authority lease. Audit/Serve admission and terminal tooling remain a
+separate reviewed step. See `CUSTODY_OPERATOR_CLI.md`.
 
 Journal mode fixes the manifest, original receipt, and complete custody-policy
 digest in an immutable header. Replay verifies every slot, content ID,

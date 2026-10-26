@@ -194,3 +194,14 @@ owner release. Audit operator tooling, owned paired hosting, remote partitions,
 physical/copy fencing and the wider release gates remain open. Local process and
 QUIC checks add no independent-audit or public-testnet-duration credit. The
 weighted lifecycle criterion is still incomplete; readiness remains 40/100.
+
+2026-10-27 operator-runtime follow-up: explicit commands now review/publish/verify
+the fixed unsigned intent, supervise Audit preparation/recovery/network actions,
+and own a local paired QUIC exchange. Fully reported session tokens bind readable
+scope to retained owner/journal positions, compared again under the original
+guard before effects. Both network hosts and accepted callbacks drain before
+owner release; lost output preserves exact evidence and pending tickets.
+Reviewed Audit/Serve admission/terminal tooling, remote partitions, independently
+enforced physical/copy fencing and the wider launch evidence remain open. Local
+tests add no independent-audit or public-testnet-duration credit; weighted
+readiness remains 40/100.

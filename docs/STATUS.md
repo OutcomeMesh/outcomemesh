@@ -2051,6 +2051,52 @@ Implemented in an isolated, not-yet-activated consensus package:
   store and 16.626 for cmd/omd. These are test durations, not benchmarks. The
   unchanged ten-minute bounds now retain headroom while preserving all standard
   test/subtest coverage and fuzz seeds. Integration process gates remain separate.
+  Operator Audit/paired follow-up (2026-10-27): three explicit commands now
+  review/publish/verify the unsigned intent, supervise owned Audit actions and
+  control an owned local paired QUIC exchange. Intent fields and nonce source
+  are fixed before publication, which requires the independently retained ID;
+  neither review nor publish invents time/randomness, signs or admits anything.
+  Reports omit raw nonce and private seed bytes. Exact publication retry and
+  native output cancellation preserve retained bytes for separate verification.
+  Audit control requires a fully reported same-session scope before prepare,
+  recover or pinned network Audit. The token is consumed per action. The local
+  comparison commits canonical original paths, externally pinned scope/peers,
+  effective limits and confirmed authority/journal positions; route/listen
+  options additionally enter the CLI scope. Current comparison occurs under
+  the original guard before effects. Default review starts no listener, signs
+  nothing and closes owners before output. Missing data never initializes.
+  The paired runtime privately owns one original coordinator and both existing
+  participants. An exchange creates two authenticated hosts, checks its review
+  before transport setup and again under the joint guard before application I/O,
+  then drains both hosts/streams/callbacks before owner release. The gate prevents
+  callback Add after shutdown starts waiting. Active Close cancels admitted work;
+  cleanup errors remain available from repeated Close. Scope/token/transport
+  observations never become reusable current-authority grants.
+  Native CLI processes exercise Audit prepare -> pinned exchange -> kill -> exact
+  offline recovery, paired fresh/repeated/reopened exchange, owner exclusion,
+  EOF/SIGTERM, partial control, another session's unreported token and lost stdout
+  after both journal commits. The next reviewed exchange preserves those original
+  proof/renewal IDs and journal heads without automatic authority completion.
+  Root process coverage passed in 8.772 seconds without race detection. The final
+  combined CLI unit/process group passed with race/integration tags in 64.144
+  seconds. Core runtime/comparison tests passed with race detection in 18.166
+  seconds; independent runtime coverage also passed in 16.275. These are test
+  durations, not benchmarks. Makefile includes a separate two-minute operator
+  process group; existing timeouts and the three disjoint standard race groups
+  are unchanged. No new network, consensus or retained intent/receipt/journal
+  encoding is introduced, and no new untrusted binary decoder requires fuzzing.
+  Reviewed Audit/Serve admission and terminal tooling, remote partitions,
+  physical/copy fencing and the broader launch evidence remain open. Existing
+  local process/QUIC coverage adds no independent-audit or testnet-duration credit.
+  See CUSTODY_OPERATOR_CLI.md. Weighted production readiness remains 40/100.
+  Full final Go 1.26.7 make test-all passed: formatting, full vet and all three
+  disjoint race groups. Fresh store runs took 240.645 seconds for archive,
+  427.208 for remaining and 129.506 for managed custody. Corresponding cmd/omd
+  runs took 1.723, 114.225 and 92.044 seconds. Unchanged workarchive/simulation
+  packages used valid cached results. Durations are validation evidence, not
+  benchmarks. Integration-tag cmd/omd and store vet passed. A native omd build
+  and help command passed with all three new operator commands listed; no foreign
+  runtime/build or independent physical/public-network evidence is claimed.
   Process-gate observation (2026-09-07): the first combined run stopped at
   `TestProcessTieCampaignStorageFailuresRecoverWithoutFalseAdvance/observer_confirmation_after_link`
   because the expected confirmation marker was absent. Five isolated repetitions

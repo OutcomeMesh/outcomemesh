@@ -159,8 +159,13 @@ unsigned intent before challenge signing, guards accepted results and exact
 recovery, and provides a local pair using one original coordinator. The owned
 `work-archive-custody-managed-serve-quic` CLI defaults to review and explicitly
 serves under dedicated control pipes, draining handlers before owner release.
-Audit operator tooling, owned paired hosting, in-place owner transfer and
-physical/cross-host enforcement remain open.
+The [operator commands](docs/CUSTODY_OPERATOR_CLI.md) now prepare unsigned
+intents, supervise reviewed Audit preparation/recovery/network exchanges and
+run both local participants through one owned paired QUIC runtime. Review
+tokens are consumed and checked again under the original guard; each paired
+exchange drains both hosts and callbacks before owner release. Audit/Serve
+admission and terminal tooling, in-place transfer and physical/cross-host
+enforcement remain open.
 
 ## Build and run
 

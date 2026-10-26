@@ -2,8 +2,10 @@
 
 The managed custody path binds each live action to a pending operation in the
 original local authority coordinator. Audit preparation, acceptance and exact
-recovery are explicit library calls. A separate operator CLI owns a serving host
-for one already admitted challenge. Neither path completes tickets automatically.
+recovery are explicit library calls. Owned Audit/paired runtimes and separate
+operator commands now supervise those effects and their hosts; the Serve CLI
+owns a serving host for one already admitted challenge. None completes tickets
+automatically. See [CUSTODY_OPERATOR_CLI.md](CUSTODY_OPERATOR_CLI.md) for commands.
 
 These are local enforcement boundaries. They do not establish distributed
 revocation, cross-host authority freshness, copied-key fencing, physical storage
@@ -85,7 +87,9 @@ Unknown versions, trailing bytes, invalid field bounds and envelopes above the
 `ManagedCustodyAuditSession.Audit(ctx, authenticatedReplicaID, stream)` requires
 the actual identity authenticated by the caller's transport. The caller owns
 that transport and the original coordinator; passing a hash does not authenticate
-a connection. Construction creates no host, listener or audit client CLI.
+a connection. This session's construction creates no host or listener. The
+separate owned Audit runtime/CLI creates a pinned client only for an explicit
+reviewed network action.
 
 Every effect rechecks the pending Audit ticket, the original retained intent and
 root placement under that same coordinator. The guard covers challenge
@@ -236,6 +240,8 @@ A partial failure can leave one or both journals committed; neither ticket is
 completed. Inspect each exact retained side and use its explicit recovery path.
 
 This pair is a local library executor. It owns no transport host and grants no
-permission to remote copies. It is not a distributed broker, cross-host fence,
-automatic owner transfer or authority policy-generation protocol. Keep those
-larger acceptance gates open even after local paired execution succeeds.
+permission to remote copies. The separate owned paired runtime/CLI retains the
+same original owner and supplies two authenticated host endpoints, draining their
+callbacks before release. Neither is a distributed broker, cross-host fence,
+automatic owner transfer or authority policy-generation protocol. Those larger
+acceptance gates remain open.

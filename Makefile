@@ -103,6 +103,7 @@ test-fuzz-smoke:
 	$(GO) test ./sim/workgraphmodel -run '^$$' -fuzz '^FuzzRunSelfishStrategiesNeverBreakAccounting$$' -fuzztime=$(FUZZTIME)
 
 test-process:
+	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessManagedCustody(AuditOperator|PairOperator|PairLostResult|Operator)' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessManagedCustodyServe' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./cmd/omd -run '^(TestProcessPruneArchiveEffect|TestPruneEffectNativeOutput)' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessPrunePreparation(RoundTrip|BrokenPipe)$$' -count=1 -timeout=2m
