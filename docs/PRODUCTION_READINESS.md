@@ -244,3 +244,17 @@ the local state/recovery foundation only; owned remote execution/handler drain,
 typed terminal verification, same-assignment WAN acceptance and independent
 physical/copy fencing remain open. No parent launch gate or independent-review
 credit is added; weighted readiness stays 40/100.
+
+2026-10-27 managed-remote follow-up: the opt-in V1 library now implements a
+separate bounded authenticated control protocol, original-A confirmed Begin
+before enabling Start, independently pinned Audit data exchange, B monotone
+sealing and complete handler drain before signed Drain. A typed terminal must
+match the result already accepted in the same original A journal; Audit and
+Serve complete independently through explicit source-guarded actions. Real
+process tests cover B death before data and after commit before response, A owner
+reopen, no fresh restart and exact cached recovery. Tagged race, wire isolation
+and proof-expiry/uncertain-confirmation regressions pass. See
+REMOTE_CUSTODY_EXECUTION.md. Operator/server CLI, negative-disposition tooling,
+same-assignment WAN acceptance, independent physical/copy fencing and external
+review remain open. This closes the owned library slice, not the parent launch
+gate; weighted readiness remains 40/100.

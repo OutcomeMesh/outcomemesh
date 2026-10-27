@@ -182,8 +182,12 @@ The separate [remote authority foundation](docs/REMOTE_AUTHORITY_FOUNDATION.md)
 adds an opt-in version-1 assignment whose original owner retains an unresolved
 remote execution across restart. A record-only worker journal seals delayed
 starts permanently, while drain never implies successful custody or completion.
-This is a state/recovery foundation; owned remote execution, terminal validation
-and same-assignment WAN acceptance remain open.
+The opt-in [managed remote protocol](docs/REMOTE_CUSTODY_EXECUTION.md) now adds
+confirmed-owner Start, an independently pinned data exchange, irreversible
+handler drain and a typed terminal checked against the original accepted A
+journal. Drain and the two ticket completions remain explicit separate actions.
+Operator/server CLI, same-assignment WAN acceptance and independent key/root
+copy fencing remain open.
 
 ## Build and run
 

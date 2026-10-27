@@ -25,52 +25,57 @@ import (
 )
 
 const (
-	SessionProtocol         protocol.ID = "/outcomemesh/session/0"
-	WorkGraphProtocol       protocol.ID = "/outcomemesh/workgraph/1"
-	VersionedChainProtocol  protocol.ID = "/outcomemesh/chain/1"
-	ChainNotifyProtocol     protocol.ID = "/outcomemesh/chain-notify/1"
-	TiePairProtocol         protocol.ID = "/outcomemesh/tie-pair/2"
-	ArchiveObjectProtocol   protocol.ID = "/outcomemesh/workarchive/1"
-	ArchiveCustodyProtocol  protocol.ID = "/outcomemesh/workarchive-custody/1"
-	PruneCompletionProtocol protocol.ID = "/outcomemesh/prune-completion/0"
-	PruneAdmissionProtocol  protocol.ID = "/outcomemesh/prune-admission/0"
-	maxListenAddresses                  = 8
-	maxAddressBytes                     = 256
+	SessionProtocol              protocol.ID = "/outcomemesh/session/0"
+	WorkGraphProtocol            protocol.ID = "/outcomemesh/workgraph/1"
+	VersionedChainProtocol       protocol.ID = "/outcomemesh/chain/1"
+	ChainNotifyProtocol          protocol.ID = "/outcomemesh/chain-notify/1"
+	TiePairProtocol              protocol.ID = "/outcomemesh/tie-pair/2"
+	ArchiveObjectProtocol        protocol.ID = "/outcomemesh/workarchive/1"
+	ArchiveCustodyProtocol       protocol.ID = "/outcomemesh/workarchive-custody/1"
+	PruneCompletionProtocol      protocol.ID = "/outcomemesh/prune-completion/0"
+	PruneAdmissionProtocol       protocol.ID = "/outcomemesh/prune-admission/0"
+	RemoteCustodyControlProtocol protocol.ID = "/outcomemesh/custody-remote-control/0"
+	maxListenAddresses                       = 8
+	maxAddressBytes                          = 256
 	// MaxConnectionLimit and MaxStreamsPerPeerLimit are hard implementation
 	// bounds. Callers may choose lower operational limits, but cannot silently
 	// expand the resource-manager scopes past these values.
-	MaxConnectionLimit                            = 1_024
-	MaxStreamsPerPeerLimit                        = 32
-	MaxWorkStreamsPerPeerLimit                    = 4
-	MaxWorkStreamsPerMinuteLimit                  = 60
-	MaxWorkStreamsGlobalPerMinuteLimit            = 4_096
-	MaxVersionedChainStreamsLimit                 = 64
-	MaxVersionedChainStreamsPerPeerLimit          = 2
-	MaxVersionedChainStreamsPerMinuteLimit        = 30
-	MaxVersionedChainStreamsGlobalPerMinuteLimit  = 1_024
-	MaxTiePairStreamsLimit                        = 16
-	MaxTiePairStreamsPerPeerLimit                 = 1
-	MaxTiePairStreamsPerMinuteLimit               = 4
-	MaxTiePairStreamsGlobalPerMinuteLimit         = 128
-	MaxArchiveObjectStreamsLimit                  = 16
-	MaxArchiveObjectStreamsPerPeerLimit           = 2
-	MaxArchiveObjectStreamsPerMinuteLimit         = 4
-	MaxArchiveObjectStreamsGlobalPerMinuteLimit   = 128
-	MaximumArchiveObjectPeers                     = 64
-	MaxArchiveCustodyStreamsLimit                 = 8
-	MaxArchiveCustodyStreamsPerPeerLimit          = 1
-	MaxArchiveCustodyStreamsPerMinuteLimit        = 2
-	MaxArchiveCustodyStreamsGlobalPerMinuteLimit  = 64
-	MaximumArchiveCustodyAuditors                 = 64
-	MaxPruneCompletionStreamsLimit                = 8
-	MaxPruneCompletionStreamsPerPeerLimit         = 1
-	MaxPruneCompletionStreamsPerMinuteLimit       = 60
-	MaxPruneCompletionStreamsGlobalPerMinuteLimit = 256
-	MaxPruneAdmissionStreamsLimit                 = 8
-	MaxPruneAdmissionStreamsPerPeerLimit          = 1
-	MaxPruneAdmissionStreamsPerMinuteLimit        = 60
-	MaxPruneAdmissionStreamsGlobalPerMinuteLimit  = 256
-	MaxFileDescriptorLimit                        = 4_096
+	MaxConnectionLimit                                 = 1_024
+	MaxStreamsPerPeerLimit                             = 32
+	MaxWorkStreamsPerPeerLimit                         = 4
+	MaxWorkStreamsPerMinuteLimit                       = 60
+	MaxWorkStreamsGlobalPerMinuteLimit                 = 4_096
+	MaxVersionedChainStreamsLimit                      = 64
+	MaxVersionedChainStreamsPerPeerLimit               = 2
+	MaxVersionedChainStreamsPerMinuteLimit             = 30
+	MaxVersionedChainStreamsGlobalPerMinuteLimit       = 1_024
+	MaxTiePairStreamsLimit                             = 16
+	MaxTiePairStreamsPerPeerLimit                      = 1
+	MaxTiePairStreamsPerMinuteLimit                    = 4
+	MaxTiePairStreamsGlobalPerMinuteLimit              = 128
+	MaxArchiveObjectStreamsLimit                       = 16
+	MaxArchiveObjectStreamsPerPeerLimit                = 2
+	MaxArchiveObjectStreamsPerMinuteLimit              = 4
+	MaxArchiveObjectStreamsGlobalPerMinuteLimit        = 128
+	MaximumArchiveObjectPeers                          = 64
+	MaxArchiveCustodyStreamsLimit                      = 8
+	MaxArchiveCustodyStreamsPerPeerLimit               = 1
+	MaxArchiveCustodyStreamsPerMinuteLimit             = 2
+	MaxArchiveCustodyStreamsGlobalPerMinuteLimit       = 64
+	MaximumArchiveCustodyAuditors                      = 64
+	MaxPruneCompletionStreamsLimit                     = 8
+	MaxPruneCompletionStreamsPerPeerLimit              = 1
+	MaxPruneCompletionStreamsPerMinuteLimit            = 60
+	MaxPruneCompletionStreamsGlobalPerMinuteLimit      = 256
+	MaxPruneAdmissionStreamsLimit                      = 8
+	MaxPruneAdmissionStreamsPerPeerLimit               = 1
+	MaxPruneAdmissionStreamsPerMinuteLimit             = 60
+	MaxPruneAdmissionStreamsGlobalPerMinuteLimit       = 256
+	MaxRemoteCustodyControlStreamsLimit                = 8
+	MaxRemoteCustodyControlStreamsPerPeerLimit         = 2
+	MaxRemoteCustodyControlStreamsPerMinuteLimit       = 60
+	MaxRemoteCustodyControlStreamsGlobalPerMinuteLimit = 256
+	MaxFileDescriptorLimit                             = 4_096
 )
 
 var (
@@ -106,14 +111,18 @@ type Config struct {
 	MaxArchiveCustodyStreamsPerMinute       int
 	MaxArchiveCustodyStreamsGlobalPerMinute int
 
-	MaxPruneCompletionStreams                int
-	MaxPruneCompletionStreamsPerPeer         int
-	MaxPruneCompletionStreamsPerMinute       int
-	MaxPruneCompletionStreamsGlobalPerMinute int
-	MaxPruneAdmissionStreams                 int
-	MaxPruneAdmissionStreamsPerPeer          int
-	MaxPruneAdmissionStreamsPerMinute        int
-	MaxPruneAdmissionStreamsGlobalPerMinute  int
+	MaxPruneCompletionStreams                     int
+	MaxPruneCompletionStreamsPerPeer              int
+	MaxPruneCompletionStreamsPerMinute            int
+	MaxPruneCompletionStreamsGlobalPerMinute      int
+	MaxPruneAdmissionStreams                      int
+	MaxPruneAdmissionStreamsPerPeer               int
+	MaxPruneAdmissionStreamsPerMinute             int
+	MaxPruneAdmissionStreamsGlobalPerMinute       int
+	MaxRemoteCustodyControlStreams                int
+	MaxRemoteCustodyControlStreamsPerPeer         int
+	MaxRemoteCustodyControlStreamsPerMinute       int
+	MaxRemoteCustodyControlStreamsGlobalPerMinute int
 
 	MemoryBytes        int64
 	MaxFileDescriptors int
@@ -145,14 +154,18 @@ func DefaultConfig() Config {
 		MaxArchiveCustodyStreamsPerMinute:       1,
 		MaxArchiveCustodyStreamsGlobalPerMinute: 8,
 
-		MaxPruneCompletionStreams:                2,
-		MaxPruneCompletionStreamsPerPeer:         1,
-		MaxPruneCompletionStreamsPerMinute:       8,
-		MaxPruneCompletionStreamsGlobalPerMinute: 32,
-		MaxPruneAdmissionStreams:                 2,
-		MaxPruneAdmissionStreamsPerPeer:          1,
-		MaxPruneAdmissionStreamsPerMinute:        8,
-		MaxPruneAdmissionStreamsGlobalPerMinute:  32,
+		MaxPruneCompletionStreams:                     2,
+		MaxPruneCompletionStreamsPerPeer:              1,
+		MaxPruneCompletionStreamsPerMinute:            8,
+		MaxPruneCompletionStreamsGlobalPerMinute:      32,
+		MaxPruneAdmissionStreams:                      2,
+		MaxPruneAdmissionStreamsPerPeer:               1,
+		MaxPruneAdmissionStreamsPerMinute:             8,
+		MaxPruneAdmissionStreamsGlobalPerMinute:       32,
+		MaxRemoteCustodyControlStreams:                2,
+		MaxRemoteCustodyControlStreamsPerPeer:         2,
+		MaxRemoteCustodyControlStreamsPerMinute:       8,
+		MaxRemoteCustodyControlStreamsGlobalPerMinute: 32,
 
 		MemoryBytes:        64 << 20,
 		MaxFileDescriptors: 128,
@@ -197,18 +210,24 @@ type Host struct {
 	maxArchiveCustodyStreamsPerMinute       int
 	maxGlobalArchiveCustodyStreamsPerMinute int
 
-	pruneCompletionMu                        sync.Mutex
-	pruneCompletionWindowStart               time.Time
-	pruneCompletionGlobalCount               int
-	pruneCompletionPeerCounts                map[types.Hash]int
-	maxPruneCompletionStreamsPerMinute       int
-	maxGlobalPruneCompletionStreamsPerMinute int
-	pruneAdmissionMu                         sync.Mutex
-	pruneAdmissionWindowStart                time.Time
-	pruneAdmissionGlobalCount                int
-	pruneAdmissionPeerCounts                 map[types.Hash]int
-	maxPruneAdmissionStreamsPerMinute        int
-	maxGlobalPruneAdmissionStreamsPerMinute  int
+	pruneCompletionMu                             sync.Mutex
+	pruneCompletionWindowStart                    time.Time
+	pruneCompletionGlobalCount                    int
+	pruneCompletionPeerCounts                     map[types.Hash]int
+	maxPruneCompletionStreamsPerMinute            int
+	maxGlobalPruneCompletionStreamsPerMinute      int
+	pruneAdmissionMu                              sync.Mutex
+	pruneAdmissionWindowStart                     time.Time
+	pruneAdmissionGlobalCount                     int
+	pruneAdmissionPeerCounts                      map[types.Hash]int
+	maxPruneAdmissionStreamsPerMinute             int
+	maxGlobalPruneAdmissionStreamsPerMinute       int
+	remoteCustodyControlMu                        sync.Mutex
+	remoteCustodyControlWindowStart               time.Time
+	remoteCustodyControlGlobalCount               int
+	remoteCustodyControlPeerCounts                map[types.Hash]int
+	maxRemoteCustodyControlStreamsPerMinute       int
+	maxGlobalRemoteCustodyControlStreamsPerMinute int
 }
 
 func New(ctx context.Context, privateKey ed25519.PrivateKey, config Config, handler Handler) (*Host, error) {
@@ -271,12 +290,15 @@ func New(ctx context.Context, privateKey ed25519.PrivateKey, config Config, hand
 		maxArchiveCustodyStreamsPerMinute:       config.MaxArchiveCustodyStreamsPerMinute,
 		maxGlobalArchiveCustodyStreamsPerMinute: config.MaxArchiveCustodyStreamsGlobalPerMinute,
 
-		pruneCompletionPeerCounts:                make(map[types.Hash]int),
-		maxPruneCompletionStreamsPerMinute:       config.MaxPruneCompletionStreamsPerMinute,
-		maxGlobalPruneCompletionStreamsPerMinute: config.MaxPruneCompletionStreamsGlobalPerMinute,
-		pruneAdmissionPeerCounts:                 make(map[types.Hash]int),
-		maxPruneAdmissionStreamsPerMinute:        config.MaxPruneAdmissionStreamsPerMinute,
-		maxGlobalPruneAdmissionStreamsPerMinute:  config.MaxPruneAdmissionStreamsGlobalPerMinute,
+		pruneCompletionPeerCounts:                     make(map[types.Hash]int),
+		maxPruneCompletionStreamsPerMinute:            config.MaxPruneCompletionStreamsPerMinute,
+		maxGlobalPruneCompletionStreamsPerMinute:      config.MaxPruneCompletionStreamsGlobalPerMinute,
+		pruneAdmissionPeerCounts:                      make(map[types.Hash]int),
+		maxPruneAdmissionStreamsPerMinute:             config.MaxPruneAdmissionStreamsPerMinute,
+		maxGlobalPruneAdmissionStreamsPerMinute:       config.MaxPruneAdmissionStreamsGlobalPerMinute,
+		remoteCustodyControlPeerCounts:                make(map[types.Hash]int),
+		maxRemoteCustodyControlStreamsPerMinute:       config.MaxRemoteCustodyControlStreamsPerMinute,
+		maxGlobalRemoteCustodyControlStreamsPerMinute: config.MaxRemoteCustodyControlStreamsGlobalPerMinute,
 	}
 	result.setHandler(SessionProtocol, handler)
 	return result, nil
@@ -792,6 +814,12 @@ func validateConfig(ctx context.Context, privateKey ed25519.PrivateKey, config C
 		config.MaxPruneAdmissionStreamsPerMinute <= 0 || config.MaxPruneAdmissionStreamsPerMinute > MaxPruneAdmissionStreamsPerMinuteLimit ||
 		config.MaxPruneAdmissionStreamsGlobalPerMinute < config.MaxPruneAdmissionStreamsPerMinute ||
 		config.MaxPruneAdmissionStreamsGlobalPerMinute > MaxPruneAdmissionStreamsGlobalPerMinuteLimit ||
+		config.MaxRemoteCustodyControlStreams <= 0 || config.MaxRemoteCustodyControlStreams > MaxRemoteCustodyControlStreamsLimit ||
+		config.MaxRemoteCustodyControlStreamsPerPeer <= 0 || config.MaxRemoteCustodyControlStreamsPerPeer > MaxRemoteCustodyControlStreamsPerPeerLimit ||
+		config.MaxRemoteCustodyControlStreams < config.MaxRemoteCustodyControlStreamsPerPeer ||
+		config.MaxRemoteCustodyControlStreamsPerMinute <= 0 || config.MaxRemoteCustodyControlStreamsPerMinute > MaxRemoteCustodyControlStreamsPerMinuteLimit ||
+		config.MaxRemoteCustodyControlStreamsGlobalPerMinute < config.MaxRemoteCustodyControlStreamsPerMinute ||
+		config.MaxRemoteCustodyControlStreamsGlobalPerMinute > MaxRemoteCustodyControlStreamsGlobalPerMinuteLimit ||
 		config.MemoryBytes < 16<<20 || config.MemoryBytes > 2<<30 ||
 		config.MaxFileDescriptors < config.MaxConnections || config.MaxFileDescriptors > MaxFileDescriptorLimit ||
 		config.GracePeriod < 0 {
@@ -818,10 +846,12 @@ func newResourceManager(config Config) (network.ResourceManager, error) {
 		2*config.MaxVersionedChainStreamsPerPeer + config.MaxTiePairStreamsPerPeer +
 		config.MaxArchiveObjectStreamsPerPeer + config.MaxArchiveCustodyStreamsPerPeer +
 		config.MaxPruneCompletionStreamsPerPeer + config.MaxPruneAdmissionStreamsPerPeer +
+		config.MaxRemoteCustodyControlStreamsPerPeer +
 		internalStreamsPerPeer
 	totalStreams := config.MaxConnections*(config.MaxStreamsPerPeer+config.MaxWorkStreamsPerPeer+internalStreamsPerPeer) +
 		2*config.MaxVersionedChainStreams + config.MaxTiePairStreams +
-		config.MaxArchiveObjectStreams + config.MaxArchiveCustodyStreams + config.MaxPruneCompletionStreams + config.MaxPruneAdmissionStreams
+		config.MaxArchiveObjectStreams + config.MaxArchiveCustodyStreams + config.MaxPruneCompletionStreams + config.MaxPruneAdmissionStreams +
+		config.MaxRemoteCustodyControlStreams
 	system := rcmgr.ResourceLimits{
 		Streams:         rcmgr.LimitVal(totalStreams),
 		StreamsInbound:  rcmgr.LimitVal(totalStreams),
@@ -890,6 +920,12 @@ func newResourceManager(config Config) (network.ResourceManager, error) {
 		StreamsOutbound: rcmgr.LimitVal(config.MaxPruneAdmissionStreamsPerPeer),
 		Memory:          64 << 10,
 	}
+	remoteCustodyControlPerPeer := rcmgr.ResourceLimits{
+		Streams:         rcmgr.LimitVal(config.MaxRemoteCustodyControlStreamsPerPeer),
+		StreamsInbound:  rcmgr.LimitVal(config.MaxRemoteCustodyControlStreamsPerPeer),
+		StreamsOutbound: rcmgr.LimitVal(config.MaxRemoteCustodyControlStreamsPerPeer),
+		Memory:          64 << 10,
+	}
 	partial := rcmgr.PartialLimitConfig{
 		System:      system,
 		Transient:   system,
@@ -949,17 +985,24 @@ func newResourceManager(config Config) (network.ResourceManager, error) {
 				StreamsOutbound: rcmgr.LimitVal(config.MaxPruneAdmissionStreams),
 				Memory:          512 << 10,
 			},
+			RemoteCustodyControlProtocol: {
+				Streams:         rcmgr.LimitVal(config.MaxRemoteCustodyControlStreams),
+				StreamsInbound:  rcmgr.LimitVal(config.MaxRemoteCustodyControlStreams),
+				StreamsOutbound: rcmgr.LimitVal(config.MaxRemoteCustodyControlStreams),
+				Memory:          512 << 10,
+			},
 		},
 		ProtocolPeer: map[protocol.ID]rcmgr.ResourceLimits{
-			SessionProtocol:         applicationPerPeer,
-			WorkGraphProtocol:       workGraphPerPeer,
-			VersionedChainProtocol:  versionedChainPerPeer,
-			ChainNotifyProtocol:     versionedChainPerPeer,
-			TiePairProtocol:         tiePairPerPeer,
-			ArchiveObjectProtocol:   archiveObjectPerPeer,
-			ArchiveCustodyProtocol:  archiveCustodyPerPeer,
-			PruneCompletionProtocol: pruneCompletionPerPeer,
-			PruneAdmissionProtocol:  pruneAdmissionPerPeer,
+			SessionProtocol:              applicationPerPeer,
+			WorkGraphProtocol:            workGraphPerPeer,
+			VersionedChainProtocol:       versionedChainPerPeer,
+			ChainNotifyProtocol:          versionedChainPerPeer,
+			TiePairProtocol:              tiePairPerPeer,
+			ArchiveObjectProtocol:        archiveObjectPerPeer,
+			ArchiveCustodyProtocol:       archiveCustodyPerPeer,
+			PruneCompletionProtocol:      pruneCompletionPerPeer,
+			PruneAdmissionProtocol:       pruneAdmissionPerPeer,
+			RemoteCustodyControlProtocol: remoteCustodyControlPerPeer,
 		},
 		Conn: rcmgr.ResourceLimits{
 			Conns: 1, ConnsInbound: 1, ConnsOutbound: 1, FD: 1, Memory: 4 << 20,

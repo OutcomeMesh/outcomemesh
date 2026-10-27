@@ -436,8 +436,8 @@ or protection against shared rollback of both roots. Its unsigned local pin
 envelopes and diagnostic snapshots are not execution permits or remote freshness
 proofs. Callers must not turn an exact retry into duplicate consumer execution.
 Process-kill tests are not physical power-loss or multi-host partition evidence.
-There is still no distributed current-authority service or default installed
-acceptance integration. Explicit opt-in adapters below add narrower local paths.
+There is no default installed distributed authority service. Explicit opt-in
+adapters below add bounded local and fixed-session remote paths.
 Old runtime acceptance paths remain under their existing policies until
 explicitly integrated. No authority entry is accepted as a replica receipt,
 challenge, availability bundle or rebaseline proposal.
@@ -457,12 +457,41 @@ an unconfirmed Sealing record also conservatively blocks it. Open neither fills
 missing confirmation nor repairs damaged history. Only explicit exact retry can
 settle a complete pending record. Neither a signed Begin proposal, a Started
 record, a retained result digest nor an unsigned drain draft is execution
-permission or evidence of physically drained handlers. The owned remote
-protocol must still enforce those conditions and validate custody freshness.
+permission or evidence of physically drained handlers. The separate owned
+remote protocol enforces those conditions and validates custody freshness.
 Draining does not complete tickets or turn an unknown outcome into success.
 Copy/rollback protection and exclusive key ownership remain deployment gates;
 two local journals do not establish independent physical fencing. See
-REMOTE_AUTHORITY_FOUNDATION.md for the remaining network/terminal boundaries.
+REMOTE_AUTHORITY_FOUNDATION.md and REMOTE_CUSTODY_EXECUTION.md for scope.
+
+The opt-in managed remote protocol authenticates A control and Audit transport
+roles separately. The owned A runtime keeps its original coordinator through
+confirmed-Begin validation, enabling Start, source acceptance and all transport
+cleanup. A narrow private remote-Audit check requires the exact plan and both
+pending tickets; generic operation guards remain unchanged. B arms fresh signing
+only after Prepared-to-Started confirmation in that same owned runtime. Reopened
+Started permits only the exact original committed cache, never fresh signing
+when its result is absent. Duplicate Start cannot replenish a consumed allowance.
+
+Before signing Drain, B durably retains Sealing, closes data admission, cancels
+and drains all accepted handlers, validates its original source and commits the
+immutable seal. A peer-reset stream is explicitly aborted with Reset if graceful
+Close fails; only a successful actual abort can clear that cleanup failure, and
+the full handler still must retire. If both termination attempts fail, no drain
+success is exposed. This says nothing about proof delivery or A acceptance.
+
+The control frame is bounded to 4 KiB before allocation, requires complete EOF
+and carries no proof body. Its retained ResultID is checked against the exact
+response already accepted in A's private original journal. Same-byte replacement
+of live journal/artifact roots or permanent locks is rejected; whole-deployment
+copy/rollback remains outside this local identity check. The typed terminal and
+independent completion methods retain that same original source decision through
+append and confirmation. B metadata alone cannot fill a missing or expired A
+acceptance. Pending Begin, Drain and Complete require their explicit exact resume
+paths; Open, Seal and Apply never silently settle them. Unknown/unseen outcomes
+remain pending ordinary tickets until separate negative-disposition tooling.
+Operator/server CLI, same-assignment WAN fault/soak acceptance, independent key/root
+fencing and external security review remain deployment gates.
 
 The optional WorkChain ticketed-prune primitive now binds the exact requested
 floor and original result to an assignment/ticket in the same synchronous batch

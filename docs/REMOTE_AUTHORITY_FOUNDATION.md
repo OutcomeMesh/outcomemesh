@@ -120,7 +120,12 @@ drain draft is an unsigned static proposal derived from this journal's exact
 retained Sealed record and an independently selected position; it is not an
 attestation that an unimplemented remote runtime has drained physical effects.
 
-## Network integration gates
+## Network integration contract
+
+The opt-in [managed remote protocol](REMOTE_CUSTODY_EXECUTION.md) now implements
+the owned Start, exact remote Audit, handler drain and typed terminal paths
+described below. The foundation packages themselves remain record-only; their
+values do not independently grant execution.
 
 The next layer must retain A's original coordinator and send enabling Start
 bytes only after Begin has been durably applied and independently confirmed.
@@ -152,9 +157,8 @@ the original active local journal and must not accept a copied remote journal.
 If B committed but A never accepted a proof before it expired, drain cannot
 refresh that proof or invent Audit acceptance.
 
-The same-assignment WAN lifecycle, owned signing/drain runtime, remote terminal
-validation, independently enforced copy fencing and long-duration acceptance
-remain open until those layers and their failure tests exist.
+Operator/server CLI, negative-disposition tooling, same-assignment WAN acceptance,
+independently enforced copy fencing and long-duration acceptance remain open.
 
 ## Verification
 
@@ -188,7 +192,8 @@ the journal before creating its replacement. Production journal code did not
 change. The root-only permission-removal case remains an explicit skip when
 UID 0 can still write; it supplies no physical write-denial evidence.
 
-The final Go-only source manifest matches on both systems: 582 tracked files
+For foundation commit `90350aa`, the final Go-only source manifest matched on
+both systems: 582 tracked files
 (`.go`, `go.mod` and `go.sum`), sorted by relative path; each line is
 `SHA256(file bytes)`, two spaces, the relative path and LF. Its SHA256 is:
 

@@ -20,7 +20,9 @@ drain. Reviewed local Audit/Serve admission and terminal tooling is available in
 the [ticket workflow](CUSTODY_TICKET_WORKFLOW.md). Distributed authority and active
 rebaseline remain open. The separate opt-in [remote state foundation](REMOTE_AUTHORITY_FOUNDATION.md)
 retains a V1 intrinsic Begin/Drained hold across owner restart and a record-only
-worker tombstone; it does not yet provide owned remote execution or completion.
+worker tombstone. The separate [owned remote protocol](REMOTE_CUSTODY_EXECUTION.md)
+now adds fixed-session Start/Audit/drain and original-source typed completion;
+operator/server CLI, WAN acceptance and independent copy fencing remain open.
 See the [operator commands](CUSTODY_OPERATOR_CLI.md).
 See [managed Serve acceptance](CUSTODY_SERVE_ACCEPTANCE.md) and the
 [managed runtime](CUSTODY_MANAGED_RUNTIME.md) and [effect runtime](PRUNE_EFFECT_RUNTIME.md)
@@ -46,7 +48,7 @@ This is why another signed retirement file, by itself, is not a global fence.
 
 | Path | Current enforcement | Required before active cross-host cutover |
 | --- | --- | --- |
-| V1 reference authority and record-only remote worker journal | Intrinsic durable Begin/Drained hold, permanent no-restart sealing branch and post-drain generic Serve refusal | Owned authenticated Start/signing/drain runtime, typed remote terminal, same-assignment WAN failure acceptance and independent physical/copy fencing |
+| V1 remote authority and owned execution library | Confirmed original-owner Start, separate pinned data/control, monotone worker sealing, complete handler drain and typed terminal bound to original accepted A journal; explicit independent completions | Operator/server CLI, negative disposition, same-assignment WAN failure acceptance and independent physical/copy fencing |
 | Auditor challenge creation, result publication, journal append and artifact recovery | CLI holds artifact lock then active journal decision scope for the whole cycle | Bind the whole live operation to the current assignment; recovery must not promote historical validity to current acceptance |
 | Replica fresh, cached and restart-recovered responses | Journal-backed sessions hold their current decision scope through response and stream retirement | Reject retired assignments even with copied keys/journals; drain operations admitted before retirement |
 | Opt-in `ManagedCustodyServeSession` | Exact signed Serve ticket, challenge ID, independent authenticated peer pin and existing active journal; original coordinator guard through fresh/cached/recovered response, EOF, stream Close and cancellation drain | Independently enforced remote/copy fencing; no implicit ticket completion |

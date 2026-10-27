@@ -2248,6 +2248,48 @@ Implemented in an isolated, not-yet-activated consensus package:
   validation and same-assignment WAN fault/soak acceptance remain open. These
   local foundations do not supply physical/copy fencing or independent audit;
   weighted readiness stays 40/100.
+  Managed remote execution follow-up (2026-10-27): the opt-in V1 library now
+  retains the original A coordinator through confirmed Begin, authenticated
+  Start and exact remote Audit. B owns only its separate worker journal, original
+  custody journal, object source and replica/control keys. A control and Audit
+  transports are separate pinned roles; no A authority root or proof key is
+  moved between participants. The 4-KiB bounded metadata protocol has separate
+  stream/rate/memory budgets, canonical framing, complete EOF and no body import.
+  B confirms Started before enabling one same-runtime fresh attempt. Reopened
+  Started enables only an exact committed cached response, never fresh signing
+  when the original result is missing. Seal durably freezes new data admission
+  before cancellation and complete handler drain, then commits its immutable
+  disposition before signing. Reconcile only reads confirmed state. Close retains
+  a sealed/uncertain branch and drains both handler groups before owner release.
+  The new RemoteCustodyTerminal commits B's signed seal/drain and the exact
+  matching response accepted in A's PRIVATE original journal. Capture checks
+  that source under its decision; both independent completions hold the same
+  source decision through authority append and confirmation. The runtime rejects
+  same-byte live source-directory/lock replacement.
+  Unknown/unseen drains or a B result that A rejected as expired cannot produce
+  successful terminals. Explicit pending Begin/Drain/Complete recovery confirms
+  only the same bytes; exact historical Complete retries remain lookups after
+  the other ticket closes, preserving original response time.
+  The first full focused normal run exposed a QUIC cancellation cleanup race:
+  after A rejected an expired proof, B's graceful Close could return a cancelled
+  stream error and block Seal. The private stream now explicitly resets when
+  graceful close fails, clearing cleanup failure only if actual Reset succeeds;
+  handler drain remains mandatory. Three deterministic expiry/cleanup repeats
+  pass. The coordinated integration/race suite passes (store 76.302 seconds,
+  control wire 4.313, transport 3.996), including both real B SIGKILL boundaries
+  and A owner reopen. Full transport/wire race also passes; native control and
+  terminal fuzz smoke pass. The terminal golden is 3,809 bytes with a fixed ID.
+  The same frozen suite passes natively on Linux/amd64, Go 1.26.7, CGO_ENABLED=0,
+  offline dependencies and read-only modules (store 23.051 seconds, wire 0.374,
+  transport 0.663). The 597-file Go source manifest matches before/after; all 39
+  recorded task processes are gone and the temporary SSH master is closed.
+  This is one-host native process acceptance, not same-assignment WAN evidence.
+  Final Go 1.26.7 make test-all passes formatting, full vet and all three
+  disjoint race groups; the store groups took 221.172, 493.024 and 151.868
+  seconds. Integration-tag vet also passes. No timeout extension was used.
+  See REMOTE_CUSTODY_EXECUTION.md for exact ownership, recovery and remaining
+  CLI/WAN/physical-fencing boundaries. No independent audit, sustained testnet
+  or parent production gate credit is added; readiness stays 40/100.
   Process-gate observation (2026-09-07): the first combined run stopped at
   `TestProcessTieCampaignStorageFailuresRecoverWithoutFalseAdvance/observer_confirmation_after_link`
   because the expected confirmation marker was absent. Five isolated repetitions

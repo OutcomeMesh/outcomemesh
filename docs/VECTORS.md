@@ -255,3 +255,25 @@ plan_id    = 29e1f46f85cf0d4a6b9b883c0c0e227659961e46eef1bd473b326770f0779929
 seal_bytes = 139
 seal_id    = 7070477c5923dbd0a7c28cb445b81b1b66129b9d456f8627d0b75e86fe67c52c
 ```
+
+## Managed remote metadata and typed terminal
+
+`TestControlCanonicalGoldenAndFrames` fixes full request/response codecs in
+`node/custodyauthority/remotewire/wire_test.go`. The separate protocol is
+`/outcomemesh/custody-remote-control/0`; its four-byte big-endian frame prefix
+counts only the canonical body and rejects bodies over 4 KiB before allocation.
+The fixed fixture has a 1,023-byte request, 107-byte Started reply and 526-byte
+retained-result Drain reply. It carries no journal/proof body.
+
+`TestRemoteCustodyTerminalCodecVectorAndSubstitution` retains a fixed canonical
+envelope built from the existing historical custody vector, V1 signatures and
+sealing commitments. This codec fixture alone supplies no current owner or
+acceptance proof; real owned network tests separately establish that binding.
+The separate ID domain is `OMESH/custody-authority/remote-terminal/id/v0`.
+
+```text
+magic          = 4f4d43525445524d
+version        = 0
+terminal_bytes = 3809
+terminal_id    = 65bdc27adc12bbb246f043845034d5f43ffdba2a64f31a6325332d00dc580eab
+```
