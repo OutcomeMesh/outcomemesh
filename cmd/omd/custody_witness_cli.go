@@ -292,7 +292,7 @@ func runWitness(ctx context.Context, args []string, input io.ReadCloser, out io.
 		if err != nil {
 			return err
 		}
-		request = witnesswire.Request{ScopeID: sid, Nonce: nonce, Expected: expected}
+		request = witnesswire.Request{Version: scope.Version, ScopeID: sid, Nonce: nonce, Expected: expected}
 		switch *kindText {
 		case "review":
 			request.Kind = witnesswire.Review

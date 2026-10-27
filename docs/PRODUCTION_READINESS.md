@@ -400,3 +400,20 @@ mandatory consumption/acceptance in the actual custody path, negative Serve
 resolution, protected independent witness deployment and split-vote progress
 remain open. Device, independent-verifier/audit, release and public-testnet gates
 are unchanged. Total readiness remains approximately **44/100**.
+
+
+2026-10-27 mandatory-V2 follow-up: a separate assignment/job version now commits
+its witness policy and derives the execution scope. Session-bound fence V1,
+actual target consumption before chunk/proof work, full result quorum binding and
+original-A acceptance with retained explicit recovery are implemented. Normal
+CLI/process tests traverse that complete path; compatibility, persistence fault,
+copy/session, lost reply and exact historical recovery tests accompany it.
+See [CUSTODY_V2.md](CUSTODY_V2.md) and the [V2 acceptance index](evidence/custody-v2-20261027.json) for exact evidence.
+
+This is an experimental node-side custody path, not global consensus activation.
+The volatile-key guarantee assumes the honest target implementation; signatures
+cannot prove that a hostile implementation did not persist/copy its session key.
+Physical/independent key protection, four independent witness domains, split-vote
+progress, certified Serve resolution, migration, external audits and sustained
+public-testnet/calibration gates remain open. No weighted launch gate is closed
+by this prototype slice. Total readiness remains **44/100**.

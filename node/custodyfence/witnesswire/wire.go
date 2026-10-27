@@ -13,6 +13,7 @@ import (
 )
 
 const Version0 uint16 = 0
+const Version1 uint16 = 1
 const MaxFrameBytes = 4096
 
 type Kind uint8
@@ -35,7 +36,7 @@ type Request struct {
 }
 
 func (r Request) CanonicalBytes() ([]byte, error) {
-	if r.Version != Version0 || r.ScopeID.IsZero() || r.Nonce.IsZero() || r.Expected.Position.HeadID.IsZero() || r.Expected.Position.Sequence > 3 {
+	if (r.Version != Version0 && r.Version != Version1) || r.ScopeID.IsZero() || r.Nonce.IsZero() || r.Expected.Position.HeadID.IsZero() || r.Expected.Position.Sequence > 3 {
 		return nil, ErrProtocol
 	}
 	var body []byte
@@ -50,7 +51,7 @@ func (r Request) CanonicalBytes() ([]byte, error) {
 			return nil, ErrProtocol
 		}
 		body, err = r.Command.CanonicalBytes()
-		if r.Command.ScopeID != r.ScopeID || r.Command.ExpectedSequence != r.Expected.Position.Sequence || r.Command.ExpectedHead != r.Expected.Position.HeadID {
+		if r.Command.Version != r.Version || r.Command.ScopeID != r.ScopeID || r.Command.ExpectedSequence != r.Expected.Position.Sequence || r.Command.ExpectedHead != r.Expected.Position.HeadID {
 			return nil, ErrProtocol
 		}
 	case Commit:
@@ -59,7 +60,7 @@ func (r Request) CanonicalBytes() ([]byte, error) {
 		}
 		body, err = r.Certificate.CanonicalBytes()
 		c := r.Certificate.Command
-		if c.ScopeID != r.ScopeID || c.ExpectedSequence != r.Expected.Position.Sequence || c.ExpectedHead != r.Expected.Position.HeadID {
+		if c.Version != r.Version || c.ScopeID != r.ScopeID || c.ExpectedSequence != r.Expected.Position.Sequence || c.ExpectedHead != r.Expected.Position.HeadID {
 			return nil, ErrProtocol
 		}
 	default:
@@ -85,14 +86,14 @@ func (r Request) ID() (types.Hash, error) {
 	if err != nil {
 		return types.Hash{}, err
 	}
-	return types.DomainHash("OMESH/custody-fence/witness-request/id/v0", b), nil
+	return types.DomainHash(requestDomain(r.Version), b), nil
 }
 func (r Request) Validate(s custodyfence.Scope) error {
 	if _, err := r.CanonicalBytes(); err != nil {
 		return err
 	}
 	id, err := s.ID()
-	if err != nil || id != r.ScopeID {
+	if err != nil || id != r.ScopeID || r.Version != s.Version {
 		return ErrProtocol
 	}
 	switch r.Kind {
@@ -153,7 +154,7 @@ type Response struct {
 }
 
 func (r Response) CanonicalBytes() ([]byte, error) {
-	if r.Version != Version0 {
+	if (r.Version != Version0 && r.Version != Version1) || r.Version != r.Observation.Version {
 		return nil, ErrProtocol
 	}
 	obs, err := r.Observation.CanonicalBytes()
@@ -166,7 +167,7 @@ func (r Response) CanonicalBytes() ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		if r.Vote.Witness != r.Observation.Witness || r.Vote.CommandID != r.Observation.PendingID {
+		if r.Vote.Version != r.Version || r.Vote.Witness != r.Observation.Witness || r.Vote.CommandID != r.Observation.PendingID {
 			return nil, ErrProtocol
 		}
 	}
@@ -188,7 +189,11 @@ func DecodeResponse(b []byte) (Response, error) {
 		return r, ErrProtocol
 	}
 	r.Version, _ = d.U16()
-	obs, err := d.Fixed(custodyfence.ObservationBytes)
+	obsSize := custodyfence.ObservationBytes
+	if r.Version == Version1 {
+		obsSize = custodyfence.ObservationBytesV1
+	}
+	obs, err := d.Fixed(obsSize)
 	if err != nil {
 		return r, ErrProtocol
 	}
@@ -231,7 +236,7 @@ func ValidateResponse(s custodyfence.Scope, r Request, response Response, witnes
 		}
 	case Vote:
 		cid, _ := r.Command.ID()
-		if actual.Position != r.Expected.Position || actual.PendingID != cid || response.Vote.CommandID != cid || response.Vote.Witness != witness {
+		if response.Version != r.Version || actual.Position != r.Expected.Position || actual.PendingID != cid || response.Vote.CommandID != cid || response.Vote.Witness != witness {
 			return ErrProtocol
 		}
 	case Commit:
@@ -243,7 +248,7 @@ func ValidateResponse(s custodyfence.Scope, r Request, response Response, witnes
 		x := o.Snapshot
 		switch c.Kind {
 		case custodyfence.Claim:
-			if x.Phase != custodyfence.Claimed || x.ClaimID != cid {
+			if x.Phase != custodyfence.Claimed || x.ClaimID != cid || c.Version == custodyfence.Version1 && x.SessionID != c.EvidenceID {
 				return ErrProtocol
 			}
 		case custodyfence.MarkUnknown:
@@ -269,7 +274,7 @@ func Assemble(s custodyfence.Scope, requests []Request, responses []Response) (c
 	if len(requests) != len(responses) || len(requests) == 0 || len(requests) > custodyfence.MaximumWitnesses {
 		return custodyfence.Certificate{}, ErrProtocol
 	}
-	out := custodyfence.Certificate{Command: requests[0].Command}
+	out := custodyfence.Certificate{Version: requests[0].Command.Version, Command: requests[0].Command}
 	seen := map[[32]byte]bool{}
 	for i, r := range requests {
 		v := responses[i].Vote
@@ -353,4 +358,11 @@ func WriteResponse(w io.Writer, r Response) error {
 		return err
 	}
 	return writeFrame(w, b)
+}
+
+func requestDomain(version uint16) string {
+	if version == Version1 {
+		return "OMESH/custody-fence/witness-request/id/v1"
+	}
+	return "OMESH/custody-fence/witness-request/id/v0"
 }

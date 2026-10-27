@@ -9,6 +9,7 @@ import (
 )
 
 const ObservationBytes = 308
+const ObservationBytesV1 = ObservationBytes + 32
 
 // Observation authenticates exact current local metadata for one request ID.
 // It is historical upon release, never an execution grant or an external pin.
@@ -23,7 +24,16 @@ type Observation struct {
 
 func (o Observation) unsignedBytes() ([]byte, error) {
 	x := o.Snapshot
-	if o.Version != Version0 || o.RequestID.IsZero() || types.Hash(o.Witness).IsZero() || x.ScopeID.IsZero() || x.Position.HeadID.IsZero() || x.Position.Sequence > 3 {
+	if (o.Version != Version0 && o.Version != Version1) || o.RequestID.IsZero() || types.Hash(o.Witness).IsZero() || x.ScopeID.IsZero() || x.Position.HeadID.IsZero() || x.Position.Sequence > 3 {
+		return nil, ErrWitness
+	}
+	if o.Version == Version0 && !x.SessionID.IsZero() {
+		return nil, ErrWitness
+	}
+	if o.Version == Version1 && (x.Phase == Claimed || x.Phase == Unknown || x.Phase == ResultRecorded) && x.SessionID.IsZero() {
+		return nil, ErrWitness
+	}
+	if (x.Phase == Unused || x.Phase == UnclaimedClosed) && !x.SessionID.IsZero() {
 		return nil, ErrWitness
 	}
 	switch x.Phase {
@@ -67,6 +77,9 @@ func (o Observation) unsignedBytes() ([]byte, error) {
 	} else {
 		e.U8(0)
 	}
+	if o.Version == Version1 {
+		e.Fixed(x.SessionID[:])
+	}
 	return e.Bytes(), nil
 }
 func (o Observation) CanonicalBytes() ([]byte, error) {
@@ -74,7 +87,7 @@ func (o Observation) CanonicalBytes() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	h := types.DomainHash("OMESH/custody-fence/observation/signature/v0", b)
+	h := types.DomainHash(fenceDomain(o.Version, "observation/signature"), b)
 	if !ed25519.Verify(o.Witness[:], h[:], o.Signature[:]) {
 		return nil, ErrWitness
 	}
@@ -85,7 +98,7 @@ func (o Observation) Verify(s Scope, request types.Hash, witness [32]byte) error
 		return err
 	}
 	id, err := s.ID()
-	if err != nil || o.Snapshot.ScopeID != id || o.RequestID != request || o.Witness != witness {
+	if err != nil || o.Snapshot.ScopeID != id || o.Version != s.Version || o.RequestID != request || o.Witness != witness {
 		return ErrWitness
 	}
 	for _, k := range s.Witnesses {
@@ -97,7 +110,7 @@ func (o Observation) Verify(s Scope, request types.Hash, witness [32]byte) error
 }
 func DecodeObservation(b []byte) (Observation, error) {
 	var o Observation
-	if len(b) != ObservationBytes {
+	if len(b) != ObservationBytes && len(b) != ObservationBytesV1 {
 		return o, ErrWitness
 	}
 	d := codec.NewDecoder(b)
@@ -106,6 +119,9 @@ func DecodeObservation(b []byte) (Observation, error) {
 		return o, ErrWitness
 	}
 	o.Version, _ = d.U16()
+	if (o.Version == Version0 && len(b) != ObservationBytes) || (o.Version == Version1 && len(b) != ObservationBytesV1) {
+		return o, ErrWitness
+	}
 	for _, v := range [][]byte{o.RequestID[:], o.Witness[:], o.Snapshot.ScopeID[:]} {
 		readFixed(d, v)
 	}
@@ -121,6 +137,9 @@ func DecodeObservation(b []byte) (Observation, error) {
 		return Observation{}, ErrWitness
 	}
 	o.Snapshot.ObligationHeld = held == 1
+	if o.Version == Version1 {
+		readFixed(d, o.Snapshot.SessionID[:])
+	}
 	readFixed(d, o.Signature[:])
 	if _, err := o.CanonicalBytes(); err != nil {
 		return Observation{}, err
@@ -154,12 +173,12 @@ func (w *Witness) Observe(request types.Hash) (Observation, error) {
 	if err := w.check(); err != nil {
 		return Observation{}, err
 	}
-	o := Observation{RequestID: request, Witness: w.public, Snapshot: w.state.Snapshot(), PendingID: w.pin().PendingID}
+	o := Observation{Version: w.state.scope.Version, RequestID: request, Witness: w.public, Snapshot: w.state.Snapshot(), PendingID: w.pin().PendingID}
 	b, err := o.unsignedBytes()
 	if err != nil {
 		return Observation{}, err
 	}
-	h := types.DomainHash("OMESH/custody-fence/observation/signature/v0", b)
+	h := types.DomainHash(fenceDomain(o.Version, "observation/signature"), b)
 	copy(o.Signature[:], ed25519.Sign(w.key, h[:]))
 	return o, nil
 }

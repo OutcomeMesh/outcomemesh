@@ -25,6 +25,7 @@ test-race:
 	$(GO) test -race ./... -run '^TestRemote'
 
 test-fuzz-smoke:
+	$(GO) test ./node/custodyv2 -run '^$$' -fuzz '^FuzzDecodeV2Artifacts$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyfence/witnesswire -run '^$$' -fuzz '^FuzzWitnessWireCodecs$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./cmd/omd -run '^$$' -fuzz '^FuzzWitnessResultBundleCodec$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyfence -run '^$$' -fuzz '^FuzzIndependentFenceCodecs$$' -fuzztime=$(FUZZTIME)

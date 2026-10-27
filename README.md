@@ -209,7 +209,12 @@ original Serve obligation remains pending, blocking retirement. The experimental
 locks and unknown-outcome rules. An experimental
 [witness network and CLI](docs/CUSTODY_WITNESS_NETWORK.md) now serves those journals,
 assembles quorum certificates and binds complete historical custody results.
-Mandatory effect/source integration and protected deployment remain open. The optional
+The separate experimental [custody V2 job path](docs/CUSTODY_V2.md) now mandates
+assignment witness policy, a signed derived job, live-session claim consumption
+at the actual target, and a full result quorum before original-source acceptance.
+Its CLI supports preparation through exact crash recovery; protected deployment,
+Serve settlement and mainnet activation remain gated.
+The optional
 [local placement profile](docs/REMOTE_CUSTODY_PLACEMENT.md) checks independently
 pinned original roots, permanent locks and operator key files across restart.
 It detects ordinary copies/replacements; independent raw-key/VM-copy fencing
@@ -421,7 +426,9 @@ The CLI wallet is for development only.
   public-testnet telemetry chains, clustering policy, bounded manifest
   persistence, and ER-5 evidence aggregation;
 - `node/custodyfence/`: experimental independently pinned witness quorum and
-  durable proposal locks; mandatory custody integration remains gated;
+  durable proposal locks and versioned session commitments;
+- `node/custodyv2/`: experimental witness-mandatory jobs, target/acceptor owners,
+  bounded QUIC and typed source receipts; production deployment remains gated;
 - `node/snapshot/`: bounded chunk export and state-root verification without
   unsafe canonical-state import;
 - `node/tieproducer/`, `node/tieexchange/`: deterministic role-labelled sibling

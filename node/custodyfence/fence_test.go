@@ -140,7 +140,7 @@ func TestIndependentFenceCertificateSubsetsAndSignatureSeparation(t *testing.T) 
 	if err := bad.Verify(s); err == nil {
 		t.Fatal("controller impersonated owner")
 	}
-	for _, change := range []func(*Scope){func(s *Scope) { s.Threshold = 2 }, func(s *Scope) { s.Witnesses[0] = s.Owner }, func(s *Scope) { s.Witnesses[1] = s.Witnesses[0] }, func(s *Scope) { s.Version = 1 }} {
+	for _, change := range []func(*Scope){func(s *Scope) { s.Threshold = 2 }, func(s *Scope) { s.Witnesses[0] = s.Owner }, func(s *Scope) { s.Witnesses[1] = s.Witnesses[0] }, func(s *Scope) { s.Version = 2 }} {
 		other := testScope()
 		change(&other)
 		if _, err := other.ID(); err == nil {

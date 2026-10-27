@@ -2,12 +2,14 @@ package witnesswire
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
 	"path/filepath"
 	"testing"
 
+	"github.com/outcomemesh/outcomemesh/core/codec"
 	"github.com/outcomemesh/outcomemesh/core/types"
 	f "github.com/outcomemesh/outcomemesh/internal/fencetest"
 	"github.com/outcomemesh/outcomemesh/node/custodyfence"
@@ -144,4 +146,58 @@ func FuzzWitnessWireCodecs(fz *testing.F) {
 			}
 		}
 	})
+}
+
+func TestWitnessWireSessionVersionRejectsLegacyVoteWrapper(t *testing.T) {
+	s := f.Scope()
+	s.Version = 1
+	sid, _ := s.ID()
+	command, err := (custodyfence.Command{Version: 1, ScopeID: sid, ExpectedHead: sid, Kind: custodyfence.Claim, EvidenceID: f.Hash("live-session")}).Sign(f.Key(1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := Request{Version: 1, Kind: Vote, ScopeID: sid, Nonce: f.Hash("v1-wrapper"), Expected: custodyfence.WitnessPin{Position: custodyfence.Position{HeadID: sid}}, Command: command}
+	w, err := custodyfence.Create(filepath.Join(t.TempDir(), "witness"), s, sid, f.Key(70))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	vote, err := w.VoteAt(request.Expected, command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rid, _ := request.ID()
+	observation, err := w.Observe(rid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := Response{Version: 1, Observation: observation, Vote: vote}
+	if err := ValidateResponse(s, request, response, f.Public(70)); err != nil {
+		t.Fatal(err)
+	}
+	// Re-sign a valid V0 vote for the same command ID. A valid individual signature
+	// does not make a mixed-version response an admissible V1 endorsement.
+	legacyCommand := command
+	legacyCommand.Version = 0
+	legacyCommand.EvidenceID = types.Hash{}
+	legacyCommand, _ = legacyCommand.Sign(f.Key(1))
+	legacy := f.Certificate(legacyCommand, 70).Votes[0]
+	legacy.CommandID = vote.CommandID
+	e := codec.NewEncoder(custodyfence.VoteBytes)
+	e.Fixed([]byte("OMCFVT00"))
+	e.U16(0)
+	e.Fixed(legacy.CommandID[:])
+	e.Fixed(legacy.Witness[:])
+	h := types.DomainHash("OMESH/custody-fence/vote/signature/v0", e.Bytes())
+	copy(legacy.Signature[:], ed25519.Sign(f.Key(70), h[:]))
+	if _, err := legacy.CanonicalBytes(); err != nil {
+		t.Fatal("fixture legacy signature", err)
+	}
+	response.Vote = legacy
+	if _, err := response.CanonicalBytes(); err == nil {
+		t.Fatal("mixed-version response serialized")
+	}
+	if err := ValidateResponse(s, request, response, f.Public(70)); err == nil {
+		t.Fatal("mixed-version endorsement accepted")
+	}
 }

@@ -26,6 +26,7 @@ type Snapshot struct {
 	Position            Position
 	Phase               Phase
 	ClaimID, EvidenceID types.Hash
+	SessionID           types.Hash `json:",omitzero"`
 	ObligationHeld      bool
 }
 
@@ -97,6 +98,10 @@ func (s *State) Apply(c Certificate) error {
 	case Claim:
 		x.Phase = Claimed
 		x.ClaimID = id
+		x.EvidenceID = types.Hash{}
+		if c.Command.Version == Version1 {
+			x.SessionID = c.Command.EvidenceID
+		}
 		x.ObligationHeld = true
 	case MarkUnknown:
 		x.Phase = Unknown

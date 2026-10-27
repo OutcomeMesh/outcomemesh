@@ -1,0 +1,193 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-27",
+  "assessment": "Experimental witness-mandatory custody V2; no consensus activation or mainnet approval.",
+  "readiness_before": 44,
+  "readiness_after": 44,
+  "source": {
+    "files": 673,
+    "release_manifest_sha256": "283391c975053f2f176022cc1b64c9f29cc43b1ce6dee1cab633dc64c8a2bf30",
+    "native_build_manifest_sha256": "c705fd51c5695d027ccde4b6b820ec28b6024b9e4c1c0f148e4361414f8261ba",
+    "includes": "All Go files, go.mod/go.sum and two public runtime-fixture artifacts; documentation excluded.",
+    "release_unchanged_after_final_checks": true,
+    "production_sources_identical_to_native_build": true,
+    "native_to_release_test_only_delta": [
+      {
+        "path": "cmd/omd/custody_v2_process_test.go",
+        "before_sha256": "9b91c7288188ba03b1a36c9da9dbaf109e9ae915f025a805fa8a3e61f620e937",
+        "after_sha256": "b98cce8887c9c46d1ab4ad6630b7eb6e7011ed4154bb41f4d36b4a9b2f360285",
+        "reason": "Use decimal seed numbers in fixture filenames; letter names for seeds 14 and 46 collided on case-insensitive macOS filesystems."
+      }
+    ]
+  },
+  "functional_checks": {
+    "assignment_commits_prior_witness_policy": true,
+    "three_role_plan_signatures": true,
+    "scope_derived_from_context": true,
+    "session_bound_fence_version": 1,
+    "protocol": "/outcomemesh/custody/v2",
+    "old_claim_refused_by_new_live_session": true,
+    "consumed_before_real_custody_effect": true,
+    "full_result_and_quorum_chain_required": true,
+    "original_a_source_acceptance": true,
+    "cold_open_stabilizes_verified_retained_files": true,
+    "explicit_exact_pending_resume": true,
+    "v0_fence_bytes_and_domains_preserved": true,
+    "legacy_effect_handlers_not_registered": true
+  },
+  "local": {
+    "toolchain": "go1.26.7 darwin/arm64",
+    "final_matrix": {
+      "command": "GOTOOLCHAIN=go1.26.7 GOFLAGS=-p=1 GOMAXPROCS=2 make -j1 test-all",
+      "status": 0,
+      "race_groups": 5,
+      "valid_go_test_cache_used": true,
+      "log_sha256": "f107770490a2b1778d7fb72d1981332a14bc9fafdc488314b89eed4f17de300b",
+      "timeouts_extended": false
+    },
+    "fresh_checks": {
+      "integration": {
+        "command": [
+          "go",
+          "test",
+          "-tags=integration",
+          "./cmd/omd",
+          "-run",
+          "^(TestCustodyV2|TestProcessCustodyV2|TestWitness|TestProcessWitness)",
+          "-count=1"
+        ],
+        "status": 0,
+        "seconds": 17.318,
+        "log_sha256": "3289ea3b51edb04b0404dc0f715d6b7848b8f04962081a4239ef8cbb7c38cf57"
+      },
+      "integration-vet": {
+        "command": [
+          "go",
+          "vet",
+          "-tags=integration",
+          "./..."
+        ],
+        "status": 0,
+        "seconds": 0.785,
+        "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "fuzz-v2": {
+        "command": [
+          "go",
+          "test",
+          "./node/custodyv2",
+          "-run",
+          "^$",
+          "-fuzz",
+          "^FuzzDecodeV2Artifacts$",
+          "-fuzztime=5s"
+        ],
+        "status": 0,
+        "seconds": 11.659,
+        "log_sha256": "10e2c981b6a61b839ab59e4eca7cd694755c28b007728e642d4cd9ec19ac297f"
+      },
+      "fuzz-wire": {
+        "command": [
+          "go",
+          "test",
+          "./node/custodyfence/witnesswire",
+          "-run",
+          "^$",
+          "-fuzz",
+          "^FuzzWitnessWireCodecs$",
+          "-fuzztime=5s"
+        ],
+        "status": 0,
+        "seconds": 6.773,
+        "log_sha256": "d103ac13645f5e39d46a08df7babaa770278db9e94fb7f231ebf7b04311e6d3d"
+      },
+      "fuzz-fence": {
+        "command": [
+          "go",
+          "test",
+          "./node/custodyfence",
+          "-run",
+          "^$",
+          "-fuzz",
+          "^FuzzIndependentFenceCodecs$",
+          "-fuzztime=5s"
+        ],
+        "status": 0,
+        "seconds": 6.78,
+        "log_sha256": "aeb6a775f3706194448def92c6853fbc5fd099c5dbf35c6b47a9615764f92dc1"
+      }
+    },
+    "observations": [
+      {
+        "test": "TestPruneArchiveEffectCLIControlLifetime/executed/context",
+        "observation": "A repeat parallel-package run hit its unchanged 10-second ready-output watchdog before execution, at prune_effect_cli_test.go:307.",
+        "isolated_repetitions_passed": 5,
+        "serial_repository_matrix_passed": true,
+        "root_cause_confirmed": false,
+        "original_raw_log_retained": false
+      },
+      {
+        "test": "TestProcessCustodyV2LostClientOutputThenKilledTarget",
+        "observation": "Darwin exposed a fixture filename case collision; numeric filenames fix it. The corrected full integration selection was rerun without cache and passed."
+      }
+    ],
+    "environment_restart": {
+      "workspace_and_staged_changes_preserved": true,
+      "temporary_local_logs_lost": true,
+      "native_records_recovered_and_hashes_checked": true,
+      "final_local_matrix_and_fresh_checks_repeated": true
+    }
+  },
+  "native": {
+    "go": "go version go1.26.7 linux/amd64",
+    "offline_modules": true,
+    "readonly_modules": true,
+    "cgo_enabled": false,
+    "build_workers": 2,
+    "binaries_sha256": {
+      "omd": "103dc9f68e706261842fbc99def91319405b3b159285ebf6053d7f8030b00ddb",
+      "omd.test": "44550faa3d51eafb388dcce6a976d75e6d745d6de1b8c3b843c14ead8663f00a",
+      "v2.test": "28f3157beb5e5e451a1ae04d9531e3fcdfb21028657d3debe4d24b362ef40ff8",
+      "fence.test": "785e05823658e59d985fb978326f645cf4e074c809d2a5dc6853ef3e8bc14fd3",
+      "wire.test": "642c56e049b2f18b503e2fca3738bbb85ad67ac587a945faf5206777eabe4d11"
+    },
+    "host_a": {
+      "checks_seconds": {
+        "build-omd": 8.287,
+        "build-omd.test": 13.614,
+        "build-v2.test": 3.644,
+        "build-fence.test": 0.497,
+        "build-wire.test": 0.497,
+        "test-omd.test": 7.589,
+        "test-v2.test": 4.153,
+        "test-fence.test": 0.207,
+        "test-wire.test": 0.037
+      },
+      "log_sha256": "4a9a50f319a3586c16b5820b5ff65e252bf7fa112d22f72291facc28cca1d7f4",
+      "remaining_task_processes": 0,
+      "uid": 0
+    },
+    "host_b": {
+      "checks_seconds": {
+        "omd.test": 8.315,
+        "v2.test": 4.951,
+        "fence.test": 0.219,
+        "wire.test": 0.053
+      },
+      "log_sha256": "d3b7402ff2748124f4fbdcfcd8f3e187746b91288e885bc27267056a8fee9882",
+      "binary_hashes_match_a": true,
+      "remaining_task_processes": 0,
+      "uid": 0
+    },
+    "cross_host_v2_job_campaign": false,
+    "independent_protected_witness_domains_proved": false
+  },
+  "limitations": [
+    "These are separate native CLI/process and QUIC fixture campaigns on two Linux hosts, not a joint cross-host V2 job campaign.",
+    "Four logical witnesses use public deterministic fixture keys; four independently protected failure domains are not established.",
+    "Volatile-session protection assumes the honest target implementation. A copied address space or maliciously persisted session key needs independent execution/key protection.",
+    "The source receipt does not close V1 Serve, authorize deletion, resolve split votes or activate consensus.",
+    "Assignment-wide admission/budgets, enrollment/activation/migration, external audits and sustained public-testnet/calibration gates remain open.",
+    "Original V1 owners, retained obligations and website were not used or migrated."
+  ]
+}

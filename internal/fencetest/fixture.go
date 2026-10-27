@@ -41,16 +41,20 @@ func Sign(s custodyfence.Scope, p custodyfence.Position, kind custodyfence.Kind,
 // Certificate independently constructs fixture signatures using the documented
 // vote domain. Real network tests obtain their votes from retained witnesses.
 func Certificate(c custodyfence.Command, seeds ...byte) custodyfence.Certificate {
-	q := custodyfence.Certificate{Command: c}
+	q := custodyfence.Certificate{Version: c.Version, Command: c}
 	id, _ := c.ID()
 	for _, seed := range seeds {
-		v := custodyfence.Vote{CommandID: id, Witness: Public(seed)}
+		v := custodyfence.Vote{Version: c.Version, CommandID: id, Witness: Public(seed)}
 		e := codec.NewEncoder(custodyfence.VoteBytes)
 		e.Fixed([]byte("OMCFVT00"))
-		e.U16(0)
+		e.U16(c.Version)
 		e.Fixed(v.CommandID[:])
 		e.Fixed(v.Witness[:])
-		h := types.DomainHash("OMESH/custody-fence/vote/signature/v0", e.Bytes())
+		domain := "OMESH/custody-fence/vote/signature/v0"
+		if c.Version == 1 {
+			domain = "OMESH/custody-fence/vote/signature/v1"
+		}
+		h := types.DomainHash(domain, e.Bytes())
 		copy(v.Signature[:], ed25519.Sign(Key(seed), h[:]))
 		q.Votes = append(q.Votes, v)
 	}

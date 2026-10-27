@@ -145,7 +145,7 @@ func (s *Service) handle(_ context.Context, _ types.Hash, stream network.Stream)
 		_ = stream.Reset()
 		return
 	}
-	response := witnesswire.Response{}
+	response := witnesswire.Response{Version: r.Version}
 	switch r.Kind {
 	case witnesswire.Review:
 		_, pin, e := s.witness.Snapshot()

@@ -28,6 +28,27 @@ using `PRODUCTION_READINESS.md`. The denominator is this full launch plan, not
 the current slice. Small completed tasks do not automatically increase the score;
 an estimate never overrides an unpassed exit gate.
 
+## Active custody V2 integration slice (2026-10-27)
+
+The separate experimental V2 path now mandates assignment witness policy,
+derived signed job scope, volatile-session claim consumption at the real target,
+typed result quorum and original-source acceptance with explicit crash recovery.
+See [CUSTODY_V2.md](CUSTODY_V2.md) for rules and remaining trust boundaries.
+
+Next required work remains ordered:
+
+1. Validate the same V2 flow across independently operated hosts, partitions,
+   process failures and deliberately copied persistent participants; keep original
+   witness pins outside participant backups and identify actual failure domains.
+2. Define and implement independently certified positive/negative Serve
+   disposition. The current accepted-source receipt alone cannot clear V1 Serve.
+3. Specify safe progress for split votes and its quorum/rollback assumptions;
+   never reset a retained slot to recover availability.
+4. Establish protected execution/key deployment, activation/migration rules and
+   independent review before connecting these experimental jobs to mainnet.
+5. Complete the existing M5–M10 audit, economics, calibration and sustained
+   adversarial public-testnet exit gates. No software slice waives those gates.
+
 ## Product thesis
 
 The initial product is a native ledger where a user signs both a resource

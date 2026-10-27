@@ -120,6 +120,14 @@ role/scope substitution, copied-owner conflicting results, one compromised
 witness, persistence uncertainty, concurrent conflicts, exact recovery and real
 process death after directory sync but before signature release.
 
+## Session-bound integration
+
+[CUSTODY_V2.md](CUSTODY_V2.md) specifies the separate mandatory V2 job path.
+It derives fence V1 from a prior assignment policy, commits a live session in
+Claim/observation, consumes at the real target and checks typed source acceptance.
+V0 remains compatible; V1 uses separate signature/ID domains. These additions do
+not upgrade existing V1 custody owners or remove the deployment gates below.
+
 ## Required integration before deployment
 
 1. Introduce an explicitly versioned assignment and mandatory fence certificates

@@ -169,7 +169,9 @@ Independent key/rollback protection, physical-device campaigns and external
 review remain gates. The [production ledger](PRODUCTION_READINESS.md) assigns no
 additional point to this partial integration.
 
-Next, a new custody assignment/proof version must mandate a preselected witness
+The separate [V2 job path](CUSTODY_V2.md) now implements this assignment, target
+and source-acceptance integration experimentally. The original deployment
+requirements remain: a new custody assignment/proof version must mandate a preselected witness
 policy, derive each exact slot, enforce consumption at the actual effect target,
 and require the full result binding under the original A source decision before
 acceptance or completion. Avoid a circular commitment: a scope already contains

@@ -16,6 +16,7 @@ import (
 
 const (
 	Version0                uint16 = 0
+	Version1                uint16 = 1
 	MaximumWitnesses               = 16
 	MaximumScopeBytes              = 8 + 2 + 4*32 + 2*32 + 2 + MaximumWitnesses*32
 	CommandBytes                   = 8 + 2 + 32 + 8 + 32 + 1 + 2*32 + 64
@@ -45,7 +46,7 @@ type Scope struct {
 
 func (s Scope) CanonicalBytes() ([]byte, error) {
 	n := len(s.Witnesses)
-	if s.Version != Version0 || s.AssignmentID.IsZero() || s.IntentID.IsZero() || s.PlanID.IsZero() || s.BeginID.IsZero() ||
+	if (s.Version != Version0 && s.Version != Version1) || s.AssignmentID.IsZero() || s.IntentID.IsZero() || s.PlanID.IsZero() || s.BeginID.IsZero() ||
 		types.Hash(s.Owner).IsZero() || types.Hash(s.Controller).IsZero() || s.Owner == s.Controller ||
 		n < 4 || n > MaximumWitnesses || int(s.Threshold) > n || 3*int(s.Threshold) <= 2*n {
 		return nil, ErrScope
@@ -74,7 +75,7 @@ func (s Scope) ID() (types.Hash, error) {
 	if err != nil {
 		return types.Hash{}, err
 	}
-	return types.DomainHash("OMESH/custody-fence/scope/id/v0", b), nil
+	return types.DomainHash(fenceDomain(s.Version, "scope/id"), b), nil
 }
 
 func DecodeScope(b []byte) (Scope, error) {
@@ -129,12 +130,12 @@ type Command struct {
 }
 
 func (c Command) unsignedBytes() ([]byte, error) {
-	if c.Version != Version0 || c.ScopeID.IsZero() || c.ExpectedHead.IsZero() || c.ExpectedSequence >= 3 {
+	if (c.Version != Version0 && c.Version != Version1) || c.ScopeID.IsZero() || c.ExpectedHead.IsZero() || c.ExpectedSequence >= 3 {
 		return nil, ErrCommand
 	}
 	switch c.Kind {
 	case Claim:
-		if !c.ClaimID.IsZero() || !c.EvidenceID.IsZero() {
+		if !c.ClaimID.IsZero() || (c.Version == Version0 && !c.EvidenceID.IsZero()) || (c.Version == Version1 && c.EvidenceID.IsZero()) {
 			return nil, ErrCommand
 		}
 	case MarkUnknown, RecordResult:
@@ -172,7 +173,7 @@ func (c Command) ID() (types.Hash, error) {
 	if err != nil {
 		return types.Hash{}, err
 	}
-	return types.DomainHash("OMESH/custody-fence/command/id/v0", b), nil
+	return types.DomainHash(fenceDomain(c.Version, "command/id"), b), nil
 }
 func (c Command) Sign(key ed25519.PrivateKey) (Command, error) {
 	if !validKey(key) {
@@ -182,13 +183,13 @@ func (c Command) Sign(key ed25519.PrivateKey) (Command, error) {
 	if err != nil {
 		return Command{}, err
 	}
-	h := types.DomainHash("OMESH/custody-fence/command/signature/v0", b)
+	h := types.DomainHash(fenceDomain(c.Version, "command/signature"), b)
 	copy(c.Signature[:], ed25519.Sign(key, h[:]))
 	return c, nil
 }
 func (c Command) Verify(s Scope) error {
 	id, err := s.ID()
-	if err != nil || id != c.ScopeID {
+	if err != nil || id != c.ScopeID || c.Version != s.Version {
 		return ErrScope
 	}
 	b, err := c.unsignedBytes()
@@ -199,7 +200,7 @@ func (c Command) Verify(s Scope) error {
 	if c.Kind == MarkUnknown || c.Kind == CloseUnclaimed {
 		key = s.Controller
 	}
-	h := types.DomainHash("OMESH/custody-fence/command/signature/v0", b)
+	h := types.DomainHash(fenceDomain(c.Version, "command/signature"), b)
 	if !ed25519.Verify(key[:], h[:], c.Signature[:]) {
 		return ErrCommand
 	}
@@ -240,7 +241,7 @@ type Vote struct {
 }
 
 func (v Vote) CanonicalBytes() ([]byte, error) {
-	if v.Version != Version0 || v.CommandID.IsZero() || types.Hash(v.Witness).IsZero() {
+	if (v.Version != Version0 && v.Version != Version1) || v.CommandID.IsZero() || types.Hash(v.Witness).IsZero() {
 		return nil, ErrQuorum
 	}
 	e := codec.NewEncoder(VoteBytes)
@@ -249,7 +250,7 @@ func (v Vote) CanonicalBytes() ([]byte, error) {
 	e.Fixed(v.CommandID[:])
 	e.Fixed(v.Witness[:])
 	b := e.Bytes()
-	h := types.DomainHash("OMESH/custody-fence/vote/signature/v0", b)
+	h := types.DomainHash(fenceDomain(v.Version, "vote/signature"), b)
 	if !ed25519.Verify(v.Witness[:], h[:], v.Signature[:]) {
 		return nil, ErrQuorum
 	}
@@ -260,14 +261,14 @@ func signVote(c Command, key ed25519.PrivateKey) (Vote, error) {
 	if err != nil || !validKey(key) {
 		return Vote{}, ErrQuorum
 	}
-	v := Vote{CommandID: id}
+	v := Vote{Version: c.Version, CommandID: id}
 	copy(v.Witness[:], key.Public().(ed25519.PublicKey))
 	e := codec.NewEncoder(VoteBytes)
 	e.Fixed([]byte("OMCFVT00"))
 	e.U16(v.Version)
 	e.Fixed(v.CommandID[:])
 	e.Fixed(v.Witness[:])
-	h := types.DomainHash("OMESH/custody-fence/vote/signature/v0", e.Bytes())
+	h := types.DomainHash(fenceDomain(v.Version, "vote/signature"), e.Bytes())
 	copy(v.Signature[:], ed25519.Sign(key, h[:]))
 	return v, nil
 }
@@ -300,7 +301,7 @@ type Certificate struct {
 }
 
 func (c Certificate) CanonicalBytes() ([]byte, error) {
-	if c.Version != Version0 || len(c.Votes) == 0 || len(c.Votes) > MaximumWitnesses {
+	if (c.Version != Version0 && c.Version != Version1) || c.Command.Version != c.Version || len(c.Votes) == 0 || len(c.Votes) > MaximumWitnesses {
 		return nil, ErrQuorum
 	}
 	b, err := c.Command.CanonicalBytes()
@@ -314,7 +315,7 @@ func (c Certificate) CanonicalBytes() ([]byte, error) {
 	e.Fixed(b)
 	e.U8(uint8(len(c.Votes)))
 	for i, v := range c.Votes {
-		if v.CommandID != id || (i > 0 && bytes.Compare(c.Votes[i-1].Witness[:], v.Witness[:]) >= 0) {
+		if v.Version != c.Version || v.CommandID != id || (i > 0 && bytes.Compare(c.Votes[i-1].Witness[:], v.Witness[:]) >= 0) {
 			return nil, ErrQuorum
 		}
 		b, err := v.CanonicalBytes()
@@ -388,4 +389,11 @@ func DecodeCertificate(b []byte) (Certificate, error) {
 func readFixed(d *codec.Decoder, out []byte) { b, _ := d.Fixed(len(out)); copy(out, b) }
 func validKey(key ed25519.PrivateKey) bool {
 	return len(key) == ed25519.PrivateKeySize && bytes.Equal(key, ed25519.NewKeyFromSeed(key[:ed25519.SeedSize]))
+}
+
+func fenceDomain(version uint16, suffix string) string {
+	if version == Version1 {
+		return "OMESH/custody-fence/" + suffix + "/v1"
+	}
+	return "OMESH/custody-fence/" + suffix + "/v0"
 }

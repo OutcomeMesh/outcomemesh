@@ -10,6 +10,44 @@ Full planned production readiness is approximately **44/100**, using the weighte
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
 
+## 2026-10-27: mandatory V2 job, target session and original-source acceptance
+
+- Added a separate custody V2 assignment and three-role signed job. Its immutable
+  witness policy precedes the assignment; the runtime derives the exact scope.
+  Fence V1 commits the winning volatile execution session in claim/observation
+  domains while retaining V0 compatibility.
+- The original target durably consumes its exact live-session claim quorum before
+  real chunk work, proof/renewal signing and original-B append. Repeats and cold
+  sessions refuse the old permission. Result recovery preserves exact signed
+  bytes. The full result requires the winning session signature as well as the
+  ordinary custody evidence.
+- Original A requires the entire typed result/quorum history and fresh custody
+  proof, retains a pending bundle before append and a signed accepted-source
+  receipt before reply. Reopen only stabilizes validated retained bytes; it never
+  appends or creates a grant. Exact explicit Resume distinguishes
+  an already accepted entry from an unaccepted, now expired proof.
+- Added an opt-in authenticated V2 target protocol and one reviewed CLI covering
+  public role signing, scope derivation, original-owner creation/serving, target
+  requests/calls, extraction, bundle verification, acceptance and exact recovery.
+  A process campaign obtains both quorums via normal witness CLI RPCs and accepts
+  the real result into original A. Fault tests cover consumption/result/receipt
+  persistence boundaries, live key copies, missing responses and source changes.
+
+- All five repository race groups pass in the final sequential-package matrix;
+  current integration/process checks, integration vet and three five-second fuzz
+  smoke targets pass. Native Go 1.26.7 builds on both Linux hosts match and pass
+  the complete job/process and wire/fence checks. These are separate per-host
+  campaigns, not a joint cross-host V2 job run. The final source differs from the
+  native snapshot only in a portable test-filename correction. The acceptance
+  index retains that provenance and one transient legacy readiness watchdog.
+
+See [the V2 operator and trust-boundary guide](CUSTODY_V2.md). Validation evidence
+is recorded in the [V2 acceptance index](evidence/custody-v2-20261027.json). This closes the prototype
+binding/effect/accepted-source path, not network activation or Serve settlement.
+A hostile copied address space or implementation persisting the session secret
+is outside the honest target guarantee. Readiness remains **44/100** pending the
+protected independent deployment, resolution, audit and stability gates.
+
 ## 2026-10-27: witness network, CLI and exact historical result binding
 
 - Added a separately enabled authenticated QUIC witness protocol with exact scope,

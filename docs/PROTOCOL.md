@@ -578,3 +578,14 @@ equal notification transfers no blocks. Local outbound workers may coalesce
 multiple wins to one pending prompt per peer because every session advertises
 the newest selected tip at its own handshake. Default hosts cannot negotiate
 it.
+
+
+## Experimental node-side custody V2 compatibility
+
+The optional custody V2 assignment/job, session-bound fence V1, target protocol
+and accepted-source receipt are specified in [CUSTODY_V2.md](CUSTODY_V2.md).
+They do not change ledger consensus bytes or activate a fork. The V2 outer
+assignment commits an immutable witness policy; signed jobs derive their scope.
+The V2 effect and acceptance adapters reject legacy/no-quorum substitution.
+Legacy V0 fence domains/bytes and existing custody V0/V1 histories remain
+unchanged and are not migrated or resolved by this optional service.
