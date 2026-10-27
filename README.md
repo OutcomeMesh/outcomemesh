@@ -434,3 +434,10 @@ See [docs/PLAN.md](docs/PLAN.md), [docs/STATUS.md](docs/STATUS.md),
 [docs/ACTIVATION_REVIEW.md](docs/ACTIVATION_REVIEW.md),
 [docs/TESTNET_TELEMETRY.md](docs/TESTNET_TELEMETRY.md),
 [docs/P2P.md](docs/P2P.md), and [docs/SECURITY.md](docs/SECURITY.md).
+
+## Contributing and license
+
+See [Contributing to OutcomeMesh Core](CONTRIBUTING.md) for development,
+review and security reporting. Project-owned code is available under the
+[MIT License](LICENSE). Dependencies and separately licensed material retain
+their own copyright and license terms.
