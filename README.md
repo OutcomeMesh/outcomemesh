@@ -8,7 +8,7 @@ Substrate dependency.
 The project is pre-alpha. Nothing in this repository is ready to secure real
 value.
 
-Estimated readiness for the full planned production launch: **about 40/100**.
+Estimated readiness for the full planned production launch: **about 44/100**.
 This is a weighted engineering assessment, not a security guarantee or a count
 of completed tasks. See [the baseline and remaining launch gates](docs/PRODUCTION_READINESS.md).
 
@@ -193,8 +193,11 @@ create assignments, authority/worker roots and plans, and review/sign/co-sign
 admissions, Begin proposals and successful completions. The [position-zero CLI
 workflow](docs/REMOTE_CUSTODY_BOOTSTRAP.md) now also creates local source journals,
 applies initial admissions and prepares their exact challenge under original
-guards. Same-assignment WAN acceptance and independent key/root copy fencing
-remain open.
+guards. The [V1 WAN campaign](docs/REMOTE_CUSTODY_WAN.md) now covers eleven
+controlled scenarios on two hosts, including 32 cycles on one assignment and
+the original source journals. Unknown/expired/unseen outcomes retain their
+ordinary tickets. Negative-disposition closure, independently enforced key/root copy
+fencing and the wider production gates remain open.
 
 ## Build and run
 

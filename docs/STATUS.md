@@ -5,7 +5,7 @@ Updated: 2026-10-27
 This file records evidence against `PLAN.md`. A milestone remains open until all
 of its exit gates pass; implementing most deliverables does not close it.
 
-Full planned production readiness is approximately **43/100**, using the weighted
+Full planned production readiness is approximately **44/100**, using the weighted
 [readiness baseline](PRODUCTION_READINESS.md). This is an engineering estimate,
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
@@ -2383,6 +2383,51 @@ Implemented in an isolated, not-yet-activated consensus package:
   race groups: the unchanged Archive result was reused (prior store 266.936
   seconds), and fresh store groups took 323.574, 190.212, 154.074 and 79.510.
   Integration-tag vet passes; the 619-file Go source pin is unchanged.
+  Same-assignment WAN follow-up (2026-10-27): eleven V1 scenarios passed on two
+  explicitly selected Linux hosts with different observed kernel-boot hashes.
+  Each independent scenario creates its assignment and all original roots via
+  CLI; A retains the sole authority/pins, while B owns its separate worker/source
+  and separate control/transport/evidence keys. No live owner or journal is copied.
+  Ten individual scenarios cover healthy delivery, partition-before, packet
+  loss/delay, A death before/after accepted data, B death before/after committed
+  data, a lost sealed reply, expired B-only cache and Unseen seal. Private native
+  B pause helpers isolate actual effect boundaries; killed helpers are replaced
+  by the normal CLI server on the same retained worker. A sealed-reply error hook
+  is private and unset in normal operation. The new race test retains A's active
+  hold after a lost reply and recovers the exact same seal on explicit retry.
+  Metadata-only Reconcile does not confirm A's Drain. Restart after Started
+  without cache refuses fresh signing; committed-cache recovery preserves its
+  original proof ID and RespondedAt. Expired/unseen/unknown branches reject
+  successful capture and keep both ordinary tickets pending. Every completed
+  cycle also sends the old Start through an authenticated live B connection and
+  requires refusal without accepting a transport timeout as proof.
+  The bounded reuse series completes 32 sequential cycles with one assignment,
+  unchanged original source/authority/artifact roots and locks, and loss/delay
+  every fourth cycle. Final A authority sequence is 192, both source sequences
+  are 32, pending operations are zero and no remote hold remains. Across the
+  campaign, 42 cycles completed; 39 successful cycles independently completed
+  two tickets, while three negative scenarios preserved their ordinary tickets.
+  The reporter checks retained state, original identities, distinct operation/
+  result IDs, relay counters and common source/binary/controller pins rather
+  than trusting passed flags. Raw role/config/seed/log/report files remain private;
+  docs/evidence/remote-custody-wan-20261027.json is a sanitized digest-bound index.
+  Initial rehearsals correctly refused a role root before its first admission
+  because Python's archive data filter dropped private directory modes. The
+  controller now restores 0700/0600 extraction modes and creates private logs;
+  the regression check passes, and original root validation was not weakened.
+  Native Linux/amd64 Go 1.26.7 builds used CGO_ENABLED=0, offline/read-only
+  modules and two build workers (92.161 seconds). The exact 620-file Go/module
+  source manifest remains unchanged. Go 1.26.7 make test-all passes formatting,
+  full vet and all five disjoint race groups (store 239.156, 293.799, 151.987,
+  151.863 and 80.388 seconds). Integration-tag vet, focused seal-reply race/native
+  process checks and 25 Python supervisor/controller/reporter tests pass.
+  Task processes and test UDP listeners are absent after cleanup, and both
+  temporary SSH masters are closed. Earlier failed workspaces remain retained.
+  See REMOTE_CUSTODY_WAN.md and the next REMOTE_CUSTODY_NEGATIVE_PLAN.md. This
+  closes the reserved V1 operator/WAN criterion: storage/lifecycle credit rises
+  from 11 to 12 of 15 and total readiness from 43 to approximately 44/100.
+  Negative-disposition closure, independent key/root copy fencing, device-failure
+  campaigns, external audits and sustained public-testnet gates remain open.
   Process-gate observation (2026-09-07): the first combined run stopped at
   `TestProcessTieCampaignStorageFailuresRecoverWithoutFalseAdvance/observer_confirmation_after_link`
   because the expected confirmation marker was absent. Five isolated repetitions

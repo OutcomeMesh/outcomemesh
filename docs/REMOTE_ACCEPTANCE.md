@@ -26,6 +26,10 @@ local coordinators and pin roots. They exchange one identity-pinned challenge
 and response over QUIC. This does **not** distribute one assignment's authority
 across two servers.
 
+The separate [V1 WAN procedure](REMOTE_CUSTODY_WAN.md) uses one assignment,
+A's original authority and a separately bootstrapped B worker/source. Keep its
+scenario records distinct from this earlier two-assignment transport campaign.
+
 The exporter declares `AllPurposes` for each fresh test consumer because the
 reference assignment requires complete purpose coverage. The procedure admits
 only A's Audit operation and B's Serve operation. It creates no Prune ticket.

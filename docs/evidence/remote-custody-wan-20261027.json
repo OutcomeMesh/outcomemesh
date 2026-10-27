@@ -1,0 +1,296 @@
+{
+  "binaries": {
+    "omd": "511076e54ca961750f82e987783fbfaaab4708ac62bfaac5aec498b0b00d173a",
+    "omd.test": "f64fe765525a81da340faad4602451eb81fa91cd06b672b4032a4625a2ca2eb4",
+    "store.test": "0d9e7a412599a65d62e2d57d8035e2a2952d12042a4a4781edbe667cc8e33322"
+  },
+  "boundaries": [
+    "owner-controlled keys and original local roots remain trusted",
+    "not independent key/root copy fencing",
+    "negative branches retain ordinary tickets; no negative-completion workflow claimed",
+    "bounded controlled series, not device-failure or sustained adversarial public-testnet evidence",
+    "no external audit or mainnet authorization"
+  ],
+  "cleanup": {
+    "all_three_binary_pins_unchanged_on_both_hosts": true,
+    "bound_test_udp_ports": {
+      "a": [],
+      "b": []
+    },
+    "hosts_checked": 2,
+    "observed_kernel_boots_unchanged_and_distinct": true,
+    "original_workspaces_retained": true,
+    "private_supervisor_pin_unchanged_on_both_hosts": true,
+    "remaining_task_processes": {
+      "a": 0,
+      "b": 0
+    },
+    "temporary_ssh_masters_closed": 2
+  },
+  "completed_cycles": 42,
+  "controller_sha256": "3a1a5dccb5432f01c9b54b59aed6da288a6be4c1c389c93b8e85c2c355ce0d6a",
+  "date": "2026-10-27",
+  "native_build": {
+    "binaries": {
+      "omd": "511076e54ca961750f82e987783fbfaaab4708ac62bfaac5aec498b0b00d173a",
+      "omd.test": "f64fe765525a81da340faad4602451eb81fa91cd06b672b4032a4625a2ca2eb4",
+      "store.test": "0d9e7a412599a65d62e2d57d8035e2a2952d12042a4a4781edbe667cc8e33322"
+    },
+    "cgo_enabled": false,
+    "elapsed_seconds": 92.161,
+    "go": "go version go1.26.7 linux/amd64",
+    "offline_modules": true,
+    "readonly_modules": true,
+    "source_files": 620,
+    "source_manifest": "f9b0d488f2bce40e8ecb439126dadb7df81e9efd95557129ec75d4490ec56190"
+  },
+  "negative_cycles_with_ordinary_tickets_retained": 3,
+  "passed": true,
+  "private_validation_log_sha256": {
+    "focused_sealed_reply_race": "5f3bb12d5259f4e6f299a91ffffda8c8583a5cbc95a85b9075d6e9f9d44b9f27",
+    "integration_vet": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "process_recovery": "aa19c8d881d51b4fc9ce587ac498c9eccb86483cf974a0ee2a392c0a4b7b30aa",
+    "python_acceptance_tools": "d9ed53180657e121563eb22e5ca4456a313b567d8822293249e73b79071f0f03",
+    "repository_test_all": "bb8e4521300cfd30a0ff1a5d31d6dd493679b15deeb8a370a3eb8eea3ff33f44"
+  },
+  "recorded_at_utc": "2026-10-27T15:45:03.265437+00:00",
+  "reporter_sha256": "9e1da9e8a30ab7c81eb14b96791a7a38e9ea8bbe76e63497ac2bfe143d199e38",
+  "required_matrix_checked": true,
+  "scenarios": [
+    {
+      "assignment_id": "a99515f21d58b4419c223be60cfb0aa7bc9113369e430438095bc044c41b8d96",
+      "cycle_count": 1,
+      "delayed_start_rejected_on_every_cycle": true,
+      "final_active_remote": false,
+      "final_authority_sequence": 6,
+      "final_pending_operations": 0,
+      "final_source_sequences": [
+        1,
+        1
+      ],
+      "ordinary_tickets_retained": false,
+      "original_roots_reused": false,
+      "passed": true,
+      "private_report_sha256": "9bc5d31ceaca25fc35bac6cb044bb5ea7a0a23b038a8cda10411753f17fd589e",
+      "scenario": "a-restart-after-data",
+      "single_assignment": true
+    },
+    {
+      "assignment_id": "1a26de93818125189442cf98ff5581d3be7e3fab0fa0e48c6d7b0f4fce9bd217",
+      "cycle_count": 1,
+      "delayed_start_rejected_on_every_cycle": true,
+      "final_active_remote": false,
+      "final_authority_sequence": 6,
+      "final_pending_operations": 0,
+      "final_source_sequences": [
+        1,
+        1
+      ],
+      "ordinary_tickets_retained": false,
+      "original_roots_reused": false,
+      "passed": true,
+      "private_report_sha256": "50649c522f8bffb419440a0db6193bff6264d0258cf545dd8da311ca27e03907",
+      "scenario": "a-restart-before-data",
+      "single_assignment": true
+    },
+    {
+      "assignment_id": "24835081c37b7e8a7b1ba39917e0fb9ca787b872e7736d4a9c65a6dd2eb7a976",
+      "cycle_count": 1,
+      "delayed_start_rejected_on_every_cycle": true,
+      "final_active_remote": false,
+      "final_authority_sequence": 6,
+      "final_pending_operations": 0,
+      "final_source_sequences": [
+        1,
+        1
+      ],
+      "ordinary_tickets_retained": false,
+      "original_roots_reused": false,
+      "passed": true,
+      "private_report_sha256": "d444410cf5ff173309c650f5b9effb8a24d57819ca08351ff73fe15d5528b654",
+      "scenario": "b-restart-after-result",
+      "single_assignment": true
+    },
+    {
+      "assignment_id": "e09cbb4bfaafe47c416cc2419fcf390dae4850510fda9281a8feaa993f0d9bd3",
+      "cycle_count": 1,
+      "delayed_start_rejected_on_every_cycle": true,
+      "final_active_remote": false,
+      "final_authority_sequence": 4,
+      "final_pending_operations": 2,
+      "final_source_sequences": [
+        0,
+        0
+      ],
+      "ordinary_tickets_retained": true,
+      "original_roots_reused": false,
+      "passed": true,
+      "private_report_sha256": "1e0c422abceea6eca59ec0d848d82d28f37d458b533cf32c82059d8e5ffef522",
+      "scenario": "b-restart-before-result",
+      "single_assignment": true
+    },
+    {
+      "assignment_id": "d6c90f68a269eb4eefc6da2b6d1dc170e8c953f6d61a9b59052ebd1a38a8a0bd",
+      "cycle_count": 1,
+      "delayed_start_rejected_on_every_cycle": true,
+      "final_active_remote": false,
+      "final_authority_sequence": 4,
+      "final_pending_operations": 2,
+      "final_source_sequences": [
+        0,
+        1
+      ],
+      "ordinary_tickets_retained": true,
+      "original_roots_reused": false,
+      "passed": true,
+      "private_report_sha256": "e752751bba7ad088ed6dd2dad51968fc3d8cdc237318aaf9d8c20a6ad5c6ed25",
+      "scenario": "expired-cache",
+      "single_assignment": true
+    },
+    {
+      "assignment_id": "192a3b2aa1ce7109a087bf44ad957d60a63b7dab566db8c55dbf6add57b67a8b",
+      "cycle_count": 1,
+      "delayed_start_rejected_on_every_cycle": true,
+      "final_active_remote": false,
+      "final_authority_sequence": 6,
+      "final_pending_operations": 0,
+      "final_source_sequences": [
+        1,
+        1
+      ],
+      "ordinary_tickets_retained": false,
+      "original_roots_reused": false,
+      "passed": true,
+      "private_report_sha256": "13085ad0385d4e7bea338d6bf3b47afcf5f95f2d3ee2f789278bb84545fbc8af",
+      "scenario": "healthy",
+      "single_assignment": true
+    },
+    {
+      "assignment_id": "0bdc5a9fa3bb0a0303dd126bc3f7b4ab26e4e500ca449ccf15fb35582d372985",
+      "cycle_count": 1,
+      "delayed_start_rejected_on_every_cycle": true,
+      "final_active_remote": false,
+      "final_authority_sequence": 6,
+      "final_pending_operations": 0,
+      "final_source_sequences": [
+        1,
+        1
+      ],
+      "ordinary_tickets_retained": false,
+      "original_roots_reused": false,
+      "passed": true,
+      "private_report_sha256": "04329a1f27004582b1b3a99361c67fac0d9e043be1f1386000e1fbd9e2d6a396",
+      "scenario": "loss-delay",
+      "single_assignment": true
+    },
+    {
+      "assignment_id": "8f48dab57326fd20f0d7a442849099189c91fd36a0b9984340b04974ba3f5c5c",
+      "cycle_count": 1,
+      "delayed_start_rejected_on_every_cycle": true,
+      "final_active_remote": false,
+      "final_authority_sequence": 6,
+      "final_pending_operations": 0,
+      "final_source_sequences": [
+        1,
+        1
+      ],
+      "ordinary_tickets_retained": false,
+      "original_roots_reused": false,
+      "passed": true,
+      "private_report_sha256": "f31a218e7ad24165c006c173fe352ce41b1e91f67d5b95bc6576381aa68ff557",
+      "scenario": "partition-before",
+      "single_assignment": true
+    },
+    {
+      "assignment_id": "003f9bfe9718bcea4fa1406cb050a155117ac3859c5684707406137ae6d3a296",
+      "cycle_count": 1,
+      "delayed_start_rejected_on_every_cycle": true,
+      "final_active_remote": false,
+      "final_authority_sequence": 6,
+      "final_pending_operations": 0,
+      "final_source_sequences": [
+        1,
+        1
+      ],
+      "ordinary_tickets_retained": false,
+      "original_roots_reused": false,
+      "passed": true,
+      "private_report_sha256": "01877bed918519a20ade807d2d72be6a8c6571c146e5ce18a2b56d4b03b5570c",
+      "scenario": "seal-reply-loss",
+      "single_assignment": true
+    },
+    {
+      "assignment_id": "487169db19d18c34807f1b2bb62e3aff0cecdc0df2d9a1108f90e0aa3614770d",
+      "cycle_count": 32,
+      "delayed_start_rejected_on_every_cycle": true,
+      "final_active_remote": false,
+      "final_authority_sequence": 192,
+      "final_pending_operations": 0,
+      "final_source_sequences": [
+        32,
+        32
+      ],
+      "ordinary_tickets_retained": false,
+      "original_roots_reused": true,
+      "passed": true,
+      "private_report_sha256": "2a417fe22efa22c7137e13fe1811c69f004a5180d4dfd5fe4621f196bc5c7737",
+      "scenario": "soak",
+      "single_assignment": true
+    },
+    {
+      "assignment_id": "030082a7781a8ece317735fdb75cf4416750a8e1a8f593ed84c7335ff03d7ec4",
+      "cycle_count": 1,
+      "delayed_start_rejected_on_every_cycle": true,
+      "final_active_remote": false,
+      "final_authority_sequence": 4,
+      "final_pending_operations": 2,
+      "final_source_sequences": [
+        0,
+        0
+      ],
+      "ordinary_tickets_retained": true,
+      "original_roots_reused": false,
+      "passed": true,
+      "private_report_sha256": "ed1c9e7b68d55ff430b25a7b5c4deca40ff5ed42840b0f85c431c18bdf09d04d",
+      "scenario": "unseen-seal",
+      "single_assignment": true
+    }
+  ],
+  "schema_version": 1,
+  "scope": "controlled same-assignment V1 WAN fault and bounded reuse acceptance",
+  "session_lifecycle": "fresh intent/plan/worker per cycle; interrupted sessions retain the same worker and immutable scope",
+  "source_file_count": 620,
+  "source_manifest_format": "sorted relative Go/module paths; SHA256(file bytes), two spaces, path, LF",
+  "source_manifest_sha256": "f9b0d488f2bce40e8ecb439126dadb7df81e9efd95557129ec75d4490ec56190",
+  "source_revision_parent": "91550da0f46cda4fe440d08272ca6568112882bf",
+  "source_unchanged_after_campaign": true,
+  "successful_cycles": 39,
+  "successful_ticket_completions": 78,
+  "validation": {
+    "existing_process_recovery_store_seconds": 9.794,
+    "focused_sealed_reply_race_store_seconds": 5.494,
+    "integration_tag_vet_exit_code": 0,
+    "opt_in_helpers_executed_in_native_wan": true,
+    "opt_in_helpers_skip_without_environment": true,
+    "python_exit_code": 0,
+    "python_test_count": 25,
+    "race_groups": [
+      "Archive",
+      "Prune",
+      "remaining",
+      "ManagedCustody",
+      "Remote"
+    ],
+    "repository_command": "GOTOOLCHAIN=go1.26.7 make -j1 test-all",
+    "repository_exit_code": 0,
+    "store_race_group_seconds": [
+      239.156,
+      293.799,
+      151.987,
+      151.863,
+      80.388
+    ],
+    "timeout_increased": false
+  },
+  "validator_output_sha256": "28cc9045d675ea6bde6a48bc95ce5971dffa75692ffbfbef05a246a9b90b3e7c"
+}

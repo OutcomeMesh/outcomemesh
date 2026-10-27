@@ -140,10 +140,13 @@ GOTOOLCHAIN=go1.26.7 make -j1 test-all
 The separate [operator/server CLI](REMOTE_CUSTODY_OPERATOR.md) now supervises
 these APIs and durably retains sealed metadata and original-source terminals.
 It opens existing roots only and does not automatically bootstrap a deployment.
-Same-assignment WAN fault/soak acceptance, V1 bootstrap/offline signing workflow,
-independently enforced key/root copy fencing, negative-disposition tooling and the wider mainnet launch gates remain
-open. Local/process success does not supply independent audit or long-duration
-public-testnet evidence.
+The subsequent [offline preparation](REMOTE_CUSTODY_OFFLINE.md) and
+[position-zero workflow](REMOTE_CUSTODY_BOOTSTRAP.md) provide explicit bootstrap
+and reviewed signing. See the separate [V1 WAN campaign](REMOTE_CUSTODY_WAN.md)
+for same-assignment cross-host procedure and acceptance records. Independently
+enforced key/root copy fencing, negative-disposition closure and the wider
+mainnet gates remain open. Local/process success does not supply independent
+audit or long-duration public-testnet evidence.
 
 The frozen implementation passed the focused integration/race suite on macOS
 (store 76.302 seconds, wire 4.313, transport 3.996). The same suite passed

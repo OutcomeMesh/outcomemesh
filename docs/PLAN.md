@@ -757,13 +757,26 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
                           reply, recover the same entry and close both tickets
                           independently at confirmed position six. Retain V0
                           rejection/behavior and explicit pending Resume.
+                        - [x] Controlled same-assignment V1 WAN operator
+                          acceptance on two Linux hosts: frozen native binaries,
+                          explicit CLI bootstrap, partitions/loss/delay, A/B
+                          process deaths before and after result acceptance,
+                          lost sealed reply and metadata-only reconciliation.
+                          Reject expired/unseen/unknown success and retain both
+                          ordinary tickets. Reject delayed Start over an
+                          authenticated live route after every seal. Reuse one
+                          assignment and original source journals/locks through
+                          32 sequential cycles, closing both tickets independently;
+                          validate retained reports before publishing a sanitized
+                          index. See REMOTE_CUSTODY_WAN.md.
                         - [ ] Single-assignment cross-host current-authority
                           enforcement and independently enforced physical/copy
                           fencing. Separate local assignments over real WAN do
                           not establish distributed current authority. The V1
-                          state/journal foundation does not close this gate.
-                          Remaining work: unknown/unseen terminal disposition;
-                          same-assignment WAN fault/soak acceptance;
+                          managed operator path now has controlled WAN evidence;
+                          this does not fence copied roots or independent use of
+                          A's trusted control key. Remaining work: unknown/unseen
+                          terminal disposition (REMOTE_CUSTODY_NEGATIVE_PLAN.md);
                           independently protected keys/roots and copy fencing.
                           In-place owner transfer is not added by the explicit
                           stop/close/reopen operator workflow.

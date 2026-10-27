@@ -213,6 +213,8 @@ five race groups. Archive reused its unchanged successful run (store 266.936
 seconds); fresh store groups took 323.574, 190.212, 154.074 and 79.510 seconds.
 The Go source pin remained unchanged. Integration-tag vet also passed.
 
-Same-assignment cross-host fault/soak acceptance, unknown/unseen disposition
-closure, independently enforced key/root copy fencing, device-failure campaigns,
-independent audits and sustained public-testnet launch gates remain open.
+The subsequent [V1 WAN campaign](REMOTE_CUSTODY_WAN.md) covers the same-assignment
+cross-host fault/reuse procedure and acceptance records. Unknown/unseen
+disposition closure, independently enforced key/root copy fencing,
+device-failure campaigns, independent audits and sustained public-testnet launch
+gates remain open.

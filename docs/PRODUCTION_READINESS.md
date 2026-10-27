@@ -1,6 +1,6 @@
 # Production readiness baseline
 
-Assessment date: 2026-10-27. **Approximately 43/100 toward the full planned launch.**
+Assessment date: 2026-10-27. **Approximately 44/100 toward the full planned launch.**
 Status remains research/pre-alpha: do not secure real value with this code.
 
 The requested target is **mainnet with real value on 2026-11-01**, recorded on
@@ -23,12 +23,12 @@ step does not earn an automatic percentage increase.
 | --- | ---: | ---: | --- |
 | v0 specification, deterministic kernel, ledger and PoW (M0–3) | 20 | 20 | Repository exit gates recorded complete; this does not imply external security approval. |
 | Devnet and WorkGraph (M4–5) | 20 | 12 | M4 complete; M5 experimental implementation/research exists, but activation, independent review and calibration gates remain open. |
-| Protected storage and operator lifecycle (part of M5) | 15 | 11 | Previous retained storage/prune baseline: 8; owned local Audit/Serve and reviewed ticket workflow: +2; fixed-session remote authority/execution/result verification: +1. V1 operator/WAN acceptance, negative-disposition workflow and physical-storage/copy fencing remain open. |
+| Protected storage and operator lifecycle (part of M5) | 15 | 12 | Previous retained storage/prune baseline: 8; owned local Audit/Serve and reviewed ticket workflow: +2; fixed-session remote authority/execution/result verification: +1; V1 CLI/operator same-assignment WAN faults and original-root 32-cycle reuse acceptance: +1. Negative-disposition workflow and physical-storage/copy fencing remain open. |
 | Committee/application/privacy/proving scope (M6–8) | 15 | 0 | Not integrated; still gated by M5. |
 | Independent verification and security audits (M9–10) | 10 | 0 | No completed independent consensus verifier or external audit evidence satisfying the plan. |
 | Sustained adversarial public testnet (M9) | 10 | 0 | Local process tests are not a public testnet; the required six-month consensus stability gate is not met. |
 | Release, ecosystem and production operations (M9–10) | 10 | 0 | Full signed/reproducible release, wallet/operator, incident-response, demand/security-budget and legal-review evidence is not complete. |
-| Total | 100 | 43 | Approximate planning baseline only. |
+| Total | 100 | 44 | Approximate planning baseline only. |
 
 The two M5 rows separate consensus/networking work from the storage/operator
 subsystem so the same work is not credited twice. Implemented features and test
@@ -44,9 +44,11 @@ the fixed-session remote execution library with original-owner result checking
 REMOTE_CUSTODY_EXECUTION.md, including native/race/process checks. Transport
 functionality already credited in the devnet row is not counted again.
 
-The remaining four lifecycle points are reserved for the V1 operator/WAN path,
-negative-disposition lifecycle, independent key/root copy fencing, and device
-exhaustion/power-loss/long-retention acceptance (one each). Their work can be
+The remaining three lifecycle points are reserved for negative-disposition
+lifecycle, independent key/root copy fencing, and device exhaustion/power-loss/
+long-retention acceptance (one each). The V1 operator/WAN point was credited
+only after the complete same-assignment fault matrix and original-root 32-cycle
+reuse series passed on two hosts; see the dated follow-up below. Their work can be
 incremental, but each point needs its stated acceptance evidence. The four
 zero-credit areas still account for 45 of the 100 planned points; a higher code
 completion count cannot replace those launch gates. The score remains a rough
@@ -300,3 +302,26 @@ closes the remaining successful local bootstrap/tooling substep. The reserved
 V1 operator/WAN point still requires same-assignment cross-host fault/soak
 acceptance; negative dispositions, independent copy fencing, device campaigns,
 independent review and launch gates remain open. The baseline stays 43/100.
+
+2026-10-27 same-assignment WAN acceptance: the complete V1 CLI/operator matrix
+passed on two explicitly selected Linux hosts. Ten independent scenarios cover
+healthy exchange, partitions/loss/delay, both process roles before/after result
+effects, lost sealed reply, expired cache and Unseen seal. A separate 32-cycle
+series reuses one assignment and the original authority/source roots/locks,
+including loss/delay every fourth cycle. It finishes at A authority position
+192, both source positions 32, zero pending operations and no active remote hold.
+Negative scenarios retain their two ordinary tickets; metadata-only Reconcile
+does not confirm Drain, and each sealed branch rejects delayed Start through a
+live authenticated connection. The retained-report validator checks scope,
+identities, exact result IDs/times, relay counters and common build/source pins.
+See [the procedure](REMOTE_CUSTODY_WAN.md) and
+[sanitized acceptance index](evidence/remote-custody-wan-20261027.json).
+
+This closes the reserved V1 operator/WAN criterion: protected storage/operator
+lifecycle rises from 11 to 12 of 15, and total readiness from 43 to approximately
+44/100. The evidence is controlled fault/bounded reuse acceptance with trusted
+owner keys and original roots. It does not fence independent key/root copies,
+resolve negative tickets, prove device power-loss durability, supply an external
+audit or satisfy the public-testnet stability/calibration gates. The next
+[negative-disposition work plan](REMOTE_CUSTODY_NEGATIVE_PLAN.md) earns no credit
+until its implementation and acceptance criteria pass.

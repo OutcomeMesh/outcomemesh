@@ -161,9 +161,10 @@ independent ticket completions, EOF/malformed control, and separate processes
 with output broken after a confirmed Drain. The reopened operator recovers the
 same immutable evidence without another effect.
 
-This CLI does not close same-assignment WAN fault/soak acceptance,
-negative-disposition closure, independent physical/key copy fencing,
-device-failure campaigns or the public-testnet/audit launch gates.
+The subsequent [V1 WAN campaign](REMOTE_CUSTODY_WAN.md) exercises this CLI over
+one assignment on two hosts. Negative-disposition closure, independent
+physical/key copy fencing, device-failure campaigns and the public-testnet/audit
+launch gates remain open.
 
 The focused integration/race run passed on macOS (cmd/omd 33.884 seconds, store
 82.984). Native Linux/amd64 Go 1.26.7 with CGO_ENABLED=0, offline dependencies,

@@ -13,6 +13,41 @@ import (
 	libp2ptransport "github.com/outcomemesh/outcomemesh/node/transport/libp2p"
 )
 
+func TestRemoteCustodySealReplyFailureRetainsOriginalHold(t *testing.T) {
+	f := newRemoteExecutionFixture(t)
+	a, b, address := openRemoteTerminalPair(t, f, f.auditConfig(t))
+	if _, err := a.ExecuteQUIC(t.Context(), testKey(16), testKey(46), libp2ptransport.DefaultConfig(), address); err != nil {
+		t.Fatal(err)
+	}
+	b.hooks.at = func(stage string) error {
+		if stage == "remote-control-drained-before-response-write" {
+			return errors.New("injected lost sealed reply")
+		}
+		return nil
+	}
+	if _, err := a.SealQUIC(t.Context(), testKey(16), libp2ptransport.DefaultConfig(), address); err == nil {
+		t.Fatal("lost reply confirmed A's drain")
+	}
+	b.controlWG.Wait()
+	state := testCoordination(t, a.life.owner)
+	if state.Authority.Remote == nil || state.Confirmed.Sequence != 3 || state.Authority.Pending != 2 {
+		t.Fatal("lost reply released original obligation", state)
+	}
+	r, err := b.Review(t.Context())
+	if err != nil || r.WorkerStage != remoteworker.Sealed || r.SealID.IsZero() {
+		t.Fatal("B seal not retained", r, err)
+	}
+	b.hooks.at = nil
+	reply, err := a.SealQUIC(t.Context(), testKey(16), libp2ptransport.DefaultConfig(), address)
+	sealID, _ := reply.Seal.ID()
+	if err != nil || sealID != r.SealID {
+		t.Fatal("retry replaced sealed history", err)
+	}
+	if current := testCoordination(t, a.life.owner); current.Authority.Remote != nil || current.Confirmed.Sequence != 4 || current.Authority.Pending != 2 {
+		t.Fatal("retry did not independently confirm exact drain", current)
+	}
+}
+
 func TestRemoteCustodyOperatorReviewsNeverGrantStaleActions(t *testing.T) {
 	f := newRemoteExecutionFixture(t)
 	cfg := f.auditConfig(t)

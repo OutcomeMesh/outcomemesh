@@ -157,8 +157,15 @@ the original active local journal and must not accept a copied remote journal.
 If B committed but A never accepted a proof before it expired, drain cannot
 refresh that proof or invent Audit acceptance.
 
-Operator/server CLI, negative-disposition tooling, same-assignment WAN acceptance,
-independently enforced copy fencing and long-duration acceptance remain open.
+At this foundation checkpoint, operator/server CLI, negative-disposition tooling,
+same-assignment WAN acceptance, independently enforced copy fencing and
+long-duration acceptance remained open. Subsequent work is documented in
+[managed execution](REMOTE_CUSTODY_EXECUTION.md),
+[operator/server CLI](REMOTE_CUSTODY_OPERATOR.md),
+[position-zero bootstrap](REMOTE_CUSTODY_BOOTSTRAP.md) and the
+[V1 WAN campaign](REMOTE_CUSTODY_WAN.md). Independent copy fencing,
+negative-disposition closure and sustained public-testnet acceptance remain
+separate open gates.
 
 ## Verification
 

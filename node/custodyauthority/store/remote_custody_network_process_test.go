@@ -37,6 +37,8 @@ type remoteNetworkProcessConfig struct {
 	Timeout                                                   time.Duration
 	Now                                                       uint64
 	PauseBeforeResponse                                       bool
+	PauseStage                                                string
+	Listen                                                    []string
 	Marker                                                    string
 }
 
@@ -368,7 +370,9 @@ func TestRemoteCustodyNetworkProcessHelper(t *testing.T) {
 	}
 	session := workarchive.DefaultCustodySessionConfig()
 	session.RequestTimeout = fixture.Timeout
-	session.Now = func() uint64 { return fixture.Now }
+	if fixture.Now != 0 {
+		session.Now = func() uint64 { return fixture.Now }
+	}
 	service, err := OpenRemoteCustodyServeService(t.Context(), RemoteCustodyServeServiceConfig{Scope: fixture.Scope, WorkerPath: fixture.WorkerPath,
 		JournalPath: fixture.JournalPath, ObjectPath: fixture.ObjectPath, ObjectPolicy: fixture.ObjectPolicy, JournalLimits: fixture.JournalLimits,
 		ReplicaPrivateKey: fixture.ReplicaPrivateKey, ControlPrivateKey: fixture.ControlPrivateKey, SessionConfig: session})
@@ -376,9 +380,16 @@ func TestRemoteCustodyNetworkProcessHelper(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer service.Close()
-	if fixture.PauseBeforeResponse {
+	if fixture.PauseBeforeResponse || fixture.PauseStage != "" {
+		stage := fixture.PauseStage
+		if stage == "" {
+			stage = "remote-data-before-response-write"
+		}
+		if stage != "remote-data-admitted" && stage != "remote-data-before-response-write" && stage != "remote-control-drained-before-response-write" {
+			t.Fatal("unsupported private pause stage")
+		}
 		service.hooks.at = func(stage string) error {
-			if stage == "remote-data-before-response-write" {
+			if stage == fixture.PauseStage || fixture.PauseStage == "" && stage == "remote-data-before-response-write" {
 				if err := os.WriteFile(fixture.Marker, []byte("committed\n"), 0o600); err != nil {
 					return err
 				}
@@ -387,7 +398,11 @@ func TestRemoteCustodyNetworkProcessHelper(t *testing.T) {
 			return nil
 		}
 	}
-	if err := service.Start(t.Context(), fixture.TransportPrivateKey, libp2ptransport.DefaultConfig()); err != nil {
+	transportConfig := libp2ptransport.DefaultConfig()
+	if len(fixture.Listen) != 0 {
+		transportConfig.Listen = fixture.Listen
+	}
+	if err := service.Start(t.Context(), fixture.TransportPrivateKey, transportConfig); err != nil {
 		t.Fatal(err)
 	}
 	addresses := service.Addresses()

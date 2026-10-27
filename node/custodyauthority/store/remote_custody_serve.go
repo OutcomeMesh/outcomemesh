@@ -246,6 +246,13 @@ func (service *RemoteCustodyServeService) handleControl(_ context.Context, peer 
 	if err != nil {
 		return
 	}
+	// Private acceptance seam: the sealed branch is already durable and all
+	// data callbacks have drained. Normal builds install no hook here.
+	if response.Status == remotewire.StatusDrained {
+		if err := service.hooks.reach("remote-control-drained-before-response-write"); err != nil {
+			return
+		}
+	}
 	if err := remotewire.WriteResponse(owned, response); err != nil {
 		return
 	}

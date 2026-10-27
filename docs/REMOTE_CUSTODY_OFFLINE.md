@@ -201,6 +201,8 @@ This was the offline preparation slice. The subsequent
 [position-zero workflow](REMOTE_CUSTODY_BOOTSTRAP.md) now covers initial A/B
 source journals and source-guarded V1 admission/challenge preparation before a
 Plan/Begin exists. It uses a separate pre-Begin challenge command; the operator's
-later `prepare` action consumes the complete fixed session. Same-assignment WAN
-fault/soak acceptance, negative-disposition closure, independent copy fencing and
-mainnet gates remain open. Do not copy live authority, pin or source journals.
+later `prepare` action consumes the complete fixed session. The separate
+[V1 WAN campaign](REMOTE_CUSTODY_WAN.md) covers the same-assignment cross-host
+procedure and its acceptance records. Negative-disposition closure, independent
+copy fencing and mainnet gates remain open. Do not copy live authority, pin or
+source journals.
