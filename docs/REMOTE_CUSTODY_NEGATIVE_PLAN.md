@@ -1,14 +1,17 @@
 # Remote custody negative-disposition work plan
 
 Status: the separately versioned signed observation, owned capture/review and
-historical B-result export are implemented; see
+historical B-result export and explicit administrative Audit disposition are implemented; see
 [the negative observation workflow](REMOTE_CUSTODY_NEGATIVE.md). Per-ticket
-settlement and uncertainty/retention rules remain open. The [WAN campaign](REMOTE_CUSTODY_WAN.md) checks
+Serve settlement and independent absence/retention rules remain open. The [WAN campaign](REMOTE_CUSTODY_WAN.md) checks
 that these branches retain their ordinary Audit/Serve tickets and refuse a
 successful terminal. No readiness credit is assigned to this design note.
 
-The implementation currently retains BOTH ordinary tickets in every negative
-branch, including Unseen. It does not bypass step 1 or implement negative Complete.
+Capture retains BOTH ordinary tickets in every negative branch, including
+Unseen. An explicit separately signed Audit-only Complete may close the recorded
+administrative observation while the original Serve ticket remains pending.
+This is the durable uncertainty/retention hold; even Unseen cannot release it
+under the V1 copied-key boundary. No negative Serve Complete is implemented.
 The [local placement profile](REMOTE_CUSTODY_PLACEMENT.md) adds configured
 copy detection; it does not close the independent fencing requirement.
 
@@ -76,6 +79,12 @@ to the existing generic state machine is not a safe implementation shortcut.
    pending entry; opening, reviewing, sealing and reading metadata never resume
    or complete implicitly. An ineligible unknown branch must still refuse this
    path even if both parties supply signatures.
+
+   Implemented slice: all four historical observations are eligible only for
+   administrative Audit disposition. The exact original Serve ticket must remain
+   pending, preserving the maximum-pending/retirement constraint. The typed path
+   rejects Serve, stale observations and a different pending attempt. Successful
+   custody encoding and semantics are unchanged. Serve resolution stays open.
 
 5. **Repeat native process and two-host acceptance.** Cover publication before/
    after durable confirmation, lost output, kill/reopen, changed scope/source,

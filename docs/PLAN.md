@@ -778,7 +778,7 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
                           output recovery and read-only sealed B entry export.
                           Preserve positive vectors and reject stale absence
                           observations after original source advance. See
-                          REMOTE_CUSTODY_NEGATIVE.md; negative Complete is not added.
+                          REMOTE_CUSTODY_NEGATIVE.md; capture does not complete.
                         - [x] Opt-in local placement enrollment and runtime
                           checks for original roots/locks, anchor directory and
                           role seed files. Check independent pins before CLI
@@ -788,6 +788,22 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
                           explicit reviewed enrollment; no automatic rebind or
                           implicit recovery. See REMOTE_CUSTODY_PLACEMENT.md.
                           This is not raw-key, full-VM or distributed copy fencing.
+                        - [x] Explicit negative Audit-only administrative Complete
+                          with independent consumer/authority signatures, original
+                          source/Drain guards, exact retry and explicit pending
+                          Resume. Keep the original Serve ticket pending in all
+                          four branches, including Unseen; prohibit retirement
+                          across that obligation. Preserve positive evidence and
+                          reject proof refresh/new execution. See
+                          REMOTE_CUSTODY_NEGATIVE.md.
+                        - [x] Experimental independent witness protocol and
+                          durable non-equivocation journal: externally pinned
+                          scope, >2/3 signatures, one claim/result commitment,
+                          retained unknown obligation, fsync before vote release,
+                          strict replay/recovery and process-death tests. See
+                          CUSTODY_FENCE.md. This is a separate foundation;
+                          mandatory assignment/transport/effect acceptance and
+                          independent service deployment remain open below.
                         - [ ] Single-assignment cross-host current-authority
                           enforcement and independently enforced physical/copy
                           fencing. Separate local assignments over real WAN do
@@ -795,7 +811,10 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
                           managed operator path now has controlled WAN evidence;
                           this does not fence copied roots or independent use of
                           A's trusted control key. Remaining work: unknown/unseen
-                          terminal disposition (REMOTE_CUSTODY_NEGATIVE_PLAN.md);
+                          Serve disposition (REMOTE_CUSTODY_NEGATIVE_PLAN.md),
+                          mandatory versioned witness assignment/transport/effect/
+                          proof validation and independent witness deployment
+                          (CUSTODY_FENCE.md);
                           independently protected keys/roots and copy fencing.
                           In-place owner transfer is not added by the explicit
                           stop/close/reopen operator workflow.

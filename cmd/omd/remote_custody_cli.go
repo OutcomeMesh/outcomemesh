@@ -389,8 +389,8 @@ func loadRemoteCustodyOptions(ctx context.Context, args []string) (o remoteCusto
 		}
 		o.drainPath, o.terminalPath, o.entryPath = *drainPath, *terminalPath, *entryPath
 		o.negativePath, o.remoteResultPath = *negativePath, *remoteResultPath
-		if o.negativePath != "" && o.entryPath != "" {
-			return o, errors.New("negative observation cannot select successful completion")
+		if o.negativePath != "" && o.entryPath != "" && o.terminalPath != "" {
+			return o, errors.New("Complete must select exactly one positive or negative evidence type")
 		}
 		artifacts := []string{o.drainPath, o.terminalPath, o.entryPath, o.negativePath, o.remoteResultPath}
 		for i, p := range artifacts {
@@ -433,8 +433,8 @@ func loadRemoteCustodyOptions(ctx context.Context, args []string) (o remoteCusto
 			}
 		}
 		if o.entryPath != "" {
-			if o.entryID.IsZero() || o.terminalID.IsZero() {
-				return o, errors.New("Complete input requires entry and terminal pins")
+			if o.entryID.IsZero() || (o.terminalID.IsZero() == o.negativeID.IsZero()) {
+				return o, errors.New("Complete input requires entry and exactly one positive or negative evidence pin")
 			}
 			b, err := readRegularArtifact(o.entryPath, custodyauthority.MaximumEntryBytes)
 			if err != nil {
@@ -446,8 +446,16 @@ func loadRemoteCustodyOptions(ctx context.Context, args []string) (o remoteCusto
 			}
 			id, _ := entry.ID()
 			c := entry.Command
-			if id != o.entryID || entry.Version != custodyauthority.Version1 || entry.AuthorityPublicKey != a.AuthorityPublicKey || c.AssignmentID != assignmentID || c.Kind != custodyauthority.Complete || c.EvidenceID != o.terminalID {
-				return o, errors.New("Complete input differs from scope or retained terminal")
+			evidence := o.terminalID
+			if !o.negativeID.IsZero() {
+				evidence = o.negativeID
+				auditID, _ := admission.ID()
+				if c.TicketID != auditID || c.ActorPublicKey != admission.Command.ActorPublicKey {
+					return o, errors.New("negative completion must retain Serve and select the exact Audit ticket")
+				}
+			}
+			if id != o.entryID || entry.Version != custodyauthority.Version1 || entry.AuthorityPublicKey != a.AuthorityPublicKey || c.AssignmentID != assignmentID || c.Kind != custodyauthority.Complete || c.EvidenceID != evidence {
+				return o, errors.New("Complete input differs from scope or retained evidence")
 			}
 		}
 	}
@@ -960,6 +968,36 @@ func runRemoteCustodyControl(parent context.Context, o remoteCustodyOptions, inp
 				}
 				o.terminalID, _ = term.ID()
 				err = writePruneOutputLine(output, fmt.Sprintf("remote_custody_captured expected_review_id=%s terminal_id=%s completion_submitted=false\n", id, o.terminalID))
+			case "apply-negative-audit-complete", "resume-negative-audit-complete":
+				if o.entryID.IsZero() || o.negativeID.IsZero() || !o.terminalID.IsZero() {
+					return errors.New("negative Audit completion needs pinned --complete-entry and --negative")
+				}
+				n, e := store.LoadRemoteCustodyNegative(o.negativePath, o.negativeID)
+				if e != nil {
+					return e
+				}
+				body, e := readRegularArtifact(o.entryPath, custodyauthority.MaximumEntryBytes)
+				if e != nil {
+					return e
+				}
+				entry, e := custodyauthority.DecodeEntry(body)
+				if e != nil {
+					return e
+				}
+				eid, _ := entry.ID()
+				if eid != o.entryID {
+					return errors.New("negative Complete entry differs from selected ID")
+				}
+				var commit store.Commit
+				if action == "apply-negative-audit-complete" {
+					commit, err = a.ApplyNegativeAuditComplete(run, n, entry)
+				} else {
+					commit, err = a.ResumeNegativeAuditComplete(run, n, entry)
+				}
+				if err != nil {
+					return err
+				}
+				err = writePruneOutputLine(output, fmt.Sprintf("remote_custody_audit_disposed expected_review_id=%s entry_id=%s sequence=%d appended=%t serve_ticket_retained=true execution_outcome_resolved=false source_advanced=false\n", id, commit.EntryID, commit.Snapshot.Sequence, commit.Appended))
 			case "apply-complete", "resume-complete":
 				if o.entryPath == "" || o.entryID.IsZero() || o.terminalID.IsZero() {
 					return errors.New("completion needs a pinned external --complete-entry and retained --terminal")

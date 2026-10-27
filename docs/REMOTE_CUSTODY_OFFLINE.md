@@ -212,3 +212,10 @@ signed format. Offline successful Complete still requires an accepted
 `RemoteCustodyTerminal`; a negative ID or B-only entry digest cannot substitute
 for that evidence. The [local placement profile](REMOTE_CUSTODY_PLACEMENT.md)
 covers remote operator role files, not these offline consumer signing keys.
+
+An additional explicit `--kind negative-audit-complete --purpose audit` signs
+only an administrative disposition using `--negative` and its independent pin.
+It requires the exact Audit admission and refuses Serve or a positive terminal.
+The live typed application additionally checks the original source/Drain and
+the still-pending original Serve obligation. It cannot cancel an unknown effect,
+authorize another attempt or release retention. See the negative workflow.

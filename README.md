@@ -202,7 +202,11 @@ fencing and the wider production gates remain open.
 The [negative observation workflow](docs/REMOTE_CUSTODY_NEGATIVE.md) now records
 signed Unseen/unknown/unaccepted-result evidence against the original A source,
 including export and historical verification of B's complete retained entry.
-Both ordinary tickets remain pending. The optional
+Capture keeps both ordinary tickets pending. An explicit, separately signed
+administrative Audit completion can now close that observation while the
+original Serve obligation remains pending, blocking retirement. The experimental
+[independent witness foundation](docs/CUSTODY_FENCE.md) adds durable quorum vote
+locks and unknown-outcome rules; mandatory protocol integration remains open. The optional
 [local placement profile](docs/REMOTE_CUSTODY_PLACEMENT.md) checks independently
 pinned original roots, permanent locks and operator key files across restart.
 It detects ordinary copies/replacements; independent raw-key/VM-copy fencing
@@ -413,6 +417,8 @@ The CLI wallet is for development only.
 - `node/calibration/`: crash-safe first-admission collection, signed hourly
   public-testnet telemetry chains, clustering policy, bounded manifest
   persistence, and ER-5 evidence aggregation;
+- `node/custodyfence/`: experimental independently pinned witness quorum and
+  durable proposal locks; mandatory custody integration remains gated;
 - `node/snapshot/`: bounded chunk export and state-root verification without
   unsafe canonical-state import;
 - `node/tieproducer/`, `node/tieexchange/`: deterministic role-labelled sibling

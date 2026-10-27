@@ -2,8 +2,9 @@
 
 The A operator can now retain an explicit, authority-signed observation when a
 sealed remote session has no result accepted in its original source. This is
-the evidence/capture portion of the [negative work plan](REMOTE_CUSTODY_NEGATIVE_PLAN.md).
-It does not settle either ordinary ticket. An unresolved outcome is not renamed
+the capture portion of the [negative work plan](REMOTE_CUSTODY_NEGATIVE_PLAN.md).
+Capture does not settle either ordinary ticket. A separate explicit administrative
+Audit completion is described below; Serve remains pending. An unresolved outcome is not renamed
 to cancellation, successful custody or absence of an effect.
 
 ## Classification and retention
@@ -19,8 +20,64 @@ No branch advances the accepted source, extends a receipt, earns custody credit,
 authorizes pruning or grants another execution attempt. Ordinary ticket retention
 continues to constrain the original authority. In particular, the maximum-pending
 budget is not bypassed by moving uncertainty into an untracked diagnostic file.
-Per-ticket negative settlement and any separate durable uncertainty hold are
-still a later implementation gate.
+The existing pending Serve ticket carries that durable obligation after an
+optional administrative Audit completion. No separate diagnostic file replaces
+that ticket. Resolving Serve itself remains an implementation/acceptance gate.
+
+## Explicit administrative Audit disposition
+
+All four observations can close the auditor's obligation to record the selected
+outcome, with the auditor consumer's signature and authority co-signature. This
+is an administrative disposition, never successful custody or cancellation of
+the remote effect. Only the exact Audit admission is eligible. Even Unseen
+cannot complete Serve: a local worker seal cannot exclude a separately copied
+participant under the V1 trust boundary.
+
+The typed builder is `BuildRemoteCustodyNegativeAuditCompleteCommand`. Application
+uses `ApplyNegativeAuditComplete`; only `ResumeNegativeAuditComplete` may resume
+the retained exact pending attempt. They retain the original owner and source
+decision, validate the whole signed observation, compare the exact confirmed
+Drain, require the original Serve operation still pending, and require A's source
+still at the observed predecessor. A changed source or another pending authority
+command refuses application. An exact historical retry returns the same entry
+without another append. A completed Audit must reference this same observation.
+
+Use the existing V1 offline signature commands with the full selected scope and:
+
+```text
+--kind negative-audit-complete --purpose audit
+--negative /ABS/negative --negative-id PINNED_NEGATIVE_ID
+--admission /ABS/audit-admission --admission-id PINNED_AUDIT_ID
+--expected-sequence SEQUENCE --expected-head HEAD
+```
+
+Review, sign with the Audit consumer, then independently review and co-sign with
+the authority, as in the [offline guide](REMOTE_CUSTODY_OFFLINE.md). Selecting
+`--purpose serve`, a positive terminal or another admission is refused. Offline
+review proves the static message, not current live eligibility.
+
+On A's operator select the pinned negative and external Complete entry, with no
+`--terminal` selected. Obtain a fresh same-session review and explicitly issue:
+
+```text
+apply-negative-audit-complete REVIEW_ID
+```
+
+If an exact attempt was retained but not confirmed, review again and use
+`resume-negative-audit-complete REVIEW_ID`. Opening/reviewing never submits it.
+After successful application, a first-cycle authority is at position five with
+one pending Serve operation; its original sources, receipt and proof time are
+unchanged. Stop cannot retire this assignment across that outstanding operation.
+The drained worker cannot execute again. This does not introduce a Serve
+completion, successor owner, pruning permission or rewards.
+
+Retain the selected negative file before completing Audit. Capture still requires
+both tickets pending and cannot generate/enrich another disposition afterward.
+Default review verifies the exact retained observation after Audit completion.
+For controlled native/WAN follow-up use
+`scripts/remote_acceptance/negative_settlement.py` with the separately retained
+WAN and negative reports. This explicitly mutates only A's administrative ticket;
+the earlier negative-capture campaign remains historical evidence.
 
 ## Owned capture
 
@@ -137,5 +194,5 @@ B input file and rejected the negative envelope as a successful terminal.
 
 This evidence remains within the original-owner trusted-key boundary. A local
 observation cannot establish global absence under cloned keys/roots. Independent
-fencing, negative ticket settlement, device failures, audits and public-testnet
+fencing, Serve disposition, device failures, audits and public-testnet
 launch gates remain open.

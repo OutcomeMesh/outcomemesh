@@ -269,10 +269,14 @@ func (r *RemoteCustodyAuditRuntime) checkNegativeLocked(n RemoteCustodyNegative,
 	if err := n.Validate(r.scope); err != nil {
 		return err
 	}
-	return r.checkNegativeStateLocked(n, decision)
+	return r.checkNegativeDispositionLocked(n, decision, true, false)
 }
 
 func (r *RemoteCustodyAuditRuntime) checkNegativeStateLocked(n RemoteCustodyNegative, decision *workarchive.CustodyJournalDecision) error {
+	return r.checkNegativeDispositionLocked(n, decision, false, false)
+}
+
+func (r *RemoteCustodyAuditRuntime) checkNegativeDispositionLocked(n RemoteCustodyNegative, decision *workarchive.CustodyJournalDecision, settledAudit, pending bool) error {
 	if n.Intent != r.intent || n.AuditAdmission != r.admission {
 		return ErrRemoteCustody
 	}
@@ -280,8 +284,12 @@ func (r *RemoteCustodyAuditRuntime) checkNegativeStateLocked(n RemoteCustodyNega
 	if err != nil {
 		return err
 	}
-	if err := r.pendingTicketsLocked(current); err != nil {
-		return err
+	if current.Pending != nil && !pending {
+		return ErrPendingAttempt
+	}
+	if current.Authority.AssignmentID != r.scope.Worker.Plan.AssignmentID ||
+		(current.Authority.Phase != custodyauthority.Accepting && current.Authority.Phase != custodyauthority.Stopping) {
+		return ErrRemoteCustody
 	}
 	if current.Authority.Remote != nil {
 		return custodyauthority.ErrRemoteActive
@@ -289,13 +297,29 @@ func (r *RemoteCustodyAuditRuntime) checkNegativeStateLocked(n RemoteCustodyNega
 	drainID, _ := n.Drained.ID()
 	sealID, _ := n.Seal.ID()
 	serveID, _ := r.scope.Worker.Plan.Admission.ID()
-	matched := false
-	for _, op := range current.Authority.Operations {
-		if op.TicketID == serveID {
-			matched = op.RemoteBeginID == n.BeginID && op.RemotePlanID == n.PlanID && op.RemoteDrainID == drainID && op.RemoteTombstoneID == sealID
+	auditID, _ := r.admission.ID()
+	var negativeID types.Hash
+	if settledAudit {
+		negativeID, err = n.ID()
+		if err != nil {
+			return err
 		}
 	}
-	if !matched || current.Confirmed.Sequence < n.Drained.Command.ExpectedSequence+1 {
+	matched, audit := false, false
+	for _, op := range current.Authority.Operations {
+		if op.TicketID == auditID {
+			audit = op.Purpose == custodyauthority.Audit && op.ConsumerPublicKey == r.intent.ConsumerPublicKey &&
+				op.OperationID == r.session.intentID && op.RemoteBeginID.IsZero() &&
+				(op.CompletionID.IsZero() || (settledAudit && op.EvidenceID == negativeID))
+		}
+		if op.TicketID == serveID {
+			matched = op.Purpose == custodyauthority.Serve && op.CompletionID.IsZero() &&
+				op.ConsumerPublicKey == r.scope.Worker.Plan.Admission.Command.ActorPublicKey &&
+				op.OperationID == r.scope.Worker.Plan.Admission.Command.OperationID &&
+				op.RemoteBeginID == n.BeginID && op.RemotePlanID == n.PlanID && op.RemoteDrainID == drainID && op.RemoteTombstoneID == sealID
+		}
+	}
+	if !matched || !audit || current.Confirmed.Sequence < n.Drained.Command.ExpectedSequence+1 {
 		return ErrRemoteCustody
 	}
 	source, err := decision.State()

@@ -100,7 +100,7 @@ func runRemoteCustodySigning(ctx context.Context, args []string, output io.Write
 	f.SetOutput(io.Discard)
 	common := addCustodyCommandScopeFlags(f)
 	mode := f.String("mode", "review", "review (default), or sign")
-	kind := f.String("kind", "", "admit, begin, or complete; Drained is emitted only by the live sealed B runtime")
+	kind := f.String("kind", "", "admit, begin, complete, or negative-audit-complete; Drained requires live sealed B")
 	purposeText := f.String("purpose", "", "audit or serve; Begin requires serve")
 	sequence := f.String("expected-sequence", "", "explicit fixed authority sequence")
 	head := f.String("expected-head", "", "independently retained fixed authority head")
@@ -115,6 +115,8 @@ func runRemoteCustodySigning(ctx context.Context, args []string, output io.Write
 	admissionPin := f.String("admission-id", "", "independent selected ticket ID")
 	terminalPath := f.String("terminal", "", "Complete only: accepted remote terminal")
 	terminalPin := f.String("terminal-id", "", "independent accepted terminal ID")
+	negativePath := f.String("negative", "", "negative-audit-complete only: immutable negative observation")
+	negativePin := f.String("negative-id", "", "independent negative observation ID")
 	commandPath := f.String("command", "", "co-sign only: exact actor-signed canonical command")
 	reviewPin := f.String("expected-review-id", "", "sign only: exact reviewed signature message")
 	outPath := f.String("out", "", "sign only: immutable output in an existing parent")
@@ -127,6 +129,13 @@ func runRemoteCustodySigning(ctx context.Context, args []string, output io.Write
 		return err
 	}
 	present := custodyCommandPresence(f)
+	if *kind != "negative-audit-complete" {
+		if err := custodyCommandForbid(present, "negative", "negative-id"); err != nil {
+			return err
+		}
+	} else if *purposeText != "audit" {
+		return errors.New("negative completion closes only Audit; Serve must remain pending")
+	}
 	if *mode != "review" && *mode != "sign" {
 		return errors.New("mode must be review or sign")
 	}
@@ -180,7 +189,7 @@ func runRemoteCustodySigning(ctx context.Context, args []string, output io.Write
 		if err != nil {
 			return err
 		}
-	case "begin", "complete":
+	case "begin", "complete", "negative-audit-complete":
 		if err := custodyCommandForbid(present, "consumer-public-key"); err != nil {
 			return err
 		}
@@ -217,6 +226,32 @@ func runRemoteCustodySigning(ctx context.Context, args []string, output io.Write
 			if admission.Command.Purpose != purpose {
 				return errors.New("selected completion purpose differs from admission")
 			}
+			if *kind == "negative-audit-complete" {
+				if err := custodyCommandForbid(present, "terminal", "terminal-id"); err != nil {
+					return err
+				}
+				nid, e := managedCustodyExternalID("negative-id", *negativePin)
+				if e != nil {
+					return e
+				}
+				file, e := custodyCommandFile(*negativePath)
+				if e != nil {
+					return e
+				}
+				n, e := store.LoadRemoteCustodyNegative(file, nid)
+				if e != nil {
+					return e
+				}
+				if n.Intent != scope.Intent || admission != n.AuditAdmission {
+					return errors.New("negative observation differs from the selected Audit intent or ticket")
+				}
+				draft, err = store.BuildRemoteCustodyNegativeAuditCompleteCommand(remote, n, position)
+				if err != nil {
+					return err
+				}
+				inputs = append(inputs, beginFile, admissionFile, file)
+				break
+			}
 			tid, e := managedCustodyExternalID("terminal-id", *terminalPin)
 			if e != nil {
 				return e
@@ -242,7 +277,7 @@ func runRemoteCustodySigning(ctx context.Context, args []string, output io.Write
 			return err
 		}
 	default:
-		return errors.New("kind must be admit, begin or complete; offline Drained signing is unavailable")
+		return errors.New("kind must be admit, begin, complete or negative-audit-complete; offline Drained signing is unavailable")
 	}
 	command := draft
 	if cosign {

@@ -10,6 +10,38 @@ Full planned production readiness is approximately **44/100**, using the weighte
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
 
+## 2026-10-27: negative Audit disposition and independent witness foundation
+
+- A separate reviewed negative Audit-only Complete now records an administrative
+  outcome for all four signed negative classes. The exact original Serve ticket
+  remains pending, including Unseen. Original source/Drain checks, explicit
+  pending Resume, exact lost-output retry and retirement refusal preserve that
+  obligation. Positive custody formats and proof times are unchanged.
+- Native CLI/process tests cover lost completion output, kill/reopen and exact
+  retries. On the two original Linux hosts, Unseen, Started/NoResult and an expired
+  B-only result each close one Audit, remain at one pending Serve, and leave both
+  original source journals unchanged. The three old negative-capture reports
+  predate these explicit administrative completions; they remain historical.
+- `node/custodyfence` adds a separate experimental immutable slot protocol with
+  an independently pinned witness set and >2/3 quorum. Its durable witness locks
+  the complete proposal before releasing a signature, preserves unknown outcomes,
+  refuses conflicting copied-owner results and requires exact explicit recovery.
+  Fixed vectors, fuzzing, concurrency/persistence tests and verified SIGKILL at
+  the sync/sign boundary run on Darwin and both Linux hosts. Four witnesses in
+  these tests are local fixtures, not four deployed independent services.
+- Go 1.26.7 repository formatting/vet and all five race groups pass, along with
+  focused integration/process tests, integration vet, 31 acceptance-helper tests
+  and the witness codec fuzz smoke. Final native source pin and sanitized results
+  are in the [acceptance index](evidence/custody-negative-audit-witness-20261027.json).
+  No test children/listeners remain on either server; temporary SSH masters close.
+- Project-owned code now has an MIT [license](../LICENSE) with the 2026 collective
+  OutcomeMesh Core copyright and [contribution guide](../CONTRIBUTING.md).
+
+Readiness stays **44/100**. Serve resolution, mandatory versioned witness
+assignment/transport/effect/proof validation, independently protected witness
+deployment, safe progress after split votes, physical-device campaigns and
+independent/public-testnet gates remain open. See [CUSTODY_FENCE.md](CUSTODY_FENCE.md).
+
 ## Milestone 0: specification foundation — complete
 
 - Architecture, protocol, security model, dependency boundary, and gated plan

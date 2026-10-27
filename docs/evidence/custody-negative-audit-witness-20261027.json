@@ -1,0 +1,178 @@
+{
+  "base_commit": "48ee85b",
+  "boundaries": [
+    "Audit disposition is administrative; each exact original Serve ticket remains pending, including Unseen.",
+    "Independent quorum witness protocol is a standalone experimental SDK/journal; mandatory assignment, transport, effect consumption and proof acceptance integration are not implemented.",
+    "Witness result IDs are commitments, not validated custody proofs or grants.",
+    "Tests use four local witness fixtures per host, not four independently deployed witness services.",
+    "Witness keys/locks and independently retained pins must survive rollback; cloning enough witnesses invalidates the less-than-one-third fault assumption.",
+    "No view change or timeout recovery; a split without quorum remains blocked.",
+    "Native tests run as root; non-root permission and physical-device durability campaigns are not established.",
+    "No Serve resolution, independent audit or public-testnet readiness credit is added."
+  ],
+  "cleanup": {
+    "a": {
+      "binaries": {
+        "omd": "15019c84aefe6dbfabb4aba750c7eb6ca0d0b59b3fde289d2c882aa3a2b2ea9f",
+        "omd.test": "324a177968d0b88a289babeb8d6cc704e8b4447b66f838c92558cab451785bd4"
+      },
+      "fence_binary_sha256": "41684fea2835d0325a68934b74a20b2be3dff2e09e38c0ee11226b9fe072d37b",
+      "kernel_boot_sha256": "bf2a16e07b0130078e13d893ae02bcfd1b3e916b57f75739310ad9c66fb0f0e6",
+      "task_child_count": 0,
+      "task_listener_count": 0
+    },
+    "b": {
+      "binaries": {
+        "omd": "15019c84aefe6dbfabb4aba750c7eb6ca0d0b59b3fde289d2c882aa3a2b2ea9f",
+        "omd.test": "324a177968d0b88a289babeb8d6cc704e8b4447b66f838c92558cab451785bd4"
+      },
+      "fence_binary_sha256": "41684fea2835d0325a68934b74a20b2be3dff2e09e38c0ee11226b9fe072d37b",
+      "kernel_boot_sha256": "8252034a28c1487f9c495ba8f3a1afd187fbb9b9fb6a9a006425fc58b4e8b9eb",
+      "task_child_count": 0,
+      "task_listener_count": 0
+    }
+  },
+  "controllers_sha256": {
+    "negative.py": "f70b752ef9494d67ae0f838f7cae215ca9206da191a75468d553ba9953ddb3e2",
+    "negative_settlement.py": "4e55b84a5619e228c0f6233db9b1b60c6778cc89e7d622814b9f4b444db42e9d",
+    "run.py": "59dc97b47e4a32ea813081cf823de36728a9d6a3145625c384e413435a65a0c0",
+    "support.py": "8fbc1305bca033bac5519f304aa14da4e0546c1c4261bfc2ea1b1ac61d8e14bc",
+    "v1.py": "5c19cda8d1b5d8957d14ff59a8cac6aaa54c723858b0bbe9bfa8bb50b110ba7d"
+  },
+  "date_utc": "2026-10-27",
+  "go_module_source_files": 640,
+  "local_validation": {
+    "focused_integration_race": {
+      "log_sha256": "083a8e59d1b80fc85dbaa1dcbc9561d27fbb8b4f0eed17776f9731c800b9f236",
+      "passed": true
+    },
+    "fuzz": {
+      "executions": 385984,
+      "log_sha256": "74e9f76cf67f43b71714bc6d98b201c43dd2de2eff8dfdc95648834d5536750e",
+      "passed": true,
+      "seconds": 3,
+      "target": "FuzzIndependentFenceCodecs"
+    },
+    "integration_vet_passed": true,
+    "python_log_sha256": "85b2204fd0ec316196afec969e87137499dfea572c02379897adca44c15a85fc",
+    "python_tests": 31,
+    "repository_gates": {
+      "command": "GOTOOLCHAIN=go1.26.7 make -j1 test-all",
+      "final_frozen_source_cached_recheck_passed": true,
+      "final_log_sha256": "eed5a5044dc6bef0d5f5548d25177afa68f98b3c3aaacd14810728b1e8f4bfd9",
+      "initial_log_sha256": "9c22b97a85ffd055c18e128be3f94bea9b07a5e5402703d4b8452429ea30287d",
+      "passed": true,
+      "race_groups": 5,
+      "store_group_seconds": [
+        259.99,
+        315.417,
+        159.082,
+        179.984,
+        112.072
+      ]
+    },
+    "witness_sigkill_after_test_correction": {
+      "log_sha256": "9780bf45ea9730f69f8d8653ca4f10544222b23ba7b187541bcaa3784a610322",
+      "passed": true
+    }
+  },
+  "native_build": {
+    "binaries": {
+      "fence.test": "41684fea2835d0325a68934b74a20b2be3dff2e09e38c0ee11226b9fe072d37b",
+      "omd": "15019c84aefe6dbfabb4aba750c7eb6ca0d0b59b3fde289d2c882aa3a2b2ea9f",
+      "omd.test": "324a177968d0b88a289babeb8d6cc704e8b4447b66f838c92558cab451785bd4",
+      "store.test": "afdc96b35edc077e9d7456c797a5cb139d7d7bb35fd48ea812703e99d1cbde55"
+    },
+    "build_workers": 2,
+    "cgo_enabled": false,
+    "elapsed_seconds": 24.621,
+    "go": "go version go1.26.7 linux/amd64",
+    "native_log_sha256": "9fa1ae447a7595a557c8de75670c081ab01e54c584447799e6587ae9e193e20f",
+    "offline_modules": true,
+    "readonly_modules": true,
+    "seconds": {
+      "build-cli-tests": 3.953,
+      "build-fence-tests": 1.087,
+      "build-omd": 3.821,
+      "build-store-tests": 3.733,
+      "cli-tests": 5.739,
+      "fence-tests": 0.213,
+      "store-tests": 6.023
+    },
+    "source_files": 640,
+    "source_manifest": "8f6f5c6101034ef31ad879aa036575890f1cbd0ba61bd17fa76f4da7eb05f66a",
+    "source_unchanged": true
+  },
+  "native_witness_tests": {
+    "four_witnesses_are_local_fixtures_per_host": true,
+    "host_b_log_sha256": "2d1105adc1c59fe21ff78da746e82dd8ab9d99cd7b5303d9f1b157d09a876698",
+    "host_count": 2,
+    "independent_four_host_deployment": false,
+    "same_binary_sha256": "41684fea2835d0325a68934b74a20b2be3dff2e09e38c0ee11226b9fe072d37b",
+    "sigkill_wait_status_verified": true
+  },
+  "production_readiness": {
+    "changed": false,
+    "credited": 44,
+    "total": 100
+  },
+  "schema_version": 1,
+  "source_manifest_sha256": "8f6f5c6101034ef31ad879aa036575890f1cbd0ba61bd17fa76f4da7eb05f66a",
+  "wan_audit_disposition": {
+    "audit_completions": 3,
+    "cases": [
+      {
+        "assignment_id": "e09cbb4bfaafe47c416cc2419fcf390dae4850510fda9281a8feaa993f0d9bd3",
+        "audit_complete_id": "32f990c1bc416bbe13e4c358dd6e2d62b448832670aa1b669e2607d63a2f798a",
+        "exact_retry_no_append": true,
+        "kind": 2,
+        "negative_id": "9616a5530c75a6403a4fd48b387ddb13bb5805f1a3d7fea761e673033ee9361e",
+        "original_identities_unchanged": true,
+        "passed": true,
+        "pending_operations": 1,
+        "report_sha256": "418b14ed192bff831804d12366d5c1be848d2ca953e83aed849d4401ca8a344f",
+        "scenario": "b-restart-before-result",
+        "source_positions": [
+          0,
+          0
+        ]
+      },
+      {
+        "assignment_id": "d6c90f68a269eb4eefc6da2b6d1dc170e8c953f6d61a9b59052ebd1a38a8a0bd",
+        "audit_complete_id": "eb76d372eb9b4af7d431057f4154f07be78212bb08fb3572a7da88e4050b0ac1",
+        "exact_retry_no_append": true,
+        "kind": 4,
+        "negative_id": "a2854449a82b70f05d3e07853727193656da0d0360daea9b108920279b086839",
+        "original_identities_unchanged": true,
+        "passed": true,
+        "pending_operations": 1,
+        "report_sha256": "16b44d267c5a4f7a01539b67a97af15500cae32f4667edfb3a23a749fe6cded2",
+        "scenario": "expired-cache",
+        "source_positions": [
+          0,
+          1
+        ]
+      },
+      {
+        "assignment_id": "030082a7781a8ece317735fdb75cf4416750a8e1a8f593ed84c7335ff03d7ec4",
+        "audit_complete_id": "9abf4f58f66ff7685a11bca6e393a754fba0eb4ee09952a19301d7ad45c94904",
+        "exact_retry_no_append": true,
+        "kind": 1,
+        "negative_id": "30e7c8e6a60c43e7f08621546d5528ef79c3842eb2289d88397ddd4d879edc05",
+        "original_identities_unchanged": true,
+        "passed": true,
+        "pending_operations": 1,
+        "report_sha256": "c13f3245b51f6f2f8cdfb12db15467ea7a8e3e2a8bbd9c318e19ecbbac87550c",
+        "scenario": "unseen-seal",
+        "source_positions": [
+          0,
+          0
+        ]
+      }
+    ],
+    "legacy_v1_independent_fencing": false,
+    "new_execution_granted": false,
+    "serve_obligations_remaining": 3,
+    "source_or_proof_refresh": false
+  }
+}

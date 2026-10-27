@@ -5,6 +5,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -26,6 +27,76 @@ func enrollRemoteProcessPlacement(t testing.TB, f *remoteCLIFixture, role string
 	}
 	runProcessCommand(t, 15*time.Second, append(f.args(role, "placement-create"), "--placement", path, "--placement-id", fields["placement_id"])...)
 	return []string{"--placement", path, "--placement-id", fields["placement_id"], "--require-placement=true"}
+}
+
+func TestProcessRemoteCustodyNegativeAuditLostCompletionOutput(t *testing.T) {
+	f := newRemoteCLIFixture(t)
+	b := startRemoteCLIProcess(t, f.args("serve", "control"))
+	ready := remoteProcessAction(t, b, "serve", "remote_custody_serving")
+	path := filepath.Join(t.TempDir(), "negative")
+	args := append(f.args("audit", "control"), "--peer", ready["listen"], "--negative", path)
+	a := startRemoteCLIProcess(t, args)
+	remoteProcessAction(t, a, "prepare", "remote_custody_prepared")
+	remoteProcessAction(t, a, "begin", "remote_custody_begun")
+	metadata := remoteProcessAction(t, a, "seal", "remote_custody_metadata")
+	negative := remoteProcessAction(t, a, "capture-negative", "remote_custody_negative")
+	a.send(t, "close\n")
+	if err := a.wait(t); err != nil {
+		t.Fatal(err)
+	}
+	b.send(t, "close\n")
+	if err := b.wait(t); err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, err := store.DecodeRemoteCustodyNegative(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ticket, _ := f.audit.ID()
+	extra := []string{"--kind", "negative-audit-complete", "--purpose", "audit", "--expected-sequence", "4", "--expected-head", metadata["drain_id"],
+		"--begin", filepath.Join(f.public, "begin"), "--begin-id", f.scope.Worker.BeginID.String(), "--admission", filepath.Join(f.public, "audit"), "--admission-id", ticket.String(), "--negative", path, "--negative-id", negative["negative_id"]}
+	// The drain artifact ID is a distinct domain from its authority entry ID.
+	drained, _ := n.Drained.ID()
+	extra = replaceRemoteCLIFlag(extra, "--expected-head", drained.String())
+	extra = append(extra, remoteOfflinePlanArgs(f)...)
+	extra = append(extra, remoteOfflineChallengeArgs(f)...)
+	entry, entryPath := remoteOfflineSignEntry(t, f, extra, 4)
+	eid, _ := entry.ID()
+	var selected []string
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--terminal" {
+			i++
+			continue
+		}
+		selected = append(selected, args[i])
+	}
+	args = append(selected, "--drain-id", metadata["drain_id"], "--negative-id", negative["negative_id"], "--complete-entry", entryPath, "--complete-entry-id", eid.String())
+	a = startRemoteCLIProcess(t, args)
+	token := remoteProcessReview(t, a)
+	_ = a.output.Close()
+	a.send(t, "apply-negative-audit-complete "+token+"\n")
+	if err := a.wait(t); err == nil {
+		t.Fatal("lost completion output succeeded")
+	}
+	a = startRemoteCLIProcess(t, args)
+	result := remoteProcessAction(t, a, "apply-negative-audit-complete", "remote_custody_audit_disposed")
+	if result["appended"] != strconv.FormatBool(false) || result["serve_ticket_retained"] != "true" {
+		t.Fatal("lost output duplicated completion or lost Serve", result)
+	}
+	if err := a.command.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.wait(t); err == nil {
+		t.Fatal("operator was not killed")
+	}
+	view := runProcessCommand(t, 15*time.Second, replaceRemoteCLIFlag(args, "--mode", "review")...)
+	if !strings.Contains(view, `"ConfirmedSequence": 5`) || !strings.Contains(view, `"Pending": 1`) {
+		t.Fatal("cold review lost the unresolved Serve obligation", view)
+	}
 }
 
 func TestProcessRemoteCustodyNegativeLostOutputAndCopyRefusal(t *testing.T) {

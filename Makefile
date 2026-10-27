@@ -25,6 +25,7 @@ test-race:
 	$(GO) test -race ./... -run '^TestRemote'
 
 test-fuzz-smoke:
+	$(GO) test ./node/custodyfence -run '^$$' -fuzz '^FuzzIndependentFenceCodecs$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./cmd/omd -run '^$$' -fuzz '^FuzzDecodePruneEffectRootsNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./core/codec -run '^$$' -fuzz '^FuzzDecoderNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./core/outcome -run '^$$' -fuzz '^FuzzDecodeTransactionNeverPanics$$' -fuzztime=$(FUZZTIME)
@@ -112,7 +113,8 @@ test-fuzz-smoke:
 	$(GO) test ./sim/workgraphmodel -run '^$$' -fuzz '^FuzzRunSelfishStrategiesNeverBreakAccounting$$' -fuzztime=$(FUZZTIME)
 
 test-process:
-	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessRemoteCustody(CLI|Offline|FromZero)' -count=1 -timeout=2m
+	$(GO) test -tags=integration ./node/custodyfence -run '^TestIndependentWitnessProcessDeathKeepsVoteLock$$' -count=1 -timeout=2m
+	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessRemoteCustody(CLI|Offline|FromZero|Negative)' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestRemoteCustodyNetworkProcessRecovery$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestRemoteCoordinatorProcessCrashBarriers$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./node/custodyauthority/remoteworker -run '^TestWorkerSealingSurvivesKilledOriginalProcess$$' -count=1 -timeout=2m

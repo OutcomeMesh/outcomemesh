@@ -162,6 +162,13 @@ ordinary tickets pending; B's `export-result REVIEW_ID` publishes only the exact
 already sealed journal entry. Negative evidence never enters the successful
 Complete path. Neither action starts a fresh effect or refreshes a proof.
 
+With a pinned negative observation and external Audit-only Complete, the explicit
+`apply-negative-audit-complete REVIEW_ID` closes the administrative observation
+while preserving the original pending Serve ticket. Only the exact retained
+pending attempt may use `resume-negative-audit-complete REVIEW_ID`. Do not select
+`--terminal` for this path. Review/open never submits a completion. See the
+negative workflow for signing, source guards and the remaining obligation.
+
 The optional [local placement profile](REMOTE_CUSTODY_PLACEMENT.md) adds
 metadata-only `placement-review` / explicit `placement-create` modes, an
 independently pinned `--placement` and `--require-placement=true` for normal

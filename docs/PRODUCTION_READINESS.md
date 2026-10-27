@@ -339,7 +339,7 @@ fence a raw key holder, an unbound V1 caller or a full identity-preserving clone
 The same frozen implementation passed native Linux tests, three retained WAN
 negative branches with 33 copy refusals, and six normal-CLI guarded WAN scenarios
 (13 successful cycles, including an eight-cycle reuse series). Both ordinary
-tickets remain pending in each retained negative branch. The complete historical
+tickets remained pending in each branch at that capture stage. The complete historical
 B entry can be verified in a new A process without its separate input file and
 is rejected as a successful terminal. See REMOTE_CUSTODY_NEGATIVE.md,
 REMOTE_CUSTODY_PLACEMENT.md and the
@@ -351,3 +351,28 @@ profile is a detection layer, not that independent authority. Total readiness
 stays approximately 44/100; device, audit and sustained public-testnet gates are
 unchanged. The placement guide specifies the required external-issuer/protocol
 conditions for the next fencing stage without claiming them implemented.
+
+2026-10-27 administrative-disposition/witness follow-up: explicitly signed
+Audit-only negative Complete now closes the historical administrative observation
+while preserving the exact original pending Serve ticket for every negative
+class. Explicit Resume, exact retry, original source/Drain checks and retirement
+refusal are verified. A follow-up on the three original two-host negative cases
+closes three Audits and retains three unresolved Serve obligations, without source
+advance, proof refresh or fresh execution. Earlier capture reports are historical
+snapshots taken before these administrative completions.
+
+A separately versioned experimental witness SDK/journal now implements >2/3
+quorum certificates, durable proposal locks before signing, unknown-result holds
+and exact replay/recovery. Its copied-owner/one-fault, codec/fuzz and real SIGKILL
+tests pass, including native runs on both Linux hosts. The four-witness tests use
+local fixtures on each host, not four independent witness services. See
+[CUSTODY_FENCE.md](CUSTODY_FENCE.md) and the
+[sanitized acceptance index](evidence/custody-negative-audit-witness-20261027.json).
+
+There is no additional weighted point: negative Serve resolution remains open,
+and this witness foundation is not yet mandatory in assignment, transport,
+effect consumption or proof acceptance. Independently protected service
+deployment, split-vote progress, device campaigns, independent review and sustained
+public-testnet gates remain open. MIT licensing and the contribution guide add
+project governance documents, not completed legal-review/release acceptance.
+Total readiness remains approximately **44/100**.
