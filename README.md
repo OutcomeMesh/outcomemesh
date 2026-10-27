@@ -213,7 +213,10 @@ The separate experimental [custody V2 job path](docs/CUSTODY_V2.md) now mandates
 assignment witness policy, a signed derived job, live-session claim consumption
 at the actual target, and a full result quorum before original-source acceptance.
 Its CLI supports preparation through exact crash recovery; protected deployment,
-Serve settlement and mainnet activation remain gated.
+Serve settlement and mainnet activation remain gated. The [joint two-host V2
+fault campaign](docs/CUSTODY_V2_WAN.md) covers lost replies, process kills,
+quorum outages and expired results, with public signed evidence and original
+source checks.
 The optional
 [local placement profile](docs/REMOTE_CUSTODY_PLACEMENT.md) checks independently
 pinned original roots, permanent locks and operator key files across restart.

@@ -1,6 +1,6 @@
 # Production readiness baseline
 
-Assessment date: 2026-10-27. **Approximately 44/100 toward the full planned launch.**
+Assessment date: 2026-10-28. **Approximately 44/100 toward the full planned launch.**
 Status remains research/pre-alpha: do not secure real value with this code.
 
 The requested target is **mainnet with real value on 2026-11-01**, recorded on
@@ -417,3 +417,18 @@ Physical/independent key protection, four independent witness domains, split-vot
 progress, certified Serve resolution, migration, external audits and sustained
 public-testnet/calibration gates remain open. No weighted launch gate is closed
 by this prototype slice. Total readiness remains **44/100**.
+
+
+2026-10-28 joint-V2 WAN follow-up: the same signed jobs now run through normal
+CLI/QUIC on two Linux kernels, with four logical witnesses split 2/2. Three fresh
+scopes cover post-commit reply loss/SIGKILL/receipt recovery, pre-effect session
+loss, and expired B-only evidence. Original source counts, exact signed bytes,
+quorum refusal/recovery and retained obligations are checked; public signed
+artifacts and native/script/source pins accompany the acceptance index. Cleanup
+finds no selected listener or task process. See [CUSTODY_V2_WAN.md](CUSTODY_V2_WAN.md)
+and [the acceptance index](evidence/custody-v2-wan-20261028.json).
+
+This controlled matrix does not establish four independently protected witness
+or execution/key domains, release Serve, solve split votes or complete activation,
+admission, audit and stability gates. It closes the joint prototype acceptance
+slice only. No weighted launch gate is waived; readiness remains **44/100**.

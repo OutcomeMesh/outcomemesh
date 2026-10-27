@@ -37,9 +37,10 @@ See [CUSTODY_V2.md](CUSTODY_V2.md) for rules and remaining trust boundaries.
 
 Next required work remains ordered:
 
-1. Validate the same V2 flow across independently operated hosts, partitions,
-   process failures and deliberately copied persistent participants; keep original
-   witness pins outside participant backups and identify actual failure domains.
+1. The controlled [joint two-host V2 matrix](CUSTODY_V2_WAN.md) now covers
+   reply cuts, process failures, cold persistent copies and witness outages.
+   Next deploy independently operated/protected domains, retain original witness
+   pins outside participant backups and extend adversarial acceptance there.
 2. Define and implement independently certified positive/negative Serve
    disposition. The current accepted-source receipt alone cannot clear V1 Serve.
 3. Specify safe progress for split votes and its quorum/rollback assumptions;

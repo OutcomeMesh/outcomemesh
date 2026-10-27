@@ -134,6 +134,7 @@ load no seed bytes and open no owner. They are not execution grants.
 | `call` | Pins one request and peer; makes exactly one authenticated call, retaining the validated reply before stdout. |
 | `extract` | Checks response against original pinned request; publishes its claim command, result or result command. |
 | `bundle` | Verifies and publishes complete result plus mandatory quorum chain. |
+| `sign-unknown` | Validates the exact claim quorum and signs a controller proposal bound to `--evidence-id`; never executes or releases an obligation. |
 | `accept` | Checks a pinned bundle under original A and publishes its source receipt. |
 | `resume` | Explicit exact pending bundle recovery under original A. |
 | `receipt` | Publishes an already retained historical source receipt. |
@@ -158,6 +159,9 @@ collect and commit each certificate. `TestProcessCustodyV2EntireJobThroughCLI`
 is an executable reference for public draft signing, root creation, target RPCs,
 normal witness RPCs/quorum assembly and original-source acceptance. Only initial
 archive data, unstarted source fixtures and public draft data come from helpers.
+
+The [joint two-host fault campaign](CUSTODY_V2_WAN.md) now exercises the normal
+CLI path under reply loss, process kills, quorum outages and expired results.
 
 ## Trust limits and remaining gates
 

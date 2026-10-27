@@ -46,7 +46,7 @@ func runCustodyV2(ctx context.Context, args []string, input io.ReadCloser, out i
 	flags := flag.NewFlagSet(args[0], flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	mode := flags.String("mode", "review", "review or run; action-specific exact public review required")
-	action := flags.String("action", "", "draft-sign, context, scope, create-target, serve-target, create-acceptor, request, call, extract, bundle, accept, resume, receipt")
+	action := flags.String("action", "", "draft-sign, context, scope, create-target, serve-target, create-acceptor, request, call, extract, bundle, accept, resume, receipt, sign-unknown")
 	contextPath := flags.String("context", "", "canonical signed V2 context")
 	contextID := flags.String("context-id", "", "independent context ID")
 	scopeID := flags.String("scope-id", "", "independent derived witness scope ID")
@@ -77,13 +77,14 @@ func runCustodyV2(ctx context.Context, args []string, input io.ReadCloser, out i
 	timeout := flags.Duration("timeout", 10*time.Second, "100ms..2m RPC bound")
 	output := flags.String("out", "", "immutable artifact output outside original roots")
 	expected := flags.String("expected-review-id", "", "exact action review ID")
+	evidenceID := flags.String("evidence-id", "", "nonzero observation commitment; sign-unknown only")
 	if e := parsePruneFlags(flags, args[1:]); e != nil {
 		return e
 	}
 	if flags.NArg() != 0 || (*mode != "review" && *mode != "run") || *timeout < remotewire.MinimumTimeout || *timeout > remotewire.MaximumTimeout {
 		return v2.ErrProtocol
 	}
-	allowed := map[string]bool{"draft-sign": true, "context": true, "scope": true, "create-target": true, "serve-target": true, "create-acceptor": true, "request": true, "call": true, "extract": true, "bundle": true, "accept": true, "resume": true, "receipt": true}
+	allowed := map[string]bool{"draft-sign": true, "context": true, "scope": true, "create-target": true, "serve-target": true, "create-acceptor": true, "request": true, "call": true, "extract": true, "bundle": true, "accept": true, "resume": true, "receipt": true, "sign-unknown": true}
 	if !allowed[*action] {
 		return v2.ErrProtocol
 	}
@@ -96,6 +97,7 @@ func runCustodyV2(ctx context.Context, args []string, input io.ReadCloser, out i
 		"call": {"in", "in-id", "transport-key", "peer", "listen", "timeout"}, "extract": {"in", "in-id", "request", "request-id", "part"},
 		"bundle": {"in", "in-id", "claim", "claim-id", "unknown", "unknown-id", "result-certificate", "result-certificate-id"},
 		"accept": {"root", "journal", "sign-key", "in", "in-id"}, "resume": {"root", "journal", "sign-key", "bundle-id"}, "receipt": {"root", "journal", "sign-key"},
+		"sign-unknown": {"claim", "claim-id", "evidence-id", "sign-key"},
 	}
 	permit := map[string]bool{"mode": true, "action": true, "out": true, "expected-review-id": true}
 	if *action != "draft-sign" && *action != "context" {
@@ -225,7 +227,7 @@ func runCustodyV2(ctx context.Context, args []string, input io.ReadCloser, out i
 		}
 	case "serve-target":
 		signingPublic = c.Assignment.Base.RemoteControlPublicKey
-	case "accept", "resume", "receipt":
+	case "accept", "resume", "receipt", "sign-unknown":
 		signingPublic = c.Assignment.Base.AuthorityPublicKey
 	}
 	for _, path := range []*string{signKey, replicaKey, transportKey} {
@@ -250,6 +252,7 @@ func runCustodyV2(ctx context.Context, args []string, input io.ReadCloser, out i
 	var bundle v2.Bundle
 	var prepared []byte
 	var resumeID types.Hash
+	var unknown custodyfence.Command
 	if *in != "" {
 		if *inID == "" {
 			return v2.ErrProtocol
@@ -282,6 +285,30 @@ func runCustodyV2(ctx context.Context, args []string, input io.ReadCloser, out i
 		}
 	}
 	switch *action {
+	case "sign-unknown":
+		if len(prefix) != 1 {
+			return v2.ErrProtocol
+		}
+		scope, e := c.Scope()
+		if e != nil {
+			return e
+		}
+		state, e := custodyfence.NewState(scope, sid)
+		if e != nil {
+			return e
+		}
+		if e := state.Apply(prefix[0]); e != nil {
+			return e
+		}
+		x := state.Snapshot()
+		if x.Phase != custodyfence.Claimed {
+			return v2.ErrProtocol
+		}
+		evidence, e := witnessID("evidence-id", *evidenceID)
+		if e != nil {
+			return e
+		}
+		unknown = custodyfence.Command{Version: custodyfence.Version1, ScopeID: sid, ExpectedSequence: x.Position.Sequence, ExpectedHead: x.Position.HeadID, Kind: custodyfence.MarkUnknown, ClaimID: x.ClaimID, EvidenceID: evidence}
 	case "context":
 		prepared, _ = c.CanonicalBytes()
 	case "scope":
@@ -416,6 +443,9 @@ func runCustodyV2(ctx context.Context, args []string, input io.ReadCloser, out i
 	// The digest binds the action, all public file contents, canonical placements,
 	// requested network route and output. The mode and review token are excluded.
 	public := map[string]any{"action": *action, "scope_id": sid.String(), "inputs": pins, "root": *root, "journal": *journal, "objects": *objects, "sign_key": *signKey, "replica_key": *replicaKey, "transport_key": *transportKey, "role": *role, "operation": *operation, "part": *part, "bundle_id": *bundleID, "peer": *peer, "listen": *listen, "timeout": timeout.String(), "out": *output}
+	if *action == "sign-unknown" {
+		public["evidence_id"] = *evidenceID
+	}
 	raw, e := json.Marshal(public)
 	if e != nil {
 		return e
@@ -454,6 +484,23 @@ func runCustodyV2(ctx context.Context, args []string, input io.ReadCloser, out i
 		defer clear(key)
 	}
 	switch *action {
+	case "sign-unknown":
+		unknown, e = unknown.Sign(key)
+		if e != nil {
+			return e
+		}
+		scope, e := c.Scope()
+		if e != nil {
+			return e
+		}
+		if e := unknown.Verify(scope); e != nil {
+			return e
+		}
+		b, e := unknown.CanonicalBytes()
+		if e != nil {
+			return e
+		}
+		return publish(b)
 	case "draft-sign":
 		c.Plan, e = c.Plan.Sign(*role, key)
 		if e != nil {

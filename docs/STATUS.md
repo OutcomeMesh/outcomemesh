@@ -1,6 +1,6 @@
 # Implementation status
 
-Updated: 2026-10-27
+Updated: 2026-10-28
 
 This file records evidence against `PLAN.md`. A milestone remains open until all
 of its exit gates pass; implementing most deliverables does not close it.
@@ -9,6 +9,36 @@ Full planned production readiness is approximately **44/100**, using the weighte
 [readiness baseline](PRODUCTION_READINESS.md). This is an engineering estimate,
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
+
+## 2026-10-28: joint V2 WAN faults and original-source recovery
+
+- A and B now participate in the same real V2 jobs across two observed Linux
+  kernels. Each holds two of the four logical witnesses. Three fresh scopes
+  exercise a lost result reply, a lost pre-execution session and an expired
+  retained result; original A/B/cold-copy counts end at 1/1/0, 0/0/0 and 0/1/0.
+- Two available witnesses and a duplicate member cannot form the claim quorum.
+  The pending-vote SIGKILL/restart returns identical signed evidence; stale pins
+  are refused. All four witnesses retain their selected session and obligation.
+- The relay records real delayed/partition-dropped UDP packets after B commits
+  its source. B's process is killed and its exact result recovered without a new
+  Execute/proof time. A's broken stdout retains the accepted-source receipt and
+  a new CLI process publishes the identical bytes. Weak, wrong-scope, legacy and
+  late packets, and a cold permanent-key copy, cannot advance another source.
+- Added a reviewed CLI controller proposal for Unknown, bound to a full exact
+  claim quorum and observation commitment. It signs no custody result and clears
+  no obligation. The exporter/inspector/adversarial probes exist only in the
+  integration test binary; normal effects and quorum collection use the CLI.
+- Five repository race groups, focused Go CLI/process/integration tests,
+  integration vet and 37 Python tests pass. Native Linux operational binaries
+  match on both hosts. Public signed evidence is reverified through production
+  Go APIs; raw keys/roots/host addresses are excluded. Cleanup finds no task
+  process or selected UDP listener. Existing V1 owners and website are untouched.
+
+See the [WAN runbook](CUSTODY_V2_WAN.md), [acceptance index](evidence/custody-v2-wan-20261028.json)
+and [public artifact manifest](evidence/custody-v2-wan-public-20261028.json).
+Readiness remains **44/100**. Four protected failure domains, Serve disposition,
+activation/admission integration, split-vote progress, audits and sustained
+adversarial testnet/calibration gates remain open.
 
 ## 2026-10-27: mandatory V2 job, target session and original-source acceptance
 

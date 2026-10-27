@@ -309,3 +309,74 @@ func TestCustodyV2CLIReviewAndPreflightHaveNoEffect(t *testing.T) {
 		t.Fatal("review wrote output", e)
 	}
 }
+
+func TestCustodyV2CLIUnknownProposalRequiresExactClaimAndReview(t *testing.T) {
+	x := newCustodyV2Fixture(t)
+	dir := t.TempDir()
+	contextFile := filepath.Join(dir, "context")
+	raw, _ := x.context.CanonicalBytes()
+	writePruneCLIFile(t, contextFile, raw)
+	cid, _ := x.context.ID()
+	target := x.open(t)
+	candidate, e := target.Prepare()
+	if e != nil {
+		t.Fatal(e)
+	}
+	_ = target.Close()
+	claim := f.Certificate(candidate.Claim, 70, 71, 72)
+	raw, _ = claim.CanonicalBytes()
+	claimFile := filepath.Join(dir, "claim")
+	writePruneCLIFile(t, claimFile, raw)
+	key := filepath.Join(dir, "authority.seed")
+	writePruneCLIFile(t, key, f.Key(1).Seed())
+	out := filepath.Join(dir, "unknown")
+	args := []string{custodyV2Command, "--action", "sign-unknown", "--context", contextFile, "--context-id", cid.String(), "--scope-id", x.pin.String(), "--claim", claimFile, "--claim-id", custodyV2ArtifactID(raw).String(), "--evidence-id", f.Hash("lost-response").String(), "--sign-key", key, "--out", out}
+	review := pruneCLIFields(strings.SplitN(v2InProcess(t, args), "\n", 2)[0])
+	bad := replaceRemoteCLIFlag(args, "--evidence-id", f.Hash("another-response").String())
+	bad = append(bad, "--mode", "run", "--expected-review-id", review["review_id"])
+	var ignored bytes.Buffer
+	if e := runCustodyV2(t.Context(), bad, nil, &ignored); e == nil {
+		t.Fatal("review omitted observation commitment")
+	}
+	v2InProcess(t, append(args, "--mode", "run", "--expected-review-id", review["review_id"]))
+	raw, e = os.ReadFile(out)
+	if e != nil {
+		t.Fatal(e)
+	}
+	command, e := custodyfence.DecodeCommand(raw)
+	if e != nil {
+		t.Fatal(e)
+	}
+	scope, _ := x.context.Scope()
+	if e := command.Verify(scope); e != nil {
+		t.Fatal(e)
+	}
+	if command.Kind != custodyfence.MarkUnknown || command.ExpectedSequence != 1 || command.ClaimID.IsZero() {
+		t.Fatal("incorrect unknown proposal")
+	}
+	state, e := custodyfence.NewState(scope, x.pin)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e := state.Apply(claim); e != nil {
+		t.Fatal(e)
+	}
+	if e := state.Apply(f.Certificate(command, 70, 71, 72)); e != nil {
+		t.Fatal(e)
+	}
+	if !state.Snapshot().ObligationHeld {
+		t.Fatal("unknown cleared the obligation")
+	}
+	if _, e := os.Stat(filepath.Join(x.target, "consumed")); !errors.Is(e, os.ErrNotExist) {
+		t.Fatal("offline unknown signing executed work", e)
+	}
+	weak := claim
+	weak.Votes = weak.Votes[:2]
+	raw, _ = weak.CanonicalBytes()
+	weakFile := filepath.Join(dir, "weak")
+	writePruneCLIFile(t, weakFile, raw)
+	bad = replaceRemoteCLIFlag(replaceRemoteCLIFlag(args, "--claim", weakFile), "--claim-id", custodyV2ArtifactID(raw).String())
+	if e := runCustodyV2(t.Context(), bad, nil, &ignored); e == nil {
+		t.Fatal("weak quorum authorized unknown proposal")
+	}
+}
