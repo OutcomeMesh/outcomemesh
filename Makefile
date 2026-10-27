@@ -95,6 +95,8 @@ test-fuzz-smoke:
 	$(GO) test ./node/custodyauthority -run '^$$' -fuzz '^FuzzRemoteAuthorityCanonical$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyauthority/remoteworker -run '^$$' -fuzz '^FuzzDecodeRemoteWorkerArtifacts$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyauthority/remotewire -run '^$$' -fuzz '^FuzzDecodeRemoteControl$$' -fuzztime=$(FUZZTIME)
+	$(GO) test ./node/custodyauthority/store -run '^$$' -fuzz '^FuzzDecodeRemoteCustodyNegative$$' -fuzztime=$(FUZZTIME)
+	$(GO) test ./node/custodyauthority/store -run '^$$' -fuzz '^FuzzDecodeRemoteCustodyPlacement$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyauthority/store -run '^$$' -fuzz '^FuzzDecodeRemoteCustodyTerminal$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyauthority/store -run '^$$' -fuzz '^FuzzDecodePruneRequest$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyauthority/store -run '^$$' -fuzz '^FuzzDecodeArchivePruneInventory$$' -fuzztime=$(FUZZTIME)

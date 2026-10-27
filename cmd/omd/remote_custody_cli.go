@@ -38,14 +38,18 @@ var errRemoteCustodyUnobserved = errors.New("remote custody action or publicatio
 
 type remoteCustodyPath struct{ Name, Path string }
 type remoteCustodyOptions struct {
-	role, mode, address, listen        string
-	scope                              store.RemoteCustodyScope
-	audit                              store.RemoteCustodyAuditRuntimeConfig
-	serve                              store.RemoteCustodyServeServiceConfig
-	controlKey, transportKey           ed25519.PrivateKey
-	paths                              []remoteCustodyPath
-	drainPath, terminalPath, entryPath string
-	drainID, terminalID, entryID       types.Hash
+	role, mode, address, listen                   string
+	scope                                         store.RemoteCustodyScope
+	audit                                         store.RemoteCustodyAuditRuntimeConfig
+	serve                                         store.RemoteCustodyServeServiceConfig
+	controlKey, transportKey                      ed25519.PrivateKey
+	paths                                         []remoteCustodyPath
+	drainPath, terminalPath, entryPath            string
+	drainID, terminalID, entryID                  types.Hash
+	negativePath, remoteResultPath, resultOutPath string
+	negativeID, remoteResultID, resultOutID       types.Hash
+	placement                                     *store.RemoteCustodyPlacementConfig
+	placementCandidate                            store.RemoteCustodyPlacement
 }
 
 func runRemoteCustodyCLI(args []string) error {
@@ -97,7 +101,7 @@ func loadRemoteCustodyOptions(ctx context.Context, args []string) (o remoteCusto
 	}
 	f := flag.NewFlagSet(args[0], flag.ContinueOnError)
 	f.SetOutput(io.Discard)
-	mode := f.String("mode", "review", "review (default) or supervised control")
+	mode := f.String("mode", "review", "review (default), control, placement-review or placement-create")
 	assignmentPath := f.String("assignment", "", "existing canonical V1 assignment")
 	assignmentPin := f.String("assignment-id", "", "independently retained assignment ID")
 	planPath := f.String("plan", "", "existing canonical remote worker plan")
@@ -137,11 +141,26 @@ func loadRemoteCustodyOptions(ctx context.Context, args []string) (o remoteCusto
 	terminalPin := f.String("terminal-id", "", "pin required when an existing terminal is selected")
 	entryPath := f.String("complete-entry", "", "optional externally co-signed V1 Complete entry")
 	entryPin := f.String("complete-entry-id", "", "independent Complete entry pin")
+	negativePath := f.String("negative", "", "dedicated immutable unresolved-outcome artifact")
+	negativePin := f.String("negative-id", "", "independent unresolved-outcome artifact ID")
+	remoteResultPath := f.String("remote-result", "", "optional complete historical B journal entry (audit only)")
+	remoteResultPin := f.String("remote-result-id", "", "independent B journal entry ID")
+	resultOutPath := f.String("result-out", "", "exact sealed B journal entry output (serve only)")
+	resultOutPin := f.String("result-out-id", "", "pin required for an existing B result output")
+	placementPath := f.String("placement", "", "independently retained local placement manifest")
+	placementPin := f.String("placement-id", "", "independent placement manifest ID")
+	requirePlacement := f.Bool("require-placement", false, "refuse an unbound local installation")
 	if err := parsePruneFlags(f, args[1:]); err != nil {
 		return o, err
 	}
-	if *mode != "review" && *mode != "control" {
-		return o, errors.New("mode must be review or control")
+	if *mode != "review" && *mode != "control" && *mode != "placement-review" && *mode != "placement-create" {
+		return o, errors.New("mode must be review, control, placement-review or placement-create")
+	}
+	if o.role == "serve" && (*negativePath != "" || *negativePin != "" || *remoteResultPath != "" || *remoteResultPin != "") {
+		return o, errors.New("B cannot select A negative evidence")
+	}
+	if o.role == "audit" && (*resultOutPath != "" || *resultOutPin != "") {
+		return o, errors.New("A cannot export B's original source")
 	}
 	if o.role == "serve" && (*authorityPath != "" || *pinsPath != "" || *intentPath != "" || *intentPin != "" || *auditAdmission != "" || *auditPin != "" || *artifactsPath != "" || *authorityKey != "" || *auditorKey != "" || *address != "" || *drainPath != "" || *terminalPath != "" || *entryPath != "" || *drainPin != "" || *terminalPin != "" || *entryPin != "") {
 		return o, errors.New("B cannot select A owners, audit keys or result artifacts")
@@ -334,7 +353,7 @@ func loadRemoteCustodyOptions(ctx context.Context, args []string) (o remoteCusto
 			path *string
 			pin  string
 			dst  *types.Hash
-		}{{"drain", drainPath, *drainPin, &o.drainID}, {"terminal", terminalPath, *terminalPin, &o.terminalID}, {"complete-entry", entryPath, *entryPin, &o.entryID}} {
+		}{{"drain", drainPath, *drainPin, &o.drainID}, {"terminal", terminalPath, *terminalPin, &o.terminalID}, {"complete-entry", entryPath, *entryPin, &o.entryID}, {"negative", negativePath, *negativePin, &o.negativeID}, {"remote-result", remoteResultPath, *remoteResultPin, &o.remoteResultID}} {
 			if *v.path == "" {
 				if v.pin != "" {
 					return o, errors.New("artifact pin requires its path")
@@ -369,6 +388,33 @@ func loadRemoteCustodyOptions(ctx context.Context, args []string) (o remoteCusto
 			}
 		}
 		o.drainPath, o.terminalPath, o.entryPath = *drainPath, *terminalPath, *entryPath
+		o.negativePath, o.remoteResultPath = *negativePath, *remoteResultPath
+		if o.negativePath != "" && o.entryPath != "" {
+			return o, errors.New("negative observation cannot select successful completion")
+		}
+		artifacts := []string{o.drainPath, o.terminalPath, o.entryPath, o.negativePath, o.remoteResultPath}
+		for i, p := range artifacts {
+			if p == "" {
+				continue
+			}
+			for _, other := range artifacts[i+1:] {
+				if p == other {
+					return o, errors.New("remote artifacts must be distinct files")
+				}
+			}
+		}
+		if !o.negativeID.IsZero() {
+			n, err := store.LoadRemoteCustodyNegative(o.negativePath, o.negativeID)
+			if err != nil {
+				return o, err
+			}
+			if err := n.Validate(o.scope); err != nil {
+				return o, err
+			}
+		}
+		if o.remoteResultPath != "" && o.remoteResultID.IsZero() {
+			return o, errors.New("remote-result requires an independently pinned existing entry")
+		}
 		if o.drainPath != "" && o.drainPath == o.terminalPath {
 			return o, errors.New("drain and terminal must be distinct files")
 		}
@@ -404,6 +450,96 @@ func loadRemoteCustodyOptions(ctx context.Context, args []string) (o remoteCusto
 				return o, errors.New("Complete input differs from scope or retained terminal")
 			}
 		}
+	}
+	if o.role == "serve" && *resultOutPath != "" {
+		*resultOutPath, err = remoteCustodyPathFile(*resultOutPath)
+		if err != nil {
+			return o, err
+		}
+		for _, root := range roots {
+			if err := store.ValidateBootstrapPaths(filepath.Dir(*resultOutPath), *root.path); err != nil {
+				return o, err
+			}
+		}
+		for _, input := range files {
+			if *resultOutPath == *input.path {
+				return o, errors.New("result output cannot replace scope or key")
+			}
+		}
+		o.resultOutPath = *resultOutPath
+		o.paths = append(o.paths, remoteCustodyPath{"result-out", *resultOutPath})
+		if *resultOutPin != "" {
+			o.resultOutID, err = pruneExternalID("result-out-id", *resultOutPin)
+			if err != nil {
+				return o, err
+			}
+		} else if _, err := os.Lstat(*resultOutPath); err == nil {
+			return o, errors.New("existing result output requires its ID")
+		}
+	} else if *resultOutPin != "" {
+		return o, errors.New("result-out-id requires result-out")
+	}
+	if !o.remoteResultID.IsZero() {
+		if _, err := loadRemoteCustodyResult(o.remoteResultPath, o.remoteResultID, o.scope); err != nil {
+			return o, err
+		}
+	}
+	if !o.resultOutID.IsZero() {
+		if _, err := loadRemoteCustodyResult(o.resultOutPath, o.resultOutID, o.scope); err != nil {
+			return o, err
+		}
+	}
+	bindings := map[string]string{"journal": *journalPath, "control-key": *controlKey, "key": *transportKey}
+	if o.role == "audit" {
+		bindings["authority"] = *authorityPath
+		bindings["authority-pins"] = *pinsPath
+		bindings["artifacts"] = *artifactsPath
+		bindings["authority-key"] = *authorityKey
+		bindings["auditor-key"] = *auditorKey
+	} else {
+		bindings["worker"] = *workerPath
+		bindings["objects"] = *objectPath
+		bindings["replica-key"] = *replicaKey
+	}
+	if *placementPath != "" {
+		*placementPath, err = remoteCustodyPathFile(*placementPath)
+		if err != nil {
+			return o, err
+		}
+		for _, input := range o.paths {
+			if input.Path == *placementPath {
+				return o, errors.New("placement must be distinct from inputs and outputs")
+			}
+		}
+		pin := types.Hash{}
+		if *placementPin != "" {
+			pin, err = pruneExternalID("placement-id", *placementPin)
+			if err != nil {
+				return o, err
+			}
+		}
+		if *mode == "placement-review" || *mode == "placement-create" {
+			o.placementCandidate, err = store.PrepareRemoteCustodyPlacement(assignmentID, o.role, *placementPath, bindings)
+			if err != nil {
+				return o, err
+			}
+			actual, _ := o.placementCandidate.ID()
+			if *mode == "placement-create" && (pin.IsZero() || pin != actual) {
+				return o, errors.New("placement creation requires the independently reviewed placement ID")
+			}
+			o.placement = &store.RemoteCustodyPlacementConfig{Path: *placementPath, ID: actual, Bindings: bindings}
+			return o, nil
+		}
+		if pin.IsZero() {
+			return o, errors.New("placement requires its independent ID")
+		}
+		o.placement = &store.RemoteCustodyPlacementConfig{Path: *placementPath, ID: pin, Bindings: bindings}
+		if err := store.CheckRemoteCustodyPlacement(o.placement, assignmentID, o.role); err != nil {
+			return o, err
+		}
+		o.paths = append(o.paths, remoteCustodyPath{"placement", *placementPath})
+	} else if *placementPin != "" || *requirePlacement || *mode == "placement-review" || *mode == "placement-create" {
+		return o, errors.New("an independently pinned placement is required")
 	}
 	// All public scope and placement checks precede reading private seeds.
 	ctrl, err := loadPruneOfflineKey(*controlKey)
@@ -443,7 +579,26 @@ func loadRemoteCustodyOptions(ctx context.Context, args []string) (o remoteCusto
 		o.audit.AuthorityPrivateKey = authority
 		o.audit.Audit.AuditorPrivateKey = auditor
 	}
+	o.audit.Placement = o.placement
+	o.serve.Placement = o.placement
 	return o, nil
+}
+
+func loadRemoteCustodyResult(path string, pin types.Hash, scope store.RemoteCustodyScope) (workarchive.CustodyJournalEntry, error) {
+	b, err := readRegularArtifact(path, workarchive.MaximumCustodyJournalEntryBytes)
+	if err != nil {
+		return workarchive.CustodyJournalEntry{}, err
+	}
+	entry, err := workarchive.DecodeCustodyJournalEntry(b)
+	if err != nil {
+		return entry, err
+	}
+	id, _ := entry.ID()
+	cid, _ := entry.Record.Challenge.ID()
+	if pin.IsZero() || id != pin || cid != scope.Worker.Plan.Admission.Command.OperationID {
+		return entry, errors.New("remote result differs from independently pinned session")
+	}
+	return entry, entry.Verify(scope.Manifest, scope.CustodyPolicy, scope.Worker.Plan.PriorSequence+1, scope.Worker.Plan.PriorHeadID, scope.PreviousReceipt)
 }
 
 func transportPeer(key [32]byte) (types.Hash, error) { return transport.PeerIDFromPublicKey(key[:]) }
@@ -452,6 +607,7 @@ func remoteKeyMatches(key ed25519.PrivateKey, expected [32]byte) bool {
 }
 
 type remoteCustodyDisplay struct {
+	PlacementID, PlacementPath, NegativeID, RemoteResultID, ResultOutID                    string
 	Role, AssignmentID, PlanID, BeginID, AuditTicketID, ServeTicketID                      string
 	ConfirmedSequence, ObservedSequence, JournalSequence                                   uint64
 	ConfirmedHead, ObservedHead, PendingEntry, ActiveBegin, JournalHead, ReceiptID, SealID string
@@ -477,7 +633,15 @@ func writeRemoteCustodyReview(out io.Writer, o remoteCustodyOptions, r store.Rem
 	if err != nil {
 		return types.Hash{}, err
 	}
-	body, err := json.MarshalIndent(remoteCustodyDisplayFor(o, r), "", "  ")
+	display := remoteCustodyDisplayFor(o, r)
+	if o.placement != nil {
+		display.PlacementID = o.placement.ID.String()
+		display.PlacementPath = o.placement.Path
+	}
+	display.NegativeID = o.negativeID.String()
+	display.RemoteResultID = o.remoteResultID.String()
+	display.ResultOutID = o.resultOutID.String()
+	body, err := json.MarshalIndent(display, "", "  ")
 	if err != nil {
 		return types.Hash{}, err
 	}
@@ -497,6 +661,15 @@ func runRemoteCustody(ctx context.Context, args []string, input io.ReadCloser, o
 	if err != nil {
 		return err
 	}
+	if o.mode == "placement-review" || o.mode == "placement-create" {
+		id, _ := o.placementCandidate.ID()
+		if o.mode == "placement-create" {
+			if err := store.PublishRemoteCustodyPlacement(ctx, o.placementCandidate, id); err != nil {
+				return errors.Join(errRemoteCustodyUnobserved, err)
+			}
+		}
+		return writePruneOutputLine(output, fmt.Sprintf("remote_custody_placement role=%s placement_id=%s mode=%s keys_loaded=false owners_opened=false\n", o.role, id, o.mode))
+	}
 	if o.mode == "review" {
 		var review store.RemoteCustodyReview
 		if o.role == "serve" {
@@ -507,6 +680,9 @@ func runRemoteCustody(ctx context.Context, args []string, input io.ReadCloser, o
 				return e
 			}
 			review, err = runtime.Review(ctx)
+			if err == nil {
+				err = verifyRemoteNegative(ctx, o, runtime)
+			}
 			err = errors.Join(err, runtime.Close())
 		}
 		if err != nil {
@@ -528,6 +704,17 @@ func runRemoteCustody(ctx context.Context, args []string, input io.ReadCloser, o
 	}
 	defer func() { returnErr = errors.Join(returnErr, writer.Close()) }()
 	return runRemoteCustodyControl(ctx, o, control, writer)
+}
+
+func verifyRemoteNegative(ctx context.Context, o remoteCustodyOptions, a *store.RemoteCustodyAuditRuntime) error {
+	if o.negativeID.IsZero() {
+		return nil
+	}
+	n, err := store.LoadRemoteCustodyNegative(o.negativePath, o.negativeID)
+	if err != nil {
+		return err
+	}
+	return a.VerifyNegative(ctx, n)
 }
 
 func remoteCustodyOneShotOutput(ctx context.Context, output io.Writer, o remoteCustodyOptions, r store.RemoteCustodyReview) (returnErr error) {
@@ -580,6 +767,10 @@ func runRemoteCustodyControl(parent context.Context, o remoteCustodyOptions, inp
 	if o.role == "audit" {
 		a, err = store.OpenRemoteCustodyAuditRuntime(ctx, o.audit)
 		if err != nil {
+			return err
+		}
+		if err := verifyRemoteNegative(ctx, o, a); err != nil {
+			_ = a.Close()
 			return err
 		}
 		defer func() { returnErr = errors.Join(returnErr, a.Close()) }()
@@ -654,6 +845,19 @@ func runRemoteCustodyControl(parent context.Context, o remoteCustodyOptions, inp
 			tcg := libp2ptransport.DefaultConfig()
 			tcg.Listen = []string{o.listen}
 			if b != nil {
+				if action == "export-result" {
+					if o.resultOutPath == "" {
+						return errors.New("export-result requires --result-out")
+					}
+					o.resultOutID, err = b.ExportResultReviewed(ctx, o.resultOutPath, base)
+					if err != nil {
+						return errors.Join(errRemoteCustodyUnobserved, err)
+					}
+					if err := writePruneOutputLine(output, fmt.Sprintf("remote_custody_exported expected_review_id=%s result_id=%s proof_refreshed=false completion_submitted=false\n", id, o.resultOutID)); err != nil {
+						return errors.Join(errRemoteCustodyUnobserved, err)
+					}
+					continue
+				}
 				if action != "serve" {
 					return errors.New("B control accepts review, serve <review-id>, or close")
 				}
@@ -720,6 +924,28 @@ func runRemoteCustodyControl(parent context.Context, o remoteCustodyOptions, inp
 					}
 				}
 				err = writePruneOutputLine(output, fmt.Sprintf("remote_custody_metadata expected_review_id=%s status=%d drain_id=%s disposition=%d completion_submitted=false\n", id, response.Status, o.drainID, response.Seal.Disposition))
+			case "capture-negative":
+				if o.drainPath == "" || o.drainID.IsZero() || o.negativePath == "" {
+					return errors.New("capture-negative needs a pinned drain and --negative output")
+				}
+				response, e := store.LoadRemoteCustodyDrain(o.drainPath, o.drainID, o.scope)
+				if e != nil {
+					return e
+				}
+				var remote *workarchive.CustodyJournalEntry
+				if !o.remoteResultID.IsZero() {
+					entry, e := loadRemoteCustodyResult(o.remoteResultPath, o.remoteResultID, o.scope)
+					if e != nil {
+						return e
+					}
+					remote = &entry
+				}
+				n, e := a.CaptureNegativeToFile(run, response, remote, o.negativePath)
+				if e != nil {
+					return errors.Join(errRemoteCustodyUnobserved, e)
+				}
+				o.negativeID, _ = n.ID()
+				err = writePruneOutputLine(output, fmt.Sprintf("remote_custody_negative expected_review_id=%s negative_id=%s kind=%d ordinary_tickets_retained=true completion_submitted=false source_advanced=false\n", id, o.negativeID, n.Kind))
 			case "capture":
 				if o.drainPath == "" || o.drainID.IsZero() || o.terminalPath == "" {
 					return errors.New("capture needs retained pinned --drain and --terminal output")

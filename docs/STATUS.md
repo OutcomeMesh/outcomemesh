@@ -2428,6 +2428,53 @@ Implemented in an isolated, not-yet-activated consensus package:
   from 11 to 12 of 15 and total readiness from 43 to approximately 44/100.
   Negative-disposition closure, independent key/root copy fencing, device-failure
   campaigns, external audits and sustained public-testnet gates remain open.
+  Negative-observation/local-placement follow-up (2026-10-27): a new bounded
+  OMCRNEG0 envelope binds A's exact unchanged predecessor observation, both
+  admissions/intent, plan/Begin, B's immutable seal and A's confirmed Drain under
+  an authority signature. Four explicit classes distinguish Unseen, unknown
+  after Start, unverified B commitment and full historically verified B entry
+  not accepted by A. Capture/review holds the original owner and source decision
+  through no-replace publication. Accepted/later-advanced A sources cannot be
+  described as absent. Every negative branch retains both ordinary tickets;
+  this adds no negative Complete, pruning grant, receipt extension or fresh proof.
+  B's separately reviewed export publishes only its exact already sealed entry.
+  Successful terminal encoding/vectors remain unchanged and reject this format.
+  CLI adds capture-negative, export-result and explicit metadata-only placement
+  review/create. An independently pinned OMCRPLC0 record binds canonical owner
+  roots, permanent locks, role key files and a disjoint private anchor directory
+  to native identities/UID/modes. CLI checks precede seed loading; owned A/B
+  actions and B responses recheck the frozen guard. Ordinary copies/replacements
+  fail across restart. Live key replacement leaves A's active obligation intact.
+  Legacy unbound V1 operation remains explicit; raw-key, full-VM and distributed
+  copy fencing are not claimed. Offline consumer/wallet key storage is unchanged.
+  Focused integration/race checks pass (cmd/omd 27.594 seconds, store 19.103),
+  including actual CLI subprocesses, lost negative output, kill/reopen and copy
+  refusal. Native Linux/amd64 Go 1.26.7 with CGO_ENABLED=0, offline/read-only
+  modules and two build workers passes the same new CLI/SDK selections (3.659
+  and 2.662 seconds; 59.938 seconds including all three artifact builds/tests).
+  The 630-file Go/module source manifest remains unchanged locally and natively.
+  Three original retained WAN negative assignments are processed without owner
+  initialization or transfer: retained source/authority states remain equal,
+  all four classifications are exercised and 33 scratch
+  copy probes fail before opening the selected original owner. The complete
+  historical B entry reopens in a cold A review without its separate input file;
+  presenting negative evidence as a success terminal is rejected. Six fresh
+  normal-CLI WAN scenarios with required placement pass (13 successful cycles,
+  26 independent completions), including partition/loss/delay, both A restart
+  boundaries and eight cycles reusing A's original placement/source/authority.
+  Each B worker gets its own reviewed pin. This is a bounded local-profile
+  campaign, not a rerun/claim of the earlier full eleven-scenario fault matrix;
+  private B pause helpers intentionally reject the required-placement profile.
+  Go 1.26.7 make test-all passes formatting, vet and five exhaustive race groups
+  (store 241.115, 291.385, 155.375, 159.227 and 94.274 seconds). Integration-tag
+  vet, both new three-second fuzz smoke selections and 29 Python tooling tests
+  pass. Initial test setup corrected private temporary-directory modes; a runner
+  duplicate-peer flag was refused before owner startup and corrected. Original
+  validation was not relaxed. The native build's first environment attempt lacked
+  the cached Go path; the corrected offline pinned build is recorded separately.
+  See REMOTE_CUSTODY_NEGATIVE.md and REMOTE_CUSTODY_PLACEMENT.md. No additional
+  weighted lifecycle point is earned: negative settlement and independent
+  protected signing/current-authority fencing remain open. Readiness stays 44/100.
   Process-gate observation (2026-09-07): the first combined run stopped at
   `TestProcessTieCampaignStorageFailuresRecoverWithoutFalseAdvance/observer_confirmation_after_link`
   because the expected confirmation marker was absent. Five isolated repetitions

@@ -325,3 +325,29 @@ resolve negative tickets, prove device power-loss durability, supply an external
 audit or satisfy the public-testnet stability/calibration gates. The next
 [negative-disposition work plan](REMOTE_CUSTODY_NEGATIVE_PLAN.md) earns no credit
 until its implementation and acceptance criteria pass.
+
+2026-10-27 negative-observation/local-placement follow-up: signed, separately
+versioned observations now classify Unseen, unknown after Start, unverified
+retained commitment and verified-but-unaccepted B entry. Owned A capture/review
+and read-only sealed B export preserve original sources, historical proof time
+and both ordinary tickets. Lost-output/process recovery and later source-advance
+refusal are tested. A separate opt-in placement profile checks original native
+root/lock/key-file identities under an independently retained local pin, before
+CLI seed loading and during A/B actions. It rejects ordinary copies, but cannot
+fence a raw key holder, an unbound V1 caller or a full identity-preserving clone.
+
+The same frozen implementation passed native Linux tests, three retained WAN
+negative branches with 33 copy refusals, and six normal-CLI guarded WAN scenarios
+(13 successful cycles, including an eight-cycle reuse series). Both ordinary
+tickets remain pending in each retained negative branch. The complete historical
+B entry can be verified in a new A process without its separate input file and
+is rejected as a successful terminal. See REMOTE_CUSTODY_NEGATIVE.md,
+REMOTE_CUSTODY_PLACEMENT.md and the
+[sanitized negative/placement acceptance record](evidence/remote-custody-negative-placement-20261027.json).
+
+No weighted point is added: negative ticket settlement/uncertainty holds and
+independently enforced protected-key/root fencing remain incomplete. The local
+profile is a detection layer, not that independent authority. Total readiness
+stays approximately 44/100; device, audit and sustained public-testnet gates are
+unchanged. The placement guide specifies the required external-issuer/protocol
+conditions for the next fencing stage without claiming them implemented.

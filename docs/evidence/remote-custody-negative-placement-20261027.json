@@ -1,0 +1,303 @@
+{
+  "boundaries": [
+    "negative capture retains both ordinary tickets; no negative settlement or pruning permission",
+    "local profile requires independently trusted placement pins and selected guarded CLI/SDK paths",
+    "legacy unbound V1 callers and copied raw keys are not independently fenced",
+    "full identity-preserving clones, in-place rollback of all original history and compromised root users are not covered",
+    "offline consumer/wallet signing keys are unchanged",
+    "external mandatory issuer/protocol enforcement remains a future version",
+    "guarded WAN campaign covers six normal-CLI scenarios and eight reuse cycles, not the full prior eleven-scenario matrix",
+    "no physical-device, external-audit, sustained public-testnet or mainnet acceptance credit"
+  ],
+  "cleanup": {
+    "binary_and_supervisor_pins_unchanged": true,
+    "bound_test_udp_ports": 0,
+    "hosts_checked": 2,
+    "observed_kernel_boots_unchanged_and_distinct": true,
+    "original_workspaces_retained": true,
+    "private_cleanup_record_sha256": "f9dfe041fe37d0c36092b5d38a210e34dbb74ce3d920496bd9386d2c5334e91b",
+    "remaining_task_processes": 0,
+    "temporary_ssh_masters_closed": 2
+  },
+  "date": "2026-10-27",
+  "guarded_wan": {
+    "binaries": {
+      "omd": "d0c97455e0bd7d81265120346e4875e3a2d9db3a52dd569422c42e5712dd8049",
+      "omd.test": "9f20c747ae0287cae9c6f0e323cc49eb06c5e0e48c1cc2de534f4d131ba77fc2",
+      "store.test": "8e80d433814a232796388768970c93aa716ec0206c5e45a5633d85a86f7f41cb"
+    },
+    "boundaries": [
+      "owner-controlled keys and original local roots remain trusted",
+      "not independent key/root copy fencing",
+      "negative branches retain ordinary tickets; no negative-completion workflow claimed",
+      "bounded controlled series, not device-failure or sustained adversarial public-testnet evidence",
+      "no external audit or mainnet authorization"
+    ],
+    "completed_cycles": 13,
+    "controller_sha256": "5c19cda8d1b5d8957d14ff59a8cac6aaa54c723858b0bbe9bfa8bb50b110ba7d",
+    "negative_cycles_with_ordinary_tickets_retained": 0,
+    "passed": true,
+    "required_guarded_scenarios_checked": true,
+    "required_matrix_checked": false,
+    "scenarios": [
+      {
+        "assignment_id": "16e0e6b449f5f3e439ac810d14b5c2381fc6d79fb69c6a6f46c6fe3758c82e8a",
+        "cycle_count": 1,
+        "delayed_start_rejected_on_every_cycle": true,
+        "final_active_remote": false,
+        "final_authority_sequence": 6,
+        "final_pending_operations": 0,
+        "final_source_sequences": [
+          1,
+          1
+        ],
+        "local_placement_required": true,
+        "ordinary_tickets_retained": false,
+        "original_roots_reused": false,
+        "passed": true,
+        "private_report_sha256": "bb6397fd20b8d93c4cb7d361c9e43213984b2d229fff8e81bb3d64db04ed880e",
+        "scenario": "a-restart-after-data",
+        "single_assignment": true
+      },
+      {
+        "assignment_id": "7622c350285e817cf39740d0bf6abcaf00da0d5d1bf3176adcd1541c5127ea4f",
+        "cycle_count": 1,
+        "delayed_start_rejected_on_every_cycle": true,
+        "final_active_remote": false,
+        "final_authority_sequence": 6,
+        "final_pending_operations": 0,
+        "final_source_sequences": [
+          1,
+          1
+        ],
+        "local_placement_required": true,
+        "ordinary_tickets_retained": false,
+        "original_roots_reused": false,
+        "passed": true,
+        "private_report_sha256": "8434e6e446eda4f8384692e7a7cbbae802ac5f8a9f29a348ef90f38e50e9cd5b",
+        "scenario": "a-restart-before-data",
+        "single_assignment": true
+      },
+      {
+        "assignment_id": "9c300a763fbbab84eb9187bcd7ff8d7e9fad74f6e4b705cf4d7c83c6bbb60480",
+        "cycle_count": 1,
+        "delayed_start_rejected_on_every_cycle": true,
+        "final_active_remote": false,
+        "final_authority_sequence": 6,
+        "final_pending_operations": 0,
+        "final_source_sequences": [
+          1,
+          1
+        ],
+        "local_placement_required": true,
+        "ordinary_tickets_retained": false,
+        "original_roots_reused": false,
+        "passed": true,
+        "private_report_sha256": "d90dd5b387e34d6f10e8f6298ee4ef1e5d58aa06e2b9e9ba00d6069ec1001f03",
+        "scenario": "healthy",
+        "single_assignment": true
+      },
+      {
+        "assignment_id": "e3c193c8f095bd6e064ce3fe3ed339386b9b746d391d1edd79ddba13903df3a1",
+        "cycle_count": 1,
+        "delayed_start_rejected_on_every_cycle": true,
+        "final_active_remote": false,
+        "final_authority_sequence": 6,
+        "final_pending_operations": 0,
+        "final_source_sequences": [
+          1,
+          1
+        ],
+        "local_placement_required": true,
+        "ordinary_tickets_retained": false,
+        "original_roots_reused": false,
+        "passed": true,
+        "private_report_sha256": "e42b3ab0338f2acc601a025ea275e5ff64e53c5088db4a706c7684f47aa2b767",
+        "scenario": "loss-delay",
+        "single_assignment": true
+      },
+      {
+        "assignment_id": "95076454dabcc0aaddafef04f014b4dde91c18fe2e221606e82c07b2e8f363c3",
+        "cycle_count": 1,
+        "delayed_start_rejected_on_every_cycle": true,
+        "final_active_remote": false,
+        "final_authority_sequence": 6,
+        "final_pending_operations": 0,
+        "final_source_sequences": [
+          1,
+          1
+        ],
+        "local_placement_required": true,
+        "ordinary_tickets_retained": false,
+        "original_roots_reused": false,
+        "passed": true,
+        "private_report_sha256": "5c441426c0b2963ebcba3d69f94a112fa9ea10ef3e4b3840e333aa0f6a806d87",
+        "scenario": "partition-before",
+        "single_assignment": true
+      },
+      {
+        "assignment_id": "5350303b94577db06e3c5ec3871990cd0ffc795b9fcbb73062774dfe184d5029",
+        "cycle_count": 8,
+        "delayed_start_rejected_on_every_cycle": true,
+        "final_active_remote": false,
+        "final_authority_sequence": 48,
+        "final_pending_operations": 0,
+        "final_source_sequences": [
+          8,
+          8
+        ],
+        "local_placement_required": true,
+        "ordinary_tickets_retained": false,
+        "original_roots_reused": true,
+        "passed": true,
+        "private_report_sha256": "4f11779f2c438ab65e6e831be3d9fa3f79da8dc4bb2bba9231119229c7735220",
+        "scenario": "soak",
+        "single_assignment": true
+      }
+    ],
+    "schema_version": 1,
+    "scope": "controlled same-assignment V1 WAN fault and bounded reuse acceptance",
+    "session_lifecycle": "fresh intent/plan/worker per cycle; interrupted sessions retain the same worker and immutable scope",
+    "source_manifest_sha256": "cb6aab360cfb9e402a2c4d451e3bc486e7535342f21aa36427334785dd38ed1b",
+    "successful_cycles": 13,
+    "successful_ticket_completions": 26
+  },
+  "native_build_and_tests": {
+    "binaries": {
+      "omd": "d0c97455e0bd7d81265120346e4875e3a2d9db3a52dd569422c42e5712dd8049",
+      "omd.test": "9f20c747ae0287cae9c6f0e323cc49eb06c5e0e48c1cc2de534f4d131ba77fc2",
+      "store.test": "8e80d433814a232796388768970c93aa716ec0206c5e45a5633d85a86f7f41cb"
+    },
+    "build_workers": 2,
+    "cgo_enabled": false,
+    "elapsed_seconds": 59.938,
+    "go": "go version go1.26.7 linux/amd64",
+    "native_log_sha256": "c0408baac334e431712d9b5fdc6215a04e02f677a6d52a69b6e8f8f59c8082bb",
+    "offline_modules": true,
+    "readonly_modules": true,
+    "seconds": {
+      "build-cli-tests": 22.62,
+      "build-omd": 17.479,
+      "build-store-tests": 13.456,
+      "cli-tests": 3.659,
+      "store-tests": 2.662
+    },
+    "source_files": 630,
+    "source_manifest": "cb6aab360cfb9e402a2c4d451e3bc486e7535342f21aa36427334785dd38ed1b",
+    "source_unchanged": true
+  },
+  "negative_recovery": {
+    "all_four_observation_kinds_exercised": true,
+    "cold_verified_review": {
+      "binary_sha256": "d0c97455e0bd7d81265120346e4875e3a2d9db3a52dd569422c42e5712dd8049",
+      "negative_as_success_rejected": true,
+      "negative_id": "a2854449a82b70f05d3e07853727193656da0d0360daea9b108920279b086839",
+      "no_external_b_entry_selected": true,
+      "original_owner_unchanged": true,
+      "passed": true
+    },
+    "controller_sha256": "f70b752ef9494d67ae0f838f7cae215ca9206da191a75468d553ba9953ddb3e2",
+    "copy_probes_rejected": 33,
+    "ordinary_tickets_still_pending": 6,
+    "scenarios": [
+      {
+        "assignment_id": "e09cbb4bfaafe47c416cc2419fcf390dae4850510fda9281a8feaa993f0d9bd3",
+        "copy_probes_rejected": 11,
+        "observation_kinds": [
+          2
+        ],
+        "ordinary_tickets_retained": 2,
+        "original_source_sequences": [
+          0,
+          0
+        ],
+        "passed": true,
+        "prior_wan_report_sha256": "1e0c422abceea6eca59ec0d848d82d28f37d458b533cf32c82059d8e5ffef522",
+        "private_report_sha256": "f94768a9ce457ba1df712a2b9d8e00ebdec7933c18bb8da4b2221328bce26160",
+        "scenario": "b-restart-before-result"
+      },
+      {
+        "assignment_id": "d6c90f68a269eb4eefc6da2b6d1dc170e8c953f6d61a9b59052ebd1a38a8a0bd",
+        "copy_probes_rejected": 11,
+        "observation_kinds": [
+          3,
+          4
+        ],
+        "ordinary_tickets_retained": 2,
+        "original_source_sequences": [
+          0,
+          1
+        ],
+        "passed": true,
+        "prior_wan_report_sha256": "e752751bba7ad088ed6dd2dad51968fc3d8cdc237318aaf9d8c20a6ad5c6ed25",
+        "private_report_sha256": "b739f484acd3de51d094855bbe9ed60a13a4c02126f0d96b7b277f2424c372d0",
+        "scenario": "expired-cache"
+      },
+      {
+        "assignment_id": "030082a7781a8ece317735fdb75cf4416750a8e1a8f593ed84c7335ff03d7ec4",
+        "copy_probes_rejected": 11,
+        "observation_kinds": [
+          1
+        ],
+        "ordinary_tickets_retained": 2,
+        "original_source_sequences": [
+          0,
+          0
+        ],
+        "passed": true,
+        "prior_wan_report_sha256": "ed1c9e7b68d55ff430b25a7b5c4deca40ff5ed42840b0f85c431c18bdf09d04d",
+        "private_report_sha256": "1e5657f41301bf4e0a6e877c1dafc9bc6fd82a4d84fa45604114c79242c96933",
+        "scenario": "unseen-seal"
+      }
+    ]
+  },
+  "recorded_at_utc": "2026-10-27T17:14:55.239904+00:00",
+  "schema_version": 1,
+  "scope": "original-owner negative observations and opt-in local placement copy refusal; independent fencing remains open",
+  "source": {
+    "file_count": 630,
+    "format": "sorted relative Go/module paths; SHA256(file bytes), two spaces, path, LF",
+    "manifest_sha256": "cb6aab360cfb9e402a2c4d451e3bc486e7535342f21aa36427334785dd38ed1b",
+    "parent_revision": "877c73e04995d0c97c8f3d9eece1bfc25bb34eb5",
+    "unchanged_locally_and_natively": true
+  },
+  "validation": {
+    "exit_code": 0,
+    "focused_integration_race_seconds": {
+      "cmd/omd": 27.594,
+      "store": 19.103
+    },
+    "fuzz_smoke": {
+      "negative": {
+        "executions": 436,
+        "exit_code": 0,
+        "seconds": 3
+      },
+      "placement": {
+        "executions": 5892,
+        "exit_code": 0,
+        "seconds": 3
+      }
+    },
+    "integration_tag_vet_exit_code": 0,
+    "private_log_sha256": {
+      "focused_integration_race": "3b26b596b2a6ae3ff9868d779b18883131a251aec2b8fd01ec860f9885482208",
+      "integration_vet": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "negative_fuzz": "fbe8691e39a8ace309fe1d971e1527dd2a934ad04522c52763edb0a0bcca32af",
+      "placement_fuzz": "0de359c81ff29d7c48c2fd1f883fed3d704b494f54404d12ab5204b5b924ef25",
+      "python": "d84dd67810511cb37eea430b6f155a8edfcfdcd0816fb282c32098158c1ab942",
+      "repository": "36688033b06a9269cd03127d62e01f9d070b9b85759d448e6c63e1ccf63f077f"
+    },
+    "python_exit_code": 0,
+    "python_test_count": 29,
+    "repository_command": "GOTOOLCHAIN=go1.26.7 make -j1 test-all",
+    "store_race_group_seconds": [
+      241.115,
+      291.385,
+      155.375,
+      159.227,
+      94.274
+    ],
+    "timeout_increased": false
+  }
+}

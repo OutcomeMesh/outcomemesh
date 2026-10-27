@@ -218,3 +218,10 @@ cross-host fault/reuse procedure and acceptance records. Unknown/unseen
 disposition closure, independently enforced key/root copy fencing,
 device-failure campaigns, independent audits and sustained public-testnet launch
 gates remain open.
+
+After these original roots and role seed files exist, the
+[local placement profile](REMOTE_CUSTODY_PLACEMENT.md) can be explicitly reviewed
+and published before remote operator startup. It creates only its independent
+local manifest; it does not initialize or rebind any owner/source. A keeps its
+original pin across source cycles; each new B worker needs its own reviewed pin.
+This adds ordinary copy detection, not independent protected-key fencing.

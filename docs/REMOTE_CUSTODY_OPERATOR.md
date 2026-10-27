@@ -155,6 +155,19 @@ the separate explicit recovery action.
 
 ## Acceptance boundary
 
+Additional owned actions are documented in the
+[negative observation workflow](REMOTE_CUSTODY_NEGATIVE.md): A's
+`capture-negative REVIEW_ID` retains an unresolved observation with both
+ordinary tickets pending; B's `export-result REVIEW_ID` publishes only the exact
+already sealed journal entry. Negative evidence never enters the successful
+Complete path. Neither action starts a fresh effect or refreshes a proof.
+
+The optional [local placement profile](REMOTE_CUSTODY_PLACEMENT.md) adds
+metadata-only `placement-review` / explicit `placement-create` modes, an
+independently pinned `--placement` and `--require-placement=true` for normal
+review/control. Enrollment does not open owners or load seeds. This checks
+ordinary local copies/replacements, not untrusted raw keys or cloned machines.
+
 Tests cover default review with unchanged retained trees, wrong pins before key
 loading, one-use reviews, real QUIC execution, metadata/terminal persistence,
 independent ticket completions, EOF/malformed control, and separate processes

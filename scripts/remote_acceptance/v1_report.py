@@ -25,7 +25,16 @@ def validate_report(value):
             (len(cycles) == 1 or scenario == "soak"), "incomplete or unbounded cycle history")
     baseline, seen = None, {name: set() for name in ("intent_id", "challenge_id", "plan_id", "begin_id",
                                                    "journal_head_id", "current_receipt_id", "proof_id")}
+    placement_a, placements_b = None, set()
     for n, cycle in enumerate(cycles, 1):
+        if value.get("placement_required", False):
+            pins = cycle.get("placements", {})
+            require(set(pins) == {"a", "b"}, "required placement pins missing")
+            a_pin, b_pin = digest_id(pins["a"]), digest_id(pins["b"])
+            require(placement_a is None or placement_a == a_pin, "A placement was re-enrolled during reuse")
+            require(b_pin not in placements_b, "new B worker reused a prior placement")
+            placement_a = a_pin
+            placements_b.add(b_pin)
         require(cycle.get("passed") is True and cycle["cycle"] == n and cycle.get("delayed_start_rejected") is True,
                 "cycle did not finish its exact delayed-Start check")
         for name in ("intent_id", "challenge_id", "plan_id", "begin_id"):
@@ -100,6 +109,7 @@ def validate_report(value):
         if scenario == "loss-delay" or scenario == "soak" and n % 4 == 0:
             require(counters.get("forward_pattern_drops", 0) + counters.get("reverse_pattern_drops", 0) > 0, "loss scenario dropped no packets")
     return {"scenario": scenario, "cycle_count": len(cycles), "assignment_id": aid,
+            "local_placement_required": value.get("placement_required", False),
             "final_authority_sequence": cycles[-1]["final"]["a"]["confirmed_sequence"],
             "final_source_sequences": [cycles[-1]["final"][x]["journal_sequence"] for x in ("a", "b")],
             "final_pending_operations": cycles[-1]["final"]["a"]["pending_operations"],

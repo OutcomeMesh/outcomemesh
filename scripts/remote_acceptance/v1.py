@@ -22,6 +22,7 @@ PREFIX = "work-archive-custody-remote-"
 SCENARIOS = ("healthy", "partition-before", "loss-delay", "a-restart-before-data",
              "a-restart-after-data", "b-restart-before-result", "b-restart-after-result",
              "seal-reply-loss", "expired-cache", "unseen-seal", "soak")
+PLACEMENT_SCENARIOS = {"healthy", "partition-before", "loss-delay", "a-restart-before-data", "a-restart-after-data", "soak"}
 
 
 def close_supervisor(supervisor):
@@ -80,6 +81,7 @@ class Role:
     def __init__(self, host, public):
         self.h, self.p = host, public
         self.n, self.ids = 0, {}
+        self.placement_flags, self.placement_id = [], None
 
     def path(self, value):
         return self.h.root + "/" + value
@@ -161,7 +163,7 @@ class Role:
         if role == "b":
             return args + ["--worker", self.path("workers/%03d" % self.n), "--objects", self.path("objects"),
                            "--replica-key", self.path("keys/replica.seed"), "--control-key", self.path("keys/b-control.seed"),
-                           "--key", self.path("keys/b-transport.seed"), "--listen", "/ip4/0.0.0.0/udp/43980/quic-v1"]
+                           "--key", self.path("keys/b-transport.seed"), "--listen", "/ip4/0.0.0.0/udp/43980/quic-v1"] + self.placement_flags
         args += ["--control-key", self.path("keys/a-control.seed"), "--key", self.path("keys/a-data.seed"),
                  "--listen", "/ip4/127.0.0.1/udp/43971/quic-v1", "--peer", peer,
                  "--authority", self.path("authority"), "--authority-pins", self.path("authority-pins"),
@@ -176,7 +178,7 @@ class Role:
             args += ["--terminal-id", terminal]
         if complete:
             args += ["--complete-entry", self.path(self.op(complete)), "--complete-entry-id", self.ids[complete]]
-        return args
+        return args + self.placement_flags
 
 
 class Case:
@@ -209,6 +211,7 @@ class Case:
                          "cli_test_binary_sha256": self.a.h.sha256(self.a.h.test_binary), "cycles": [], "copied_live_roots": False}
         self.evidence["gate_test_binary_sha256"] = self.b.h.sha256(self.b.h.config["gate_binary"])
         self.evidence["build_provenance"] = config["provenance"]
+        self.evidence["placement_required"] = config.get("require_placement", False)
         if all(role.h.config["kind"] == "ssh" for role in (self.a, self.b)):
             boots = {name: hashlib.sha256(role.h.execute(["cat", "/proc/sys/kernel/random/boot_id"]).stdout.strip()).hexdigest()
                      for name, role in self.roles.items()}
@@ -316,7 +319,24 @@ class Case:
         b.once(args + ["--mode", "create", "--expected-review-id", review])
         for role in (a, b):
             role.session()
-        return {"cycle": cycle, "intent_id": iid, "challenge_id": cid, "plan_id": pid, "begin_id": a.ids["begin"], "issued_at": issued}
+        placements = {}
+        if self.config.get("require_placement"):
+            for name, role in (("a", a), ("b", b)):
+                if name == "b" or not role.placement_flags:
+                    role.placement_flags = []
+                    parent = role.path("placement-%03d" % cycle)
+                    role.h.execute(["mkdir", "-m", "700", parent])
+                    args = role.runtime(name)
+                    args[args.index("--mode") + 1] = "placement-review"
+                    args += ["--placement", parent + "/record"]
+                    selected = digest_id(role.record(args, "remote_custody_placement")["placement_id"])
+                    args[args.index("--mode") + 1] = "placement-create"
+                    role.once(args + ["--placement-id", selected])
+                    role.placement_flags = ["--placement", parent + "/record", "--placement-id", selected, "--require-placement=true"]
+                    role.placement_id = selected
+                placements[name] = role.placement_id
+        return {"cycle": cycle, "intent_id": iid, "challenge_id": cid, "plan_id": pid, "begin_id": a.ids["begin"], "issued_at": issued,
+                "placements": placements}
 
     def complete(self, cycle, peer, drain, terminal):
         a, b = self.a, self.b
@@ -532,6 +552,8 @@ def run_cycle(case, cycle, scenario):
 def run(config, fixture, scenario, cycles, checkpoint=None):
     require(scenario in SCENARIOS and 1 <= cycles <= 64, "invalid scenario or bounded cycle count")
     require(cycles == 1 or scenario == "soak", "multiple cycles require the explicit soak scenario")
+    require(not config.get("require_placement") or scenario in PLACEMENT_SCENARIOS,
+            "private pause helpers do not supply placement enforcement; choose a normal-CLI placement scenario")
     case = Case(config, fixture)
     for cycle in range(1, cycles + 1):
         print("remote_v1_step scenario=%s cycle=%d/%d" % (scenario, cycle, cycles), flush=True)

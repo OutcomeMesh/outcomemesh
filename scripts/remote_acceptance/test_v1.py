@@ -157,6 +157,14 @@ class V1EvidenceTests(unittest.TestCase):
         with self.assertRaises(AcceptanceError):
             v1_report.validate_report(report)
 
+    def test_required_placement_cannot_be_inferred_from_passed(self):
+        report = self.report()
+        report["placement_required"] = True
+        with self.assertRaises(AcceptanceError):
+            v1_report.validate_report(report)
+        report["cycles"][0]["placements"] = {"a": "a" * 64, "b": "b" * 64}
+        self.assertTrue(v1_report.validate_report(report)["local_placement_required"])
+
     def test_matrix_requires_every_scenario_and_one_controller_pin(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "healthy.json"

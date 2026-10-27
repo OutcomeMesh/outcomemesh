@@ -24,6 +24,7 @@ import (
 // authority key is retained only for co-signing an explicitly requested drain;
 // it is never sent to B. Opening creates no challenge, Begin or network host.
 type RemoteCustodyAuditRuntimeConfig struct {
+	Placement                        *RemoteCustodyPlacementConfig
 	AuthorityPath, AuthorityPinsPath string
 	Scope                            RemoteCustodyScope
 	Audit                            ManagedCustodyAuditConfig
@@ -35,6 +36,7 @@ type RemoteCustodyAuditRuntimeConfig struct {
 // active-hold checks do not change the generic WithOperation barrier. Neither
 // an I/O result nor Close completes an ordinary Audit or Serve ticket.
 type RemoteCustodyAuditRuntime struct {
+	placement      *remotePlacementGuard
 	life           *custodyRuntimeLifetime
 	scope          RemoteCustodyScope
 	intent         workarchive.CustodyAuditIntent
@@ -106,6 +108,10 @@ func OpenRemoteCustodyAuditRuntime(ctx context.Context, config RemoteCustodyAudi
 	if err != nil || replicaPeer != intent.ReplicaPeerID {
 		return nil, errors.Join(ErrRemoteCustody, err)
 	}
+	placement, err := openRemotePlacement(config.Placement, id, "audit", map[string]string{"authority": config.AuthorityPath, "authority-pins": config.AuthorityPinsPath, "journal": config.Audit.JournalPath, "artifacts": config.Audit.ArtifactsPath})
+	if err != nil {
+		return nil, err
+	}
 	owner, err := OpenCoordinator(config.AuthorityPath, config.AuthorityPinsPath, a, id)
 	if err != nil {
 		return nil, err
@@ -146,7 +152,7 @@ func OpenRemoteCustodyAuditRuntime(ctx context.Context, config RemoteCustodyAudi
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	runtime := &RemoteCustodyAuditRuntime{life: newCustodyRuntimeLifetime(owner), scope: scope, intent: intent, admission: config.Audit.Admission, session: session, journal: journal,
+	runtime := &RemoteCustodyAuditRuntime{placement: placement, life: newCustodyRuntimeLifetime(owner), scope: scope, intent: intent, admission: config.Audit.Admission, session: session, journal: journal,
 		authorityKey: key, controlPeer: controlPeer, auditorPeer: auditorPeer, replicaPeer: replicaPeer, timeout: config.Audit.SessionConfig.RequestTimeout,
 		sourceIdentity: make(map[string]os.FileInfo), journalLimits: config.Audit.JournalLimits}
 	for _, path := range []string{session.journalPath, filepath.Join(session.journalPath, "journal.lock"), session.artifactsPath, filepath.Join(session.artifactsPath, "custody.lock")} {
@@ -162,6 +168,9 @@ func OpenRemoteCustodyAuditRuntime(ctx context.Context, config RemoteCustodyAudi
 // Retain the original source and permanent lock inodes, including across waits
 // for decisions. An identically encoded B copy is still a different A source.
 func (runtime *RemoteCustodyAuditRuntime) checkSourceIdentity() error {
+	if err := runtime.placement.check(); err != nil {
+		return err
+	}
 	for path, before := range runtime.sourceIdentity {
 		now, err := os.Lstat(path)
 		if err != nil || now.Mode()&os.ModeSymlink != 0 || !os.SameFile(before, now) {

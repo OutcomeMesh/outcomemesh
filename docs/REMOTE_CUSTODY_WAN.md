@@ -96,6 +96,14 @@ PYTHONDONTWRITEBYTECODE=1 python3 scripts/remote_acceptance/v1_matrix.py \
 ```
 
 Use `--scenarios healthy,partition-before,...` to select a smaller explicit set.
+An optional configuration field `"require_placement": true` enables the
+[local placement profile](REMOTE_CUSTODY_PLACEMENT.md) on the normal A/B CLI
+runtimes. The controller explicitly enrolls A once and each fresh B worker,
+retains their pins in checkpoints, and requires them on reopen. Its supported
+scenarios are healthy, partition-before, loss-delay, both A restart cases and
+soak. Private B pause helpers do not enforce this profile, so other scenarios
+are refused before initialization. This option is local copy detection, not
+independent protected-key fencing; its campaign is recorded separately.
 The complete matrix is the default. Every scenario has a new fixture/assignment;
 the soak instead retains one assignment and the SAME original A/B source roots
 through all sequential cycles. No existing role root is reinitialized. New

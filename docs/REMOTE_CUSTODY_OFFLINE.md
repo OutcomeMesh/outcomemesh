@@ -206,3 +206,9 @@ later `prepare` action consumes the complete fixed session. The separate
 procedure and its acceptance records. Negative-disposition closure, independent
 copy fencing and mainnet gates remain open. Do not copy live authority, pin or
 source journals.
+
+The subsequent [negative observations](REMOTE_CUSTODY_NEGATIVE.md) use a separate
+signed format. Offline successful Complete still requires an accepted
+`RemoteCustodyTerminal`; a negative ID or B-only entry digest cannot substitute
+for that evidence. The [local placement profile](REMOTE_CUSTODY_PLACEMENT.md)
+covers remote operator role files, not these offline consumer signing keys.

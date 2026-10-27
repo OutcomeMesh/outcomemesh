@@ -286,6 +286,43 @@ func TestInspectRemoteV1Fixture(t *testing.T) {
 	}
 	rid, _ := state.CurrentReceipt.ID()
 	result := map[string]any{"assignment_id": s.AssignmentID, "journal_sequence": state.Sequence, "journal_head_id": state.HeadEntryID.String(), "current_receipt_id": rid.String(), "role": p.Role}
+	operation := filepath.Join(root, "operations", fmt.Sprintf("%03d", s.Cycle))
+	intentBytes, err := readRegularArtifact(filepath.Join(root, "intent", fmt.Sprintf("%03d", s.Cycle)), workarchive.MaximumCustodyAuditIntentBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	intent, err := workarchive.DecodeCustodyAuditIntent(intentBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	auditBytes, err := readRegularArtifact(filepath.Join(operation, "audit"), custodyauthority.MaximumEntryBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	audit, err := custodyauthority.DecodeEntry(auditBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ValidateRemoteCustodyAuditScope(scope, intent, audit); err != nil {
+		t.Fatal(err)
+	}
+	iid, _ := intent.ID()
+	aid, _ := audit.ID()
+	sid, _ := scope.Worker.Plan.Admission.ID()
+	result["intent_id"], result["audit_ticket_id"], result["serve_ticket_id"] = iid.String(), aid.String(), sid.String()
+	if body, err := readRegularArtifact(filepath.Join(operation, "drain"), remotewire.MaxFrameBytes); err == nil {
+		response, err := remotewire.DecodeResponse(body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, id, err := store.RemoteCustodyDrainArtifact(scope, response)
+		if err != nil {
+			t.Fatal(err)
+		}
+		result["drain_id"] = id.String()
+	} else if !errors.Is(err, os.ErrNotExist) {
+		t.Fatal(err)
+	}
 	identities := make(map[string]string)
 	paths := []string{"journal", "journal/journal.lock"}
 	if p.Role == "a" {

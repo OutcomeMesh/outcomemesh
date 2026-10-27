@@ -1607,6 +1607,7 @@ func printUsage() {
 	fmt.Printf("reviewed archive effect: omd %s --mode <review|control> [flags]; control uses dedicated stdin/stdout pipes\n", pruneArchiveEffectCommand)
 	fmt.Printf("managed custody replica: omd %s --mode <review|serve> [flags]; serve uses dedicated stdin/stdout pipes\n", managedCustodyServeCommand)
 	fmt.Printf("remote custody: omd %s|%s --mode <review|control> [flags]; control retains original owners until close\n", remoteCustodyAuditCommand, remoteCustodyServeCommand)
+	fmt.Println("remote local placement: --mode <placement-review|placement-create> --placement FILE [--placement-id ID]; --require-placement refuses unbound startup")
 	fmt.Printf("V1 offline preparation: omd <%s|%s> --mode <review|publish> [flags]\n", remoteCustodyAssignmentCommand, remoteCustodyPlanCommand)
 	fmt.Printf("V1 offline signatures: omd <%s|%s> --mode <review|sign> [flags]; --kind <admit|begin|complete>\n", remoteCustodySignCommand, remoteCustodyCosignCommand)
 	fmt.Printf("V1 explicit fresh roots: omd <%s|%s> --mode <review|create|verify> [flags]\n", remoteCustodyAuthorityBootstrapCommand, remoteCustodyWorkerPrepareCommand)

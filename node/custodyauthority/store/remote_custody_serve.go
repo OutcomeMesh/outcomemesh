@@ -20,6 +20,7 @@ import (
 )
 
 type RemoteCustodyServeServiceConfig struct {
+	Placement                            *RemoteCustodyPlacementConfig
 	Scope                                RemoteCustodyScope
 	WorkerPath, JournalPath, ObjectPath  string
 	ObjectPolicy                         workarchive.ObjectStorePolicy
@@ -34,6 +35,7 @@ type RemoteCustodyServeServiceConfig struct {
 // A must independently enforce confirmed Begin before dispatching that request;
 // a signed proposal or this service's Started reply is not a current grant.
 type RemoteCustodyServeService struct {
+	placement                                                    *remotePlacementGuard
 	mu                                                           sync.Mutex
 	opMu                                                         sync.Mutex
 	gate                                                         sync.Mutex
@@ -81,6 +83,10 @@ func OpenRemoteCustodyServeService(ctx context.Context, config RemoteCustodyServ
 			}
 		}
 	}
+	placement, err := openRemotePlacement(config.Placement, scope.Worker.Plan.AssignmentID, "serve", map[string]string{"worker": paths[0], "journal": paths[1], "objects": paths[2]})
+	if err != nil {
+		return nil, err
+	}
 	replicaKey, err := managedCustodyReplicaKey(config.ReplicaPrivateKey, scope.Worker.Assignment.ReplicaPublicKey)
 	if err != nil {
 		return nil, err
@@ -110,7 +116,7 @@ func OpenRemoteCustodyServeService(ctx context.Context, config RemoteCustodyServ
 	if err != nil || len(missing) != 0 {
 		return nil, errors.Join(ErrRemoteCustody, err)
 	}
-	service := &RemoteCustodyServeService{scope: scope, worker: worker, workerPath: paths[0], journalLimits: config.JournalLimits, objectPolicy: config.ObjectPolicy, journal: journal, objects: objects, replicaKey: replicaKey, controlKey: controlKey,
+	service := &RemoteCustodyServeService{placement: placement, scope: scope, worker: worker, workerPath: paths[0], journalLimits: config.JournalLimits, objectPolicy: config.ObjectPolicy, journal: journal, objects: objects, replicaKey: replicaKey, controlKey: controlKey,
 		sessionConfig: config.SessionConfig, sourceIdentity: make(map[string]os.FileInfo), done: make(chan struct{})}
 	for _, path := range []string{journal.Directory(), filepath.Join(journal.Directory(), "journal.lock")} {
 		info, e := os.Lstat(path)
@@ -169,6 +175,9 @@ func (service *RemoteCustodyServeService) Start(ctx context.Context, key ed25519
 		return ErrRemoteCustody
 	}
 	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := service.checkSourceIdentity(); err != nil {
 		return err
 	}
 	owned, err := remoteCustodyOwnedKey(key, service.scope.Worker.Assignment.RemoteTransportPublicKey)
@@ -253,6 +262,9 @@ func (service *RemoteCustodyServeService) handleControl(_ context.Context, peer 
 			return
 		}
 	}
+	if err := service.checkSourceIdentity(); err != nil {
+		return
+	}
 	if err := remotewire.WriteResponse(owned, response); err != nil {
 		return
 	}
@@ -260,6 +272,9 @@ func (service *RemoteCustodyServeService) handleControl(_ context.Context, peer 
 }
 
 func (service *RemoteCustodyServeService) controlLocked(ctx context.Context, request remotewire.Request) (remotewire.Response, error) {
+	if err := service.checkSourceIdentity(); err != nil {
+		return remotewire.Response{}, err
+	}
 	w := service.scope.Worker
 	response := remotewire.Response{Version: remotewire.Version0, Nonce: request.Nonce, PlanID: w.PlanID, BeginID: w.BeginID}
 	switch request.Kind {
@@ -388,6 +403,9 @@ func (service *RemoteCustodyServeService) handleData(_ context.Context, peer typ
 	service.gate.Unlock()
 	defer service.dataWG.Done()
 	owned := &remoteCustodyNetworkStream{Stream: stream, beforeWrite: func() error {
+		if err := service.checkSourceIdentity(); err != nil {
+			return err
+		}
 		return service.hooks.reach("remote-data-before-response-write")
 	}}
 	drained := make(chan struct{})
@@ -535,6 +553,9 @@ func (service *RemoteCustodyServeService) retainedFailure() error {
 }
 
 func (service *RemoteCustodyServeService) checkSourceIdentity() error {
+	if err := service.placement.check(); err != nil {
+		return err
+	}
 	for path, before := range service.sourceIdentity {
 		now, err := os.Lstat(path)
 		if err != nil || now.Mode()&os.ModeSymlink != 0 || !os.SameFile(before, now) {
@@ -555,7 +576,12 @@ func (service *RemoteCustodyServeService) withSourceDecision(ctx context.Context
 	if err != nil {
 		return err
 	}
-	defer func() { err := decision.Close(); service.rememberFailure(err); returnErr = errors.Join(returnErr, err) }()
+	defer func() {
+		identityErr := service.checkSourceIdentity()
+		err := decision.Close()
+		service.rememberFailure(errors.Join(identityErr, err))
+		returnErr = errors.Join(returnErr, identityErr, err)
+	}()
 	if err := service.checkSourceIdentity(); err != nil {
 		return err
 	}

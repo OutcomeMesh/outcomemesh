@@ -769,6 +769,25 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
                           32 sequential cycles, closing both tickets independently;
                           validate retained reports before publishing a sanitized
                           index. See REMOTE_CUSTODY_WAN.md.
+                        - [x] Separately versioned authority-signed negative
+                          observations with exact original-A predecessor binding.
+                          Distinguish Unseen, unknown after Start, unverified B
+                          commitment and verified-but-unaccepted B entry. Retain
+                          both tickets; never import/refresh proof or allow a
+                          successful terminal. Add owned capture/review, exact
+                          output recovery and read-only sealed B entry export.
+                          Preserve positive vectors and reject stale absence
+                          observations after original source advance. See
+                          REMOTE_CUSTODY_NEGATIVE.md; negative Complete is not added.
+                        - [x] Opt-in local placement enrollment and runtime
+                          checks for original roots/locks, anchor directory and
+                          role seed files. Check independent pins before CLI
+                          seed loading and during owned A/B actions/responses.
+                          Refuse ordinary copies, substitutions and changed
+                          private permissions across process restart. Require
+                          explicit reviewed enrollment; no automatic rebind or
+                          implicit recovery. See REMOTE_CUSTODY_PLACEMENT.md.
+                          This is not raw-key, full-VM or distributed copy fencing.
                         - [ ] Single-assignment cross-host current-authority
                           enforcement and independently enforced physical/copy
                           fencing. Separate local assignments over real WAN do

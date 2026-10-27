@@ -199,6 +199,15 @@ the original source journals. Unknown/expired/unseen outcomes retain their
 ordinary tickets. Negative-disposition closure, independently enforced key/root copy
 fencing and the wider production gates remain open.
 
+The [negative observation workflow](docs/REMOTE_CUSTODY_NEGATIVE.md) now records
+signed Unseen/unknown/unaccepted-result evidence against the original A source,
+including export and historical verification of B's complete retained entry.
+Both ordinary tickets remain pending. The optional
+[local placement profile](docs/REMOTE_CUSTODY_PLACEMENT.md) checks independently
+pinned original roots, permanent locks and operator key files across restart.
+It detects ordinary copies/replacements; independent raw-key/VM-copy fencing
+still requires a protected issuer and mandatory protocol validation.
+
 ## Build and run
 
 Go 1.26.7 is the pinned toolchain. With it available as `go`:

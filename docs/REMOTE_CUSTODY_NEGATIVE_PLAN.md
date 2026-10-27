@@ -1,9 +1,16 @@
 # Remote custody negative-disposition work plan
 
-Status: next implementation gate, not an implemented terminal format or a
-permission to complete tickets. The [WAN campaign](REMOTE_CUSTODY_WAN.md) checks
+Status: the separately versioned signed observation, owned capture/review and
+historical B-result export are implemented; see
+[the negative observation workflow](REMOTE_CUSTODY_NEGATIVE.md). Per-ticket
+settlement and uncertainty/retention rules remain open. The [WAN campaign](REMOTE_CUSTODY_WAN.md) checks
 that these branches retain their ordinary Audit/Serve tickets and refuse a
 successful terminal. No readiness credit is assigned to this design note.
+
+The implementation currently retains BOTH ordinary tickets in every negative
+branch, including Unseen. It does not bypass step 1 or implement negative Complete.
+The [local placement profile](REMOTE_CUSTODY_PLACEMENT.md) adds configured
+copy detection; it does not close the independent fencing requirement.
 
 ## Existing behavior that must be preserved
 
