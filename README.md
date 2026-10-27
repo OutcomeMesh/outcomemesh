@@ -186,8 +186,10 @@ The opt-in [managed remote protocol](docs/REMOTE_CUSTODY_EXECUTION.md) now adds
 confirmed-owner Start, an independently pinned data exchange, irreversible
 handler drain and a typed terminal checked against the original accepted A
 journal. Drain and the two ticket completions remain explicit separate actions.
-Operator/server CLI, same-assignment WAN acceptance and independent key/root
-copy fencing remain open.
+The [remote operator/server commands](docs/REMOTE_CUSTODY_OPERATOR.md) now provide
+default non-executing review, supervised owned control and retained sealed/terminal
+artifacts. Same-assignment WAN acceptance, V1 bootstrap/offline signing workflow
+and independent key/root copy fencing remain open.
 
 ## Build and run
 

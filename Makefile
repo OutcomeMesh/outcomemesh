@@ -108,6 +108,7 @@ test-fuzz-smoke:
 	$(GO) test ./sim/workgraphmodel -run '^$$' -fuzz '^FuzzRunSelfishStrategiesNeverBreakAccounting$$' -fuzztime=$(FUZZTIME)
 
 test-process:
+	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessRemoteCustodyCLI' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestRemoteCustodyNetworkProcessRecovery$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestRemoteCoordinatorProcessCrashBarriers$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./node/custodyauthority/remoteworker -run '^TestWorkerSealingSurvivesKilledOriginalProcess$$' -count=1 -timeout=2m

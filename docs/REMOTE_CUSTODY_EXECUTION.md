@@ -137,9 +137,11 @@ GOTOOLCHAIN=go1.26.7 go test -race -tags=integration \
 GOTOOLCHAIN=go1.26.7 make -j1 test-all
 ```
 
-These APIs do not provide an operator/server CLI or automatic root bootstrap.
-Same-assignment WAN fault/soak acceptance, independently enforced key/root copy
-fencing, negative-disposition tooling and the wider mainnet launch gates remain
+The separate [operator/server CLI](REMOTE_CUSTODY_OPERATOR.md) now supervises
+these APIs and durably retains sealed metadata and original-source terminals.
+It opens existing roots only and does not automatically bootstrap a deployment.
+Same-assignment WAN fault/soak acceptance, V1 bootstrap/offline signing workflow,
+independently enforced key/root copy fencing, negative-disposition tooling and the wider mainnet launch gates remain
 open. Local/process success does not supply independent audit or long-duration
 public-testnet evidence.
 

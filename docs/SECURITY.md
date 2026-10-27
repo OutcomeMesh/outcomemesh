@@ -490,8 +490,22 @@ append and confirmation. B metadata alone cannot fill a missing or expired A
 acceptance. Pending Begin, Drain and Complete require their explicit exact resume
 paths; Open, Seal and Apply never silently settle them. Unknown/unseen outcomes
 remain pending ordinary tickets until separate negative-disposition tooling.
-Operator/server CLI, same-assignment WAN fault/soak acceptance, independent key/root
+V1 bootstrap/offline signing, same-assignment WAN fault/soak acceptance, independent key/root
 fencing and external security review remain deployment gates.
+
+The V1 operator/server CLI is an opt-in existing-root wrapper. Its default
+inspection cannot seal B or create owners. Supervised control consumes a fully
+reported per-process comparison before effects; A compares live state again
+inside its original owner lock and B does so before installing a host. These
+IDs are local comparison conditions, not portable authority or permission.
+Raw trusted library entry points still require their original owner checks.
+Native EOF/signal/broken-output handling cancels and drains before owners close.
+The durable drain artifact normalizes its channel nonce to Seal.ID and makes no
+claim of a current exchange. Capture publishes the accepted terminal under the
+same original source decision, with no-replace file and directory durability.
+Read-only Reconcile after a confirmed historical Drain can recover lost output;
+it cannot enable Start or silently settle pending authority work. The V0 CLI
+contract remains unchanged, and V1 bootstrap/consumer-signing tools remain open.
 
 The optional WorkChain ticketed-prune primitive now binds the exact requested
 floor and original result to an assignment/ticket in the same synchronous batch

@@ -213,6 +213,17 @@ func PublishCustodyTerminalFile(ctx context.Context, path string, terminal Custo
 	if err != nil {
 		return err
 	}
+	return publishCustodyArtifactBytes(ctx, path, b)
+}
+
+func publishCustodyArtifactBytes(ctx context.Context, path string, b []byte) (returnErr error) {
+	if ctx == nil {
+		return ErrCustodyTerminal
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	var err error
 	path, err = storePath(path)
 	if err != nil {
 		return err

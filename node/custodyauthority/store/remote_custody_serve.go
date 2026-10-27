@@ -40,6 +40,9 @@ type RemoteCustodyServeService struct {
 	controlWG, dataWG                                            sync.WaitGroup
 	scope                                                        RemoteCustodyScope
 	worker                                                       *remoteworker.Journal
+	workerPath                                                   string
+	journalLimits                                                workarchive.CustodyJournalLimits
+	objectPolicy                                                 workarchive.ObjectStorePolicy
 	journal                                                      *workarchive.CustodyJournal
 	objects                                                      *workarchive.ObjectStore
 	sourceIdentity                                               map[string]os.FileInfo
@@ -107,7 +110,7 @@ func OpenRemoteCustodyServeService(ctx context.Context, config RemoteCustodyServ
 	if err != nil || len(missing) != 0 {
 		return nil, errors.Join(ErrRemoteCustody, err)
 	}
-	service := &RemoteCustodyServeService{scope: scope, worker: worker, journal: journal, objects: objects, replicaKey: replicaKey, controlKey: controlKey,
+	service := &RemoteCustodyServeService{scope: scope, worker: worker, workerPath: paths[0], journalLimits: config.JournalLimits, objectPolicy: config.ObjectPolicy, journal: journal, objects: objects, replicaKey: replicaKey, controlKey: controlKey,
 		sessionConfig: config.SessionConfig, sourceIdentity: make(map[string]os.FileInfo), done: make(chan struct{})}
 	for _, path := range []string{journal.Directory(), filepath.Join(journal.Directory(), "journal.lock")} {
 		info, e := os.Lstat(path)

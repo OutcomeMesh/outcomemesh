@@ -731,13 +731,21 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
                           result already accepted in the original A journal.
                           Preserve explicit Begin/Drain/Complete pending recovery
                           and independent ticket completion without proof refresh.
+                        - [x] Existing-root V1 operator/server CLI with default
+                          non-executing review, consumed same-session comparisons,
+                          original-owner rechecks and native dedicated control
+                          pipes. Retain normalized sealed metadata and publish a
+                          typed terminal under original source guards; recover
+                          confirmed Drain metadata after lost output without
+                          execution, signing or implicit authority resume.
+                          Test real CLI processes, EOF and broken output.
                         - [ ] Single-assignment cross-host current-authority
                           enforcement and independently enforced physical/copy
                           fencing. Separate local assignments over real WAN do
                           not establish distributed current authority. The V1
                           state/journal foundation does not close this gate.
-                          Remaining work: operator/server CLI and durable artifact
-                          workflow for the V1 runtime; unknown/unseen terminal
+                          Remaining work: complete V1 bootstrap/offline consumer
+                          signing workflow; unknown/unseen terminal
                           disposition; same-assignment WAN fault/soak acceptance;
                           independently protected keys/roots and copy fencing.
                           In-place owner transfer is not added by the explicit

@@ -5,7 +5,7 @@ Updated: 2026-10-27
 This file records evidence against `PLAN.md`. A milestone remains open until all
 of its exit gates pass; implementing most deliverables does not close it.
 
-Full planned production readiness is approximately **40/100**, using the weighted
+Full planned production readiness is approximately **43/100**, using the weighted
 [readiness baseline](PRODUCTION_READINESS.md). This is an engineering estimate,
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
@@ -2290,6 +2290,34 @@ Implemented in an isolated, not-yet-activated consensus package:
   See REMOTE_CUSTODY_EXECUTION.md for exact ownership, recovery and remaining
   CLI/WAN/physical-fencing boundaries. No independent audit, sustained testnet
   or parent production gate credit is added; readiness stays 40/100.
+  Operator/server follow-up (2026-10-27): separate V1 A/B commands now default to
+  non-executing review and require explicit supervised control over dedicated
+  native pipes. B default inspection closes only the unused owner without
+  sealing, while live control shutdown retains sealed/uncertain state and drains
+  handlers. Both commands reject cross-role roots/keys and verify public pins
+  before reading seeds. A complete displayed review binds paths, selected IDs,
+  route, limits and observed authority/source positions; the one-use local token
+  is consumed before action, with base-state comparison under the original owner.
+  Durable normalized drain artifacts remove only the per-exchange nonce; their
+  signed seal/command remains exact. Terminal publication holds the original
+  source decision and authority through no-replace link plus durability checks.
+  Historical Reconcile can recover lost Drain publication after confirmation,
+  but never Start, sign, apply or implicitly resume an authority entry. Separate
+  CLI processes prove broken-output recovery to the same artifact, explicit
+  EOF/malformed-control shutdown, independent completions and exact recovery.
+  Tagged race checks pass (cmd/omd 33.884 seconds, store 82.984). Native Linux,
+  Go 1.26.7 with CGO_ENABLED=0 and offline modules also passes (cmd/omd 4.782,
+  store 1.659 seconds; 22.917 seconds including orchestration/build). The exact
+  603-file Go manifest matches before/after; no native task-group children remain.
+  See REMOTE_CUSTODY_OPERATOR.md. V1 bootstrap/offline signing, same-assignment
+  WAN/soak, negative dispositions and independent physical/copy fencing remain.
+  The readiness accounting was reassessed separately: 43/100 now credits two
+  previously omitted implemented criteria (owned local Audit/Serve: +2; fixed-
+  session remote authority/execution/result validation: +1). This pass's CLI
+  earns no automatic additional point; temporal/audit/physical gates stay open.
+  Final Go 1.26.7 make test-all passes formatting, full vet and all three
+  disjoint race groups (store 218.879, 531.899 and 148.600 seconds); integration
+  vet passes too. No timeout extensions were used.
   Process-gate observation (2026-09-07): the first combined run stopped at
   `TestProcessTieCampaignStorageFailuresRecoverWithoutFalseAdvance/observer_confirmation_after_link`
   because the expected confirmation marker was absent. Five isolated repetitions

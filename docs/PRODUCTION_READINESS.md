@@ -1,10 +1,10 @@
 # Production readiness baseline
 
-Assessment date: 2026-10-26. **Approximately 40/100 toward the full planned launch.**
+Assessment date: 2026-10-27. **Approximately 43/100 toward the full planned launch.**
 Status remains research/pre-alpha: do not secure real value with this code.
 
 The requested target is **mainnet with real value on 2026-11-01**, recorded on
-2026-10-26. That leaves six days and does not satisfy the current launch plan.
+2026-10-26. On this reassessment date, five calendar days remain; that does not satisfy the current launch plan.
 In particular, the six-month adversarial public-testnet stability gate has no
 completed qualifying evidence, and independent verification/external audits
 remain open. No release date is certified or gate waived by this target.
@@ -23,16 +23,34 @@ step does not earn an automatic percentage increase.
 | --- | ---: | ---: | --- |
 | v0 specification, deterministic kernel, ledger and PoW (M0–3) | 20 | 20 | Repository exit gates recorded complete; this does not imply external security approval. |
 | Devnet and WorkGraph (M4–5) | 20 | 12 | M4 complete; M5 experimental implementation/research exists, but activation, independent review and calibration gates remain open. |
-| Protected storage and operator lifecycle (part of M5) | 15 | 8 | Pinned journals, delivery, preparation, maintenance, exact recovery, local archive acceptance with explicit renewal-prefix verification and inventory-bound start history exist; full operator/audit/serve integration and physical-storage acceptance remain open. |
+| Protected storage and operator lifecycle (part of M5) | 15 | 11 | Previous retained storage/prune baseline: 8; owned local Audit/Serve and reviewed ticket workflow: +2; fixed-session remote authority/execution/result verification: +1. V1 operator/WAN acceptance, negative-disposition workflow and physical-storage/copy fencing remain open. |
 | Committee/application/privacy/proving scope (M6–8) | 15 | 0 | Not integrated; still gated by M5. |
 | Independent verification and security audits (M9–10) | 10 | 0 | No completed independent consensus verifier or external audit evidence satisfying the plan. |
 | Sustained adversarial public testnet (M9) | 10 | 0 | Local process tests are not a public testnet; the required six-month consensus stability gate is not met. |
 | Release, ecosystem and production operations (M9–10) | 10 | 0 | Full signed/reproducible release, wallet/operator, incident-response, demand/security-budget and legal-review evidence is not complete. |
-| Total | 100 | 40 | Approximate planning baseline only. |
+| Total | 100 | 43 | Approximate planning baseline only. |
 
 The two M5 rows separate consensus/networking work from the storage/operator
 subsystem so the same work is not credited twice. Implemented features and test
 results are recorded in [STATUS.md](STATUS.md); open gates remain in the plan.
+
+The 2026-10-27 reassessment corrects stale accounting, rather than awarding
+points because a report was requested. Earlier follow-ups below deliberately
+kept the old 40-point baseline; their statements remain historical. The current
+row now explicitly credits two implemented criteria previously described as open:
+owned local Audit/Serve with reviewed admission/terminal tooling (2 points), and
+the fixed-session remote execution library with original-owner result checking
+(1 point). Evidence is in CUSTODY_TICKET_WORKFLOW.md, REMOTE_ACCEPTANCE.md and
+REMOTE_CUSTODY_EXECUTION.md, including native/race/process checks. Transport
+functionality already credited in the devnet row is not counted again.
+
+The remaining four lifecycle points are reserved for the V1 operator/WAN path,
+negative-disposition lifecycle, independent key/root copy fencing, and device
+exhaustion/power-loss/long-retention acceptance (one each). Their work can be
+incremental, but each point needs its stated acceptance evidence. The four
+zero-credit areas still account for 45 of the 100 planned points; a higher code
+completion count cannot replace those launch gates. The score remains a rough
+planning estimate, not a measured probability or a launch approval.
 
 ## Hard launch blockers regardless of score
 

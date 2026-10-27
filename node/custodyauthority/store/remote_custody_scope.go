@@ -24,6 +24,15 @@ type RemoteCustodyScope struct {
 	Challenge       workarchive.CustodyChallenge
 }
 
+// ValidateRemoteCustodyScope checks public pins without opening owners or keys.
+func ValidateRemoteCustodyScope(scope RemoteCustodyScope) error {
+	return validateRemoteCustodyScope(scope)
+}
+
+func ValidateRemoteCustodyAuditScope(scope RemoteCustodyScope, intent workarchive.CustodyAuditIntent, admission custodyauthority.Entry) error {
+	return validateRemoteAuditScope(scope, intent, admission)
+}
+
 func validateRemoteCustodyScope(scope RemoteCustodyScope) error {
 	w := scope.Worker
 	a := w.Assignment

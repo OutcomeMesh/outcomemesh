@@ -126,6 +126,8 @@ func run(arguments []string) error {
 		return runWorkArchiveCustodyChallengeQUIC(arguments[1:])
 	case managedCustodyServeCommand:
 		return runManagedCustodyServeCLI(arguments)
+	case remoteCustodyAuditCommand, remoteCustodyServeCommand:
+		return runRemoteCustodyCLI(arguments)
 	case managedCustodyAuditCommand:
 		return runManagedCustodyAuditCLI(arguments)
 	case managedCustodyIntentCommand:
@@ -1601,6 +1603,7 @@ func printUsage() {
 	fmt.Printf("reviewed historical custody extraction: omd %s --mode <review|extract|verify> [flags]\n", pruneLineageExtractCommand)
 	fmt.Printf("reviewed archive effect: omd %s --mode <review|control> [flags]; control uses dedicated stdin/stdout pipes\n", pruneArchiveEffectCommand)
 	fmt.Printf("managed custody replica: omd %s --mode <review|serve> [flags]; serve uses dedicated stdin/stdout pipes\n", managedCustodyServeCommand)
+	fmt.Printf("remote custody: omd %s|%s --mode <review|control> [flags]; control retains original owners until close\n", remoteCustodyAuditCommand, remoteCustodyServeCommand)
 	fmt.Printf("managed custody audit: omd %s --mode <review|control> [flags]; control uses dedicated stdin/stdout pipes\n", managedCustodyAuditCommand)
 	fmt.Printf("unsigned custody intent: omd %s --mode <review|publish|verify> [flags]\n", managedCustodyIntentCommand)
 	fmt.Printf("managed local custody pair: omd %s --mode <review|control> [flags]; control uses dedicated stdin/stdout pipes\n", managedCustodyPairCommand)

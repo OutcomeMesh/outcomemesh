@@ -47,6 +47,7 @@ type RemoteCustodyAuditRuntime struct {
 	replicaPeer    types.Hash
 	sourceIdentity map[string]os.FileInfo
 	timeout        time.Duration
+	journalLimits  workarchive.CustodyJournalLimits
 	hooks          storeHooks
 }
 
@@ -147,7 +148,7 @@ func OpenRemoteCustodyAuditRuntime(ctx context.Context, config RemoteCustodyAudi
 	}
 	runtime := &RemoteCustodyAuditRuntime{life: newCustodyRuntimeLifetime(owner), scope: scope, intent: intent, admission: config.Audit.Admission, session: session, journal: journal,
 		authorityKey: key, controlPeer: controlPeer, auditorPeer: auditorPeer, replicaPeer: replicaPeer, timeout: config.Audit.SessionConfig.RequestTimeout,
-		sourceIdentity: make(map[string]os.FileInfo)}
+		sourceIdentity: make(map[string]os.FileInfo), journalLimits: config.Audit.JournalLimits}
 	for _, path := range []string{session.journalPath, filepath.Join(session.journalPath, "journal.lock"), session.artifactsPath, filepath.Join(session.artifactsPath, "custody.lock")} {
 		info, err := os.Lstat(path)
 		if err != nil || info.Mode()&os.ModeSymlink != 0 {
@@ -193,6 +194,16 @@ func (runtime *RemoteCustodyAuditRuntime) action(ctx context.Context, effect fun
 	}
 	if err := run.Err(); err != nil {
 		return err
+	}
+	if expected, ok := run.Value(remoteCustodyReviewKey{}).(types.Hash); ok {
+		review, err := runtime.reviewLocked(run)
+		if err != nil {
+			return err
+		}
+		actual, err := review.ID()
+		if err != nil || actual != expected {
+			return errors.Join(ErrManagedCustodyReview, err)
+		}
 	}
 	return errors.Join(effect(run), runtime.checkSourceIdentity())
 }
@@ -593,7 +604,7 @@ func (runtime *RemoteCustodyAuditRuntime) ReconcileQUIC(ctx context.Context, con
 	config libp2ptransport.Config, address string,
 ) (response remotewire.Response, returnErr error) {
 	err := runtime.action(ctx, func(run context.Context) error {
-		if _, err := runtime.holdLocked(); err != nil {
+		if err := runtime.metadataScopeLocked(); err != nil {
 			return err
 		}
 		networkContext, cancel := context.WithTimeout(run, runtime.timeout)
@@ -606,6 +617,33 @@ func (runtime *RemoteCustodyAuditRuntime) ReconcileQUIC(ctx context.Context, con
 		return remotewire.Response{}, err
 	}
 	return response, nil
+}
+
+// Historical metadata can recover a lost publication after Drain confirmation.
+// It never enables work, signs, resumes or changes the original authority.
+func (runtime *RemoteCustodyAuditRuntime) metadataScopeLocked() error {
+	c, err := runtime.life.owner.snapshot()
+	if err != nil {
+		return err
+	}
+	w := runtime.scope.Worker
+	if c.Confirmed.Sequence < w.Begin.Command.ExpectedSequence+1 {
+		return ErrRemoteCustody
+	}
+	serveID, _ := w.Plan.Admission.ID()
+	for _, op := range c.Authority.Operations {
+		if op.TicketID == serveID && op.RemoteBeginID == w.BeginID && op.RemotePlanID == w.PlanID {
+			if c.Authority.Remote != nil {
+				if c.Authority.Remote.BeginEntryID != w.BeginID || c.Authority.Remote.PlanID != w.PlanID {
+					return ErrRemoteCustody
+				}
+			} else if op.RemoteDrainID.IsZero() {
+				return ErrRemoteCustody
+			}
+			return nil
+		}
+	}
+	return ErrRemoteCustody
 }
 
 // ResumeDrainQUIC reconciles B's already sealed branch and confirms only the

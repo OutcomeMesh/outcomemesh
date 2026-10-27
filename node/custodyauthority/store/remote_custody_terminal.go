@@ -260,6 +260,19 @@ func (runtime *RemoteCustodyAuditRuntime) checkRemoteTerminalLocked(terminal Rem
 // CaptureTerminal can only read this owned runtime's original A journal. Drain
 // metadata without a matching locally accepted response cannot produce a value.
 func (runtime *RemoteCustodyAuditRuntime) CaptureTerminal(ctx context.Context, response remotewire.Response) (terminal RemoteCustodyTerminal, returnErr error) {
+	return runtime.captureTerminal(ctx, response, "")
+}
+
+// CaptureTerminalToFile retains both original guards through durable no-replace
+// publication. Lost stdout can only recover the same immutable evidence.
+func (runtime *RemoteCustodyAuditRuntime) CaptureTerminalToFile(ctx context.Context, response remotewire.Response, path string) (RemoteCustodyTerminal, error) {
+	if path == "" {
+		return RemoteCustodyTerminal{}, ErrRemoteCustody
+	}
+	return runtime.captureTerminal(ctx, response, path)
+}
+
+func (runtime *RemoteCustodyAuditRuntime) captureTerminal(ctx context.Context, response remotewire.Response, path string) (terminal RemoteCustodyTerminal, returnErr error) {
 	err := runtime.action(ctx, func(run context.Context) (returnErr error) {
 		if _, err := response.CanonicalBytes(); err != nil {
 			return err
@@ -287,6 +300,18 @@ func (runtime *RemoteCustodyAuditRuntime) CaptureTerminal(ctx context.Context, r
 			AuditAdmission: runtime.admission, Intent: runtime.intent, Seal: response.Seal, Drained: drained, Entry: head}
 		if err := runtime.checkRemoteTerminalLocked(terminal, decision, false); err != nil {
 			return err
+		}
+		if path != "" {
+			if err := runtime.remoteOutputPath(path); err != nil {
+				return err
+			}
+			b, err := terminal.CanonicalBytes()
+			if err != nil {
+				return err
+			}
+			if err := publishCustodyArtifactBytes(run, path, b); err != nil {
+				return err
+			}
 		}
 		return run.Err()
 	})
