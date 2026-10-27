@@ -15,6 +15,7 @@ import (
 
 const (
 	Version0               uint16 = 0
+	Version1               uint16 = 1
 	MaximumMembers                = 64
 	MaximumOperations      uint32 = 65_536
 	MaximumPending         uint16 = 1_024
@@ -58,6 +59,10 @@ type Assignment struct {
 	Consumers          []Consumer
 	MaximumOperations  uint32
 	MaximumPending     uint16
+	// Version 1 independently pins the remote worker's control and transport
+	// roles. Version 0 must leave both zero; this is not an in-place upgrade.
+	RemoteControlPublicKey   [ed25519.PublicKeySize]byte
+	RemoteTransportPublicKey [ed25519.PublicKeySize]byte
 }
 
 var (
@@ -66,7 +71,7 @@ var (
 )
 
 func (assignment Assignment) validate() error {
-	if assignment.Version != Version0 || assignment.NetworkID == 0 || assignment.GenesisID.IsZero() ||
+	if (assignment.Version != Version0 && assignment.Version != Version1) || assignment.NetworkID == 0 || assignment.GenesisID.IsZero() ||
 		assignment.ActivationHeight == 0 || assignment.BaseID.IsZero() || assignment.ManifestID.IsZero() ||
 		assignment.StatementID.IsZero() || assignment.InitialReceiptID.IsZero() || assignment.CustodyPolicyID.IsZero() ||
 		assignment.IncarnationID.IsZero() || len(assignment.Auditors) == 0 || len(assignment.Auditors) > MaximumMembers ||
@@ -105,6 +110,13 @@ func (assignment Assignment) validate() error {
 	if covered != AllPurposes {
 		return ErrAssignment
 	}
+	if assignment.Version == Version0 {
+		if assignment.RemoteControlPublicKey != [32]byte{} || assignment.RemoteTransportPublicKey != [32]byte{} {
+			return ErrAssignment
+		}
+	} else if !add(assignment.RemoteControlPublicKey) || !add(assignment.RemoteTransportPublicKey) {
+		return ErrAssignment
+	}
 	return nil
 }
 
@@ -134,6 +146,10 @@ func (assignment Assignment) CanonicalBytes() ([]byte, error) {
 	for _, consumer := range assignment.Consumers {
 		e.Fixed(consumer.PublicKey[:])
 		e.U8(uint8(consumer.Purposes))
+	}
+	if assignment.Version == Version1 {
+		e.Fixed(assignment.RemoteControlPublicKey[:])
+		e.Fixed(assignment.RemoteTransportPublicKey[:])
 	}
 	return e.Bytes(), nil
 }
@@ -196,6 +212,9 @@ func DecodeAssignment(input []byte) (Assignment, error) {
 		purpose, _ := d.U8()
 		a.Consumers[index].Purposes = Purpose(purpose)
 	}
+	if a.Version == Version1 && (!decodeFixed(d, a.RemoteControlPublicKey[:]) || !decodeFixed(d, a.RemoteTransportPublicKey[:])) {
+		return Assignment{}, ErrAssignment
+	}
 	if d.Finish() != nil || a.validate() != nil {
 		return Assignment{}, ErrAssignment
 	}
@@ -207,7 +226,50 @@ func (assignment Assignment) ID() (types.Hash, error) {
 	if err != nil {
 		return types.Hash{}, err
 	}
-	return types.DomainHash("OMESH/custody-authority/assignment/id/v0", encoded), nil
+	return types.DomainHash(authorityDomain(assignment.Version, "assignment/id"), encoded), nil
+}
+
+// WithRemoteParticipant derives a NEW opt-in version-1 bootstrap scope and ID.
+// It does not migrate, activate or replace any existing owner/history. The
+// caller must separately establish and independently pin the fresh assignment.
+func WithRemoteParticipant(assignmentV0 Assignment, control, transport [32]byte) (Assignment, error) {
+	if assignmentV0.Version != Version0 {
+		return Assignment{}, ErrAssignment
+	}
+	b, err := assignmentV0.CanonicalBytes()
+	if err != nil {
+		return Assignment{}, err
+	}
+	a, err := DecodeAssignment(b)
+	if err != nil {
+		return Assignment{}, err
+	}
+	a.Version, a.RemoteControlPublicKey, a.RemoteTransportPublicKey = Version1, control, transport
+	if err := a.validate(); err != nil {
+		return Assignment{}, err
+	}
+	return a, nil
+}
+
+// MaximumEntries preserves drain capacity for every admitted operation. A V1
+// Serve ticket may additionally have one Begin and one Drained record. Unknown
+// versions return zero; callers validate the assignment before using this bound.
+func MaximumEntries(assignment Assignment) uint64 {
+	switch assignment.Version {
+	case Version0:
+		return 2*uint64(assignment.MaximumOperations) + 2
+	case Version1:
+		return 4*uint64(assignment.MaximumOperations) + 2
+	default:
+		return 0
+	}
+}
+
+func authorityDomain(version uint16, suffix string) string {
+	if version == Version1 {
+		return "OMESH/custody-authority/" + suffix + "/v1"
+	}
+	return "OMESH/custody-authority/" + suffix + "/v0"
 }
 
 func decodeFixed(d *codec.Decoder, destination []byte) bool {

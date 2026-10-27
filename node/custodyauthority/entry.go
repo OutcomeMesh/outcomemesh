@@ -16,6 +16,8 @@ const (
 	Complete
 	Stop
 	Retire
+	RemoteBegin
+	RemoteDrained
 	MaximumCommandBytes = 8 + 2 + 5*types.HashSize + 8 + 2 + ed25519.PublicKeySize + ed25519.SignatureSize
 	MaximumEntryBytes   = 8 + 2 + MaximumCommandBytes + ed25519.PublicKeySize + ed25519.SignatureSize
 )
@@ -27,8 +29,9 @@ var (
 	entryMagic   = [8]byte{'O', 'M', 'C', 'A', 'E', 'N', 'T', 'R'}
 )
 
-// Command is signed by a consumer (Admit/Complete) or the assignment authority
-// (Stop/Retire). ExpectedSequence/Head are compare-and-append inputs, not proof
+// Command is signed by a consumer (Admit/Complete), the assignment authority
+// (Stop/Retire), or the remote control key (V1 RemoteBegin/RemoteDrained).
+// ExpectedSequence/Head are compare-and-append inputs, not proof
 // of current remote state. Unused fields must be zero. EvidenceID is a terminal
 // effect/disposition commitment for Complete, a reviewed stop-intent reference
 // for Stop, and the exact committed stop entry ID for Retire.
@@ -58,7 +61,7 @@ type Entry struct {
 }
 
 func (command Command) validateShape() error {
-	if command.Version != Version0 || command.AssignmentID.IsZero() || command.ExpectedHead.IsZero() ||
+	if (command.Version != Version0 && command.Version != Version1) || command.AssignmentID.IsZero() || command.ExpectedHead.IsZero() ||
 		command.ExpectedSequence == ^uint64(0) || types.Hash(command.ActorPublicKey).IsZero() {
 		return ErrCommand
 	}
@@ -74,6 +77,14 @@ func (command Command) validateShape() error {
 		}
 	case Stop, Retire:
 		if command.Purpose != 0 || !command.OperationID.IsZero() || !command.TicketID.IsZero() || command.EvidenceID.IsZero() {
+			return ErrCommand
+		}
+	case RemoteBegin:
+		if command.Version != Version1 || command.Purpose != Serve || command.OperationID.IsZero() || command.TicketID.IsZero() || command.EvidenceID.IsZero() {
+			return ErrCommand
+		}
+	case RemoteDrained:
+		if command.Version != Version1 || command.Purpose != 0 || command.OperationID.IsZero() || command.TicketID.IsZero() || command.EvidenceID.IsZero() {
 			return ErrCommand
 		}
 	default:
@@ -106,7 +117,7 @@ func (command Command) CanonicalBytes() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	message := types.DomainHash("OMESH/custody-authority/command/signature/v0", unsigned)
+	message := types.DomainHash(authorityDomain(command.Version, "command/signature"), unsigned)
 	if !ed25519.Verify(command.ActorPublicKey[:], message[:], command.Signature[:]) {
 		return nil, ErrCommand
 	}
@@ -127,7 +138,7 @@ func (command Command) Sign(key ed25519.PrivateKey) (Command, error) {
 	if err != nil {
 		return Command{}, err
 	}
-	message := types.DomainHash("OMESH/custody-authority/command/signature/v0", unsigned)
+	message := types.DomainHash(authorityDomain(command.Version, "command/signature"), unsigned)
 	copy(command.Signature[:], ed25519.Sign(key, message[:]))
 	return command, nil
 }
@@ -162,7 +173,7 @@ func DecodeCommand(input []byte) (Command, error) {
 }
 
 func (entry Entry) unsignedBytes() ([]byte, error) {
-	if entry.Version != Version0 || types.Hash(entry.AuthorityPublicKey).IsZero() {
+	if (entry.Version != Version0 && entry.Version != Version1) || entry.Version != entry.Command.Version || types.Hash(entry.AuthorityPublicKey).IsZero() {
 		return nil, ErrEntry
 	}
 	command, err := entry.Command.CanonicalBytes()
@@ -182,7 +193,7 @@ func (entry Entry) CanonicalBytes() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	message := types.DomainHash("OMESH/custody-authority/entry/signature/v0", unsigned)
+	message := types.DomainHash(authorityDomain(entry.Version, "entry/signature"), unsigned)
 	if !ed25519.Verify(entry.AuthorityPublicKey[:], message[:], entry.Signature[:]) {
 		return nil, ErrEntry
 	}
@@ -195,13 +206,13 @@ func SignEntry(command Command, key ed25519.PrivateKey) (Entry, error) {
 	if !validKey(key) {
 		return Entry{}, ErrEntry
 	}
-	e := Entry{Version: Version0, Command: command}
+	e := Entry{Version: command.Version, Command: command}
 	copy(e.AuthorityPublicKey[:], key.Public().(ed25519.PublicKey))
 	unsigned, err := e.unsignedBytes()
 	if err != nil {
 		return Entry{}, err
 	}
-	message := types.DomainHash("OMESH/custody-authority/entry/signature/v0", unsigned)
+	message := types.DomainHash(authorityDomain(e.Version, "entry/signature"), unsigned)
 	copy(e.Signature[:], ed25519.Sign(key, message[:]))
 	return e, nil
 }
@@ -235,7 +246,7 @@ func (entry Entry) ID() (types.Hash, error) {
 	if err != nil {
 		return types.Hash{}, err
 	}
-	return types.DomainHash("OMESH/custody-authority/entry/id/v0", encoded), nil
+	return types.DomainHash(authorityDomain(entry.Version, "entry/id"), encoded), nil
 }
 
 func validKey(key ed25519.PrivateKey) bool {

@@ -159,7 +159,7 @@ func open(path string, assignment custodyauthority.Assignment, expectedID types.
 	if _, err := custodyauthority.NewState(assignment, expectedID); err != nil {
 		return nil, err
 	}
-	if expected.HeadID.IsZero() || expected.Sequence > 2*uint64(assignment.MaximumOperations)+2 {
+	if expected.HeadID.IsZero() || expected.Sequence > custodyauthority.MaximumEntries(assignment) {
 		return nil, custodyauthority.ErrHead
 	}
 	if attempted != nil {
@@ -208,7 +208,7 @@ func loadLocked(path string, lock *os.File, assignment custodyauthority.Assignme
 		return nil, err
 	}
 	entriesPath := filepath.Join(path, entriesName)
-	names, err := boundedNames(entriesPath, int(2*assignment.MaximumOperations+2))
+	names, err := boundedNames(entriesPath, int(custodyauthority.MaximumEntries(assignment)))
 	if err != nil {
 		return nil, err
 	}

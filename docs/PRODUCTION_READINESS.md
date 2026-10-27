@@ -231,3 +231,16 @@ the measured two-host transport/recovery substep. Single-assignment distributed
 current authority, independently enforced physical/copy fencing, independent
 security review and sustained adversarial testnet duration remain open. Short
 controlled runs do not satisfy those parent gates; weighted readiness stays 40/100.
+
+2026-10-27 remote-authority foundation follow-up: an opt-in V1 reference state
+now retains RemoteBegin/RemoteDrained obligations intrinsically through original
+coordinator restart and pending append recovery. A separate record-only worker
+journal makes Sealing irreversible and permanently rejects delayed Start,
+including the unseen-attempt branch. A drained remote ticket cannot enter a
+generic live Serve callback again. Targeted race/process tests join both records
+without manufacturing a proof or completing tickets. Version-0 bytes are preserved
+and legacy delivery rejects V1. See REMOTE_AUTHORITY_FOUNDATION.md. This closes
+the local state/recovery foundation only; owned remote execution/handler drain,
+typed terminal verification, same-assignment WAN acceptance and independent
+physical/copy fencing remain open. No parent launch gate or independent-review
+credit is added; weighted readiness stays 40/100.

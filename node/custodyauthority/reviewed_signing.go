@@ -72,6 +72,9 @@ func CosignReviewedPruneCommand(assignment Assignment, command Command, expected
 }
 
 func validateReviewedPruneCommand(assignment Assignment, command Command) error {
+	if assignment.Version != Version0 || command.Version != Version0 {
+		return ErrPruneReview
+	}
 	id, err := assignment.ID()
 	if err != nil || id != command.AssignmentID {
 		return errors.Join(ErrAssignment, err)

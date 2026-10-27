@@ -219,3 +219,39 @@ version       = 0
 terminal_bytes = 3252
 terminal_id   = 7e2c187517a864f52745f742671eea0ecd87df89fe0289c012e7cae8fd8cd9cc
 ```
+
+## Remote custody authority version 1
+
+`TestRemoteAuthorityV1GoldenHistory` fixes the opt-in assignment and complete
+eight-entry reference history in `node/custodyauthority/remote_signing_test.go`.
+Assignment, command-signature, entry-signature and entry-ID domains select
+`OMESH/custody-authority/<purpose>/v1`. Existing V0 domains and bytes stay fixed.
+Command/entry lengths remain 276/382 bytes. These are operational records, not
+consensus encodings, execution permission or validated remote terminal evidence.
+
+```text
+assignment_bytes = 515
+assignment_id    = 4f7596ad0e318749d6d1d47c55c50b1637315870470c41ec0367d9abb9248006
+Audit Admit      = 73dfbd89e799b2d8e77e351a748a3451780a2aae6c8ab5c6538c87c91f04a1fc
+Serve Admit      = e87dcfc03c9762c032b917d18940387c3e5a1ebc8f01fa3543e2f34786549d72
+RemoteBegin      = e1b8c76157010fbcf155233b519e5497b3d71f7fc18b3fd67dc487f517735a92
+RemoteDrained    = 1b07c6a6fcdd1efc534e12217b1ada9c6eb201ab6c1f372af048dd2451faa94e
+Audit Complete   = 3fb4218736ac4b9d243bf610e91d6efdf936405f5d7775e33e9377325cbc8418
+Serve Complete   = 34b036323e5004282a0a8960081cc2a369813b7eb5808188a651e70547dae277
+Stop             = 2156f53c31663b68f2416c2d33a78f006dced8369579731756f5215799ef56b8
+Retire           = 9ae890d3829b6932c491882d749e0cd1f1addb330ad966ed7b8544854beb6764
+```
+
+The separate worker-envelope format starts at version 0; its plan requires an
+authority V1 Serve admission. `TestPlanAndSealGoldenAndBounds` retains full
+vectors in `node/custodyauthority/remoteworker/model_test.go`. The ID domains are
+`OMESH/custody-remote-worker/plan/id/v0` and
+`OMESH/custody-remote-worker/seal/id/v0`. The seal commits one immutable sealing
+branch and disposition, without attesting physical runtime drain or proof validity.
+
+```text
+plan_bytes = 594
+plan_id    = 29e1f46f85cf0d4a6b9b883c0c0e227659961e46eef1bd473b326770f0779929
+seal_bytes = 139
+seal_id    = 7070477c5923dbd0a7c28cb445b81b1b66129b9d456f8627d0b75e86fe67c52c
+```

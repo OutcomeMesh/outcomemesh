@@ -28,6 +28,7 @@ type CompletionIntent struct {
 
 func (intent CompletionIntent) CanonicalBytes() ([]byte, error) {
 	if intent.ClientPeerID.IsZero() || intent.ServerPeerID.IsZero() || intent.ClientPeerID == intent.ServerPeerID ||
+		intent.Entry.Version != custodyauthority.Version0 || intent.Entry.Command.Version != custodyauthority.Version0 ||
 		intent.Entry.Command.Kind != custodyauthority.Complete {
 		return nil, ErrCompletionIntent
 	}
@@ -67,6 +68,9 @@ func DecodeCompletionIntent(encoded []byte) (CompletionIntent, error) {
 }
 
 func validateCompletionIntent(assignment custodyauthority.Assignment, intent CompletionIntent, expectedID types.Hash) error {
+	if assignment.Version != custodyauthority.Version0 {
+		return ErrCompletionIntent
+	}
 	aid, err := assignment.ID()
 	if err != nil || aid != intent.Entry.Command.AssignmentID || intent.Entry.AuthorityPublicKey != assignment.AuthorityPublicKey {
 		return errors.Join(ErrCompletionIntent, err)

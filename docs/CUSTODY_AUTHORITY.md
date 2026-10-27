@@ -16,8 +16,12 @@ Audit library now retains unsigned intent before signing and guards acceptance
 and exact recovery. An explicit local pair shares the original coordinator once;
 an owned Serve host/CLI drains handlers before releasing it. Separate owned Audit
 and paired QUIC runtimes now expose reviewed operator control with action/host
-drain. Audit/Serve admission and terminal tooling, distributed authority and active
-rebaseline remain open. See the [operator commands](CUSTODY_OPERATOR_CLI.md).
+drain. Reviewed local Audit/Serve admission and terminal tooling is available in
+the [ticket workflow](CUSTODY_TICKET_WORKFLOW.md). Distributed authority and active
+rebaseline remain open. The separate opt-in [remote state foundation](REMOTE_AUTHORITY_FOUNDATION.md)
+retains a V1 intrinsic Begin/Drained hold across owner restart and a record-only
+worker tombstone; it does not yet provide owned remote execution or completion.
+See the [operator commands](CUSTODY_OPERATOR_CLI.md).
 See [managed Serve acceptance](CUSTODY_SERVE_ACCEPTANCE.md) and the
 [managed runtime](CUSTODY_MANAGED_RUNTIME.md) and [effect runtime](PRUNE_EFFECT_RUNTIME.md)
 for their separate ownership scopes.
@@ -42,6 +46,7 @@ This is why another signed retirement file, by itself, is not a global fence.
 
 | Path | Current enforcement | Required before active cross-host cutover |
 | --- | --- | --- |
+| V1 reference authority and record-only remote worker journal | Intrinsic durable Begin/Drained hold, permanent no-restart sealing branch and post-drain generic Serve refusal | Owned authenticated Start/signing/drain runtime, typed remote terminal, same-assignment WAN failure acceptance and independent physical/copy fencing |
 | Auditor challenge creation, result publication, journal append and artifact recovery | CLI holds artifact lock then active journal decision scope for the whole cycle | Bind the whole live operation to the current assignment; recovery must not promote historical validity to current acceptance |
 | Replica fresh, cached and restart-recovered responses | Journal-backed sessions hold their current decision scope through response and stream retirement | Reject retired assignments even with copied keys/journals; drain operations admitted before retirement |
 | Opt-in `ManagedCustodyServeSession` | Exact signed Serve ticket, challenge ID, independent authenticated peer pin and existing active journal; original coordinator guard through fresh/cached/recovered response, EOF, stream Close and cancellation drain | Independently enforced remote/copy fencing; no implicit ticket completion |

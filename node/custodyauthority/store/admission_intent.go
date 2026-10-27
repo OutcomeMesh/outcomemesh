@@ -30,6 +30,7 @@ type AdmissionIntent struct {
 
 func (intent AdmissionIntent) CanonicalBytes() ([]byte, error) {
 	if intent.ClientPeerID.IsZero() || intent.ServerPeerID.IsZero() || intent.ClientPeerID == intent.ServerPeerID ||
+		intent.Entry.Version != custodyauthority.Version0 || intent.Entry.Command.Version != custodyauthority.Version0 ||
 		intent.Entry.Command.Kind != custodyauthority.Admit || intent.Entry.Command.Purpose != custodyauthority.Prune {
 		return nil, ErrAdmissionIntent
 	}
@@ -69,6 +70,9 @@ func DecodeAdmissionIntent(encoded []byte) (AdmissionIntent, error) {
 }
 
 func validateAdmissionIntent(assignment custodyauthority.Assignment, intent AdmissionIntent, expectedID types.Hash) error {
+	if assignment.Version != custodyauthority.Version0 {
+		return ErrAdmissionIntent
+	}
 	aid, err := assignment.ID()
 	if err != nil || aid != intent.Entry.Command.AssignmentID || intent.Entry.AuthorityPublicKey != assignment.AuthorityPublicKey {
 		return errors.Join(ErrAdmissionIntent, err)

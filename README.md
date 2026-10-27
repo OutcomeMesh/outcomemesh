@@ -178,6 +178,13 @@ restart, divergent branches and full replay after reorganization. Each custody
 participant retains a different local assignment and original owner; this does
 not establish distributed current authority for one assignment.
 
+The separate [remote authority foundation](docs/REMOTE_AUTHORITY_FOUNDATION.md)
+adds an opt-in version-1 assignment whose original owner retains an unresolved
+remote execution across restart. A record-only worker journal seals delayed
+starts permanently, while drain never implies successful custody or completion.
+This is a state/recovery foundation; owned remote execution, terminal validation
+and same-assignment WAN acceptance remain open.
+
 ## Build and run
 
 Go 1.26.7 is the pinned toolchain. With it available as `go`:

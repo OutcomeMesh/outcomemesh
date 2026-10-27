@@ -64,6 +64,9 @@ func (coordinator *Coordinator) checkOperation(binding OperationBinding) error {
 	if current.Pending != nil {
 		return ErrPendingAttempt
 	}
+	if current.Authority.Remote != nil {
+		return custodyauthority.ErrRemoteActive
+	}
 	if current.Authority.AssignmentID != binding.AssignmentID {
 		return custodyauthority.ErrAssignment
 	}
@@ -75,7 +78,11 @@ func (coordinator *Coordinator) checkOperation(binding OperationBinding) error {
 			continue
 		}
 		if operation.ConsumerPublicKey != binding.ConsumerPublicKey || operation.OperationID != binding.OperationID ||
-			operation.Purpose != binding.Purpose || !operation.CompletionID.IsZero() {
+			operation.Purpose != binding.Purpose || !operation.CompletionID.IsZero() || !operation.RemoteBeginID.IsZero() {
+			// A remote ticket is consumed for live execution permanently, even
+			// after its drain is confirmed. Generic local Serve must not become
+			// an offline fallback around the worker's sealed session. A future
+			// remote completion adapter validates the drain without this guard.
 			return custodyauthority.ErrOperation
 		}
 		return nil

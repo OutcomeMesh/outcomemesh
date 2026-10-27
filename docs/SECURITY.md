@@ -442,6 +442,28 @@ Old runtime acceptance paths remain under their existing policies until
 explicitly integrated. No authority entry is accepted as a replica receipt,
 challenge, availability bundle or rebaseline proposal.
 
+The opt-in version-1 assignment adds an intrinsic remote hold to that reference
+history. Once RemoteBegin commits, every new authority transition and generic
+effect entry is blocked until the exact B-signed, authority-co-signed
+RemoteDrained. Restart, Stop, cancellation and elapsed time cannot release it.
+The drained Serve ticket remains ineligible for generic live callbacks forever.
+All old version-0 encodings remain unchanged; old binaries reject the V1
+assignment at bootstrap, and legacy reviewed signing/delivery adapters refuse V1.
+There is no automatic upgrade or root migration.
+
+The separate remoteworker journal only records an exact plan and monotone
+Start/Sealing/Sealed history. An unseen-attempt seal prevents a delayed Start;
+an unconfirmed Sealing record also conservatively blocks it. Open neither fills
+missing confirmation nor repairs damaged history. Only explicit exact retry can
+settle a complete pending record. Neither a signed Begin proposal, a Started
+record, a retained result digest nor an unsigned drain draft is execution
+permission or evidence of physically drained handlers. The owned remote
+protocol must still enforce those conditions and validate custody freshness.
+Draining does not complete tickets or turn an unknown outcome into success.
+Copy/rollback protection and exclusive key ownership remain deployment gates;
+two local journals do not establish independent physical fencing. See
+REMOTE_AUTHORITY_FOUNDATION.md for the remaining network/terminal boundaries.
+
 The optional WorkChain ticketed-prune primitive now binds the exact requested
 floor and original result to an assignment/ticket in the same synchronous batch
 as deletion. Its unsigned parameters are not proof of admission. Exact retries

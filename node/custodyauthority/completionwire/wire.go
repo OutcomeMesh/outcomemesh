@@ -38,7 +38,7 @@ type Acknowledgement struct {
 }
 
 func (r Request) CanonicalBytes() ([]byte, error) {
-	if r.Nonce.IsZero() || r.Entry.Command.Kind != custodyauthority.Complete {
+	if r.Nonce.IsZero() || r.Entry.Version != custodyauthority.Version0 || r.Entry.Command.Version != custodyauthority.Version0 || r.Entry.Command.Kind != custodyauthority.Complete {
 		return nil, ErrProtocol
 	}
 	entry, err := r.Entry.CanonicalBytes()
@@ -58,7 +58,7 @@ func DecodeRequest(input []byte) (Request, error) {
 	copy(r.Nonce[:], input[10:42])
 	var err error
 	r.Entry, err = custodyauthority.DecodeEntry(input[42:])
-	if err != nil || r.Nonce.IsZero() || r.Entry.Command.Kind != custodyauthority.Complete {
+	if err != nil || r.Nonce.IsZero() || r.Entry.Version != custodyauthority.Version0 || r.Entry.Command.Version != custodyauthority.Version0 || r.Entry.Command.Kind != custodyauthority.Complete {
 		return Request{}, errors.Join(ErrProtocol, err)
 	}
 	return r, nil

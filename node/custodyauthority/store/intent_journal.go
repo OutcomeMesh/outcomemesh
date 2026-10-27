@@ -144,7 +144,7 @@ func loadIntentJournal(path string, lock *os.File, assignment custodyauthority.A
 	if _, err := inspectPending(path); err != nil {
 		return nil, err
 	}
-	limit := int(2*assignment.MaximumOperations + 2)
+	limit := int(custodyauthority.MaximumEntries(assignment))
 	intents, err := boundedNames(filepath.Join(path, intentsName), limit)
 	if err != nil {
 		return nil, err

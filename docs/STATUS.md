@@ -2200,6 +2200,54 @@ Implemented in an isolated, not-yet-activated consensus package:
   close single-assignment distributed current authority, physical/copy fencing,
   independent review or sustained adversarial testnet duration. Readiness stays
   40/100.
+  Remote authority foundation follow-up (2026-10-27): a new explicitly selected
+  V1 assignment commits distinct B control/transport identities without changing
+  the replica receipt/proof key. V0 canonical encodings and domains are unchanged;
+  old binaries reject V1 even at sequence zero. Legacy reviewed signing,
+  admission/completion intents, outboxes and wire requests refuse V1 rather than
+  enabling an unimplemented remote runtime. The archive-facing constructor
+  creates a detached fresh scope; it does not transfer or migrate an owner.
+  RemoteBegin commits the exact pending Serve ticket, challenge and plan in the
+  reference state. Its unresolved hold blocks all other new transitions and
+  local effect callbacks through raw Store, Coordinator, replay and explicit
+  uncertain-attempt recovery. Only the exact B-signed/authority-co-signed
+  RemoteDrained clears the hold; retained remote history permanently prevents
+  generic live Serve reuse. Neither transition completes any ticket. Replay
+  retains space for Begin/Drained plus ordinary admission/completion and Stop/Retire.
+  A separate bounded remoteworker journal pins the immutable plan and co-signed
+  Begin proposal. Its Start/Sealing/Sealed methods are record-only: no network,
+  signer, callback or execution grant is supplied. Sealing is irreversible even
+  before its confirmation; Open preserves pending records without auto-confirm,
+  repair or effect replay. Exact explicit retry settles only the same bytes. A sealed
+  unseen branch rejects delayed Start forever, and a started NoResult means
+  unknown outcome rather than proof of no effect or successful custody.
+  Targeted integration/race checks pass for the reference state, raw/coordinated
+  store, worker journal, archive-facing constructor and delivery packages. The
+  store suite kills the original process at twelve Begin/Drained publication
+  boundaries; a separate worker process is killed after unconfirmed Sealing.
+  The joined original-owner/worker tests cover unseen delayed Start and started
+  unknown outcomes, independent reopen of both journals, exact unsigned drain
+  preparation, retained pending tickets and unchanged custody journals. Positive
+  canonical fuzzing completed 297,170 authority and 228,501 worker executions;
+  stable V1 assignment/history and worker plan/seal vectors are recorded.
+  Final Go 1.26.7 make test-all passes formatting, full vet and all three
+  disjoint race groups; store groups took 233.966, 491.132 and 146.017 seconds.
+  Integration-tag vet for the authority packages and archive also passes.
+  Native Linux verification found an unlink/recreate fixture that could reuse
+  the original inode immediately. Retaining the original file outside the
+  journal makes the replacement deterministic; production journal code is
+  unchanged. The corrected worker integration/race suite passes (3.223 seconds),
+  and full make test-all passes again with fresh worker results and valid cached
+  unchanged packages. The six-package native Linux/amd64 integration suite also
+  passes (7.603 seconds) using Go 1.26.7 and CGO_ENABLED=0 without downloads.
+  Final 582-file Go source manifest matches across macOS and Linux; see the
+  foundation guide. A root-only permission-removal test explicitly skips when
+  UID 0 retains write access; it is not credited as physical write denial.
+  See REMOTE_AUTHORITY_FOUNDATION.md. An owned authenticated Start after A's
+  durable confirmation, actual B signing/handler drain, typed remote terminal
+  validation and same-assignment WAN fault/soak acceptance remain open. These
+  local foundations do not supply physical/copy fencing or independent audit;
+  weighted readiness stays 40/100.
   Process-gate observation (2026-09-07): the first combined run stopped at
   `TestProcessTieCampaignStorageFailuresRecoverWithoutFalseAdvance/observer_confirmation_after_link`
   because the expected confirmation marker was absent. Five isolated repetitions

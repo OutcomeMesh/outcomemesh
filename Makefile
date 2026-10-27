@@ -90,6 +90,8 @@ test-fuzz-smoke:
 	$(GO) test ./node/custodyauthority -run '^$$' -fuzz '^FuzzDecodeAuthorityCommand$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyauthority -run '^$$' -fuzz '^FuzzDecodeAuthorityEntry$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyauthority -run '^$$' -fuzz '^FuzzAuthorityDrainStateMachine$$' -fuzztime=$(FUZZTIME)
+	$(GO) test ./node/custodyauthority -run '^$$' -fuzz '^FuzzRemoteAuthorityCanonical$$' -fuzztime=$(FUZZTIME)
+	$(GO) test ./node/custodyauthority/remoteworker -run '^$$' -fuzz '^FuzzDecodeRemoteWorkerArtifacts$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyauthority/store -run '^$$' -fuzz '^FuzzDecodePruneRequest$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyauthority/store -run '^$$' -fuzz '^FuzzDecodeArchivePruneInventory$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyauthority/store -run '^$$' -fuzz '^FuzzDecodePruneLineageEvidence$$' -fuzztime=$(FUZZTIME)
@@ -104,6 +106,8 @@ test-fuzz-smoke:
 	$(GO) test ./sim/workgraphmodel -run '^$$' -fuzz '^FuzzRunSelfishStrategiesNeverBreakAccounting$$' -fuzztime=$(FUZZTIME)
 
 test-process:
+	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestRemoteCoordinatorProcessCrashBarriers$$' -count=1 -timeout=2m
+	$(GO) test -tags=integration ./node/custodyauthority/remoteworker -run '^TestWorkerSealingSurvivesKilledOriginalProcess$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./cmd/omd -run '^TestRemoteCustodyGatedServe(Loopback|Control)$$' -count=1 -timeout=90s
 	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessCustodyCommand' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestManagedCustodyCommandProcessRecovery$$' -count=1 -timeout=2m

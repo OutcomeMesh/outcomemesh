@@ -19,12 +19,13 @@ const (
 )
 
 var (
-	ErrHead        = errors.New("custody authority compare-and-append head differs")
-	ErrPhase       = errors.New("custody authority phase forbids this operation")
-	ErrActor       = errors.New("custody authority actor is not allowed for this operation")
-	ErrOperation   = errors.New("custody authority operation is unknown, reused, or already completed")
-	ErrOutstanding = errors.New("custody authority still has outstanding operations")
-	ErrLimit       = errors.New("custody authority admission limit reached")
+	ErrHead         = errors.New("custody authority compare-and-append head differs")
+	ErrPhase        = errors.New("custody authority phase forbids this operation")
+	ErrActor        = errors.New("custody authority actor is not allowed for this operation")
+	ErrOperation    = errors.New("custody authority operation is unknown, reused, or already completed")
+	ErrOutstanding  = errors.New("custody authority still has outstanding operations")
+	ErrLimit        = errors.New("custody authority admission limit reached")
+	ErrRemoteActive = errors.New("custody authority has an unresolved remote execution; only its exact drain is allowed")
 )
 
 // Operation records one admitted effect and its eventual terminal evidence.
@@ -37,6 +38,21 @@ type Operation struct {
 	Purpose           Purpose
 	CompletionID      types.Hash
 	EvidenceID        types.Hash
+	RemoteBeginID     types.Hash
+	RemoteDrainID     types.Hash
+	RemotePlanID      types.Hash
+	RemoteTombstoneID types.Hash
+}
+
+// RemoteExecution is a detached observation of an unresolved durable hold.
+// Neither it nor the signed Begin offer proves current remote permission.
+// There is no clock or automatic release; only B's signed exact drain closes it.
+type RemoteExecution struct {
+	BeginEntryID           types.Hash
+	TicketID               types.Hash
+	PlanID                 types.Hash
+	ChallengeID            types.Hash
+	RemoteControlPublicKey [ed25519.PublicKeySize]byte
 }
 
 // Snapshot is detached diagnostic state, not a signed current-state proof or an
@@ -51,7 +67,8 @@ type Snapshot struct {
 	StopID       types.Hash
 	StopIntentID types.Hash
 	RetirementID types.Hash
-	Operations   []Operation // sorted by ticket ID, including completed operations
+	Operations   []Operation      // sorted by ticket ID, including completed operations
+	Remote       *RemoteExecution // nil for V0 or when no remote hold is active
 }
 
 type operationKey struct {
@@ -88,6 +105,7 @@ type State struct {
 	consumers    map[[ed25519.PublicKeySize]byte]Purpose
 	operations   map[types.Hash]Operation
 	requests     map[operationKey]types.Hash
+	remote       *RemoteExecution
 }
 
 // NewState bootstraps an unused assignment. It must NEVER replace Replay on
@@ -117,9 +135,10 @@ func Replay(assignment Assignment, expectedID types.Hash, entries []Entry, expec
 	if err != nil {
 		return nil, err
 	}
-	// Every admission has at most one completion, plus one stop and retirement.
+	// Every admission has at most one completion and, in V1, one remote
+	// Begin/Drained pair, plus one stop and retirement for the assignment.
 	// Admission exhaustion never consumes the capacity needed to drain/retire.
-	if uint64(len(entries)) > 2*uint64(assignment.MaximumOperations)+2 {
+	if uint64(len(entries)) > MaximumEntries(assignment) {
 		return nil, ErrLimit
 	}
 	if expected.HeadID.IsZero() || expected.Sequence != uint64(len(entries)) {
@@ -155,7 +174,7 @@ func (state *State) validateNext(entry Entry) (types.Hash, error) {
 		return types.Hash{}, err
 	}
 	command := entry.Command
-	if entry.AuthorityPublicKey != state.assignment.AuthorityPublicKey || command.AssignmentID != state.id {
+	if entry.Version != state.assignment.Version || command.Version != state.assignment.Version || entry.AuthorityPublicKey != state.assignment.AuthorityPublicKey || command.AssignmentID != state.id {
 		return types.Hash{}, ErrAssignment
 	}
 	if command.ExpectedSequence != state.sequence || command.ExpectedHead != state.head {
@@ -164,8 +183,11 @@ func (state *State) validateNext(entry Entry) (types.Hash, error) {
 	if state.phase == Retired {
 		return types.Hash{}, ErrPhase
 	}
-	if state.sequence >= 2*uint64(state.assignment.MaximumOperations)+2 {
+	if state.sequence >= MaximumEntries(state.assignment) {
 		return types.Hash{}, ErrLimit
+	}
+	if state.remote != nil && command.Kind != RemoteDrained {
+		return types.Hash{}, ErrRemoteActive
 	}
 	switch command.Kind {
 	case Admit:
@@ -212,6 +234,27 @@ func (state *State) validateNext(entry Entry) (types.Hash, error) {
 		if state.pending != 0 {
 			return types.Hash{}, ErrOutstanding
 		}
+	case RemoteBegin:
+		if state.assignment.Version != Version1 {
+			return types.Hash{}, ErrCommand
+		}
+		if command.ActorPublicKey != state.assignment.RemoteControlPublicKey {
+			return types.Hash{}, ErrActor
+		}
+		operation, exists := state.operations[command.TicketID]
+		if !exists || operation.Purpose != Serve || !operation.CompletionID.IsZero() || !operation.RemoteBeginID.IsZero() || command.EvidenceID != operation.OperationID {
+			return types.Hash{}, ErrOperation
+		}
+	case RemoteDrained:
+		if state.assignment.Version != Version1 {
+			return types.Hash{}, ErrCommand
+		}
+		if command.ActorPublicKey != state.assignment.RemoteControlPublicKey {
+			return types.Hash{}, ErrActor
+		}
+		if state.remote == nil || command.OperationID != state.remote.BeginEntryID || command.TicketID != state.remote.TicketID {
+			return types.Hash{}, ErrOperation
+		}
 	default:
 		return types.Hash{}, ErrCommand
 	}
@@ -243,6 +286,17 @@ func (state *State) Apply(entry Entry) error {
 		state.phase, state.stopID, state.stopIntentID = Stopping, id, c.EvidenceID
 	case Retire:
 		state.phase, state.retirementID = Retired, id
+	case RemoteBegin:
+		operation := state.operations[c.TicketID]
+		operation.RemoteBeginID, operation.RemotePlanID = id, c.OperationID
+		state.operations[c.TicketID] = operation
+		state.remote = &RemoteExecution{BeginEntryID: id, TicketID: c.TicketID, PlanID: c.OperationID, ChallengeID: c.EvidenceID,
+			RemoteControlPublicKey: c.ActorPublicKey}
+	case RemoteDrained:
+		operation := state.operations[c.TicketID]
+		operation.RemoteDrainID, operation.RemoteTombstoneID = id, c.EvidenceID
+		state.operations[c.TicketID] = operation
+		state.remote = nil
 	}
 	state.sequence++
 	state.head = id
@@ -263,6 +317,10 @@ func (state *State) Snapshot() (Snapshot, error) {
 		Operations: make([]Operation, 0, len(state.operations))}
 	for _, operation := range state.operations {
 		snapshot.Operations = append(snapshot.Operations, operation)
+	}
+	if state.remote != nil {
+		detached := *state.remote
+		snapshot.Remote = &detached
 	}
 	sort.Slice(snapshot.Operations, func(i, j int) bool {
 		return types.CompareHash(snapshot.Operations[i].TicketID, snapshot.Operations[j].TicketID) < 0

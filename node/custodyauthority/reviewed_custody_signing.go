@@ -70,6 +70,10 @@ func CosignReviewedCustodyCommand(assignment Assignment, command Command, purpos
 }
 
 func validateReviewedCustodyCommand(assignment Assignment, command Command, purpose Purpose) error {
+	// The legacy local workflow has no remote-session evidence or drain UI.
+	if assignment.Version != Version0 || command.Version != Version0 {
+		return ErrCustodyReview
+	}
 	if purpose != Audit && purpose != Serve {
 		return ErrCustodyReview
 	}

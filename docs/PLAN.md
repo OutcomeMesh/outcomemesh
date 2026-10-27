@@ -709,12 +709,29 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
                           independent fork mining and full replay after reorg.
                           Retain sanitized source/artifact/state evidence; this
                           adds no independent audit or physical-control credit.
+                        - [x] Opt-in version-1 authority state with an intrinsic
+                          RemoteBegin/RemoteDrained hold. Persist the exact Serve
+                          ticket and plan across original-owner restart; freeze
+                          every other new transition until the exact drain, then
+                          permanently prohibit generic live Serve reuse. Preserve
+                          version-0 bytes and reject V1 in legacy signing/delivery.
+                        - [x] Record-only remote worker journal with immutable
+                          plan/Begin pins, irreversible Sealing and permanent
+                          unseen/started tombstones. Require explicit exact
+                          confirmation recovery; supply no execution or signer.
+                          Cover original-owner and worker process deaths, delayed
+                          Start refusal and no implicit proof/ticket completion.
                         - [ ] Single-assignment cross-host current-authority
                           enforcement and independently enforced physical/copy
                           fencing. Separate local assignments over real WAN do
-                          not establish distributed current authority. In-place owner
-                          transfer is not added by the explicit stop/close/reopen
-                          operator workflow.
+                          not establish distributed current authority. The V1
+                          state/journal foundation does not close this gate.
+                          Remaining work: owned authenticated Start after A's
+                          confirmed Begin; B's signing/stream drain and exact seal;
+                          typed remote terminal verification; same-assignment WAN
+                          fault/soak acceptance; independently protected keys/roots.
+                          In-place owner transfer is not added by the explicit
+                          stop/close/reopen operator workflow.
   - [ ] Filesystem-full, inode-exhaustion, power-loss, and long-running retention
     campaigns before deployment claims.
   - [x] Isolate the 2026-09-07 custody sibling-rejection deadline race: force the
