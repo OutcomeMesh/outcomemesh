@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-27",
+  "scope": "V1 offline custody preparation and reviewed signing; one-host native acceptance",
+  "source": {
+    "file_count": 611,
+    "manifest_sha256": "5b56e0b2d250ff674bd9401835fce468b2e310b7473c591578ea3f1364d6aee1",
+    "unchanged_after_native_run": true,
+    "format": "sorted relative Go/module paths; SHA256(file bytes), two spaces, path, LF"
+  },
+  "test_pattern": "^(TestRemoteCustodyOffline|TestRemoteCustodyBootstrap|TestRemoteCustodyPreparation|TestV1Custody|TestRemoteCustodyCLINetwork|TestProcessRemoteCustodyOffline)",
+  "macos_focused": {
+    "integration_tag": true,
+    "race": true,
+    "exit_code": 0,
+    "package_seconds": {
+      "cmd/omd": 25.331,
+      "node/custodyauthority": 2.666,
+      "node/custodyauthority/store": 3.29
+    }
+  },
+  "linux_focused": {
+    "platform": "Linux-5.15.0-164-generic-x86_64-with-glibc2.35",
+    "toolchain": "go version go1.26.7 linux/amd64",
+    "cgo_enabled": false,
+    "offline_modules": true,
+    "readonly_modules": true,
+    "build_workers": 2,
+    "integration_tag": true,
+    "race": false,
+    "exit_code": 0,
+    "elapsed_seconds": 21.942,
+    "package_seconds": {
+      "cmd/omd": 3.738,
+      "node/custodyauthority": 0.012,
+      "node/custodyauthority/store": 0.468
+    },
+    "remaining_test_group_processes": 0,
+    "temporary_ssh_master_closed": true
+  },
+  "coverage": [
+    "canonical assignment, admission, plan and Begin byte equality",
+    "V1 signature domains and V0 separation",
+    "public scope and reviewed position/role checks before seed access",
+    "exact signature retry after output loss without seeds",
+    "review/create/verify fresh authority and worker roots",
+    "Started worker verification without sealing",
+    "actual CLI subprocess dispatch",
+    "real QUIC lifecycle with both Complete signatures prepared through CLI"
+  ],
+  "remaining": [
+    "initial A/B source setup and source-guarded V1 admission/challenge bootstrap before Plan/Begin",
+    "full position-zero CLI-only lifecycle",
+    "same-assignment WAN fault and soak acceptance",
+    "negative-disposition lifecycle",
+    "independently enforced key/root copy fencing",
+    "device failure, independent audit and sustained public-testnet launch gates"
+  ],
+  "full_repository_gate": {
+    "toolchain": "Go 1.26.7",
+    "command": "make -j1 test-all",
+    "exit_code": 0,
+    "format": true,
+    "vet": true,
+    "race_groups": [
+      "^TestArchive",
+      "skip ^(TestArchive|TestManagedCustody)",
+      "^TestManagedCustody"
+    ],
+    "store_group_seconds": [
+      220.276,
+      508.01,
+      170.233
+    ],
+    "timeouts_extended": false,
+    "integration_tag_vet": true
+  }
+}

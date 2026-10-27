@@ -6,6 +6,7 @@ import (
 
 	"github.com/outcomemesh/outcomemesh/core/types"
 	"github.com/outcomemesh/outcomemesh/node/custodyauthority"
+	"github.com/outcomemesh/outcomemesh/node/transport"
 	"github.com/outcomemesh/outcomemesh/node/workarchive"
 )
 
@@ -25,13 +26,30 @@ type CustodyCommandScope struct {
 }
 
 func ValidateCustodyCommandScope(scope CustodyCommandScope) error {
+	return validateCustodyCommandScopeVersion(scope, custodyauthority.Version0)
+}
+
+// ValidateRemoteCustodyCommandScope is static V1 preparation before Plan/Begin
+// exist. It deliberately does not widen the legacy V0 workflow.
+func ValidateRemoteCustodyCommandScope(scope CustodyCommandScope) error {
+	return validateCustodyCommandScopeVersion(scope, custodyauthority.Version1)
+}
+
+func validateCustodyCommandScopeVersion(scope CustodyCommandScope, version uint16) error {
 	id, err := scope.Assignment.ID()
-	if err != nil || scope.AssignmentID.IsZero() || id != scope.AssignmentID || scope.Intent.AssignmentID != id || scope.Intent.Validate() != nil {
+	if err != nil || scope.Assignment.Version != version || scope.AssignmentID.IsZero() || id != scope.AssignmentID || scope.Intent.AssignmentID != id || scope.Intent.Validate() != nil {
 		return errors.Join(ErrCustodyCommandScope, err)
 	}
 	a := scope.Assignment
 	derived, err := workarchive.CreateCustodyAuthorityAssignment(scope.Manifest, scope.InitialReceipt, scope.CustodyPolicy,
 		a.IncarnationID, a.AuthorityPublicKey, a.Consumers, a.MaximumOperations, a.MaximumPending)
+	if version == custodyauthority.Version1 && err == nil {
+		derived, err = custodyauthority.WithRemoteParticipant(derived, a.RemoteControlPublicKey, a.RemoteTransportPublicKey)
+		peer, peerErr := transport.PeerIDFromPublicKey(a.RemoteTransportPublicKey[:])
+		if peerErr != nil || peer != scope.Intent.ReplicaPeerID {
+			return errors.Join(ErrCustodyCommandScope, peerErr)
+		}
+	}
 	if err != nil {
 		return errors.Join(ErrCustodyCommandScope, err)
 	}

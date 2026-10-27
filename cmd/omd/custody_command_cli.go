@@ -42,7 +42,9 @@ func runCustodyCommand(ctx context.Context, arguments []string, input io.ReadClo
 		return err
 	}
 	switch arguments[0] {
-	case custodyCommandSignCommand, custodyCommandCosignCommand:
+	case custodyCommandSignCommand, custodyCommandCosignCommand,
+		remoteCustodyAssignmentCommand, remoteCustodyPlanCommand, remoteCustodySignCommand,
+		remoteCustodyCosignCommand, remoteCustodyWorkerPrepareCommand, remoteCustodyAuthorityBootstrapCommand:
 		// Static commands own no journals, but a full pipe must still observe
 		// cancellation and preserve any already published immutable artifact.
 		if file, ok := output.(*os.File); ok {
@@ -66,7 +68,10 @@ func runCustodyCommand(ctx context.Context, arguments []string, input io.ReadClo
 				output = writer
 			}
 		}
-		return runCustodyCommandSigning(ctx, arguments, output)
+		if arguments[0] == custodyCommandSignCommand || arguments[0] == custodyCommandCosignCommand {
+			return runCustodyCommandSigning(ctx, arguments, output)
+		}
+		return runRemoteCustodyOffline(ctx, arguments, output)
 	case custodyTerminalCommand, custodyCommandApplyCommand:
 		return runCustodyCommandOwned(ctx, arguments, input, output)
 	default:
@@ -123,6 +128,10 @@ func custodyCommandOutput(path string) (string, error) {
 }
 
 func (f custodyCommandScopeFlags) load() (authoritystore.CustodyCommandScope, custodyCommandSources, error) {
+	return f.loadVersion(custodyauthority.Version0)
+}
+
+func (f custodyCommandScopeFlags) loadVersion(version uint16) (authoritystore.CustodyCommandScope, custodyCommandSources, error) {
 	var scope authoritystore.CustodyCommandScope
 	var paths custodyCommandSources
 	if err := f.policy.validate(); err != nil {
@@ -171,6 +180,9 @@ func (f custodyCommandScopeFlags) load() (authoritystore.CustodyCommandScope, cu
 		return scope, paths, err
 	}
 	scope.CustodyPolicy = workarchive.CustodyPolicy{TrustedAuditors: append([][32]byte(nil), scope.Assignment.Auditors...), MaximumChallengeLifetime: *f.policy.challengeLifetime, MaximumProofAge: *f.policy.proofAge, MaximumRenewalTerm: *f.policy.renewalTerm}
+	if version == custodyauthority.Version1 {
+		return scope, paths, authoritystore.ValidateRemoteCustodyCommandScope(scope)
+	}
 	return scope, paths, authoritystore.ValidateCustodyCommandScope(scope)
 }
 

@@ -188,8 +188,11 @@ handler drain and a typed terminal checked against the original accepted A
 journal. Drain and the two ticket completions remain explicit separate actions.
 The [remote operator/server commands](docs/REMOTE_CUSTODY_OPERATOR.md) now provide
 default non-executing review, supervised owned control and retained sealed/terminal
-artifacts. Same-assignment WAN acceptance, V1 bootstrap/offline signing workflow
-and independent key/root copy fencing remain open.
+artifacts. Separate [V1 offline preparation commands](docs/REMOTE_CUSTODY_OFFLINE.md)
+create assignments, authority/worker roots and plans, and review/sign/co-sign
+admissions, Begin proposals and successful completions. The position-zero
+source/admission bootstrap, same-assignment WAN acceptance and independent
+key/root copy fencing remain open.
 
 ## Build and run
 

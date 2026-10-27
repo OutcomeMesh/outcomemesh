@@ -2318,6 +2318,33 @@ Implemented in an isolated, not-yet-activated consensus package:
   Final Go 1.26.7 make test-all passes formatting, full vet and all three
   disjoint race groups (store 218.879, 531.899 and 148.600 seconds); integration
   vet passes too. No timeout extensions were used.
+  V1 offline-preparation follow-up (2026-10-27): distinct commands now derive and
+  immutably publish a V1 assignment and fixed session plan; review/create/verify
+  fresh authority/pin and B-worker roots; and independently review/sign/co-sign
+  Audit/Serve admissions, B Begin proposals and typed successful completions.
+  Ordinary V1 signing uses the existing V1 signature domains and strict role/
+  position checks through new APIs; V0 helpers and commands still reject V1.
+  Complete requires the full selected terminal, original intent and exact ticket.
+  Offline Drained signing is unavailable. Public scope is checked before seeds;
+  exact existing output is verified and re-synced before seed access, preserving
+  lost-output retry even when the key is unavailable. Bootstrap reviews bind
+  canonical placement and session, create never resets existing roots, and B
+  verify leaves a Started worker unsealed. Actual subprocesses exercise signing,
+  co-signing, seed-free retry and fresh A roots. The real-QUIC CLI test now obtains
+  both independent Complete entries through these commands. Focused integration/
+  race checks pass (cmd/omd 25.331 seconds, authority 2.666, store 3.290).
+  Native Linux/amd64 Go 1.26.7 with CGO_ENABLED=0 and offline/read-only modules
+  passes the same selection including actual subprocesses (cmd/omd 3.738 seconds,
+  authority 0.012, store 0.468). The exact 611-file Go manifest matches before/
+  after; no task-group children remain and the temporary SSH master is closed.
+  Final Go 1.26.7 make test-all passes formatting, full vet and all three
+  disjoint race groups (store 220.276, 508.010 and 170.233 seconds), without a
+  timeout extension. The pinned Go source manifest remains unchanged.
+  Integration-tag vet passes as well.
+  See REMOTE_CUSTODY_OFFLINE.md. Initial source-journal preparation and original-
+  source guarded admission/challenge preparation before Plan/Begin remain SDK
+  work; a full position-zero CLI-only workflow and same-assignment WAN acceptance
+  remain open. This slice adds no weighted readiness point; the baseline is 43/100.
   Process-gate observation (2026-09-07): the first combined run stopped at
   `TestProcessTieCampaignStorageFailuresRecoverWithoutFalseAdvance/observer_confirmation_after_link`
   because the expected confirmation marker was absent. Five isolated repetitions

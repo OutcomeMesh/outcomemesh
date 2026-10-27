@@ -34,11 +34,13 @@ Journal/object count and byte budgets remain explicit local limits.
 `--timeout` is 100ms..2m, with a 10s default. `--listen` selects a direct canonical
 IP/UDP/QUIC-v1 address and defaults to loopback with an ephemeral port.
 
-These commands consume the already prepared SDK assignment, signed admissions,
-plan/Begin proposal and existing roots. A complete V1 bootstrap and offline
-consumer-signing CLI remains a separate step. Existing V0 signing commands do
-not silently accept V1. No private seed belongs in a command-line value: seed
-flags name existing regular 32-byte seed files.
+The [V1 offline preparation commands](REMOTE_CUSTODY_OFFLINE.md) now create the
+assignment, authority roots, plan, Begin proposal and B worker, and separately
+sign/co-sign Audit/Serve admissions and successful completions. Initial source
+journals and source-guarded admission/challenge preparation before Plan/Begin
+still require the SDK; the full position-zero CLI workflow remains open.
+Existing V0 signing commands do not silently accept V1. No private seed belongs
+in a command-line value: seed flags name existing regular 32-byte seed files.
 
 ## B server
 
@@ -141,7 +143,8 @@ V1 Complete entry against the retained typed terminal, then select
 explicitly settles only that same pending command. Open, review, ordinary Apply,
 Seal and Reconcile never implicitly resume it. Close/reopen with the other
 selected Complete for the second ticket. Completion signing remains offline
-through the existing Go APIs; A's operator never loads a consumer control key.
+through the separate V1 offline commands; A's operator never loads a consumer
+control key.
 
 Control input permits one bounded complete LF-terminated queued command. Keep
 stdin open until the action result is observed; EOF cancels ongoing work rather
@@ -157,8 +160,8 @@ independent ticket completions, EOF/malformed control, and separate processes
 with output broken after a confirmed Drain. The reopened operator recovers the
 same immutable evidence without another effect.
 
-This CLI does not close same-assignment WAN fault/soak acceptance, V1 bootstrap/
-offline-signing tooling, negative-disposition closure, independent physical/key
+This CLI does not close same-assignment WAN fault/soak acceptance, the remaining
+position-zero V1 source/admission bootstrap, negative-disposition closure, independent physical/key
 copy fencing, device-failure campaigns or the public-testnet/audit launch gates.
 
 The focused integration/race run passed on macOS (cmd/omd 33.884 seconds, store

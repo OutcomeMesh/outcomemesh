@@ -314,16 +314,8 @@ func TestRemoteCustodyCLINetworkPersistsEvidenceAndIndependentCompletion(t *test
 		if err != nil {
 			t.Fatal(err)
 		}
-		tid, _ := ticket.ID()
-		draft, err := store.BuildRemoteCustodyCompleteCommand(f.scope, term, tid, current.Confirmed)
-		if err != nil {
-			t.Fatal(err)
-		}
-		entry := signRemoteCLI(t, draft, 4)
+		entry, path := remoteOfflineCompleteEntry(t, f, ticket, termID, current.Confirmed)
 		eid, _ := entry.ID()
-		encoded, _ := entry.CanonicalBytes()
-		path := filepath.Join(t.TempDir(), "complete")
-		writePruneCLIFile(t, path, encoded)
 		args := append(f.args("audit", "control"), "--peer", ready["listen"], "--drain-id", drainID.String(), "--terminal-id", termID.String(), "--complete-entry", path, "--complete-entry-id", eid.String())
 		a = startRemoteCLIControl(t, args)
 		token := a.review(t)

@@ -739,14 +739,25 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
                           confirmed Drain metadata after lost output without
                           execution, signing or implicit authority resume.
                           Test real CLI processes, EOF and broken output.
+                        - [x] Distinct V1 offline assignment/plan publication,
+                          reviewed Admit/Begin/Complete signatures and explicit
+                          fresh authority/worker bootstrap with no implicit
+                          recovery. Compare canonical bytes, preserve V0-only
+                          workflows, recover exact immutable signatures without
+                          seeds, and use CLI signatures in the real-QUIC
+                          successful-completion test. Initial source/admission
+                          bootstrap and full position-zero CLI acceptance remain
+                          the next separate substep.
                         - [ ] Single-assignment cross-host current-authority
                           enforcement and independently enforced physical/copy
                           fencing. Separate local assignments over real WAN do
                           not establish distributed current authority. The V1
                           state/journal foundation does not close this gate.
-                          Remaining work: complete V1 bootstrap/offline consumer
-                          signing workflow; unknown/unseen terminal
-                          disposition; same-assignment WAN fault/soak acceptance;
+                          Remaining work:
+                          source-journal initialization and source-guarded V1
+                          admission/challenge bootstrap before Plan/Begin, with
+                          a complete position-zero CLI acceptance; unknown/unseen
+                          terminal disposition; same-assignment WAN fault/soak acceptance;
                           independently protected keys/roots and copy fencing.
                           In-place owner transfer is not added by the explicit
                           stop/close/reopen operator workflow.

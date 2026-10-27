@@ -276,3 +276,15 @@ REMOTE_CUSTODY_EXECUTION.md. Operator/server CLI, negative-disposition tooling,
 same-assignment WAN acceptance, independent physical/copy fencing and external
 review remain open. This closes the owned library slice, not the parent launch
 gate; weighted readiness remains 40/100.
+
+2026-10-27 V1 offline-preparation follow-up: distinct public preparation and
+reviewed signing commands now cover assignment, authority/worker roots, plan,
+Audit/Serve admissions, Begin proposals and typed successful completions.
+Canonical V1 signatures remain compatible; V0 workflows remain separate. Exact
+immutable signature retry precedes seed access, and worker inspection does not
+seal a Started branch. Focused integration/race tests and subprocess acceptance
+pass. See REMOTE_CUSTODY_OFFLINE.md. The remaining initial source/admission/
+challenge bootstrap and complete position-zero CLI workflow, same-assignment WAN
+fault/soak, negative dispositions and independent copy fencing remain open. The
+current weighted baseline stays 43/100; no additional lifecycle point is earned
+by this preparation slice alone.
