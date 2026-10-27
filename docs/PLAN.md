@@ -804,6 +804,25 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
                           CUSTODY_FENCE.md. This is a separate foundation;
                           mandatory assignment/transport/effect acceptance and
                           independent service deployment remain open below.
+                        - [x] Experimental authenticated witness transport and
+                          five-command operator workflow: read-only seed-free
+                          review, explicit bootstrap/serve/recovery, exact-pinned
+                          requests, nonce-bound observations, quorum assembly,
+                          bounded frames/EOF/ACL/resources and complete cleanup.
+                          Run native CLI lost-output/SIGKILL/cold-recovery tests
+                          and four logical witnesses over two Linux hosts with
+                          insufficient/duplicate quorum refusal, original-root
+                          reuse and retained unknown/result obligations. This is
+                          not four independently protected failure domains.
+                        - [x] Separately pinned typed historical custody-result
+                          bundle: replay mandatory claim/[unknown]/result
+                          certificates, bind their evidence to the complete exact
+                          custody entry, reject legacy/digest/role substitutions
+                          and preserve original proof time. Add fixed signature
+                          vectors, fuzzing and CLI review/publication/verification.
+                          Current original-source acceptance, effect consumption
+                          and Serve completion remain open; see
+                          CUSTODY_WITNESS_NETWORK.md.
                         - [ ] Single-assignment cross-host current-authority
                           enforcement and independently enforced physical/copy
                           fencing. Separate local assignments over real WAN do

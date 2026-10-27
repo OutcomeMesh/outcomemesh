@@ -128,6 +128,8 @@ func run(arguments []string) error {
 		return runManagedCustodyServeCLI(arguments)
 	case remoteCustodyAuditCommand, remoteCustodyServeCommand:
 		return runRemoteCustodyCLI(arguments)
+	case witnessServerCommand, witnessClientCommand, witnessRequestCommand, witnessQuorumCommand, witnessResultCommand:
+		return runWitnessCLI(arguments)
 	case managedCustodyAuditCommand:
 		return runManagedCustodyAuditCLI(arguments)
 	case managedCustodyIntentCommand:
@@ -1599,6 +1601,7 @@ func defaultDevelopmentAddress() types.Address {
 
 func printUsage() {
 	fmt.Println("OutcomeMesh standalone development node")
+	fmt.Printf("experimental independent witnesses: omd <%s|%s|%s|%s> [flags]; review by default\n", witnessServerCommand, witnessClientCommand, witnessRequestCommand, witnessQuorumCommand)
 	fmt.Printf("optional command-only custody transport: omd <%s|%s|%s> [flags]\n", pruneServeCommand, pruneAdmissionCommand, pruneCompletionCommand)
 	fmt.Printf("pinned secondary custody command transport: omd %s --mode <admit|complete|both> [flags]\n", pruneSecondaryServeCommand)
 	fmt.Printf("explicit offline custody preparation: omd <%s|%s|%s|%s|%s|%s> [flags]\n", pruneAuthorityBootstrapCommand, pruneExecutorPrepareCommand, pruneSigningCommand, pruneCosigningCommand, pruneAdmissionPrepareCommand, pruneCompletionPrepareCommand)

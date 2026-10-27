@@ -1,0 +1,160 @@
+{
+  "base_commit": "48fa894",
+  "boundaries": [
+    "Witness service, CLI and result verifier are experimental; V0/V1 custody execution and source acceptance do not mandate these certificates.",
+    "Historical result verification is distinct from current original-A source acceptance, proof freshness, Serve completion and rewards.",
+    "Four logical witnesses ran on two observed kernels, using public deterministic fixture keys; independent four-domain or protected-key deployment is not established.",
+    "The result commitment in the WAN witness-only case is deliberately opaque, not a custody proof.",
+    "Quorum safety assumes fewer than one third of independent witness keys/locks are faulty; cloning enough witnesses invalidates that assumption.",
+    "Physical consumption at the effect target, a new policy-bound custody assignment/proof version, split-vote progress, device campaigns, external review and public-testnet gates remain open.",
+    "Native host tests ran as root and do not establish non-root permission or physical-device durability acceptance."
+  ],
+  "cleanup": {
+    "a": {
+      "binaries": {
+        "fence.test": "c13182b925d277b0c5eb0d3d5d91318f4a99aadd6d9500dda9c1e92859620367",
+        "net.test": "0867a0c62be5041f6d950f1b188bd218b810b5f85316a5175bf38e3fb7025cd0",
+        "omd": "a753cba1266d5420954ca03782390e08f64917ea47f325d072c9e476a0b8635e",
+        "omd.test": "a076756ffaf91cc8fe298fc3655c7344f9cbaa79aa8cd8d445f94edff6920220",
+        "wire.test": "a5973f46ca6880d05bb235cda1752b7db31a31923a130f80fadd76881dee71d8"
+      },
+      "kernel_boot_sha256": "bf2a16e07b0130078e13d893ae02bcfd1b3e916b57f75739310ad9c66fb0f0e6",
+      "task_children": 0,
+      "task_listeners": 0
+    },
+    "b": {
+      "binaries": {
+        "fence.test": "c13182b925d277b0c5eb0d3d5d91318f4a99aadd6d9500dda9c1e92859620367",
+        "net.test": "0867a0c62be5041f6d950f1b188bd218b810b5f85316a5175bf38e3fb7025cd0",
+        "omd": "a753cba1266d5420954ca03782390e08f64917ea47f325d072c9e476a0b8635e",
+        "omd.test": "a076756ffaf91cc8fe298fc3655c7344f9cbaa79aa8cd8d445f94edff6920220",
+        "wire.test": "a5973f46ca6880d05bb235cda1752b7db31a31923a130f80fadd76881dee71d8"
+      },
+      "kernel_boot_sha256": "8252034a28c1487f9c495ba8f3a1afd187fbb9b9fb6a9a006425fc58b4e8b9eb",
+      "task_children": 0,
+      "task_listeners": 0
+    }
+  },
+  "controller_sha256": "c23a570a956a25c9349101d9b1a3caa86f49292a85e6f74ea4859c828d7107dc",
+  "date_utc": "2026-10-27",
+  "go_module_source_files": 655,
+  "native_build": {
+    "binaries": {
+      "fence.test": "c13182b925d277b0c5eb0d3d5d91318f4a99aadd6d9500dda9c1e92859620367",
+      "net.test": "0867a0c62be5041f6d950f1b188bd218b810b5f85316a5175bf38e3fb7025cd0",
+      "omd": "a753cba1266d5420954ca03782390e08f64917ea47f325d072c9e476a0b8635e",
+      "omd.test": "a076756ffaf91cc8fe298fc3655c7344f9cbaa79aa8cd8d445f94edff6920220",
+      "wire.test": "72f7ad3e9f53a5a7c3d306e0edb365d12ffc5a825f3a5b4cc675718c59fb8c7a"
+    },
+    "build_workers": 2,
+    "cgo_enabled": false,
+    "elapsed_seconds": 14.802,
+    "go": "go version go1.26.7 linux/amd64",
+    "native_log_sha256": "371a2894473d364a69250cf47c8ca4832b453889cabc2504d42afad76bad2764",
+    "offline_modules": true,
+    "readonly_modules": true,
+    "seconds": {
+      "build-fence.test": 0.532,
+      "build-net.test": 2.347,
+      "build-omd": 4.011,
+      "build-omd.test": 3.559,
+      "build-wire.test": 0.691,
+      "test-fence.test": 0.229,
+      "test-net.test": 0.5,
+      "test-omd.test": 2.851,
+      "test-wire.test": 0.034
+    },
+    "source_files": 655,
+    "source_manifest": "7b456e9e3e090b4f6771d595ecad72410f8818db07945bbc469f32ac718ad7f9",
+    "source_unchanged": true
+  },
+  "native_host_b": {
+    "final_wire_vectors_passed": true,
+    "functional_log_sha256": "fc86f485d687deb8ee8e69cd2fd98fa66e89f55564cb422d12fc4a81602ffe56",
+    "functional_tests_passed": true,
+    "wire_binary_sha256": "72f7ad3e9f53a5a7c3d306e0edb365d12ffc5a825f3a5b4cc675718c59fb8c7a",
+    "wire_log_sha256": "0799ef6ef1622dddd8688212e0d0f9f41199ceb464530b9f747c111ce3e3f74e"
+  },
+  "production_readiness": {
+    "changed": false,
+    "credited": 44,
+    "total": 100
+  },
+  "schema_version": 1,
+  "source_manifest_sha256": "7b456e9e3e090b4f6771d595ecad72410f8818db07945bbc469f32ac718ad7f9",
+  "validation": {
+    "focused_integration_log_sha256": "faefceb33f1a645c087dc1ac327a27bd6f63ec4eb8d2ebed17c129ec4721c33e",
+    "focused_integration_race_passed": true,
+    "fuzz": [
+      {
+        "budget_seconds": 3,
+        "executions": 486819,
+        "log_sha256": "df0f735d0a3a079d18787b2b2c7fc01f230af27216032bcca646bbbf64717243",
+        "passed": true,
+        "target": "FuzzWitnessWireCodecs"
+      },
+      {
+        "budget_seconds": 3,
+        "executions": 657,
+        "log_sha256": "c0111422e8404ed897f70f9c6d91f1d14c881c3480137322ca337c5495b1c600",
+        "passed": true,
+        "target": "FuzzWitnessResultBundleCodec"
+      }
+    ],
+    "integration_vet_passed": true,
+    "python_log_sha256": "48fcb34debfd065a631fd9d98cf518a6dfc4ac3e4869c3c2f5ef222ac4649fa1",
+    "python_tests": 33,
+    "repository_gates": {
+      "command": "GOTOOLCHAIN=go1.26.7 make -j1 test-all",
+      "frozen_log_sha256": "c0ce464d2962f0da081abcd5509047ccae281fca9f5b326f92dcf46680eb45f8",
+      "frozen_source_recheck_passed": true,
+      "log_sha256": "85dfbb8818e52df74b6e3c608291bae05401664531781924d6fc42ca83c8aec3",
+      "passed": true,
+      "race_groups": 5,
+      "store_group_seconds": [
+        243.112,
+        305.368,
+        186.927,
+        167.28,
+        109.63
+      ]
+    }
+  },
+  "wan": {
+    "commit_exact_retries": 3,
+    "current_custody_source_acceptance_checked": false,
+    "duplicate_member_refused": true,
+    "final_heads": [
+      "93b8a3a2565dfcfc0156a15a4f7838d8e2a03152fd1a217f5d95de7e1115ef37",
+      "93b8a3a2565dfcfc0156a15a4f7838d8e2a03152fd1a217f5d95de7e1115ef37",
+      "93b8a3a2565dfcfc0156a15a4f7838d8e2a03152fd1a217f5d95de7e1115ef37",
+      "93b8a3a2565dfcfc0156a15a4f7838d8e2a03152fd1a217f5d95de7e1115ef37"
+    ],
+    "final_sequence": 3,
+    "independent_four_host_deployment": false,
+    "kernel_count": 2,
+    "late_claim_refused": true,
+    "logical_members_per_host": [
+      2,
+      2
+    ],
+    "members": 4,
+    "obligations_held": 4,
+    "one_member_outage_quorum_passed": true,
+    "operational_binaries_match_release": true,
+    "passed": true,
+    "refused_rpc_count": 2,
+    "report_sha256": "e672413c57b4c5eac11c52e0216fd9a3772716fe40d5e2fa6726d0875c88468a",
+    "result_commitment_is_opaque": true,
+    "scope_id": "9150c58859e4eeda9ad4a65d9cf750eb708bb1de18fba4facd481e7bff3f2892",
+    "source_manifest_sha256": "d619333d14ecd08b97ad19e0ae30864f820d1a7e4efa6bccc932b97ccc6d54e3",
+    "stale_restart_pin_refused": true,
+    "successful_rpc_count": 24,
+    "test_only_difference_from_release": [
+      "node/custodyfence/witnesswire/wire_test.go"
+    ],
+    "two_member_quorum_refused": true,
+    "unclaimed_close_after_unknown_refused": true,
+    "unknown_retained_across_sigkill": true
+  }
+}

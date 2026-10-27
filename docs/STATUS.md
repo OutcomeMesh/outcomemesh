@@ -10,6 +10,45 @@ Full planned production readiness is approximately **44/100**, using the weighte
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
 
+## 2026-10-27: witness network, CLI and exact historical result binding
+
+- Added a separately enabled authenticated QUIC witness protocol with exact scope,
+  request nonce and before-position/pending bindings, strict EOF and bounded
+  framing, ACL, concurrency and rate budgets. The original witness owner remains
+  retained through persistence, response verification and complete cleanup.
+- Five CLI commands cover private explicit enrollment/review/serving and local
+  recovery, request publication, authenticated calls, quorum assembly and typed
+  historical custody-result verification. Default review loads no seeds; server
+  serving uses dedicated control pipes. Publication and output aliases are
+  checked before the associated operation. Review IDs bind command and action.
+- Typed results require a full Claim/[Unknown]/Result quorum history and exact
+  complete custody entry. Wrong opaque digests, insufficient/repeated signers,
+  reused participant-role keys, other scopes and legacy-terminal fallback fail.
+  This is historical verification, not live source acceptance or Serve completion.
+- Fixed a recovery check: a completed one-transition extension must still match
+  a nonzero independently retained historical pending-vote pin. Added cold and
+  in-process regression coverage. Native process tests also lose client stdout,
+  retain the exact response, verify SIGKILL, refuse stale reopening and recover
+  the same vote without another transition.
+- The normal CLI campaign on two Linux hosts runs four logical members, two per
+  host. Two votes and repeated member evidence fail quorum assembly; three members
+  succeed. It performs 24 successful RPCs, three exact commit retries and two late
+  command refusals. Unknown survives a verified process kill; all four original
+  witness journals end at the same position three with their obligations held.
+  This uses public deterministic fixture keys and is not four protected domains.
+- All five repository race groups, focused integration/process checks, integration
+  vet, 33 acceptance-helper tests and both new fuzz targets pass. Fixed request,
+  observation and response signature/domain vectors pass on Darwin and native
+  Linux. Native operational binaries match on both hosts. The final source and
+  [sanitized acceptance index](evidence/custody-witness-network-20261027.json)
+  record the test-only wire-vector difference after the WAN build. No task
+  children/listeners remain; original V1 custody owners are not migrated/reset.
+
+Readiness stays **44/100**. Mandatory new custody assignment/policy derivation,
+effect-target consumption, original-source acceptance and Serve resolution,
+protected independent deployment and safe split-vote progress remain open. See
+[the operator/protocol guide](CUSTODY_WITNESS_NETWORK.md).
+
 ## 2026-10-27: negative Audit disposition and independent witness foundation
 
 - A separate reviewed negative Audit-only Complete now records an administrative

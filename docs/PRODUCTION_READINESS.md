@@ -376,3 +376,27 @@ deployment, split-vote progress, device campaigns, independent review and sustai
 public-testnet gates remain open. MIT licensing and the contribution guide add
 project governance documents, not completed legal-review/release acceptance.
 Total readiness remains approximately **44/100**.
+
+2026-10-27 witness-network/result-binding follow-up: the experimental journal now
+has authenticated bounded QUIC transport, action-bound reviewed CLI workflows,
+exact request/observation pins and offline quorum assembly. A separate typed
+historical custody-result verifier requires the complete claim/[unknown]/result
+certificate history and exact custody entry; it refuses opaque-digest/legacy
+substitution and participant keys counted as witnesses. It does not accept a
+current source, refresh proof or close Serve.
+
+The controlled normal-CLI WAN campaign runs four logical members on two hosts,
+not four independently protected failure domains. It checks insufficient and
+duplicate quorums, three-member progress, exact retries, verified SIGKILL with
+retained Unknown, stale reopening and late-command refusal. All four histories
+finish at position three with obligations held. Native binaries, fixed vectors,
+full repository race groups, integration/process checks, 33 helper tests and new
+wire/result fuzz targets pass. See the
+[acceptance index](evidence/custody-witness-network-20261027.json) and
+[protocol/operator guide](CUSTODY_WITNESS_NETWORK.md).
+
+No additional weighted point is assigned: new assignment/policy binding,
+mandatory consumption/acceptance in the actual custody path, negative Serve
+resolution, protected independent witness deployment and split-vote progress
+remain open. Device, independent-verifier/audit, release and public-testnet gates
+are unchanged. Total readiness remains approximately **44/100**.

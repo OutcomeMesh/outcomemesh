@@ -2,6 +2,10 @@
 
 `node/custodyfence` implements a separate bounded protocol and durable witness
 journal. It moves non-equivocation locks outside the two copied participants.
+The separate [witness network and CLI adapter](CUSTODY_WITNESS_NETWORK.md) now
+serves these original journals, assembles quorums and verifies typed historical
+custody-result bindings. Its controlled two-host campaign is not four protected
+independent failure domains or mandatory custody integration.
 It is not integrated into V0/V1 assignments, custody transport, proof acceptance,
 ticket completion or consensus. It does not close the independent fencing gate.
 
@@ -122,10 +126,12 @@ process death after directory sync but before signature release.
    on every effect/result/acceptance path. Reject unsigned, wrong-scope and legacy
    bypasses. The effect target must enforce consumption/deduplication as well as
    the result verifier: one copied historical claim cannot be a reusable grant.
-2. Deploy independent witness services with authenticated bounded transport,
+2. Deploy independently protected witness services with authenticated bounded transport,
    protected keys and monotone recovery pins outside participant backups. Test
    actual distinct failure domains, stale witness recovery, partitions and copy
    attempts. A rollback of all witnesses/pins is not detected by local file checks.
+   The experimental service/CLI and controlled two-host transport are implemented;
+   protected four-domain deployment and its acceptance remain open.
 3. Bind each result commitment to the complete typed custody evidence and A's
    accepted source. Define which independently certified disposition can close
    Serve while preserving retention and all other obligations.

@@ -152,6 +152,9 @@ func RecoverCommit(path string, s Scope, pin types.Hash, key ed25519.PrivateKey,
 			return w.state.ValidateNext(c)
 		}
 		if x.Position.Sequence == before.Position.Sequence+1 && x.Position.HeadID == id && x.PendingID.IsZero() {
+			if !w.historicalPendingMatches(before) {
+				return ErrTransition
+			}
 			return nil
 		}
 		return ErrTransition
@@ -159,13 +162,24 @@ func RecoverCommit(path string, s Scope, pin types.Hash, key ed25519.PrivateKey,
 }
 
 func openWitness(path string, s Scope, pin types.Hash, key ed25519.PrivateKey, accept func(*Witness) error) (_ *Witness, returnErr error) {
+	public, err := witnessKey(s, key)
+	if err != nil {
+		return nil, err
+	}
+	return openMember(path, s, pin, public, key, accept)
+}
+
+func openMember(path string, s Scope, pin types.Hash, public [32]byte, key ed25519.PrivateKey, accept func(*Witness) error) (_ *Witness, returnErr error) {
 	state, err := NewState(s, pin)
 	if err != nil {
 		return nil, err
 	}
-	public, err := witnessKey(s, key)
-	if err != nil {
-		return nil, err
+	member := false
+	for _, k := range state.scope.Witnesses {
+		member = member || k == public
+	}
+	if !member {
+		return nil, ErrWitness
 	}
 	path, err = canonicalPath(path)
 	if err != nil {
@@ -255,6 +269,13 @@ func openWitness(path string, s Scope, pin types.Hash, key ed25519.PrivateKey, a
 func (w *Witness) Vote(command Command) (Vote, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	return w.voteLocked(command)
+}
+
+func (w *Witness) voteLocked(command Command) (Vote, error) {
+	if !validKey(w.key) {
+		return Vote{}, ErrWitness
+	}
 	if err := w.check(); err != nil {
 		return Vote{}, err
 	}
@@ -293,6 +314,10 @@ func (w *Witness) Commit(cert Certificate) error {
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	return w.commitLocked(cert, b)
+}
+
+func (w *Witness) commitLocked(cert Certificate, b []byte) error {
 	if err := w.check(); err != nil {
 		return err
 	}

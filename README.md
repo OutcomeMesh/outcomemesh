@@ -206,7 +206,10 @@ Capture keeps both ordinary tickets pending. An explicit, separately signed
 administrative Audit completion can now close that observation while the
 original Serve obligation remains pending, blocking retirement. The experimental
 [independent witness foundation](docs/CUSTODY_FENCE.md) adds durable quorum vote
-locks and unknown-outcome rules; mandatory protocol integration remains open. The optional
+locks and unknown-outcome rules. An experimental
+[witness network and CLI](docs/CUSTODY_WITNESS_NETWORK.md) now serves those journals,
+assembles quorum certificates and binds complete historical custody results.
+Mandatory effect/source integration and protected deployment remain open. The optional
 [local placement profile](docs/REMOTE_CUSTODY_PLACEMENT.md) checks independently
 pinned original roots, permanent locks and operator key files across restart.
 It detects ordinary copies/replacements; independent raw-key/VM-copy fencing

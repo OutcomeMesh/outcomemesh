@@ -25,6 +25,8 @@ test-race:
 	$(GO) test -race ./... -run '^TestRemote'
 
 test-fuzz-smoke:
+	$(GO) test ./node/custodyfence/witnesswire -run '^$$' -fuzz '^FuzzWitnessWireCodecs$$' -fuzztime=$(FUZZTIME)
+	$(GO) test ./cmd/omd -run '^$$' -fuzz '^FuzzWitnessResultBundleCodec$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyfence -run '^$$' -fuzz '^FuzzIndependentFenceCodecs$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./cmd/omd -run '^$$' -fuzz '^FuzzDecodePruneEffectRootsNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./core/codec -run '^$$' -fuzz '^FuzzDecoderNeverPanics$$' -fuzztime=$(FUZZTIME)
@@ -113,6 +115,7 @@ test-fuzz-smoke:
 	$(GO) test ./sim/workgraphmodel -run '^$$' -fuzz '^FuzzRunSelfishStrategiesNeverBreakAccounting$$' -fuzztime=$(FUZZTIME)
 
 test-process:
+	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessWitnessLostOutputKillAndExactColdRecovery$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./node/custodyfence -run '^TestIndependentWitnessProcessDeathKeepsVoteLock$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessRemoteCustody(CLI|Offline|FromZero|Negative)' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestRemoteCustodyNetworkProcessRecovery$$' -count=1 -timeout=2m
