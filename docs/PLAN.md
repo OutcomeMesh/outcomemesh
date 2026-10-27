@@ -699,9 +699,20 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
                           resume implicitly. Test the complete process workflow
                           from position zero, lost output, independent completions
                           and exact retry after the other ticket closes.
-                        - [ ] Real remote partitions and independently enforced
-                          physical/copy fencing. Local paired acceptance does not
-                          establish distributed current authority. In-place owner
+                        - [x] Two-host acceptance with separate fresh local
+                          Audit/Serve assignments, pinned identical binaries and
+                          original owners created independently at destination.
+                          Exercise real QUIC exchange, pre-request packet loss,
+                          a deterministic post-replica-commit partition/kill,
+                          unchanged response recovery, bounded loss/delay and
+                          expired-proof refusal. Verify ordinary devnet restart,
+                          independent fork mining and full replay after reorg.
+                          Retain sanitized source/artifact/state evidence; this
+                          adds no independent audit or physical-control credit.
+                        - [ ] Single-assignment cross-host current-authority
+                          enforcement and independently enforced physical/copy
+                          fencing. Separate local assignments over real WAN do
+                          not establish distributed current authority. In-place owner
                           transfer is not added by the explicit stop/close/reopen
                           operator workflow.
   - [ ] Filesystem-full, inode-exhaustion, power-loss, and long-running retention

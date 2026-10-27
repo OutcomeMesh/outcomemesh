@@ -2,7 +2,7 @@ GO ?= go
 FUZZTIME ?= 3s
 WORKROLLOVERCYCLES ?= 256
 
-.PHONY: build fmt vet test test-race test-fuzz-smoke test-process test-work-rollover-soak test-economic-review economic-review test-calibration test-all
+.PHONY: build fmt vet test test-race test-fuzz-smoke test-process test-remote-support test-work-rollover-soak test-economic-review economic-review test-calibration test-all
 
 build:
 	$(GO) build -trimpath -o bin/omd ./cmd/omd
@@ -104,6 +104,7 @@ test-fuzz-smoke:
 	$(GO) test ./sim/workgraphmodel -run '^$$' -fuzz '^FuzzRunSelfishStrategiesNeverBreakAccounting$$' -fuzztime=$(FUZZTIME)
 
 test-process:
+	$(GO) test -tags=integration ./cmd/omd -run '^TestRemoteCustodyGatedServe(Loopback|Control)$$' -count=1 -timeout=90s
 	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessCustodyCommand' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestManagedCustodyCommandProcessRecovery$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessManagedCustody(AuditOperator|PairOperator|PairLostResult|Operator)' -count=1 -timeout=2m
@@ -129,6 +130,9 @@ test-process:
 	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestArchiveSecondaryAdmissionProcessRecovery$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestArchiveSecondaryCompletionProcessRecovery$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestArchiveSecondaryQUICProcessRecovery$$' -count=1 -timeout=2m
+
+test-remote-support:
+	PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/remote_acceptance -p 'test_*.py'
 
 test-work-rollover-soak:
 	OUTCOMEMESH_WORK_ROLLOVER_SOAK_CYCLES=$(WORKROLLOVERCYCLES) $(GO) test ./cmd/omd -run '^TestMultiNodeWorkRolloverConvergesAcrossClockSkewChurnAndRelayLoss$$' -count=1 -timeout=5m

@@ -170,6 +170,14 @@ journal result, and explicitly applies Audit/Serve admissions and completions.
 Uncertain attempts require a separately reviewed resume. In-place transfer and
 physical/cross-host enforcement remain open.
 
+The opt-in [remote acceptance procedure](docs/REMOTE_ACCEPTANCE.md) now has
+[recorded two-VPS evidence](docs/evidence/remote-acceptance-20261027.json): five
+custody scenarios cover real QUIC, partitions around the replica commit, exact
+recovery, loss/delay and expired-proof refusal. A separate devnet run checks
+restart, divergent branches and full replay after reorganization. Each custody
+participant retains a different local assignment and original owner; this does
+not establish distributed current authority for one assignment.
+
 ## Build and run
 
 Go 1.26.7 is the pinned toolchain. With it available as `go`:

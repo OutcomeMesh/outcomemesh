@@ -2153,6 +2153,53 @@ Implemented in an isolated, not-yet-activated consensus package:
   and store passed. A native trimmed-path build and help command passed with all
   four new commands listed. No foreign-runtime, independent-audit, public-network
   or physical-media acceptance is claimed.
+  Two-host acceptance follow-up (2026-10-27): the production artifact from
+  651cccf and one integration artifact were SHA256-pinned identically on two
+  provided Linux x86-64 VPS instances (Ubuntu 22.04.5/24.04). Fresh role fixtures
+  use different authority keys, consumers, assignment IDs and original local
+  coordinators. Bootstrap happens once at destination; no active authority root
+  or live ledger is copied. Five actual WAN custody scenarios passed: healthy
+  exchange (36.711 seconds), full packet loss before the request (43.815), loss
+  after B's durable journal commit plus B process kill (48.833), every-seventh
+  packet loss with 40ms directional delay (42.846), and refusal after the original
+  120-second proof age (144.792). These are test durations, not performance data.
+  The post-commit gate is integration-only and pauses the first application
+  response Write under B's original owner. After partition/kill, A remains at
+  journal 0 and B at 1; a valid retry preserves B's exact head/proof/RespondedAt.
+  Successful cases explicitly complete each local ticket and preserve an exact
+  completion retry. The expired case deliberately leaves both tickets pending
+  and unchanged, with no replacement proof or completion. Offline Recover passed
+  after the replica and the relay route were both stopped.
+
+  The ordinary v0 devnet also passed direct two-host QUIC sync, two actual server
+  process kills, failure without client-history change, restart healing, and
+  independent mining from one height-3 parent to distinct height-5/7 branches.
+  Healing selected B's greater-work height-7 tip; full replay on both hosts
+  agreed on tip/state/work/resources. The two losing A blocks remain retained,
+  so history-byte totals correctly differ. Repeated sync after restart leaves
+  both histories unchanged. This separate development-chain run took 46.253
+  seconds and makes no monetary-value or production-throughput claim.
+
+  Harness bring-up caught incomplete declared purpose coverage in the test
+  fixture and macOS AppleDouble sidecars in platform-tar output. The fixture now
+  declares the reference assignment's required coverage while admitting only
+  Audit/Serve, and Python-generated archives preserve actual paths/bytes without
+  sidecars. A bounded bulk review-frame RPC replaces per-line WAN round trips;
+  partial frames cancel the child and never submit an action. Core validation,
+  proof-age limits and protocol timeouts were not relaxed. Sixteen Python
+  support/controller regressions pass. Gated loopback/control tests pass with
+  macOS race detection (13.281 seconds) and natively on Linux; integration vet
+  passes. Full Go 1.26.7 make test-all passes formatting, full vet and all three
+  disjoint race groups with valid cached unchanged production results. Both
+  servers were checked for remaining task children and test UDP listeners: none
+  remained. No firewall/routing/tc or unrelated-service changes were made.
+  See REMOTE_ACCEPTANCE.md and evidence/remote-acceptance-20261027.json for public
+  source/artifact/state commitments. Deployment details, credentials, seeds and
+  raw reports are excluded from the repository. This closes measured cross-host
+  transport/recovery acceptance for independent local assignments; it does not
+  close single-assignment distributed current authority, physical/copy fencing,
+  independent review or sustained adversarial testnet duration. Readiness stays
+  40/100.
   Process-gate observation (2026-09-07): the first combined run stopped at
   `TestProcessTieCampaignStorageFailuresRecoverWithoutFalseAdvance/observer_confirmation_after_link`
   because the expected confirmation marker was absent. Five isolated repetitions

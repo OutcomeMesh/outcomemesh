@@ -1008,6 +1008,24 @@ requires the selected terminal still at the current head. These checks rely on
 owner-controlled local directories and do not fence privileged copies or remote
 signers. See `CUSTODY_TICKET_WORKFLOW.md`.
 
+The remote acceptance runner provisions different local Audit and Serve
+assignments. The shared signed challenge and response do not transfer a current
+authority grant between them. Fresh test control/evidence/transport keys remain
+in private role exports; original authority/pin roots are bootstrapped at their
+destination and never copied from a running owner. A single trusted test
+controller generates the fixtures, so separate SSH endpoints are not evidence
+of independent physical or organizational control.
+
+Fault injection is outside the production dispatcher: a loopback-only opaque
+UDP relay drops/delays the selected flow, and an integration-test helper gates
+the first application response Write after the original replica journal commit.
+The helper retains the original local owner and drains accepted handlers before
+release. Private stdio supervision pins executable hashes, consumes complete
+bounded review frames and never replays control actions after lost output.
+No firewall, routing or tc changes are needed. The tests establish the recorded
+transport/process/replay assertions, not copied-key fencing, hardware durability
+or sustained public-network acceptance. See `REMOTE_ACCEPTANCE.md`.
+
 Journal mode fixes the manifest, original receipt, and complete custody-policy
 digest in an immutable header. Replay verifies every slot, content ID,
 predecessor, signature, sampled batch, and receipt extension. A permanent file

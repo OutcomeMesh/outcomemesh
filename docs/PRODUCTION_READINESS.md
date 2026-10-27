@@ -217,3 +217,17 @@ starts at position zero and closes both tickets independently. This closes the
 first current-head local tooling slice, not remote partitions, independently
 enforced physical/copy fencing, independent review or the public-testnet stability
 period. Weighted readiness remains 40/100.
+
+2026-10-27 remote-acceptance follow-up: two provided Linux VPS instances ran
+identical pinned Go binaries with separate freshly bootstrapped local Audit and
+Serve assignments. Five actual WAN custody scenarios passed: healthy delivery,
+loss before the request, replica-commit/response-loss plus process kill, bounded
+loss/delay, and rejection after the original proof aged out. Exact recovery kept
+the original response and explicit completion remained separate. An ordinary
+development chain also passed restart/outage handling, independent height-5/7
+fork mining, selection of the greater-work branch and full replay on both hosts.
+See REMOTE_ACCEPTANCE.md and evidence/remote-acceptance-20261027.json. This closes
+the measured two-host transport/recovery substep. Single-assignment distributed
+current authority, independently enforced physical/copy fencing, independent
+security review and sustained adversarial testnet duration remain open. Short
+controlled runs do not satisfy those parent gates; weighted readiness stays 40/100.
