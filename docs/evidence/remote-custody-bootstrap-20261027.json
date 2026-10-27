@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-27",
+  "scope": "position-zero V1 CLI lifecycle; one-host native process acceptance",
+  "source": {
+    "file_count": 619,
+    "manifest_sha256": "6a9237d73e4d1e9d424ed28b89df5dca50d4a020b7f4053a029fc6dc98ed32e7",
+    "unchanged_after_native_run": true,
+    "format": "sorted relative Go/module paths; SHA256(file bytes), two spaces, path, LF"
+  },
+  "focused_test_pattern": "^(TestProcessRemoteCustodyFromZero|TestRemoteCustodyCLIFromZero|TestCustodySourceBootstrap|TestCustodyArtifactsBootstrap|TestRemoteCustodyInitial|TestRemoteCustodySourceCLI|TestProcessCustodyCommandWholeTicketLifecycle)",
+  "macos_focused": {
+    "integration_tag": true,
+    "race": true,
+    "exit_code": 0,
+    "package_seconds": {
+      "cmd/omd": 121.673,
+      "node/workarchive": 3.769,
+      "node/custodyauthority/store": 9.954
+    }
+  },
+  "linux_focused": {
+    "platform": "Linux-5.15.0-164-generic-x86_64-with-glibc2.35",
+    "toolchain": "go version go1.26.7 linux/amd64",
+    "cgo_enabled": false,
+    "integration_tag": true,
+    "race": false,
+    "offline_modules": true,
+    "readonly_modules": true,
+    "build_workers": 2,
+    "exit_code": 0,
+    "elapsed_seconds": 27.204,
+    "package_seconds": {
+      "cmd/omd": 7.777,
+      "node/workarchive": 0.128,
+      "node/custodyauthority/store": 1.625
+    },
+    "remaining_test_group_processes": 0,
+    "temporary_ssh_master_closed": true
+  },
+  "cli_lifecycle": {
+    "starting_authority_sequence": 0,
+    "starting_source_sequences": [
+      0,
+      0
+    ],
+    "all_v1_mutations_through_cli": true,
+    "copied_live_journals": false,
+    "lost_first_admission_output": true,
+    "real_quic": true,
+    "independent_ticket_completions": 2,
+    "final_authority_sequence": 6,
+    "final_pending_operations": 0,
+    "final_active_remote": false,
+    "final_retained_attempt": false
+  },
+  "additional_coverage": [
+    "no-create default source/challenge review",
+    "partial/existing source root refusal",
+    "source/artifact preflight and role/placement checks",
+    "explicit exact pending admission Resume",
+    "confirmed pending Audit before challenge signing",
+    "wrong auditor key and active Begin refusal",
+    "original artifact-root replacement",
+    "lost challenge output with exact retry",
+    "V0 native process lifecycle preserved"
+  ],
+  "initial_test_observation": "A race in the new output-observer fixture was corrected by using a pre-created channel; the corrected focused race run passed.",
+  "remaining": [
+    "same-assignment cross-host fault/soak acceptance",
+    "unknown/unseen disposition lifecycle",
+    "independently enforced key/root copy fencing",
+    "device exhaustion and power-loss campaigns",
+    "independent audits and sustained public-testnet launch gates"
+  ],
+  "repository_gate_observation": {
+    "initial_run": "format and vet passed; Archive race group passed; the previous combined race group hit its unchanged 10-minute package limit",
+    "timed_out_package": "node/custodyauthority/store",
+    "current_test_at_timeout": "TestRemoteAuditRuntimePreexistingResultCannotBeginNewRemoteSession",
+    "current_test_elapsed_seconds": 1,
+    "prior_combined_group_elapsed_seconds": 603.809,
+    "remedy": "partition all tests into five mutually exclusive/exhaustive groups: Archive, Prune, remaining, ManagedCustody, Remote",
+    "timeout_increased": false,
+    "tests_removed": false
+  },
+  "full_repository_gate": {
+    "toolchain": "Go 1.26.7",
+    "command": "make -j1 test-all",
+    "exit_code": 0,
+    "format": true,
+    "vet": true,
+    "race_groups": [
+      "^TestArchive",
+      "^TestPrune",
+      "skip ^(TestArchive|TestPrune|TestRemote|TestManagedCustody)",
+      "^TestManagedCustody",
+      "^TestRemote"
+    ],
+    "timeouts_extended": false,
+    "go_source_unchanged": true,
+    "integration_tag_vet": true,
+    "archive_cache_reused": true,
+    "prior_archive_store_seconds": 266.936,
+    "fresh_store_group_seconds": {
+      "Prune": 323.574,
+      "remaining": 190.212,
+      "ManagedCustody": 154.074,
+      "Remote": 79.51
+    }
+  }
+}

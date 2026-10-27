@@ -376,6 +376,8 @@ func runRemoteCustodyAuthorityBootstrap(ctx context.Context, args []string, outp
 	}
 	var position custodyauthority.Position
 	var pending bool
+	var pendingOperations uint16
+	var activeRemote bool
 	if *mode != "review" {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -397,11 +399,12 @@ func runRemoteCustodyAuthorityBootstrap(ctx context.Context, args []string, outp
 			return err
 		}
 		position, pending = s.Confirmed, s.Pending != nil
+		pendingOperations, activeRemote = s.Authority.Pending, s.Authority.Remote != nil
 	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return writePruneOutputLine(output, fmt.Sprintf("remote_custody_authority_bootstrap mode=%s assignment_id=%s review_id=%s authority=%q authority_pins=%q confirmed_sequence=%d confirmed_head=%s retained_attempt=%t roots_inspected=%t owners_closed=true execution_authorized=false automatic_resume=false\n", *mode, id, review, roots[0], roots[1], position.Sequence, position.HeadID, pending, *mode != "review"))
+	return writePruneOutputLine(output, fmt.Sprintf("remote_custody_authority_bootstrap mode=%s assignment_id=%s review_id=%s authority=%q authority_pins=%q confirmed_sequence=%d confirmed_head=%s retained_attempt=%t pending_operations=%d active_remote=%t roots_inspected=%t owners_closed=true execution_authorized=false automatic_resume=false\n", *mode, id, review, roots[0], roots[1], position.Sequence, position.HeadID, pending, pendingOperations, activeRemote, *mode != "review"))
 }
 
 func remoteBootstrapRoot(path string) (string, error) {

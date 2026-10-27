@@ -343,6 +343,23 @@ func OpenOrCreateCustodyJournalWithLimits(
 	policy CustodyPolicy,
 	limits CustodyJournalLimits,
 ) (*CustodyJournal, CustodyJournalState, error) {
+	return openCustodyJournal(context.Background(), path, manifest, initialReceipt, policy, limits, false)
+}
+
+// CreateCustodyJournalWithLimits explicitly initializes a NEW source journal.
+// Its parent must exist. Existing or partially initialized roots are never
+// opened, repaired, removed or reset, including after an uncertain failure.
+func CreateCustodyJournalWithLimits(ctx context.Context, path string, manifest Manifest, initialReceipt ReplicaReceipt, policy CustodyPolicy, limits CustodyJournalLimits) (*CustodyJournal, CustodyJournalState, error) {
+	return openCustodyJournal(ctx, path, manifest, initialReceipt, policy, limits, true)
+}
+
+func openCustodyJournal(ctx context.Context, path string, manifest Manifest, initialReceipt ReplicaReceipt, policy CustodyPolicy, limits CustodyJournalLimits, fresh bool) (opened *CustodyJournal, observed CustodyJournalState, returnErr error) {
+	if ctx == nil {
+		return nil, CustodyJournalState{}, ErrCustodyJournal
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, CustodyJournalState{}, err
+	}
 	if err := limits.Validate(); err != nil {
 		return nil, CustodyJournalState{}, err
 	}
@@ -363,14 +380,27 @@ func OpenOrCreateCustodyJournalWithLimits(
 		Version: CustodyJournalHeaderVersion0, ManifestID: manifestID,
 		PolicyID: policyID, InitialReceipt: initialReceipt,
 	}
-	if err := makeCustodyJournalRoot(path); err != nil {
-		return nil, CustodyJournalState{}, err
+	var rootInfo os.FileInfo
+	if fresh {
+		path, rootInfo, err = createCustodySourceRoot(ctx, path)
+		if err != nil {
+			return nil, CustodyJournalState{}, err
+		}
+	} else {
+		if err := makeCustodyJournalRoot(path); err != nil {
+			return nil, CustodyJournalState{}, err
+		}
 	}
-	lock, err := acquireCustodyJournalLock(path)
+	lock, err := acquireCustodyEvidenceLockContext(ctx, path, custodyJournalLockName, true)
 	if err != nil {
 		return nil, CustodyJournalState{}, err
 	}
-	defer lock.Close()
+	defer func() {
+		if closeErr := lock.Close(); fresh && closeErr != nil {
+			opened, observed = nil, CustodyJournalState{}
+			returnErr = errors.Join(returnErr, closeErr)
+		}
+	}()
 	if err := initializeCustodyJournal(path, header, limits); err != nil {
 		return nil, CustodyJournalState{}, err
 	}
@@ -387,6 +417,15 @@ func OpenOrCreateCustodyJournalWithLimits(
 	state, err := journal.scan()
 	if err != nil {
 		return nil, CustodyJournalState{}, err
+	}
+	if fresh {
+		err := checkCreatedCustodySource(path, rootInfo, lock, custodyJournalLockName)
+		if err != nil || state.Sequence != 0 || !state.HeadEntryID.IsZero() {
+			return nil, CustodyJournalState{}, errors.Join(ErrCustodyJournal, err)
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, CustodyJournalState{}, err
+		}
 	}
 	return journal, state, nil
 }

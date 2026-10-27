@@ -197,11 +197,10 @@ disjoint repository race groups (store 220.276, 508.010 and 170.233 seconds).
 No timeout extension was used and the source manifest remained unchanged.
 Integration-tag vet also passed.
 
-This is the offline preparation slice. Initial A/B source-journal preparation,
-source-guarded application of the first V1 Audit/Serve admissions, and challenge
-preparation before a Plan/Begin exists still require the existing Go APIs. The
-operator's existing `prepare` action consumes a complete preconfigured session;
-it does not solve that earlier bootstrap step. A full position-zero CLI-only
-workflow, same-assignment WAN fault/soak acceptance, negative-disposition closure,
-independent copy fencing and mainnet gates remain open. Do not assemble an
-alternative workflow by copying live authority, pin or source journals.
+This was the offline preparation slice. The subsequent
+[position-zero workflow](REMOTE_CUSTODY_BOOTSTRAP.md) now covers initial A/B
+source journals and source-guarded V1 admission/challenge preparation before a
+Plan/Begin exists. It uses a separate pre-Begin challenge command; the operator's
+later `prepare` action consumes the complete fixed session. Same-assignment WAN
+fault/soak acceptance, negative-disposition closure, independent copy fencing and
+mainnet gates remain open. Do not copy live authority, pin or source journals.

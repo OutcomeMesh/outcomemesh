@@ -288,3 +288,15 @@ challenge bootstrap and complete position-zero CLI workflow, same-assignment WAN
 fault/soak, negative dispositions and independent copy fencing remain open. The
 current weighted baseline stays 43/100; no additional lifecycle point is earned
 by this preparation slice alone.
+
+2026-10-27 position-zero CLI follow-up: fresh source journals and artifacts,
+source-guarded V1 admission application/explicit Resume and pre-Begin challenge
+preparation now complete the successful operational lifecycle through CLI.
+Actual subprocesses cover lost first-admission output and exact retry, real
+QUIC, original-A result capture and two independent completions at position six.
+Focused race/integration tests include the unchanged V0 process workflow; native
+Linux tests pass on the same source pin. See REMOTE_CUSTODY_BOOTSTRAP.md. This
+closes the remaining successful local bootstrap/tooling substep. The reserved
+V1 operator/WAN point still requires same-assignment cross-host fault/soak
+acceptance; negative dispositions, independent copy fencing, device campaigns,
+independent review and launch gates remain open. The baseline stays 43/100.

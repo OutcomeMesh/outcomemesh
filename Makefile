@@ -17,10 +17,12 @@ test:
 	$(GO) test ./...
 
 test-race:
-	# Three disjoint groups cover all tests without extending timeouts.
+	# Five disjoint groups cover all tests without extending timeouts.
 	$(GO) test -race ./... -run '^TestArchive'
-	$(GO) test -race ./... -skip '^(TestArchive|TestManagedCustody)'
+	$(GO) test -race ./... -run '^TestPrune'
+	$(GO) test -race ./... -skip '^(TestArchive|TestPrune|TestRemote|TestManagedCustody)'
 	$(GO) test -race ./... -run '^TestManagedCustody'
+	$(GO) test -race ./... -run '^TestRemote'
 
 test-fuzz-smoke:
 	$(GO) test ./cmd/omd -run '^$$' -fuzz '^FuzzDecodePruneEffectRootsNeverPanics$$' -fuzztime=$(FUZZTIME)
@@ -108,7 +110,7 @@ test-fuzz-smoke:
 	$(GO) test ./sim/workgraphmodel -run '^$$' -fuzz '^FuzzRunSelfishStrategiesNeverBreakAccounting$$' -fuzztime=$(FUZZTIME)
 
 test-process:
-	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessRemoteCustody(CLI|Offline)' -count=1 -timeout=2m
+	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessRemoteCustody(CLI|Offline|FromZero)' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestRemoteCustodyNetworkProcessRecovery$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestRemoteCoordinatorProcessCrashBarriers$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./node/custodyauthority/remoteworker -run '^TestWorkerSealingSurvivesKilledOriginalProcess$$' -count=1 -timeout=2m

@@ -96,16 +96,35 @@ type ManagedCustodyCommandService struct {
 	terminal                               CustodyTerminal
 	entryPath, challengePath, terminalPath string
 	hooks                                  storeHooks
+	remoteAdmission                        bool
 }
 
 func OpenManagedCustodyCommandService(ctx context.Context, config ManagedCustodyCommandServiceConfig) (_ *ManagedCustodyCommandService, returnErr error) {
+	return openManagedCustodyCommandService(ctx, config, false)
+}
+
+// OpenRemoteCustodyAdmissionService is V1 admission-only preparation under the
+// original A owner and source. It cannot apply Begin, Drain or Complete and does
+// not widen the V0 constructor. Execution remains a separate owned protocol.
+func OpenRemoteCustodyAdmissionService(ctx context.Context, config ManagedCustodyCommandServiceConfig) (*ManagedCustodyCommandService, error) {
+	if config.Entry.Command.Kind != custodyauthority.Admit {
+		return nil, ErrManagedCustodyCommand
+	}
+	return openManagedCustodyCommandService(ctx, config, true)
+}
+
+func openManagedCustodyCommandService(ctx context.Context, config ManagedCustodyCommandServiceConfig, remote bool) (_ *ManagedCustodyCommandService, returnErr error) {
 	if ctx == nil {
 		return nil, ErrManagedCustodyCommand
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	scope, err := cloneCustodyCommandScope(config.Scope)
+	version := custodyauthority.Version0
+	if remote {
+		version = custodyauthority.Version1
+	}
+	scope, err := cloneCustodyCommandScopeVersion(config.Scope, version)
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +133,7 @@ func OpenManagedCustodyCommandService(ctx context.Context, config ManagedCustody
 		config.Entry.Command.AssignmentID != scope.AssignmentID || config.Entry.AuthorityPublicKey != scope.Assignment.AuthorityPublicKey {
 		return nil, errors.Join(ErrManagedCustodyCommand, err)
 	}
-	service := &ManagedCustodyCommandService{entry: config.Entry, entryID: entryID}
+	service := &ManagedCustodyCommandService{entry: config.Entry, entryID: entryID, remoteAdmission: remote}
 	entryBytes, err := config.Entry.CanonicalBytes()
 	if err != nil {
 		return nil, err
@@ -141,7 +160,11 @@ func OpenManagedCustodyCommandService(ctx context.Context, config ManagedCustody
 		} else if config.ChallengePath != "" || !emptyCustodyChallenge(config.Challenge) {
 			return nil, ErrManagedCustodyCommand
 		}
-		draft, err = BuildCustodyAdmitCommand(scope, c.Purpose, c.ActorPublicKey, position, service.challenge)
+		if remote {
+			draft, err = BuildRemoteCustodyAdmitCommand(scope, c.Purpose, c.ActorPublicKey, position, service.challenge)
+		} else {
+			draft, err = BuildCustodyAdmitCommand(scope, c.Purpose, c.ActorPublicKey, position, service.challenge)
+		}
 	case custodyauthority.Complete:
 		if config.ChallengePath != "" || !emptyCustodyChallenge(config.Challenge) {
 			return nil, ErrManagedCustodyCommand
@@ -260,6 +283,9 @@ func (service *ManagedCustodyCommandService) reviewLocked(ctx context.Context, d
 // selected pending attempt is observable but only Resume may submit it.
 func (service *ManagedCustodyCommandService) validateSelectedLocked(current Coordination) (bool, error) {
 	owner, entry := service.life.owner, service.entry
+	if service.remoteAdmission && current.Authority.Remote != nil {
+		return false, ErrRemoteCustody
+	}
 	if current.Pending != nil {
 		return false, nil
 	}
@@ -364,6 +390,9 @@ func (service *ManagedCustodyCommandService) apply(ctx context.Context, expected
 			result, err = owner.resume(run)
 		} else {
 			result, err = owner.append(run, service.entry)
+		}
+		if service.remoteAdmission {
+			return errors.Join(err, service.source.validate())
 		}
 		return err
 	})
@@ -474,7 +503,11 @@ type managedCustodyCommandSource struct {
 }
 
 func cloneCustodyCommandScope(scope CustodyCommandScope) (CustodyCommandScope, error) {
-	if err := ValidateCustodyCommandScope(scope); err != nil {
+	return cloneCustodyCommandScopeVersion(scope, custodyauthority.Version0)
+}
+
+func cloneCustodyCommandScopeVersion(scope CustodyCommandScope, version uint16) (CustodyCommandScope, error) {
+	if err := validateCustodyCommandScopeVersion(scope, version); err != nil {
 		return CustodyCommandScope{}, err
 	}
 	b, err := scope.Assignment.CanonicalBytes()

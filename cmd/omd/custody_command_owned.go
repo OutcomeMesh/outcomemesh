@@ -2,12 +2,15 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 
@@ -20,17 +23,21 @@ import (
 var errCustodyCommandUnobserved = errors.New("custody action result was not observed; inspect the retained canonical artifact and original journals before an explicit retry")
 
 type custodyCommandOwnedOptions struct {
-	name, mode, out string
-	scope           authoritystore.CustodyCommandScope
-	sources         custodyCommandSources
-	purpose         custodyauthority.Purpose
-	apply           authoritystore.ManagedCustodyCommandServiceConfig
-	capture         authoritystore.ManagedCustodyTerminalCaptureServiceConfig
+	name, mode, out  string
+	scope            authoritystore.CustodyCommandScope
+	sources          custodyCommandSources
+	purpose          custodyauthority.Purpose
+	apply            authoritystore.ManagedCustodyCommandServiceConfig
+	capture          authoritystore.ManagedCustodyTerminalCaptureServiceConfig
+	artifacts, nonce string
+	auditorKey       ed25519.PrivateKey
 }
 
 func loadCustodyCommandOwnedOptions(ctx context.Context, args []string) (custodyCommandOwnedOptions, error) {
 	o := custodyCommandOwnedOptions{name: args[0]}
 	capture := o.name == custodyTerminalCommand
+	prepare := o.name == remoteCustodyChallengeCommand
+	remote := prepare || o.name == remoteCustodyAdmissionApplyCommand
 	f := flag.NewFlagSet(o.name, flag.ContinueOnError)
 	f.SetOutput(io.Discard)
 	common := addCustodyCommandScopeFlags(f)
@@ -42,6 +49,11 @@ func loadCustodyCommandOwnedOptions(ctx context.Context, args []string) (custody
 	admissionPath := f.String("admission", "", "exact co-signed admission")
 	admissionText := f.String("admission-id", "", "independently retained admission ID")
 	limits := addArchiveCustodyJournalLimitFlags(f)
+	var artifacts, auditorKey string
+	if prepare {
+		f.StringVar(&artifacts, "artifacts", "", "existing original A artifact root")
+		f.StringVar(&auditorKey, "auditor-key", "", "control only: existing auditor evidence seed file")
+	}
 	var entryPath, entryText, challengePath, challengeText, terminalPath, terminalText, out string
 	if capture {
 		f.StringVar(&out, "out", "", "control only: immutable captured terminal envelope")
@@ -67,7 +79,11 @@ func loadCustodyCommandOwnedOptions(ctx context.Context, args []string) (custody
 		}
 	}
 	var err error
-	o.scope, o.sources, err = common.load()
+	if remote {
+		o.scope, o.sources, err = common.loadVersion(custodyauthority.Version1)
+	} else {
+		o.scope, o.sources, err = common.load()
+	}
 	if err != nil {
 		return o, err
 	}
@@ -115,6 +131,9 @@ func loadCustodyCommandOwnedOptions(ctx context.Context, args []string) (custody
 			return o, err
 		}
 		id, _ := entry.ID()
+		if remote && entry.Command.Kind != custodyauthority.Admit {
+			return o, errors.New("V1 preparation applies only ordinary admissions; Begin/Drain/Complete use the remote operator")
+		}
 		o.apply = authoritystore.ManagedCustodyCommandServiceConfig{AuthorityPath: *authority, AuthorityPinsPath: *pins, Scope: o.scope, Entry: entry, EntryID: id, JournalPath: *journal, JournalLimits: limits.limits(), IntentPath: o.sources.Intent, EntryPath: path}
 		switch entry.Command.Kind {
 		case custodyauthority.Admit:
@@ -154,6 +173,40 @@ func loadCustodyCommandOwnedOptions(ctx context.Context, args []string) (custody
 			return o, errors.New("local custody apply accepts only Audit/Serve Admit or Complete")
 		}
 	}
+	if prepare {
+		if o.purpose != custodyauthority.Audit {
+			return o, errors.New("challenge preparation requires the Audit admission")
+		}
+		o.artifacts, err = managedCustodyCanonicalDirectory(artifacts)
+		if err != nil {
+			return o, err
+		}
+		for _, root := range []string{*authority, *pins, *journal, filepath.Dir(o.sources.Intent), filepath.Dir(o.apply.EntryPath)} {
+			if err := authoritystore.ValidateBootstrapPaths(o.artifacts, root); err != nil {
+				return o, err
+			}
+		}
+		if o.mode == "review" {
+			if err := custodyCommandForbid(present, "auditor-key"); err != nil {
+				return o, err
+			}
+		} else {
+			o.auditorKey, err = loadPruneOfflineKey(auditorKey)
+			if err != nil {
+				return o, err
+			}
+			if [32]byte(o.auditorKey.Public().(ed25519.PublicKey)) != o.scope.Intent.AuditorPublicKey {
+				return o, errors.New("auditor seed does not match the pinned intent")
+			}
+		}
+	}
+	if remote && o.mode == "control" {
+		var nonce [32]byte
+		if _, err := rand.Read(nonce[:]); err != nil {
+			return o, err
+		}
+		o.nonce = fmt.Sprintf("%x", nonce)
+	}
 	return o, ctx.Err()
 }
 
@@ -164,6 +217,35 @@ type custodyCommandOwner struct {
 }
 
 func openCustodyCommandOwner(ctx context.Context, o custodyCommandOwnedOptions) (custodyCommandOwner, error) {
+	if o.name == remoteCustodyChallengeCommand {
+		s, err := authoritystore.OpenRemoteCustodyChallengeService(ctx, authoritystore.RemoteCustodyChallengeConfig{Admission: o.apply, ArtifactsPath: o.artifacts, SessionConfig: workarchive.DefaultCustodySessionConfig()})
+		if err != nil {
+			return custodyCommandOwner{}, err
+		}
+		return custodyCommandOwner{
+			review: func(ctx context.Context) (any, types.Hash, error) {
+				r, err := s.Review(ctx)
+				if err != nil {
+					return nil, types.Hash{}, err
+				}
+				id, err := r.ID()
+				return r, id, err
+			},
+			action: func(ctx context.Context, action string, id types.Hash) (string, error) {
+				if action != "prepare" {
+					return "", errors.New("challenge control requires prepare")
+				}
+				challenge, err := s.Prepare(ctx, id, o.auditorKey)
+				if err != nil {
+					return "", err
+				}
+				cid, err := challenge.ID()
+				if err != nil {
+					return "", errors.Join(errCustodyCommandUnobserved, err)
+				}
+				return fmt.Sprintf("challenge_id=%s challenge_published=true execution_started=false", cid), nil
+			}, close: s.Close}, nil
+	}
 	if o.name == custodyTerminalCommand {
 		s, err := authoritystore.OpenManagedCustodyTerminalCaptureService(ctx, o.capture)
 		if err != nil {
@@ -193,7 +275,13 @@ func openCustodyCommandOwner(ctx context.Context, o custodyCommandOwnedOptions) 
 				return fmt.Sprintf("terminal_id=%s artifact_published=true completion_submitted=false", tid), nil
 			}, close: s.Close}, nil
 	}
-	s, err := authoritystore.OpenManagedCustodyCommandService(ctx, o.apply)
+	var s *authoritystore.ManagedCustodyCommandService
+	var err error
+	if o.name == remoteCustodyAdmissionApplyCommand {
+		s, err = authoritystore.OpenRemoteCustodyAdmissionService(ctx, o.apply)
+	} else {
+		s, err = authoritystore.OpenManagedCustodyCommandService(ctx, o.apply)
+	}
 	if err != nil {
 		return custodyCommandOwner{}, err
 	}
@@ -238,11 +326,16 @@ func custodyCommandOwnedScope(o custodyCommandOwnedOptions, review any, base typ
 	case authoritystore.ManagedCustodyCaptureReview:
 		confirmed, observed = r.AuthorityPosition, r.AuthorityPosition
 		head, receipt, admission, terminal, sequence = r.JournalHeadID, r.CurrentReceiptID, r.AdmissionID, r.TerminalID, r.JournalSequence
+	case authoritystore.RemoteCustodyChallengeReview:
+		a := r.Admission
+		confirmed, observed = a.AuthorityPosition, a.ObservedAuthorityPosition
+		head, receipt, admission, sequence = a.JournalHeadID, a.CurrentReceiptID, a.EntryID, a.JournalSequence
 	default:
 		return nil, types.Hash{}, errors.New("unsupported custody review type")
 	}
 	b, err := json.MarshalIndent(struct {
 		Scope                     custodyCommandPublicScope `json:"scope"`
+		ControlNonce              string                    `json:"control_nonce,omitempty"`
 		Review                    any                       `json:"owned_review"`
 		BaseID                    string                    `json:"base_review_id"`
 		Purpose                   custodyauthority.Purpose  `json:"selected_purpose"`
@@ -257,7 +350,7 @@ func custodyCommandOwnedScope(o custodyCommandOwnedOptions, review any, base typ
 		EntryID                   string                    `json:"entry_id"`
 		AdmissionID               string                    `json:"admission_id"`
 		TerminalID                string                    `json:"terminal_id"`
-	}{custodyCommandPublic(o.scope, o.sources), review, base.String(), o.purpose, o.out, confirmed.Sequence, confirmed.HeadID.String(), observed.Sequence, observed.HeadID.String(), sequence, head.String(), receipt.String(), entry.String(), admission.String(), terminal.String()}, "", "  ")
+	}{custodyCommandPublic(o.scope, o.sources), o.nonce, review, base.String(), o.purpose, o.out, confirmed.Sequence, confirmed.HeadID.String(), observed.Sequence, observed.HeadID.String(), sequence, head.String(), receipt.String(), entry.String(), admission.String(), terminal.String()}, "", "  ")
 	return b, types.DomainHash("OMESH/local/custody-command-cli-review/v0", b), err
 }
 
@@ -382,6 +475,9 @@ func runCustodyCommandControl(parent context.Context, o custodyCommandOwnedOptio
 			valid := action == "apply" || action == "resume"
 			if o.name == custodyTerminalCommand {
 				valid = action == "capture"
+			}
+			if o.name == remoteCustodyChallengeCommand {
+				valid = action == "prepare"
 			}
 			if !ok || !valid {
 				return errors.New("control accepts review, the selected action with its review ID, or close")

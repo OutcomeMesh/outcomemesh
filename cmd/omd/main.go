@@ -136,7 +136,8 @@ func run(arguments []string) error {
 		return runManagedCustodyPairCLI(arguments)
 	case custodyCommandSignCommand, custodyCommandCosignCommand, custodyTerminalCommand, custodyCommandApplyCommand,
 		remoteCustodyAssignmentCommand, remoteCustodyPlanCommand, remoteCustodySignCommand,
-		remoteCustodyCosignCommand, remoteCustodyWorkerPrepareCommand, remoteCustodyAuthorityBootstrapCommand:
+		remoteCustodyCosignCommand, remoteCustodyWorkerPrepareCommand, remoteCustodyAuthorityBootstrapCommand,
+		remoteCustodySourceCommand, remoteCustodyAdmissionApplyCommand, remoteCustodyChallengeCommand:
 		return runCustodyCommandCLI(arguments)
 	case "work-archive-custody-checkpoint":
 		return runWorkArchiveCustodyCheckpoint(arguments[1:], false)
@@ -1609,6 +1610,8 @@ func printUsage() {
 	fmt.Printf("V1 offline preparation: omd <%s|%s> --mode <review|publish> [flags]\n", remoteCustodyAssignmentCommand, remoteCustodyPlanCommand)
 	fmt.Printf("V1 offline signatures: omd <%s|%s> --mode <review|sign> [flags]; --kind <admit|begin|complete>\n", remoteCustodySignCommand, remoteCustodyCosignCommand)
 	fmt.Printf("V1 explicit fresh roots: omd <%s|%s> --mode <review|create|verify> [flags]\n", remoteCustodyAuthorityBootstrapCommand, remoteCustodyWorkerPrepareCommand)
+	fmt.Printf("V1 source journals: omd %s --mode <review|create|verify> --role <audit|serve> [flags]\n", remoteCustodySourceCommand)
+	fmt.Printf("V1 initial admissions/challenge: omd <%s|%s> --mode <review|control> [flags]\n", remoteCustodyAdmissionApplyCommand, remoteCustodyChallengeCommand)
 	fmt.Printf("managed custody audit: omd %s --mode <review|control> [flags]; control uses dedicated stdin/stdout pipes\n", managedCustodyAuditCommand)
 	fmt.Printf("unsigned custody intent: omd %s --mode <review|publish|verify> [flags]\n", managedCustodyIntentCommand)
 	fmt.Printf("managed local custody pair: omd %s --mode <review|control> [flags]; control uses dedicated stdin/stdout pipes\n", managedCustodyPairCommand)

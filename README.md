@@ -190,9 +190,11 @@ The [remote operator/server commands](docs/REMOTE_CUSTODY_OPERATOR.md) now provi
 default non-executing review, supervised owned control and retained sealed/terminal
 artifacts. Separate [V1 offline preparation commands](docs/REMOTE_CUSTODY_OFFLINE.md)
 create assignments, authority/worker roots and plans, and review/sign/co-sign
-admissions, Begin proposals and successful completions. The position-zero
-source/admission bootstrap, same-assignment WAN acceptance and independent
-key/root copy fencing remain open.
+admissions, Begin proposals and successful completions. The [position-zero CLI
+workflow](docs/REMOTE_CUSTODY_BOOTSTRAP.md) now also creates local source journals,
+applies initial admissions and prepares their exact challenge under original
+guards. Same-assignment WAN acceptance and independent key/root copy fencing
+remain open.
 
 ## Build and run
 

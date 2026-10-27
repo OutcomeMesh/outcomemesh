@@ -114,9 +114,32 @@ func (cycle *CustodyAuditCycle) ArtifactsDirectory() string {
 // under an artifact->journal decision. Already retained challenges never obtain
 // a fresh nonce/time. A committed exact result may restore its missing challenge.
 func (cycle *CustodyAuditCycle) PrepareChallenge(ctx context.Context) (challenge CustodyChallenge, returnErr error) {
+	return cycle.prepareChallengeChecked(ctx, nil)
+}
+
+// PrepareChallengeChecked is a trusted local primitive. The managed caller
+// retains its original authority while check validates the SAME source decision
+// before signing and after publication, under artifact->journal locks. check
+// must not escape the decision or reacquire either lock. This grants no authority.
+func (cycle *CustodyAuditCycle) PrepareChallengeChecked(ctx context.Context, check func(*CustodyJournalDecision) error) (CustodyChallenge, error) {
+	if check == nil {
+		return CustodyChallenge{}, ErrCustodyAuditCycle
+	}
+	return cycle.prepareChallengeChecked(ctx, check)
+}
+
+func (cycle *CustodyAuditCycle) prepareChallengeChecked(ctx context.Context, check func(*CustodyJournalDecision) error) (challenge CustodyChallenge, returnErr error) {
 	err := cycle.withDecision(ctx, func(decision *CustodyJournalDecision) error {
+		if check != nil {
+			if err := check(decision); err != nil {
+				return err
+			}
+		}
 		var err error
 		challenge, _, _, err = cycle.prepareLocked(ctx, decision)
+		if err == nil && check != nil {
+			err = check(decision)
+		}
 		return err
 	})
 	if err != nil {

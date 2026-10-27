@@ -2345,6 +2345,44 @@ Implemented in an isolated, not-yet-activated consensus package:
   source guarded admission/challenge preparation before Plan/Begin remain SDK
   work; a full position-zero CLI-only workflow and same-assignment WAN acceptance
   remain open. This slice adds no weighted readiness point; the baseline is 43/100.
+  Position-zero CLI follow-up (2026-10-27): a distinct source command now reviews,
+  exclusively creates or verifies A/B source journals and A's artifact root.
+  Existing/partial roots are never reinitialized; both A destinations are checked
+  before creation, and uncertain failures retain their files. The source format
+  stays V0. A separate V1 admission service checks the complete pinned intent/
+  archive and original source before applying or explicitly resuming the exact
+  signed admission, without widening the V0 constructor. The pre-Begin challenge
+  service requires a confirmed pending Audit and holds original authority,
+  artifact lock and source decision through deterministic publication, checking
+  source/root/lock identities before and after. Default review uses no seed and
+  signs nothing; managed controls include a fresh process nonce and consume each
+  displayed comparison before action. Native CLI processes now create every V1
+  session artifact/root/admission from zero, execute real QUIC, capture the same
+  original-A result and independently sign/apply both completions. Lost first-
+  admission output reopens to the exact same entry; final CLI inspection confirms
+  sequence six, zero pending operations and no active remote obligation.
+  Tests also cover exact pending Resume, active Begin refusal, wrong evidence
+  key, replaced original artifacts, no-create inspection, source preflight and
+  lost challenge output. A race in the new test observer was fixed with a
+  pre-created channel; corrected focused integration/race tests, including the
+  unchanged V0 process lifecycle, pass (cmd/omd 121.673 seconds, workarchive 3.769,
+  store 9.954). Native Linux/amd64 Go 1.26.7 with CGO_ENABLED=0 and offline/read-only
+  modules passes the same selection (cmd/omd 7.777 seconds, workarchive 0.128,
+  store 1.625). Its exact 619-file source manifest matches before and after; no
+  task-group children remain and the temporary SSH master is closed.
+  See REMOTE_CUSTODY_BOOTSTRAP.md. Same-assignment
+  WAN fault/soak, negative dispositions and independent copy fencing stay open;
+  weighted production readiness remains approximately 43/100.
+  Full-gate observation: the former combined race group hit its ten-minute
+  package limit at a remote test that had run for one second, after Archive,
+  formatting and vet had passed. The race target was split into five disjoint
+  exhaustive groups (Archive, Prune, remaining, ManagedCustody, Remote), keeping
+  the default timeout and every test. This is a test partition change, not a
+  product-code or deadline relaxation.
+  The partitioned Go 1.26.7 make test-all passes formatting, full vet and all five
+  race groups: the unchanged Archive result was reused (prior store 266.936
+  seconds), and fresh store groups took 323.574, 190.212, 154.074 and 79.510.
+  Integration-tag vet passes; the 619-file Go source pin is unchanged.
   Process-gate observation (2026-09-07): the first combined run stopped at
   `TestProcessTieCampaignStorageFailuresRecoverWithoutFalseAdvance/observer_confirmation_after_link`
   because the expected confirmation marker was absent. Five isolated repetitions

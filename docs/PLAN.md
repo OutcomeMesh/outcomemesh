@@ -745,19 +745,25 @@ inputs, outputs, fee, expiry height, and a GuardVM program.
                           recovery. Compare canonical bytes, preserve V0-only
                           workflows, recover exact immutable signatures without
                           seeds, and use CLI signatures in the real-QUIC
-                          successful-completion test. Initial source/admission
-                          bootstrap and full position-zero CLI acceptance remain
-                          the next separate substep.
+                          successful-completion test.
+                        - [x] Explicit fresh A/B source journals and A artifacts,
+                          original-A guarded V1 admission application and
+                          pre-Begin challenge preparation. Require independently
+                          confirmed pending Audit, preserve exact intent nonce/
+                          times, reject partial/existing root reinitialization,
+                          active remote holds and replaced source/lock identities.
+                          Run the entire position-zero CLI lifecycle through
+                          native processes and real QUIC, lose the first admission
+                          reply, recover the same entry and close both tickets
+                          independently at confirmed position six. Retain V0
+                          rejection/behavior and explicit pending Resume.
                         - [ ] Single-assignment cross-host current-authority
                           enforcement and independently enforced physical/copy
                           fencing. Separate local assignments over real WAN do
                           not establish distributed current authority. The V1
                           state/journal foundation does not close this gate.
-                          Remaining work:
-                          source-journal initialization and source-guarded V1
-                          admission/challenge bootstrap before Plan/Begin, with
-                          a complete position-zero CLI acceptance; unknown/unseen
-                          terminal disposition; same-assignment WAN fault/soak acceptance;
+                          Remaining work: unknown/unseen terminal disposition;
+                          same-assignment WAN fault/soak acceptance;
                           independently protected keys/roots and copy fencing.
                           In-place owner transfer is not added by the explicit
                           stop/close/reopen operator workflow.

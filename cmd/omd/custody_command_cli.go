@@ -44,7 +44,7 @@ func runCustodyCommand(ctx context.Context, arguments []string, input io.ReadClo
 	switch arguments[0] {
 	case custodyCommandSignCommand, custodyCommandCosignCommand,
 		remoteCustodyAssignmentCommand, remoteCustodyPlanCommand, remoteCustodySignCommand,
-		remoteCustodyCosignCommand, remoteCustodyWorkerPrepareCommand, remoteCustodyAuthorityBootstrapCommand:
+		remoteCustodyCosignCommand, remoteCustodyWorkerPrepareCommand, remoteCustodyAuthorityBootstrapCommand, remoteCustodySourceCommand:
 		// Static commands own no journals, but a full pipe must still observe
 		// cancellation and preserve any already published immutable artifact.
 		if file, ok := output.(*os.File); ok {
@@ -72,7 +72,7 @@ func runCustodyCommand(ctx context.Context, arguments []string, input io.ReadClo
 			return runCustodyCommandSigning(ctx, arguments, output)
 		}
 		return runRemoteCustodyOffline(ctx, arguments, output)
-	case custodyTerminalCommand, custodyCommandApplyCommand:
+	case custodyTerminalCommand, custodyCommandApplyCommand, remoteCustodyAdmissionApplyCommand, remoteCustodyChallengeCommand:
 		return runCustodyCommandOwned(ctx, arguments, input, output)
 	default:
 		return errors.New("unsupported custody command")

@@ -24,6 +24,9 @@ const (
 	remoteCustodyCosignCommand             = "work-archive-custody-remote-command-cosign"
 	remoteCustodyWorkerPrepareCommand      = "work-archive-custody-remote-worker-prepare"
 	remoteCustodyAuthorityBootstrapCommand = "work-archive-custody-remote-authority-bootstrap"
+	remoteCustodySourceCommand             = "work-archive-custody-remote-source"
+	remoteCustodyAdmissionApplyCommand     = "work-archive-custody-remote-admission-apply"
+	remoteCustodyChallengeCommand          = "work-archive-custody-remote-challenge"
 )
 
 func runRemoteCustodyOffline(ctx context.Context, args []string, output io.Writer) error {
@@ -36,6 +39,8 @@ func runRemoteCustodyOffline(ctx context.Context, args []string, output io.Write
 		return runRemoteCustodySigning(ctx, args, output)
 	case remoteCustodyAuthorityBootstrapCommand:
 		return runRemoteCustodyAuthorityBootstrap(ctx, args, output)
+	case remoteCustodySourceCommand:
+		return runRemoteCustodySource(ctx, args, output)
 	}
 	return errors.New("unsupported remote offline command")
 }

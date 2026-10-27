@@ -36,9 +36,10 @@ IP/UDP/QUIC-v1 address and defaults to loopback with an ephemeral port.
 
 The [V1 offline preparation commands](REMOTE_CUSTODY_OFFLINE.md) now create the
 assignment, authority roots, plan, Begin proposal and B worker, and separately
-sign/co-sign Audit/Serve admissions and successful completions. Initial source
-journals and source-guarded admission/challenge preparation before Plan/Begin
-still require the SDK; the full position-zero CLI workflow remains open.
+sign/co-sign Audit/Serve admissions and successful completions. The
+[position-zero workflow](REMOTE_CUSTODY_BOOTSTRAP.md) now creates local source
+journals and applies initial admissions/prepares their challenge before Plan/Begin
+through separately reviewed original-owner commands.
 Existing V0 signing commands do not silently accept V1. No private seed belongs
 in a command-line value: seed flags name existing regular 32-byte seed files.
 
@@ -160,9 +161,9 @@ independent ticket completions, EOF/malformed control, and separate processes
 with output broken after a confirmed Drain. The reopened operator recovers the
 same immutable evidence without another effect.
 
-This CLI does not close same-assignment WAN fault/soak acceptance, the remaining
-position-zero V1 source/admission bootstrap, negative-disposition closure, independent physical/key
-copy fencing, device-failure campaigns or the public-testnet/audit launch gates.
+This CLI does not close same-assignment WAN fault/soak acceptance,
+negative-disposition closure, independent physical/key copy fencing,
+device-failure campaigns or the public-testnet/audit launch gates.
 
 The focused integration/race run passed on macOS (cmd/omd 33.884 seconds, store
 82.984). Native Linux/amd64 Go 1.26.7 with CGO_ENABLED=0, offline dependencies,
