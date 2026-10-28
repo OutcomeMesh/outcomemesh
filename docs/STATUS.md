@@ -10,6 +10,36 @@ Full planned production readiness is approximately **44/100**, using the weighte
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
 
+## 2026-10-29: isolated source/version service and Linux participant boundary
+
+The [custody gateway](CUSTODY_GATEWAY.md) now keeps a newly generated service key
+and the original sealed source/object access behind a different Linux UID.
+Issuer-signed descriptors pin the selected source, complete import identities,
+new root/key, ACL, UIDs and bounded lifetime log. Kernel peer credentials and a
+signed request are both mandatory; clients also check the server UID and key.
+
+Original-source inspection and actual manifest-bound chunk reads execute inside
+the owner boundary, with source guards across the read and one service lock across
+operation/signing/durable publication. Exact positions/nonces, byte-identical tip
+retry, one-attempt cold recovery and irreversible issuer revocation reject stale
+requests without allocating another event. The final slot/byte allowance is
+reserved for revocation. Partial publication remains evidence and blocks reuse.
+Reviewed CLI covers identity, descriptor derivation/signing, configuration,
+requests, calls, public response inspection, strict startup and stale-socket cleanup.
+
+[Evidence](evidence/custody-gateway-20261029.json) records the frozen sources,
+canonical vectors, decoder fuzzing, placement/key/log faults, race checks and
+native Linux process acceptance. The same native binaries are checked on both
+servers. A distinct unprivileged process cannot read private key/source/object
+files; actual read, wrong UID, malformed frames, lost output, kill/restart, exact
+retry and retained revocation are exercised.
+
+This protects the live service from old **participant** copies under the stated
+OS boundary. Root/service-host compromise or a complete service VM/key clone is
+outside that boundary. Original profile-5 job execution, protected A/B deployment,
+independent hardware/external-state defenses, external audit and sustained testnet
+remain open. No weighted launch gate closes: readiness remains **44/100**.
+
 ## 2026-10-29: sealed original sources and checks on held actions
 
 The [source handoff](CUSTODY_SOURCE_HANDOFF.md) now fixes one selected successor

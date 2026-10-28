@@ -66,13 +66,35 @@ func ReviewSourceHandoff(g v2.AdmissionGenesis, b v2.EnrollmentBinding, pins Sou
 // successor while original authority/worker and source guards are held. Retry
 // completes only the same record/proof; no journal copy, append or time refresh.
 func TransferSourceHandoff(ctx context.Context, g v2.AdmissionGenesis, b v2.EnrollmentBinding, pins SourceHandoffPins, l SourceLocation) (workarchive.CustodySourceHandoff, bool, error) {
-	return sourceHandoff(ctx, g, b, pins, l, true)
+	return sourceHandoff(ctx, g, b, pins, l, true, nil)
 }
 func InspectSourceHandoff(ctx context.Context, g v2.AdmissionGenesis, b v2.EnrollmentBinding, pins SourceHandoffPins, l SourceLocation) (workarchive.CustodySourceHandoff, error) {
-	h, _, e := sourceHandoff(ctx, g, b, pins, l, false)
+	h, _, e := sourceHandoff(ctx, g, b, pins, l, false, nil)
 	return h, e
 }
-func sourceHandoff(ctx context.Context, g v2.AdmissionGenesis, b v2.EnrollmentBinding, pins SourceHandoffPins, l SourceLocation, transfer bool) (result workarchive.CustodySourceHandoff, changed bool, returnErr error) {
+
+// InspectSourceHandoffChunk reads one manifest-bound original object while the
+// original retirement/worker and source-journal guards remain held. It publishes
+// no receipt and does not enable imported job execution.
+func InspectSourceHandoffChunk(ctx context.Context, g v2.AdmissionGenesis, b v2.EnrollmentBinding, pins SourceHandoffPins, l SourceLocation, objects string, id types.Hash) (workarchive.CustodySourceHandoff, []byte, error) {
+	if l.Role != Target || objects == "" || id.IsZero() {
+		return workarchive.CustodySourceHandoff{}, nil, ErrPreparation
+	}
+	read := &sourceChunkRead{objects: objects, id: id}
+	h, _, err := sourceHandoff(ctx, g, b, pins, l, false, read)
+	if err != nil {
+		return workarchive.CustodySourceHandoff{}, nil, err
+	}
+	return h, read.data, nil
+}
+
+type sourceChunkRead struct {
+	objects string
+	id      types.Hash
+	data    []byte
+}
+
+func sourceHandoff(ctx context.Context, g v2.AdmissionGenesis, b v2.EnrollmentBinding, pins SourceHandoffPins, l SourceLocation, transfer bool, read *sourceChunkRead) (result workarchive.CustodySourceHandoff, changed bool, returnErr error) {
 	if ctx == nil {
 		return result, false, ErrPreparation
 	}
@@ -157,6 +179,24 @@ func sourceHandoff(ctx context.Context, g v2.AdmissionGenesis, b v2.EnrollmentBi
 		result, e = d.InspectSourceHandoff()
 		if e != nil {
 			return e
+		}
+		if read != nil {
+			if e := check(); e != nil {
+				return e
+			}
+			store, e := workarchive.OpenExistingObjectStoreContext(ctx, read.objects, workarchive.DefaultObjectStorePolicy())
+			if e != nil {
+				return e
+			}
+			mid, e := g.Manifest.ID()
+			if e != nil {
+				return e
+			}
+			batch, e := workarchive.ServeChunkRequest(store, g.Manifest, workarchive.ChunkRequest{Version: workarchive.ObjectExchangeVersion0, ManifestID: mid, IDs: []types.Hash{read.id}})
+			if e != nil || len(batch.Objects) != 1 {
+				return errors.Join(ErrEvidence, e)
+			}
+			read.data = batch.Objects[0].Encoded
 		}
 		return check()
 	})

@@ -34,7 +34,8 @@ func sourceHandoffCLIReviewed(t testing.TB, driver v2CLIDriver, args []string) [
 	}
 	return append(append([]string{}, args...), "--mode", "run", "--expected-review-id", fields["review_id"])
 }
-func runSourceHandoffCLI(t *testing.T, driver v2CLIDriver) {
+func runSourceHandoffCLI(t *testing.T, driver v2CLIDriver) { runSourceHandoffFixture(t, driver, nil) }
+func runSourceHandoffFixture(t *testing.T, driver v2CLIDriver, after func(v2.AdmissionGenesis, v2.EnrollmentBinding, []cut.SourceLocation, []types.Hash, string)) {
 	legacy, evidence := cutoverAcceptedLegacy(t)
 	lid, _ := evidence.Assignment.ID()
 	owner, e := store.OpenCoordinator(legacy.authority, legacy.pins, evidence.Assignment, lid)
@@ -181,6 +182,9 @@ func runSourceHandoffCLI(t *testing.T, driver v2CLIDriver) {
 		if _, _, e := workarchive.OpenExistingCustodyJournalWithLimits(t.Context(), l.Journal, g.Manifest, g.Initial, g.CustodyPolicy, workarchive.DefaultCustodyJournalLimits()); e == nil {
 			t.Fatal("legacy source remained live")
 		}
+	}
+	if after != nil {
+		after(g, binding, locations, placements, legacy.base.serve.config.ObjectPath)
 	}
 }
 func TestRequiredSourceHandoffCLI(t *testing.T) { runSourceHandoffCLI(t, sourceHandoffCLIInProcess) }

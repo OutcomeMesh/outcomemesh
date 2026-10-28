@@ -662,3 +662,24 @@ boundary. The new record/pair formats, strict bounds, domains and fixed vectors
 are specified in the linked contract. Existing consensus and artifact bytes remain
 unchanged. This is local original-source exclusion; protected independent version
 authority and an active imported adapter remain activation requirements.
+
+
+## Isolated custody source gateway
+
+The experimental [gateway v1](CUSTODY_GATEWAY.md) has separate issuer-signed
+source/root/key/ACL/UID descriptors, exact-position signed Inspect/ReadChunk/Revoke
+requests and service-signed durable historical responses. A response head hashes
+the unsigned response including its complete signed request and previous head;
+sequence increments once per committed action. An exact active tip retry returns
+identical bytes. Revocation is issuer-only and permanent; old read retries refuse.
+Startup/recovery never adopts an unpinned tip. Linux kernel peer UID verification
+and a separate private service UID protect original object/key access from old
+participant copies. They do not fence host root or a complete service VM clone.
+
+The wire contract bounds descriptors to 1024 bytes, requests to 241 bytes,
+response data to 64 MiB, events to 256 and the response journal to 256 MiB. The
+canonical vectors and malformed-input fuzz target are in gatewaywire. The service
+performs only source inspection/original chunk reads and revocation. No consensus,
+old proof, old V2 packet, admission or accounting format changes. Profile-5 job
+execution still refuses; actual protected runtime adapters and independent
+monotone/key deployment remain activation requirements.

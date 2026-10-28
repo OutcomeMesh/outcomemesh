@@ -77,9 +77,13 @@ Next required work remains ordered:
    now derives a policy-5 successor, carries spent/source/retention into original
    admission witnesses and shares the existing registry-2 slot across native and
    imported choices. The sealed original-source handoff now closes legacy access under original
-   A/B guards. Next deploy an independently protected monotone version authority
-   and active successor adapter at every effect/acceptance path. Imported
-   execution remains disabled.
+   A/B guards. The [isolated source gateway](CUSTODY_GATEWAY.md) now owns a
+   fresh key and original storage under a separate Linux UID, with exact signed
+   per-action positions, durable replies and irreversible issuer revocation.
+   It performs original-source inspection and object reads, not imported jobs.
+   Next bind actual Target/Acceptor/admission/closure effects to the protected
+   service and deploy independently operated/protected domains with external
+   monotone state. Imported execution remains disabled.
 4. Specify safe progress for split votes and its quorum/rollback assumptions;
    never reset a retained slot to recover availability.
 5. Establish protected execution/key deployment, activation/migration rules and

@@ -156,3 +156,14 @@ after transfer publication and recovers through the same public CLI.
 frozen sources, required checks and limits of the controlled campaign. Production
 readiness remains **44/100**; this local exclusion layer closes no independent
 protected-deployment, external-audit or sustained public-testnet gate.
+
+
+## Isolated source access after handoff
+
+The separate [source/version gateway](CUSTODY_GATEWAY.md) can now inspect this
+exact seal and read original B objects while the original A/B and journal guards
+are held. Its fresh key/private storage live under a different Linux UID from
+participants. Exact per-action pins, retained replies and irreversible revocation
+provide the first protected service component. It grants no imported job
+execution and does not claim root/VM-clone resistance; active runtime integration
+and independent deployment remain required.

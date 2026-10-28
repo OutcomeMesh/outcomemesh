@@ -27,6 +27,7 @@ test-race:
 	$(GO) test -race ./... -run '^TestAdmissionDelivery'
 
 test-fuzz-smoke:
+	$(GO) test ./node/custodygateway/gatewaywire -run '^$$' -fuzz '^FuzzGatewayArtifacts$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/workarchive -run '^$$' -fuzz '^FuzzDecodeCustodySourceHandoff$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodycutover -run '^$$' -fuzz '^FuzzSourceHandoffPair$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyv2 -run '^$$' -fuzz '^FuzzImportedAdmissionCodecs$$' -fuzztime=$(FUZZTIME)
@@ -126,6 +127,7 @@ test-fuzz-smoke:
 	$(GO) test ./sim/workgraphmodel -run '^$$' -fuzz '^FuzzRunSelfishStrategiesNeverBreakAccounting$$' -fuzztime=$(FUZZTIME)
 
 test-process:
+	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessGatewayUIDIsolationRestartAndRevocation$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessSourceHandoffLostOutputAndColdRetry$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessRemoteImportedAccountingColdRecovery$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessCustodyV2EnrolledDeliveryColdStoresAndLostOutput$$' -count=1 -timeout=2m

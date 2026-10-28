@@ -1407,3 +1407,20 @@ intent unresolved. The profile-4 proof verifier also checks separation of later
 job client transport keys from registry signing roles. Neither a historical
 receipt nor proof delivery can create an owner, reset an unknown effect or
 supply protected physical enrollment.
+
+
+## Isolated source gateway boundary (2026-10-29)
+
+The experimental [source/version gateway](CUSTODY_GATEWAY.md) introduces a fresh
+private signing key, issuer-pinned descriptor and Linux service/participant UID
+separation. The participant has no root/service credentials, capabilities, backup
+or memory access. Kernel peer credentials and signed ACL requests are both
+required; protected original-source reads and revocation share one service lock.
+Responses are durable historical reports, never future execution authorization.
+
+The local placement identity is a replacement detector. Host administrators,
+service UID compromise, full machine/VM/key clones, physical device failure and
+already copied bytes are outside this OS boundary. Independently protected keys,
+external monotone pins, trusted backup/deployment and external review remain open.
+No profile-5 job execution, old-key cryptographic erasure, old-verifier upgrade or
+all-assignment activation follows from a gateway descriptor or response.

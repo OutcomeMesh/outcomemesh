@@ -236,7 +236,11 @@ now carries spending/source/retention into selected profile-5 admission witnesse
 with one shared registry choice across native and imported successors. The
 [sealed source handoff](docs/CUSTODY_SOURCE_HANDOFF.md) retains the selected
 successor in original A/B journals and closes their legacy access. Protected
-old-grant exclusion, active source handoff and execution activation remain gated. The [joint two-host V2
+old-grant exclusion and execution activation remain gated. The experimental
+[isolated source gateway](docs/CUSTODY_GATEWAY.md) performs original-source
+inspection and chunk reads with a fresh private key, separate Linux participant
+UID, exact request positions and permanent revocation. Imported job execution
+and root/VM-clone protection remain gated. The [joint two-host V2
 fault campaign](docs/CUSTODY_V2_WAN.md) covers lost replies, process kills,
 quorum outages and expired results, with public signed evidence and original
 source checks.

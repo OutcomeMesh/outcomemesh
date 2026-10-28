@@ -1,10 +1,10 @@
 # Production readiness baseline
 
-Assessment date: 2026-10-28. **Approximately 44/100 toward the full planned launch.**
+Assessment date: 2026-10-29. **Approximately 44/100 toward the full planned launch.**
 Status remains research/pre-alpha: do not secure real value with this code.
 
 The requested target is **mainnet with real value on 2026-11-01**, recorded on
-2026-10-26. On this reassessment date, four calendar days remain; that does not satisfy the current launch plan.
+2026-10-26. On this reassessment date, three calendar days remain; that does not satisfy the current launch plan.
 In particular, the six-month adversarial public-testnet stability gate has no
 completed qualifying evidence, and independent verification/external audits
 remain open. No release date is certified or gate waived by this target.
@@ -562,3 +562,13 @@ receipt publication, original guards, root/lock replacement and lost CLI output.
 This does not establish independent protected execution/key deployment, global
 revocation of arbitrary old copies, or active imported execution. Those and the
 existing M5–M10 gates remain required. Readiness remains **44/100**.
+
+
+2026-10-29 isolated gateway follow-up: a new issuer-approved service now owns a
+fresh signing key and performs sealed-source inspection and original chunk reads
+behind a separate Linux UID, with exact per-action pins, durable replies and
+irreversible revocation. Native participant processes are denied direct access
+to key/source/object files. This is an OS isolation component, not completed
+all-assignment activation or protection against root/full-service-VM copies.
+Imported execution and independently protected deployment remain disabled/open;
+the copy-fencing point and total remain unchanged at approximately **44/100**.
