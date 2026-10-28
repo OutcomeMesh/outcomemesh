@@ -44,15 +44,21 @@ Next required work remains ordered:
 2. The [typed V2 Serve disposition](CUSTODY_V2_SERVE.md) now covers fulfilled
    work and original-quorum no-claim cancellation, with original-owner A/B
    application, explicit recovery and retained archive deadlines. Unknown or
-   B-only expired results remain held. Next integrate assignment-wide V2
-   admission/budgets and specify explicit legacy-ticket migration; the adapter
-   cannot clear existing V1 Serve tickets. A dedicated typed Serve RPC is not
-   part of this standalone operator-CLI slice.
-3. Specify safe progress for split votes and its quorum/rollback assumptions;
+   B-only expired results remain held. The adapter cannot clear existing V1
+   Serve tickets. A dedicated typed Serve RPC is not part of that CLI slice.
+3. The [assignment-wide admission coordinator](CUSTODY_V2_ADMISSION.md) now
+   shares two-unit lifetime/pending accounting across job Plans, with typed
+   witness quorums, permanent deduplication and full Serve A/B closure evidence.
+   Next bind a signed mandatory admission profile to original runtime owners,
+   consume the selected admission before effects, and enforce current source
+   checks/delivery recovery. Existing raw V2 APIs are not activated by this
+   coordinator. [Legacy cutover rules](CUSTODY_V2_MIGRATION.md) are specified;
+   import/activation and the accounting bridge remain unimplemented.
+4. Specify safe progress for split votes and its quorum/rollback assumptions;
    never reset a retained slot to recover availability.
-4. Establish protected execution/key deployment, activation/migration rules and
+5. Establish protected execution/key deployment, activation/migration rules and
    independent review before connecting these experimental jobs to mainnet.
-5. Complete the existing M5–M10 audit, economics, calibration and sustained
+6. Complete the existing M5–M10 audit, economics, calibration and sustained
    adversarial public-testnet exit gates. No software slice waives those gates.
 
 ## Product thesis

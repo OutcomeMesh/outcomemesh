@@ -10,6 +10,40 @@ Full planned production readiness is approximately **44/100**, using the weighte
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
 
+## 2026-10-28: shared assignment admission accounting
+
+- The [V2 admission coordinator](CUSTODY_V2_ADMISSION.md) adds a separate
+  assignment-wide witness chain. Semantic genesis ID derives only from the outer
+  assignment; a separate descriptor pin binds archive, initial source, limits
+  and policy. Another Plan cannot select another budget namespace.
+- Admit spends two lifetime operation units and holds two pending units for one
+  Audit/Serve job. One source/job remains active at a time; cancellation never
+  refunds spending. Full Serve certificate plus A and B applied receipts can
+  close accounting; unknown/expired work stays held. Completed contexts/plans
+  remain permanently deduplicated. Fulfillment advances the exact source cursor;
+  unclaimed closure leaves it unchanged.
+- Witnesses persist the full typed proposal before signing and the selected QC
+  before exposing committed state. Exact external head/pending pins and explicit
+  cold recovery prevent reset/replacement after lost output. A valid majority
+  may override a minority vote while retaining both records. Local capacity
+  reserves drain space separately from the signed operation budget.
+- Added reviewed CLI for genesis, entries, witness ownership/vote/commit/status
+  and quorum assembly. Tests include real multi-root quorum contention, weak/
+  duplicate refusals, exhaustion/no refunds, fulfilled source advancement,
+  invalid closure atomicity, copied/moved/tampered roots, four injected sync
+  boundaries, codec vectors/fuzz and native process lost-output recovery.
+- The [two-host evidence index](evidence/custody-v2-admission-20261028.json)
+  records four logical witnesses sharing the same admission and cold-recovered
+  position. A second Admit and stale pins are refused; original A/B/copy sources
+  remain unchanged at zero. The registered job remains spent=2/pending=2.
+- This is accounting, not mandatory executor activation or live source
+  authorization. Existing raw V2 paths and old V1 tickets are unchanged. Next
+  bind a signed admission profile to original owners and durably consume it
+  before effects. [Legacy migration](CUSTODY_V2_MIGRATION.md) now has explicit
+  nonimplemented eligibility/cutover/accounting gates. Protected enrollment,
+  migration implementation, network delivery and public-testnet/audit gates
+  remain open; readiness stays **44/100**.
+
 ## 2026-10-28: typed V2 Serve disposition and original-owner apply
 
 - [V2 Serve disposition](CUSTODY_V2_SERVE.md) now requires a complete typed

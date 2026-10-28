@@ -451,3 +451,20 @@ No V1 pending Serve is silently closed. Typed Serve RPC, independent protected
 witness deployment, split-vote progress, physical device acceptance and the
 M5–M10 audit/economic/public-testnet gates remain open. No weighted launch gate
 is waived; readiness remains **44/100**.
+
+
+## 2026-10-28 follow-up: assignment-wide coordinator (score unchanged)
+
+[V2 admission accounting](CUSTODY_V2_ADMISSION.md) now has a shared permanent
+witness history across job Plans, signed two-unit budgets, nonrefundable lifetime
+spending, one active job, full Serve A/B accounting closure and exact cold
+recovery. Its reviewed CLI and [two-host evidence](evidence/custody-v2-admission-20261028.json)
+exercise the coordinator, without starting an execution or changing source data.
+
+This does not yet make admission mandatory in raw V2 execution. The reserved
+lifecycle point still needs the signed runtime profile, original-source/current
+owner checks, consumption/delivery recovery and an implemented activation/
+accounting bridge. [V1 migration rules](CUSTODY_V2_MIGRATION.md) are a specification,
+not an import command or release of old pending Serve. Independent protected
+witness deployment, physical storage, external review and sustained adversarial
+testnet gates remain unchanged. Readiness remains **44/100**.

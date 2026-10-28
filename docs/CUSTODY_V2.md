@@ -174,6 +174,17 @@ This is a standalone reviewed operator CLI, not a new Serve voting RPC or V1
 ledger migration. Historical acceptance receipts alone never close an unused
 original local source.
 
+## Assignment-wide accounting coordinator
+
+The [admission coordinator](CUSTODY_V2_ADMISSION.md) adds a shared witness history
+for the outer assignment, two-unit lifetime/pending job accounting, exact source
+cursor, never-reused contexts/plans and typed Serve A/B accounting closure.
+It is a separate reviewed CLI and journal. Its certificates do not activate the
+raw Target/Acceptor APIs, establish current original source ownership or grant
+execution. Mandatory runtime binding and network delivery are the next gates.
+[Legacy migration rules](CUSTODY_V2_MIGRATION.md) are a specification, with no
+import/activation implementation and no release of old pending tickets.
+
 ## Trust limits and remaining gates
 
 The safety claim assumes original monotone witness histories and fewer than one
