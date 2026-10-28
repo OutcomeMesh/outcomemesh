@@ -25,22 +25,32 @@ type placement struct {
 	Files   map[string]fileStamp
 }
 type root struct {
-	mu        sync.Mutex
-	path      string
-	ctx       Context
-	scopeID   types.Hash
-	lock      *os.File
-	identity  map[string]os.FileInfo
-	placement []byte
-	sources   Sources
-	decision  *workarchive.CustodyJournalDecision
-	objects   *workarchive.ObjectStore
-	failed    bool
-	hook      func(string) error
+	mu           sync.Mutex
+	path         string
+	ctx          Context
+	scopeID      types.Hash
+	lock         *os.File
+	identity     map[string]os.FileInfo
+	placement    []byte
+	sources      Sources
+	decision     *workarchive.CustodyJournalDecision
+	objects      *workarchive.ObjectStore
+	failed       bool
+	binding      *AdmissionBinding
+	bindingBytes []byte
+	bindingID    types.Hash
+	hook         func(string) error
 }
 
-func createRoot(path string, c Context, pin types.Hash, role string, sources Sources) (returnErr error) {
+func createRoot(path string, c Context, pin types.Hash, role string, sources Sources) error {
+	return createRootBound(path, c, pin, role, sources, nil)
+}
+func createRootBound(path string, c Context, pin types.Hash, role string, sources Sources, binding *AdmissionBinding) (returnErr error) {
 	c, e := c.freeze()
+	if e != nil {
+		return e
+	}
+	bound, boundRaw, _, e := freezeRequiredBinding(c, binding)
 	if e != nil {
 		return e
 	}
@@ -104,10 +114,22 @@ func createRoot(path string, c Context, pin types.Hash, role string, sources Sou
 	if e := publish(path, "placement", p, nil); e != nil {
 		return e
 	}
+	if bound != nil {
+		if e := publish(path, "admission", boundRaw, nil); e != nil {
+			return e
+		}
+	}
 	return publish(path, "ready", append([]byte("OMCVRDY2"), pin[:]...), nil)
 }
-func openRoot(path string, c Context, pin types.Hash, role string, sources Sources) (r *root, returnErr error) {
+func openRoot(path string, c Context, pin types.Hash, role string, sources Sources) (*root, error) {
+	return openRootBound(path, c, pin, role, sources, nil)
+}
+func openRootBound(path string, c Context, pin types.Hash, role string, sources Sources, binding *AdmissionBinding) (r *root, returnErr error) {
 	c, e := c.freeze()
+	if e != nil {
+		return nil, e
+	}
+	bound, boundRaw, boundID, e := freezeRequiredBinding(c, binding)
 	if e != nil {
 		return nil, e
 	}
@@ -184,7 +206,7 @@ func openRoot(path string, c Context, pin types.Hash, role string, sources Sourc
 			returnErr = errors.Join(returnErr, decision.Close())
 		}
 	}()
-	r = &root{path: path, ctx: c, scopeID: pin, lock: lock, identity: map[string]os.FileInfo{path: info, filepath.Join(path, "owner.lock"): held}, placement: p, sources: sources, decision: decision}
+	r = &root{path: path, ctx: c, scopeID: pin, lock: lock, identity: map[string]os.FileInfo{path: info, filepath.Join(path, "owner.lock"): held}, placement: p, sources: sources, decision: decision, binding: bound, bindingBytes: boundRaw, bindingID: boundID}
 	for name := range placementFiles(sources) {
 		info, e := os.Lstat(name)
 		if e != nil {
@@ -192,7 +214,7 @@ func openRoot(path string, c Context, pin types.Hash, role string, sources Sourc
 		}
 		r.identity[name] = info
 	}
-	if role == "target" {
+	if role == "target" && bound == nil {
 		r.objects, e = workarchive.OpenExistingObjectStoreContext(nilContext(), sources.Objects, workarchive.DefaultObjectStorePolicy())
 		if e != nil {
 			return nil, e
@@ -234,10 +256,20 @@ func (r *root) check() error {
 	if closeErr != nil {
 		return closeErr
 	}
-	if len(entries) > 8 {
+	maximum := 8
+	if r.ctx.Assignment.Policy.Version == PolicyVersionAdmission {
+		maximum++
+	}
+	if len(entries) > maximum {
 		return ErrProtocol
 	}
 	allowed := map[string]bool{"context": true, "placement": true, "ready": true, "owner.lock": true, "serve.pending": true, "serve.settled": true}
+	if r.ctx.Assignment.Policy.Version == PolicyVersionAdmission {
+		allowed["admission"] = true
+	}
+	if e := r.checkAdmission(); e != nil {
+		return e
+	}
 	var placed placement
 	if json.Unmarshal(r.placement, &placed) != nil {
 		return ErrProtocol
@@ -279,7 +311,7 @@ func (r *root) stabilize() (returnErr error) {
 	if e := r.check(); e != nil {
 		return e
 	}
-	for _, name := range []string{"context", "placement", "ready", "owner.lock", "consumed", "result", "pending", "accepted", "serve.pending", "serve.settled"} {
+	for _, name := range []string{"context", "placement", "ready", "owner.lock", "consumed", "result", "pending", "accepted", "serve.pending", "serve.settled", "admission"} {
 		path := filepath.Join(r.path, name)
 		info, e := os.Lstat(path)
 		if errors.Is(e, os.ErrNotExist) {

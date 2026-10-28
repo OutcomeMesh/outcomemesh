@@ -17,6 +17,11 @@ import (
 )
 
 const Version2 uint16 = 2
+
+// PolicyVersionAdmission requires the signed assignment to use the mandatory
+// admission runtime profile. It is a policy version, not a consensus or job
+// encoding upgrade. Version2 policies retain their original behavior and IDs.
+const PolicyVersionAdmission uint16 = 3
 const MaximumPolicyBytes = 1024
 const MaximumAssignmentBytes = 16 * 1024
 const MaximumPlanBytes = 4096
@@ -27,7 +32,9 @@ var ErrConsumed = errors.New("custody V2 execution already consumed; recover ret
 var ErrUncertain = errors.New("custody V2 persistence uncertain; retain the exact attempt and reopen without execution")
 
 // Policy exists before the assignment, plan and slot. Its ID is consequently
-// not recursive. Version two always requires the session-bound witness format.
+// not recursive. Both policy versions require the session-bound witness format.
+// PolicyVersionAdmission additionally fixes mandatory assignment-wide admission;
+// clearing that requirement changes the assignment ID and all signed job pins.
 type Policy struct {
 	Version   uint16
 	Threshold uint8
@@ -35,7 +42,7 @@ type Policy struct {
 }
 
 func (p Policy) CanonicalBytes() ([]byte, error) {
-	if p.Version != Version2 || len(p.Witnesses) < 4 || len(p.Witnesses) > custodyfence.MaximumWitnesses || int(p.Threshold) > len(p.Witnesses) || 3*int(p.Threshold) <= 2*len(p.Witnesses) {
+	if (p.Version != Version2 && p.Version != PolicyVersionAdmission) || len(p.Witnesses) < 4 || len(p.Witnesses) > custodyfence.MaximumWitnesses || int(p.Threshold) > len(p.Witnesses) || 3*int(p.Threshold) <= 2*len(p.Witnesses) {
 		return nil, ErrProtocol
 	}
 	e := codec.NewEncoder(MaximumPolicyBytes)
@@ -56,7 +63,11 @@ func (p Policy) ID() (types.Hash, error) {
 	if e != nil {
 		return types.Hash{}, e
 	}
-	return types.DomainHash("OMESH/custody/v2/witness-policy/id", b), nil
+	domain := "OMESH/custody/v2/witness-policy/id"
+	if p.Version == PolicyVersionAdmission {
+		domain = "OMESH/custody/v3/witness-policy/id"
+	}
+	return types.DomainHash(domain, b), nil
 }
 func DecodePolicy(b []byte) (Policy, error) {
 	var p Policy

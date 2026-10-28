@@ -112,11 +112,14 @@ type Acceptor struct {
 func CreateAcceptor(path string, c Context, pin types.Hash, journal string) error {
 	return createRoot(path, c, pin, "acceptor", Sources{Journal: journal})
 }
-func OpenAcceptor(path string, c Context, pin types.Hash, journal string, key ed25519.PrivateKey) (a *Acceptor, returnErr error) {
+func OpenAcceptor(path string, c Context, pin types.Hash, journal string, key ed25519.PrivateKey) (*Acceptor, error) {
+	return openAcceptorBound(path, c, pin, journal, nil, key)
+}
+func openAcceptorBound(path string, c Context, pin types.Hash, journal string, binding *AdmissionBinding, key ed25519.PrivateKey) (a *Acceptor, returnErr error) {
 	if !matches(key, c.Assignment.Base.AuthorityPublicKey) {
 		return nil, ErrProtocol
 	}
-	r, e := openRoot(path, c, pin, "acceptor", Sources{Journal: journal})
+	r, e := openRootBound(path, c, pin, "acceptor", Sources{Journal: journal}, binding)
 	if e != nil {
 		return nil, e
 	}
@@ -168,7 +171,7 @@ func (a *Acceptor) Accept(ctx context.Context, b Bundle, now uint64) (Receipt, e
 	if e := a.r.noServeAttempt(); e != nil {
 		return Receipt{}, e
 	}
-	if _, e := readFile(filepath.Join(a.r.path, "pending"), MaximumBundleBytes+32); e == nil {
+	if _, e := readFile(filepath.Join(a.r.path, "pending"), MaximumBundleBytes+160); e == nil {
 		return Receipt{}, ErrPending
 	} else if !errors.Is(e, os.ErrNotExist) {
 		return Receipt{}, e
@@ -187,6 +190,10 @@ func (a *Acceptor) Accept(ctx context.Context, b Bundle, now uint64) (Receipt, e
 		return Receipt{}, e
 	}
 	pending, e := encodePending(b, now)
+	if e != nil {
+		return Receipt{}, e
+	}
+	pending, e = a.r.wrapAdmissionRecord("pending", pending)
 	if e != nil {
 		return Receipt{}, e
 	}
@@ -300,7 +307,11 @@ func (a *Acceptor) receipt() (Receipt, error) {
 	return DecodeReceipt(raw)
 }
 func (a *Acceptor) pending() (Bundle, uint64, error) {
-	raw, e := readFile(filepath.Join(a.r.path, "pending"), MaximumBundleBytes+32)
+	raw, e := readFile(filepath.Join(a.r.path, "pending"), MaximumBundleBytes+160)
+	if e != nil {
+		return Bundle{}, 0, e
+	}
+	raw, e = a.r.unwrapAdmissionRecord("pending", raw)
 	if e != nil {
 		return Bundle{}, 0, e
 	}

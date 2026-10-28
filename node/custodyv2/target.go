@@ -23,11 +23,14 @@ type Target struct {
 func CreateTarget(path string, c Context, pin types.Hash, sources Sources) error {
 	return createRoot(path, c, pin, "target", sources)
 }
-func OpenTarget(path string, c Context, pin types.Hash, sources Sources, replica, control ed25519.PrivateKey) (t *Target, returnErr error) {
+func OpenTarget(path string, c Context, pin types.Hash, sources Sources, replica, control ed25519.PrivateKey) (*Target, error) {
+	return openTargetBound(path, c, pin, sources, nil, replica, control)
+}
+func openTargetBound(path string, c Context, pin types.Hash, sources Sources, binding *AdmissionBinding, replica, control ed25519.PrivateKey) (t *Target, returnErr error) {
 	if !matches(replica, c.Assignment.Base.ReplicaPublicKey) || !matches(control, c.Assignment.Base.RemoteControlPublicKey) {
 		return nil, ErrProtocol
 	}
-	r, e := openRoot(path, c, pin, "target", sources)
+	r, e := openRootBound(path, c, pin, "target", sources, binding)
 	if e != nil {
 		return nil, e
 	}
@@ -96,7 +99,9 @@ func (t *Target) Prepare() (Candidate, error) {
 	return candidate, nil
 }
 
-// Execute is the only method that can read chunks, sign a proof or advance B.
+// Execute answers the current challenge, signs its proof and advances B.
+// Required owners defer all current object-store reads until durable consumed;
+// legacy owner inspection retains its existing eager validation behavior.
 // No configurable callback or caller-imported session key can bypass this gate.
 func (t *Target) Execute(ctx context.Context, claim custodyfence.Certificate, now uint64) (result Result, returnErr error) {
 	if ctx == nil {
@@ -154,6 +159,10 @@ func (t *Target) Execute(ctx context.Context, claim custodyfence.Certificate, no
 	if e != nil {
 		return result, e
 	}
+	used, e = t.r.wrapAdmissionRecord("consumed", used)
+	if e != nil {
+		return result, e
+	}
 	if e := t.r.write("consumed", used); e != nil {
 		return result, e
 	}
@@ -169,6 +178,13 @@ func (t *Target) Execute(ctx context.Context, claim custodyfence.Certificate, no
 		}
 	}
 	c := t.r.ctx
+	if t.r.objects == nil {
+		// Required owners open no current archive objects before durable consumption.
+		t.r.objects, e = workarchive.OpenExistingObjectStoreContext(ctx, t.r.sources.Objects, workarchive.DefaultObjectStorePolicy())
+		if e != nil {
+			return result, e
+		}
+	}
 	batch, proof, e := workarchive.AnswerCustodyChallenge(t.r.objects, c.Manifest, c.Previous, c.Plan.Challenge, c.CustodyPolicy, t.replica, now)
 	if e != nil {
 		return result, e
@@ -267,6 +283,10 @@ func (t *Target) ResultCommand(prefix []custodyfence.Certificate) (Result, custo
 }
 func (t *Target) consumed() (Candidate, custodyfence.Certificate, error) {
 	b, e := readFile(filepath.Join(t.r.path, "consumed"), 4096)
+	if e != nil {
+		return Candidate{}, custodyfence.Certificate{}, e
+	}
+	b, e = t.r.unwrapAdmissionRecord("consumed", b)
 	if e != nil {
 		return Candidate{}, custodyfence.Certificate{}, e
 	}

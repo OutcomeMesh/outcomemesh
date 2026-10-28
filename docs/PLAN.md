@@ -49,11 +49,14 @@ Next required work remains ordered:
 3. The [assignment-wide admission coordinator](CUSTODY_V2_ADMISSION.md) now
    shares two-unit lifetime/pending accounting across job Plans, with typed
    witness quorums, permanent deduplication and full Serve A/B closure evidence.
-   Next bind a signed mandatory admission profile to original runtime owners,
-   consume the selected admission before effects, and enforce current source
-   checks/delivery recovery. Existing raw V2 APIs are not activated by this
-   coordinator. [Legacy cutover rules](CUSTODY_V2_MIGRATION.md) are specified;
-   import/activation and the accounting bridge remain unimplemented.
+   The [signed required profile](CUSTODY_V2_REQUIRED.md) now binds a complete
+   Admit prefix to original Target/Acceptor owners, rejects raw-owner bypass,
+   consumes binding/admission IDs before current archive-object reads and retains
+   exact acceptance/Serve/accounting recovery. Legacy policy 2 is unchanged;
+   this does not activate or migrate it. Next complete durable admission delivery,
+   protected enrollment and activation/cutover registry rules. [Legacy cutover
+   rules](CUSTODY_V2_MIGRATION.md) are specified; import/activation and the
+   accounting bridge remain unimplemented.
 4. Specify safe progress for split votes and its quorum/rollback assumptions;
    never reset a retained slot to recover availability.
 5. Establish protected execution/key deployment, activation/migration rules and

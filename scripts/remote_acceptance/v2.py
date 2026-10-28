@@ -54,7 +54,7 @@ def once(host, args, prefix=None, check=True):
 
 
 def reviewed(host, args, witness=False, mode="run"):
-    prefix = "custody_witness_review" if witness else "custody_v2_review"
+    prefix = "custody_witness_review" if witness else ("custody_v2_required_review" if args[0] == "work-archive-custody-v2-required" else "custody_v2_review")
     record = once(host, args, prefix)
     require(record["keys_loaded"] == "false", "review loaded private keys")
     return args + ["--mode", mode, "--expected-review-id", record["review_id"]]
@@ -139,6 +139,8 @@ class Member:
 
 
 class Case:
+    export_test = "TestExportCustodyV2WANFixture"
+    serving_prefix = "custody_v2_serving"
     def __init__(self, config, scenario):
         self.config, self.scenario = config, scenario
         self.events, self.checks, self.targets, self.members = [], {}, {}, []
@@ -160,7 +162,7 @@ class Case:
         require(self.boots["a"] != self.boots["b"], "two observed kernels required")
         parent = config["export_parent"] + "/" + nonce
         self.a.execute(["mkdir", "-m", "700", "-p", parent])
-        output = self.a.execute([self.a.test_binary, "-test.run=^TestExportCustodyV2WANFixture$", "-test.count=1", "-test.v"],
+        output = self.a.execute([self.a.test_binary, "-test.run=^" + self.export_test + "$", "-test.count=1", "-test.v"],
                                 {"OUTCOMEMESH_REMOTE_FIXTURE_OUT": parent, "OMESH_V2_SCENARIO": scenario}).stdout.decode()
         matches = re.findall(r"custody_v2_fixture root=(\S+)", output)
         require(len(matches) == 1, "missing fresh V2 export")
@@ -174,10 +176,13 @@ class Case:
         require(not self.public["OriginalOwnersCreated"] and self.public["Scenario"] == scenario, "fixture exported an active owner")
         self.prepare_context()
         self.checks["sources_initially_zero"] = all(self.inspect(h)["source_sequence"] == 0 for h in (self.a, self.b, self.clone))
+        self.create_owners()
+        self.identities = {name: self.inspect(h)["original_identities_sha256"] for name, h in self.hosts.items()}
+
+    def create_owners(self):
         for h in (self.b, self.clone):
             self.act(h, "create-target", ["--root", h.root + "/owner", "--journal", h.root + "/journal", "--objects", h.root + "/objects"])
         self.act(self.a, "create-acceptor", ["--root", self.a.root + "/owner", "--journal", self.a.root + "/journal"])
-        self.identities = {name: self.inspect(h)["original_identities_sha256"] for name, h in self.hosts.items()}
 
     def args(self, h, action, extra=()):
         return [CLI, "--action", action, "--context", h.root + "/context", "--context-id", self.public["ContextID"], "--scope-id", self.scope] + list(extra)
@@ -222,7 +227,7 @@ class Case:
                  "--listen", "/ip4/0.0.0.0/udp/%d/quic-v1" % port, "--timeout", "15s"])
         server = Supervisor(h, {"target": {"argv": [h.binary] + reviewed(h, args)}})
         self.targets[h.root] = server
-        ready = server.start("target", "custody_v2_serving")
+        ready = server.start("target", self.serving_prefix)
         require(ready["scope_id"] == self.scope and ready["execution_started"] == "false", "startup executed work")
         route = "/ip4/%s/udp/%d/quic-v1/p2p/%s" % (h.config["public_ip"], port, ready["address"].rsplit("/p2p/", 1)[1])
         if not clone: self.direct_peer = route

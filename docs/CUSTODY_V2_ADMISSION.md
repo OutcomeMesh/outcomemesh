@@ -2,8 +2,9 @@
 
 Status: experimental accounting coordinator with independently enrolled witness
 histories. This stage implements a shared budget chain and its reviewed operator
-CLI. It does not activate mandatory admission in existing V2 Target/Acceptor
-runtimes, migrate old tickets, issue execution permission or change consensus.
+CLI. The separate [required profile](CUSTODY_V2_REQUIRED.md) now enforces its
+proof in new signed policy-3 owners. The coordinator alone does not activate
+legacy policy-2 owners, migrate old tickets, grant an effect or change consensus.
 Every CLI review/output explicitly reports `coordinator_only=true` and
 `execution_granted=false`.
 
@@ -66,9 +67,10 @@ lineage, not a fresh independent reading of A or B.
 A complete Close packet is **historical accounting evidence**. This stage verifies
 its typed signatures and cursor, and may record accounting closure. It does not
 hold an original A/B source lock or establish live current source ownership.
-The mandatory execution adapter still must bind the certified admission to the
-original owners, recheck their current source and consume admission durably
-before reading chunks/signing/appending. Existing raw V2 APIs remain separate;
+The [required execution adapter](CUSTODY_V2_REQUIRED.md) binds certified admission
+to original owners, checks their current source and consumes admission durably
+before current archive-object reads/signing/appending. Existing raw policy-2
+APIs remain separate;
 a coordinator QC or diagnostic snapshot cannot enable them or certify that an
 old effect happened after this admission.
 
@@ -155,9 +157,10 @@ The separate [V1 cutover specification](CUSTODY_V2_MIGRATION.md) requires comple
 retirement/source/accounting and independently enforced exclusion of old grants;
 it implements no import or activation command. Pending old Serve stays pending.
 
-Next: a signed mandatory admission profile and original-owner runtime binding,
-including one-use consumption before effects, original source-currentness checks,
-durable admission delivery/recovery and typed network transport. Protected
+The signed policy-3 profile and original-owner runtime binding now implement
+one-use consumption before effects and original source-currentness checks. Next:
+durable admission delivery/recovery, typed network distribution and activation
+registry integration. Protected
 independent enrollment, safe split-vote progress, migration/activation, physical
 storage acceptance, external review and the sustained adversarial public-testnet
 conditions remain launch gates. This coordinator does not waive them.

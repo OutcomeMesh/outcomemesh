@@ -468,3 +468,20 @@ accounting bridge. [V1 migration rules](CUSTODY_V2_MIGRATION.md) are a specifica
 not an import command or release of old pending Serve. Independent protected
 witness deployment, physical storage, external review and sustained adversarial
 testnet gates remain unchanged. Readiness remains **44/100**.
+
+
+## 2026-10-28 follow-up: mandatory signed profile (score unchanged)
+
+[Required admission](CUSTODY_V2_REQUIRED.md) now binds complete accounting proof
+into new signed policy-3 owners. Downgrade/raw-open paths fail, original-source/
+session checks remain, and binding-aware consumption precedes current archive
+reads. Original A acceptance, Serve A/B and accounting closure preserve the same
+proof through cold recovery. [Acceptance evidence](evidence/custody-v2-required-20261028.json)
+records the complete required path and unknown holds on two hosts.
+
+This closes the signed-profile/runtime-binding slice. The reserved lifecycle
+point still requires durable admission distribution/recovery and implemented
+activation/cutover/accounting-bridge evidence. Legacy policies and their pending
+obligations are not promoted. Independent protected deployment, physical-storage,
+audit and sustained adversarial public-testnet conditions are unchanged.
+Readiness remains **44/100**.

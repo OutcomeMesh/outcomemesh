@@ -37,6 +37,9 @@ type v2WANMetadata struct {
 }
 
 func exportV2WAN(t testing.TB, parent, scenario string) string {
+	return exportV2WANWithPolicy(t, parent, scenario, v2.Version2)
+}
+func exportV2WANWithPolicy(t testing.TB, parent, scenario string, policyVersion uint16) string {
 	t.Helper()
 	if scenario != "lost-result" && scenario != "lost-session" && scenario != "expired-result" {
 		t.Fatal("unknown V2 WAN scenario")
@@ -70,7 +73,7 @@ func exportV2WAN(t testing.TB, parent, scenario string) string {
 	if e != nil {
 		t.Fatal(e)
 	}
-	a := v2.Assignment{Version: 2, Base: base, Policy: v2.Policy{Version: 2, Threshold: 3, Witnesses: f.Scope().Witnesses}}
+	a := v2.Assignment{Version: 2, Base: base, Policy: v2.Policy{Version: policyVersion, Threshold: 3, Witnesses: f.Scope().Witnesses}}
 	aid, e := a.ID()
 	if e != nil {
 		t.Fatal(e)
@@ -181,6 +184,34 @@ func TestExportCustodyV2WANFixture(t *testing.T) {
 	}
 	root := exportV2WAN(t, parent, os.Getenv("OMESH_V2_SCENARIO"))
 	fmt.Printf("custody_v2_fixture root=%s owners_created=false test_keys_public=true\n", root)
+}
+func TestExportCustodyV2RequiredWANFixture(t *testing.T) {
+	parent := os.Getenv("OUTCOMEMESH_REMOTE_FIXTURE_OUT")
+	if parent == "" {
+		t.Skip("explicit never-started mandatory-admission fixture")
+	}
+	root := exportV2WANWithPolicy(t, parent, os.Getenv("OMESH_V2_SCENARIO"), v2.PolicyVersionAdmission)
+	fmt.Printf("custody_v2_fixture root=%s owners_created=false test_keys_public=true admission_required=true\n", root)
+}
+func TestCustodyV2RequiredWANFixtureIsSignedAndNeverStarted(t *testing.T) {
+	parent := t.TempDir()
+	if e := os.Chmod(parent, 0700); e != nil {
+		t.Fatal(e)
+	}
+	root := exportV2WANWithPolicy(t, parent, "lost-result", v2.PolicyVersionAdmission)
+	for _, role := range []string{"a", "b", "clone"} {
+		b, e := os.ReadFile(filepath.Join(root, role, "expected-context"))
+		if e != nil {
+			t.Fatal(e)
+		}
+		c, e := v2.DecodeContext(b)
+		if e != nil || c.Assignment.Policy.Version != v2.PolicyVersionAdmission {
+			t.Fatal("fixture profile", e)
+		}
+		if _, e := os.Stat(filepath.Join(root, role, "owner")); !os.IsNotExist(e) {
+			t.Fatal("exported live owner", e)
+		}
+	}
 }
 func TestInspectCustodyV2WANFixture(t *testing.T) {
 	root := os.Getenv("OUTCOMEMESH_REMOTE_ROLE_ROOT")

@@ -179,9 +179,11 @@ original local source.
 The [admission coordinator](CUSTODY_V2_ADMISSION.md) adds a shared witness history
 for the outer assignment, two-unit lifetime/pending job accounting, exact source
 cursor, never-reused contexts/plans and typed Serve A/B accounting closure.
-It is a separate reviewed CLI and journal. Its certificates do not activate the
-raw Target/Acceptor APIs, establish current original source ownership or grant
-execution. Mandatory runtime binding and network delivery are the next gates.
+It is a separate reviewed CLI and journal. Its certificates alone do not
+establish current original source ownership or grant execution. The
+[required profile](CUSTODY_V2_REQUIRED.md) now binds them to signed policy-3
+Target/Acceptor owners and consumes them before archive work. Legacy policy-2
+raw owners are unchanged; durable delivery and activation remain gates.
 [Legacy migration rules](CUSTODY_V2_MIGRATION.md) are a specification, with no
 import/activation implementation and no release of old pending tickets.
 

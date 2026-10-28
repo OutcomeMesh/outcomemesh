@@ -10,6 +10,36 @@ Full planned production readiness is approximately **44/100**, using the weighte
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
 
+## 2026-10-28: signed admission requirement at the real effect boundary
+
+- [Required profile](CUSTODY_V2_REQUIRED.md) adds immutable policy version 3 to
+  new signed V2 assignments. Clearing mode changes IDs and invalidates role
+  signatures. Legacy policy-2 bytes/IDs and V0/V1 histories stay unchanged.
+- Complete bounded genesis/QC prefixes must end in this exact active Admit and
+  source cursor. Required roots retain exact proof before ready; raw factories,
+  missing/foreign/closed bindings and marker/record substitutions are refused.
+- Original B persists binding/admission IDs with the existing single consumed
+  candidate/Claim boundary. Required Open/Prepare no longer scan current archive
+  objects; opening/hashing them starts only after durable consumption. Missing/
+  corrupt objects after that boundary remain unknown and cannot replay after
+  repair. Original A's pending packet similarly binds its admission before append.
+- Required CLI covers binding, target service, A acceptance/recovery and Serve
+  A/B application/status. A native process lifecycle uses real admission witness
+  roots, QUIC work/recovery, exact A acceptance, Serve and shared accounting Close.
+  Tests include downgrade/raw bypass, stale historical proof with genuine
+  Claim/no-claim exclusion, original-source advancement, copied/moved roots,
+  identity corruption, six consumption/acceptance crash stages and codec/fuzz.
+- [Two-host acceptance](evidence/custody-v2-required-20261028.json) exercises real
+  shared admission before required owner creation, lost network reply/result
+  recovery, original A/B Serve and accounting closure, plus a pre-effect lost
+  session whose work/Serve/pending budget remains held. Signed bytes, physical
+  original source positions and binding-aware private record IDs are checked.
+- This enforces admission for newly signed profile-3 jobs, not automatic mainnet
+  activation or migration of old assignments. Protected independent enrollment,
+  durable distribution/outbox, legacy-grant exclusion/accounting bridge, physical
+  device faults, external review and sustained adversarial testnet gates remain
+  open. No weighted launch gate is waived; readiness remains **44/100**.
+
 ## 2026-10-28: shared assignment admission accounting
 
 - The [V2 admission coordinator](CUSTODY_V2_ADMISSION.md) adds a separate
