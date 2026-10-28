@@ -56,7 +56,13 @@ Next required work remains ordered:
    this does not activate or migrate it. [Durable proof delivery](CUSTODY_V2_DELIVERY.md)
    now retains exact inbox/outbox intents, authenticated recipient acknowledgements
    and explicit cold recovery without creating execution owners. Next complete
-   protected enrollment and activation/cutover registry rules. [Legacy cutover
+   protected enrollment and activation/cutover registry rules. The
+   [one-choice registry foundation](CUSTODY_REGISTRY.md) now fixes one experimental
+   profile-3 candidate under a stable externally provisioned resource anchor,
+   with a separate descriptor pin, three-role agreement and permanent quorum
+   selection. It grants no activation or profile upgrade; physical anchor
+   uniqueness, mandatory integration and the version/accounting bridge remain
+   required. [Legacy cutover
    rules](CUSTODY_V2_MIGRATION.md) are specified; import/activation and the
    accounting bridge remain unimplemented.
 4. Specify safe progress for split votes and its quorum/rollback assumptions;

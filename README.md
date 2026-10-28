@@ -15,6 +15,9 @@ of completed tasks. See [the baseline and remaining launch gates](docs/PRODUCTIO
 ## Design principles
 
 - Users sign constraints over the final state diff.
+- Holders choose terms for their own transfers; agreed trade prices do not set
+  a universal exchange rate. See [ownership and exchange](docs/OWNERSHIP_AND_EXCHANGE.md)
+  for the current single-signer limits and future settlement requirements.
 - Assets are typed resources with explicit owners and versions.
 - Consensus data has one canonical binary encoding.
 - Consensus execution is deterministic and independent of local storage.
@@ -217,6 +220,9 @@ Its CLI supports preparation through exact crash recovery. [Typed Serve](docs/CU
 [required profile](docs/CUSTODY_V2_REQUIRED.md) bind accounting to original owners.
 [Retained proof delivery](docs/CUSTODY_V2_DELIVERY.md) provides authenticated
 inbox/outbox distribution and explicit recovery before separate owner creation.
+The [resource registry foundation](docs/CUSTODY_REGISTRY.md) separately records
+one jointly signed assignment selection under an independently pinned anchor;
+its certificates do not activate work or migrate a legacy owner.
 Protected deployment, legacy cutover and mainnet activation remain gated. The [joint two-host V2
 fault campaign](docs/CUSTODY_V2_WAN.md) covers lost replies, process kills,
 quorum outages and expired results, with public signed evidence and original

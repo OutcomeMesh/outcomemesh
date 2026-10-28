@@ -502,3 +502,19 @@ legacy exclusion/activation/accounting bridge, physical device acceptance,
 external review and sustained public-testnet evidence are still required. No
 reserved weighted lifecycle point is awarded before its complete gate passes.
 Readiness remains **44/100**.
+
+
+## 2026-10-28 follow-up: one-choice enrollment foundation (score unchanged)
+
+The [resource registry](CUSTODY_REGISTRY.md) now separates a stable externally
+provisioned anchor from its mutable assignment/policy descriptor and retains one
+three-role-signed candidate through a permanent witness quorum. Original-root
+journals and reviewed CLI support exact vote/commit recovery and minority-record
+retention without granting custody execution or migration.
+
+Physical resource uniqueness, independently protected issuer/witness histories,
+mandatory runtime enforcement and the version/source/accounting bridge remain
+required. The terminal profile-3 selection cannot be reset or silently promoted
+into another assignment/profile. This is a prototype selection component; the
+reserved lifecycle point and all launch blockers remain open. Readiness stays
+**44/100**.

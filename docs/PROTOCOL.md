@@ -184,6 +184,14 @@ excessive stack depth, missing final `HALT`, instructions after `HALT`, or a fal
 `HALT` succeeds only with an empty stack. Each instruction costs one unit and the
 instruction limit is also the initial gas limit in version 0.
 
+Version-0 `policy_hash` and `payload_hash` are committed resource metadata.
+Execution does not resolve `policy_hash` into a program or require ordinary
+outputs to inherit those fields. The transaction's signed `guard_program`
+applies to that transaction's pre-state and candidate post-state only. There is
+no market-price opcode or implicit fiat-payment oracle. Persistent spending
+policies and atomic multi-owner settlement require a separately specified
+version; see [ownership and exchange](OWNERSHIP_AND_EXCHANGE.md).
+
 ## Reference state root
 
 Milestone 1 uses a deterministic reference root, not the final sparse tree:

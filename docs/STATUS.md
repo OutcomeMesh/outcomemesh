@@ -10,6 +10,35 @@ Full planned production readiness is approximately **44/100**, using the weighte
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
 
+## 2026-10-28: one-choice resource registry foundation
+
+- [Resource enrollment](CUSTODY_REGISTRY.md) separates stable external anchor
+  identity from assignment, receipt, key, roster and budget descriptors. Changing
+  the descriptor preserves RegistryID and cannot silently create a new namespace
+  inside its independently pinned original history.
+- Complete profile-3 candidate Genesis needs issuer, A authority and B control
+  signatures before registry voting. A separate >2/3 quorum selects one exact
+  assignment forever. Budget/network/shared-role/descriptor checks, canonical
+  formats, reference concurrency and native CLI recovery accompany the model.
+- Original witness journals retain full proposal before vote and full QC before
+  apply. Unknown writes poison the handle; exact old-pin cold recovery and a
+  valid majority preserve a minority local proposal. Copy/move/replacement,
+  malformed keys/paths, truncated/unknown files and alternate QC attempts refuse.
+- [Joint acceptance](evidence/custody-registry-20261028.json) records 17 checks
+  with actual 3/4 selection, a retained fourth minority proposal, lost vote and
+  commit output, exact cold retry and descriptor/second-assignment refusals on
+  two hosts. Production APIs reverify the 59-artifact public corpus. Seven race
+  groups, fresh process CLI, vet, 56 helper tests and decoder fuzz smoke pass.
+- This remains selection-only. Protected physical anchor issuance, mandatory
+  runtime integration, profile/version identity continuity and the legacy
+  accounting bridge are not activated by these certificates. No old obligation
+  is reset. Readiness remains **44/100**.
+- [Ownership and exchange](OWNERSHIP_AND_EXCHANGE.md) records holder-chosen trade
+  terms and the boundary between a voluntary trade price and market quotes.
+  The v0 single-signer/transaction-local GuardVM and opaque PolicyHash behavior
+  are clarified without changing consensus or claiming a working multi-owner
+  or fiat settlement path.
+
 ## 2026-10-28: durable admission proof delivery and explicit recovery
 
 - [Retained delivery](CUSTODY_V2_DELIVERY.md) adds a separately pinned receiver
