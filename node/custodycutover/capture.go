@@ -204,13 +204,8 @@ func CaptureSource(ctx context.Context, e Evidence, legacyID, anchorID types.Has
 		}
 		eid, _ := e.ID()
 		observation = Observation{Version: Version1, EvidenceID: eid, AssignmentID: legacyID, RetirementID: assess.RetirementID, SourceHeadID: assess.SourceHeadID, SourceSequence: assess.SourceSequence, ReceiptID: assess.ReceiptID, MinimumRetainUntil: assess.MinimumRetainUntil, Nonce: nonce, Role: l.Role, AnchorID: anchorID, PlacementCommitment: types.DomainHash(domain+"source-placement/commitment", nonce[:], placementID[:])}
-		unsigned, err := observation.unsigned()
+		observation, err = observation.Sign(e, anchorID, key)
 		if err != nil {
-			return err
-		}
-		h := types.DomainHash(domain+"observation/signature", unsigned)
-		copy(observation.Signature[:], ed25519.Sign(key, h[:]))
-		if err := observation.Verify(e, anchorID); err != nil {
 			return err
 		}
 		if err := check(); err != nil {

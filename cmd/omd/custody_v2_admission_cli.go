@@ -44,7 +44,9 @@ func runCustodyV2Admission(ctx context.Context, args []string, out io.Writer) (r
 	flags := flag.NewFlagSet(args[0], flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	mode := flags.String("mode", "review", "review or run")
-	action := flags.String("action", "", "genesis, admit-entry, close-entry, witness-create, witness-vote, witness-commit, witness-status, certificate")
+	action := flags.String("action", "", "genesis, inspect-genesis, inspect-history, admit-entry, close-entry, witness-create, witness-vote, witness-commit, witness-status, certificate")
+	enrollmentPath := flags.String("enrollment", "", "complete imported registry selection; required for profile 5")
+	enrollmentID := flags.String("enrollment-id", "", "independent exact imported enrollment artifact pin")
 	genesisPath := flags.String("genesis", "", "canonical immutable assignment admission descriptor")
 	genesisID := flags.String("genesis-id", "", "independent assignment-wide admission genesis pin")
 	descriptorID := flags.String("genesis-descriptor-id", "", "independent full genesis descriptor pin")
@@ -73,14 +75,16 @@ func runCustodyV2Admission(ctx context.Context, args []string, out io.Writer) (r
 		return v2.ErrAdmission
 	}
 	permitted := map[string][]string{
-		"genesis":        {"context", "context-id"},
-		"admit-entry":    {"context", "context-id", "sequence", "head-id", "sign-key"},
-		"close-entry":    {"context", "context-id", "sequence", "head-id", "sign-key", "in", "in-id", "a-receipt", "a-receipt-id", "b-receipt", "b-receipt-id"},
-		"witness-create": {"root", "witness", "sign-key", "sequence", "head-id", "pending-id"},
-		"witness-vote":   {"root", "witness", "sign-key", "sequence", "head-id", "pending-id", "in", "in-id"},
-		"witness-commit": {"root", "witness", "sign-key", "sequence", "head-id", "pending-id", "in", "in-id"},
-		"witness-status": {"root", "witness", "sign-key", "sequence", "head-id", "pending-id"},
-		"certificate":    {"in", "in-id", "votes", "vote-ids"},
+		"genesis":         {"context", "context-id"},
+		"inspect-genesis": {},
+		"inspect-history": {"in", "in-id"},
+		"admit-entry":     {"context", "context-id", "sequence", "head-id", "sign-key"},
+		"close-entry":     {"context", "context-id", "sequence", "head-id", "sign-key", "in", "in-id", "a-receipt", "a-receipt-id", "b-receipt", "b-receipt-id"},
+		"witness-create":  {"root", "witness", "sign-key", "sequence", "head-id", "pending-id"},
+		"witness-vote":    {"root", "witness", "sign-key", "sequence", "head-id", "pending-id", "in", "in-id"},
+		"witness-commit":  {"root", "witness", "sign-key", "sequence", "head-id", "pending-id", "in", "in-id"},
+		"witness-status":  {"root", "witness", "sign-key", "sequence", "head-id", "pending-id"},
+		"certificate":     {"in", "in-id", "votes", "vote-ids"},
 	}
 	selectors, ok := permitted[*action]
 	if !ok {
@@ -90,6 +94,8 @@ func runCustodyV2Admission(ctx context.Context, args []string, out io.Writer) (r
 	allowed := map[string]bool{"action": true, "mode": true, "genesis-id": true, "genesis-descriptor-id": true, "out": true, "expected-review-id": true}
 	if *action != "genesis" {
 		allowed["genesis"] = true
+		allowed["enrollment"] = true
+		allowed["enrollment-id"] = true
 	}
 	for _, s := range selectors {
 		allowed[s] = true
@@ -184,6 +190,24 @@ func runCustodyV2Admission(ctx context.Context, args []string, out io.Writer) (r
 	if e != nil || did != wanted {
 		return v2.ErrAdmission
 	}
+	var enrollments []v2.EnrollmentBinding
+	if g.Version == v2.PolicyVersionImported {
+		raw, e := load(*enrollmentPath, *enrollmentID, v2.MaximumEnrollmentBindingBytes)
+		if e != nil {
+			return e
+		}
+		binding, e := v2.DecodeEnrollmentBinding(raw)
+		if e != nil {
+			return e
+		}
+		if e := binding.VerifyImported(g); e != nil {
+			return e
+		}
+		enrollments = []v2.EnrollmentBinding{binding}
+	} else if present["enrollment"] || present["enrollment-id"] {
+		return v2.ErrEnrollmentRequired
+	}
+
 	if *root != "" {
 		*root, e = custodyV2RootPath(*root)
 		if e != nil {
@@ -251,12 +275,44 @@ func runCustodyV2Admission(ctx context.Context, args []string, out io.Writer) (r
 	var entry v2.AdmissionEntry
 	var cert v2.AdmissionCertificate
 	if *in != "" || *inID != "" {
-		source, e = load(*in, *inID, v2.MaximumAdmissionCertificateBytes)
+		limit := v2.MaximumAdmissionCertificateBytes
+		if *action == "inspect-history" {
+			limit = v2.MaximumAdmissionBindingBytes
+		}
+		source, e = load(*in, *inID, limit)
 		if e != nil {
 			return e
 		}
 	}
 	switch *action {
+	case "inspect-genesis", "inspect-history":
+		state, err := v2.NewAdmissionState(g, gid)
+		if err != nil {
+			return err
+		}
+		if *action == "inspect-history" {
+			b, err := v2.DecodeAdmissionBinding(source)
+			if err != nil {
+				return err
+			}
+			want, _ := g.CanonicalBytes()
+			actual, err := b.Genesis.CanonicalBytes()
+			if err != nil || !bytes.Equal(want, actual) {
+				return v2.ErrAdmission
+			}
+			for _, q := range b.Chain {
+				if err := state.Apply(q); err != nil {
+					return err
+				}
+			}
+		}
+		prepared, e = json.Marshal(struct {
+			Snapshot                         v2.AdmissionSnapshot
+			HistoricalOnly, ExecutionGranted bool
+		}{Snapshot: state.Snapshot(), HistoricalOnly: true})
+		if e != nil {
+			return e
+		}
 	case "genesis":
 		prepared, e = g.CanonicalBytes()
 		if e != nil {
@@ -404,13 +460,13 @@ func runCustodyV2Admission(ctx context.Context, args []string, out io.Writer) (r
 		var w *v2.AdmissionWitness
 		switch *action {
 		case "witness-create":
-			w, e = v2.CreateAdmissionWitness(*root, g, gid, key)
+			w, e = v2.CreateAdmissionWitness(*root, g, gid, key, enrollments...)
 		case "witness-vote":
-			w, e = v2.RecoverAdmissionVote(*root, g, gid, key, before, entry)
+			w, e = v2.RecoverAdmissionVote(*root, g, gid, key, before, entry, enrollments...)
 		case "witness-commit":
-			w, e = v2.RecoverAdmissionCommit(*root, g, gid, key, before, cert)
+			w, e = v2.RecoverAdmissionCommit(*root, g, gid, key, before, cert, enrollments...)
 		case "witness-status":
-			w, e = v2.OpenAdmissionWitness(*root, g, gid, key, before)
+			w, e = v2.OpenAdmissionWitness(*root, g, gid, key, before, enrollments...)
 		}
 		if e != nil {
 			return e

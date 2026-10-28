@@ -27,7 +27,7 @@ const PolicyVersionAdmission uint16 = 3
 const PolicyVersionEnrolled uint16 = 4
 
 func requiresAdmission(v uint16) bool {
-	return v == PolicyVersionAdmission || v == PolicyVersionEnrolled
+	return v == PolicyVersionAdmission || v == PolicyVersionEnrolled || v == PolicyVersionImported
 }
 
 const MaximumPolicyBytes = 1024
@@ -48,17 +48,21 @@ type Policy struct {
 	Threshold                        uint8
 	Witnesses                        [][32]byte
 	RegistryID, RegistryDescriptorID types.Hash
+	ImportID                         types.Hash
 }
 
 func (p Policy) CanonicalBytes() ([]byte, error) {
 	if (p.Version != Version2 && !requiresAdmission(p.Version)) || len(p.Witnesses) < 4 || len(p.Witnesses) > custodyfence.MaximumWitnesses || int(p.Threshold) > len(p.Witnesses) || 3*int(p.Threshold) <= 2*len(p.Witnesses) {
 		return nil, ErrProtocol
 	}
-	if p.Version == PolicyVersionEnrolled {
+	if p.Version == PolicyVersionEnrolled || p.Version == PolicyVersionImported {
 		if p.RegistryID.IsZero() || p.RegistryDescriptorID.IsZero() {
 			return nil, ErrProtocol
 		}
 	} else if !p.RegistryID.IsZero() || !p.RegistryDescriptorID.IsZero() {
+		return nil, ErrProtocol
+	}
+	if (p.Version == PolicyVersionImported) != !p.ImportID.IsZero() {
 		return nil, ErrProtocol
 	}
 	e := codec.NewEncoder(MaximumPolicyBytes)
@@ -72,9 +76,12 @@ func (p Policy) CanonicalBytes() ([]byte, error) {
 		}
 		e.Fixed(k[:])
 	}
-	if p.Version == PolicyVersionEnrolled {
+	if p.Version == PolicyVersionEnrolled || p.Version == PolicyVersionImported {
 		e.Fixed(p.RegistryID[:])
 		e.Fixed(p.RegistryDescriptorID[:])
+	}
+	if p.Version == PolicyVersionImported {
+		e.Fixed(p.ImportID[:])
 	}
 	return e.Bytes(), nil
 }
@@ -89,6 +96,9 @@ func (p Policy) ID() (types.Hash, error) {
 	}
 	if p.Version == PolicyVersionEnrolled {
 		domain = "OMESH/custody/v4/witness-policy/id"
+	}
+	if p.Version == PolicyVersionImported {
+		domain = "OMESH/custody/v5/witness-policy/id"
 	}
 	return types.DomainHash(domain, b), nil
 }
@@ -105,8 +115,11 @@ func DecodePolicy(b []byte) (Policy, error) {
 	p.Threshold, _ = d.U8()
 	n, e := d.U8()
 	tail := 0
-	if p.Version == PolicyVersionEnrolled {
+	if p.Version == PolicyVersionEnrolled || p.Version == PolicyVersionImported {
 		tail = 64
+	}
+	if p.Version == PolicyVersionImported {
+		tail += 32
 	}
 	if e != nil || n > custodyfence.MaximumWitnesses || d.Remaining() != int(n)*32+tail {
 		return p, ErrProtocol
@@ -115,9 +128,12 @@ func DecodePolicy(b []byte) (Policy, error) {
 	for i := range p.Witnesses {
 		fixed(d, p.Witnesses[i][:])
 	}
-	if p.Version == PolicyVersionEnrolled {
+	if p.Version == PolicyVersionEnrolled || p.Version == PolicyVersionImported {
 		fixed(d, p.RegistryID[:])
 		fixed(d, p.RegistryDescriptorID[:])
+	}
+	if p.Version == PolicyVersionImported {
+		fixed(d, p.ImportID[:])
 	}
 	if _, e := p.CanonicalBytes(); e != nil || d.Finish() != nil {
 		return Policy{}, e

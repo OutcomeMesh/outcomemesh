@@ -16,6 +16,15 @@ import (
 
 const Version1 uint16 = 1
 const Version2 uint16 = 2
+
+// SelectionVersionImported adds an accounting import choice to the SAME existing
+// version-2 slot. There is no version-3 resource descriptor or new namespace.
+const SelectionVersionImported uint16 = 3
+
+func SupportsSelection(g, choice uint16) bool {
+	return (g == Version1 && choice == Version1) || (g == Version2 && (choice == Version2 || choice == SelectionVersionImported))
+}
+
 const MaximumGenesisBytes = 2048
 const MaximumSelectionBytes = 8 << 20
 const VoteBytes = 10 + 4*types.HashSize + ed25519.SignatureSize
@@ -34,9 +43,14 @@ func Domain(v uint16) string {
 	if v == Version2 {
 		return "OMESH/custody-registry/v2/"
 	}
+	if v == SelectionVersionImported {
+		return "OMESH/custody-registry/v3/"
+	}
 	return ""
 }
-func validVersion(v uint16) bool                  { return v == Version1 || v == Version2 }
+func validVersion(v uint16) bool {
+	return v == Version1 || v == Version2 || v == SelectionVersionImported
+}
 func versionMagic(prefix string, v uint16) string { return fmt.Sprintf("%s%d", prefix, v) }
 func readVersion(d *codec.Decoder, prefix string) (uint16, error) {
 	b, e := d.Fixed(8)
@@ -62,7 +76,7 @@ type Genesis struct {
 }
 
 func (g Genesis) Validate() error {
-	if !validVersion(g.Version) || g.NetworkID == 0 || g.ChainGenesisID.IsZero() || g.ResourceID.IsZero() || types.Hash(g.Issuer).IsZero() ||
+	if (g.Version != Version1 && g.Version != Version2) || g.NetworkID == 0 || g.ChainGenesisID.IsZero() || g.ResourceID.IsZero() || types.Hash(g.Issuer).IsZero() ||
 		len(g.Witnesses) < 4 || len(g.Witnesses) > custodyfence.MaximumWitnesses || int(g.Threshold) > len(g.Witnesses) || 3*int(g.Threshold) <= 2*len(g.Witnesses) ||
 		g.MaximumOperations == 0 || g.MaximumOperations > custodyauthority.MaximumOperations || g.MaximumPending == 0 || g.MaximumPending > custodyauthority.MaximumPending || uint32(g.MaximumPending) > g.MaximumOperations {
 		return ErrRegistry
@@ -231,7 +245,7 @@ func (v Vote) validate(g Genesis) error {
 		return e
 	}
 	did, _ := g.DescriptorID()
-	if v.Version != g.Version || v.RegistryID != id || v.DescriptorID != did {
+	if !SupportsSelection(g.Version, v.Version) || v.RegistryID != id || v.DescriptorID != did {
 		return ErrQuorum
 	}
 	for _, w := range g.Witnesses {

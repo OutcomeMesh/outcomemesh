@@ -2,8 +2,10 @@
 
 Status: implemented historical review and durable preparation. This is not a
 V1-to-V2 importer, registry selection, runtime assignment, admission genesis or
-activation certificate. The [cutover contract](CUSTODY_V2_MIGRATION.md) still
-requires protected exclusion of old grants and an enforced accounting bridge.
+activation certificate. The separate [imported accounting stage](CUSTODY_IMPORTED_ACCOUNTING.md) now
+consumes this review with an enforced spending/source seed and exact registry
+selection. The [cutover contract](CUSTODY_V2_MIGRATION.md) still requires protected
+exclusion of old grants and active original-source handoff.
 
 ## Complete legacy evidence
 
@@ -98,14 +100,15 @@ and old B control. The semantic anchor ID and full descriptor ID are independent
 pinned. The resource Genesis2 is public metadata here: no existing registry slot
 is selected, reset or upgraded by this package.
 
-The Blueprint does not fix a final outer V2 assignment or its initial admission
-position. A future importer must bind that complete assignment and source/spending
-position, and recheck the actual later job's consumer/auditor/transport roles.
+The Blueprint alone is not an outer V2 assignment. The separate profile-5 importer
+now deterministically derives the full assignment and initial source/spending
+position from the signed Proposal. Its full registry selection commits those
+bytes. Future activation must also check actual job and protected execution roles.
 
-This arithmetic is a reviewed bridge proposal. Current V2 admission histories
-still start from their own native genesis. No existing runtime consumes this
-proposal to import nonzero source state or spending, and no ordinary fresh V2
-budget may be described as having carried the reviewed old spending forward.
+This review arithmetic becomes enforced accounting only through the separate
+profile-5 importer and its selected admission witnesses. Native V2 histories
+continue to start from their own genesis. An ordinary fresh native budget is not
+a continuation of old spending; neither path activates imported execution.
 
 ## Reviewed CLI
 
@@ -116,6 +119,7 @@ arguments plus `--mode run --expected-review-id <reported-id>`.
 
 | Action | Required material / output |
 | --- | --- |
+| `import-genesis` | Full signed proposal and all independent pins including `--proposal-id`; derive the inactive profile-5 accounting genesis. See the separate imported accounting rules. |
 | `history-export` | Complete Evidence JSON template with empty History and zero End; original `--authority` / `--authority-pins`; canonical full evidence output. |
 | `assess` | Full `--evidence`; historical source, spending and retention assessment. |
 | `source-location` | Complete `--source` SourceLocation JSON; metadata candidate output for independent review. |
@@ -177,8 +181,8 @@ introduced. The four pinned codec vectors are in `node/custodycutover/codec_test
 Local inode checks do not revoke raw keys, fence a full VM clone, prove no extra
 resource descriptor was issued or establish protected independent witnesses. The
 new observations/signatures are historical consent, not exclusion of old grants.
-Protected monotone enrollment, runtime version fencing, enforced carry-over of
-spending/source state, actual device failures, independent review and sustained
+Protected monotone enrollment, runtime version fencing, active source handoff,
+actual device failures, independent review and sustained
 public-testnet evidence remain launch gates. Readiness remains **44/100**.
 
 ## Checks

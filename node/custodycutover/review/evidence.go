@@ -1,7 +1,7 @@
-// Package custodycutover prepares disabled legacy transitions. Its evidence,
+// Package review verifies historical legacy transition material. Its evidence,
 // observations and proposals are historical review material, never an import,
 // execution grant, source retirement or proof of protected global fencing.
-package custodycutover
+package review
 
 import (
 	"bytes"
@@ -72,7 +72,7 @@ func (e Evidence) CanonicalBytes() ([]byte, error) {
 		if err != nil {
 			return err
 		}
-		if len(enc.Bytes())+len(raw)+10 > MaximumEvidenceBytes {
+		if enc.Len()+len(raw)+10 > MaximumEvidenceBytes {
 			return ErrEvidence
 		}
 		enc.BytesField(raw)

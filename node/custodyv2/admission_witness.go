@@ -74,7 +74,11 @@ func admissionPlacement(path string) ([]byte, error) {
 	}
 	return json.Marshal(m)
 }
-func CreateAdmissionWitness(path string, g AdmissionGenesis, pin types.Hash, key ed25519.PrivateKey) (_ *AdmissionWitness, returnErr error) {
+func CreateAdmissionWitness(path string, g AdmissionGenesis, pin types.Hash, key ed25519.PrivateKey, enrollment ...EnrollmentBinding) (_ *AdmissionWitness, returnErr error) {
+	enrolled, e := importedEnrollment(g, enrollment)
+	if e != nil {
+		return nil, e
+	}
 	state, e := NewAdmissionState(g, pin)
 	if e != nil {
 		return nil, e
@@ -126,30 +130,41 @@ func CreateAdmissionWitness(path string, g AdmissionGenesis, pin types.Hash, key
 	if e != nil {
 		return nil, e
 	}
-	placement, e := admissionPlacement(path)
+	placement, e := admissionPlacementFor(path, g)
 	if e != nil {
 		return nil, e
 	}
-	ready := append(append([]byte("OMCVAWR2"), pin[:]...), pub[:]...)
-	for _, f := range []struct {
+	ready := admissionReady(g, pin, pub, enrolled)
+	initialFiles := []struct {
 		name string
 		b    []byte
-	}{{"genesis", raw}, {"placement", placement}, {"ready", ready}} {
+	}{{"genesis", raw}, {"placement", placement}}
+	if len(enrolled) > 0 {
+		initialFiles = append(initialFiles, struct {
+			name string
+			b    []byte
+		}{"enrollment", enrolled})
+	}
+	initialFiles = append(initialFiles, struct {
+		name string
+		b    []byte
+	}{"ready", ready})
+	for _, f := range initialFiles {
 		if e := w.publish(f.name, f.b); e != nil {
 			return nil, e
 		}
 	}
 	return w, w.check()
 }
-func OpenAdmissionWitness(path string, g AdmissionGenesis, pin types.Hash, key ed25519.PrivateKey, expected custodyfence.WitnessPin) (*AdmissionWitness, error) {
-	return openAdmissionWitness(path, g, pin, key, func(w *AdmissionWitness) error {
+func OpenAdmissionWitness(path string, g AdmissionGenesis, pin types.Hash, key ed25519.PrivateKey, expected custodyfence.WitnessPin, enrollment ...EnrollmentBinding) (*AdmissionWitness, error) {
+	return openAdmissionWitness(path, g, pin, key, enrollment, func(w *AdmissionWitness) error {
 		if w.pin() != expected {
 			return ErrAdmissionHead
 		}
 		return nil
 	})
 }
-func RecoverAdmissionVote(path string, g AdmissionGenesis, pin types.Hash, key ed25519.PrivateKey, before custodyfence.WitnessPin, attempt AdmissionEntry) (*AdmissionWitness, error) {
+func RecoverAdmissionVote(path string, g AdmissionGenesis, pin types.Hash, key ed25519.PrivateKey, before custodyfence.WitnessPin, attempt AdmissionEntry, enrollment ...EnrollmentBinding) (*AdmissionWitness, error) {
 	raw, e := attempt.CanonicalBytes()
 	if e != nil {
 		return nil, e
@@ -165,7 +180,7 @@ func RecoverAdmissionVote(path string, g AdmissionGenesis, pin types.Hash, key e
 	if attempt.ExpectedSequence != before.Position.Sequence || attempt.ExpectedHead != before.Position.HeadID || (!before.PendingID.IsZero() && before.PendingID != id) {
 		return nil, ErrAdmissionHead
 	}
-	return openAdmissionWitness(path, g, pin, key, func(w *AdmissionWitness) error {
+	return openAdmissionWitness(path, g, pin, key, enrollment, func(w *AdmissionWitness) error {
 		actual := w.pin()
 		if actual.Position != before.Position || (actual.PendingID != before.PendingID && actual.PendingID != id) {
 			return ErrAdmissionHead
@@ -173,7 +188,7 @@ func RecoverAdmissionVote(path string, g AdmissionGenesis, pin types.Hash, key e
 		return w.state.ValidateNext(attempt)
 	})
 }
-func RecoverAdmissionCommit(path string, g AdmissionGenesis, pin types.Hash, key ed25519.PrivateKey, before custodyfence.WitnessPin, attempt AdmissionCertificate) (*AdmissionWitness, error) {
+func RecoverAdmissionCommit(path string, g AdmissionGenesis, pin types.Hash, key ed25519.PrivateKey, before custodyfence.WitnessPin, attempt AdmissionCertificate, enrollment ...EnrollmentBinding) (*AdmissionWitness, error) {
 	raw, e := attempt.CanonicalBytes()
 	if e != nil {
 		return nil, e
@@ -188,9 +203,13 @@ func RecoverAdmissionCommit(path string, g AdmissionGenesis, pin types.Hash, key
 	if attempt.Entry.ExpectedSequence != before.Position.Sequence || attempt.Entry.ExpectedHead != before.Position.HeadID {
 		return nil, ErrAdmissionHead
 	}
-	return openAdmissionWitness(path, g, pin, key, func(w *AdmissionWitness) error { return w.canCommitAt(before, attempt, raw) })
+	return openAdmissionWitness(path, g, pin, key, enrollment, func(w *AdmissionWitness) error { return w.canCommitAt(before, attempt, raw) })
 }
-func openAdmissionWitness(path string, g AdmissionGenesis, pin types.Hash, key ed25519.PrivateKey, accept func(*AdmissionWitness) error) (_ *AdmissionWitness, returnErr error) {
+func openAdmissionWitness(path string, g AdmissionGenesis, pin types.Hash, key ed25519.PrivateKey, enrollment []EnrollmentBinding, accept func(*AdmissionWitness) error) (_ *AdmissionWitness, returnErr error) {
+	enrolled, e := importedEnrollment(g, enrollment)
+	if e != nil {
+		return nil, e
+	}
 	state, e := NewAdmissionState(g, pin)
 	if e != nil {
 		return nil, e
@@ -238,11 +257,11 @@ func openAdmissionWitness(path string, g AdmissionGenesis, pin types.Hash, key e
 	if e := lockRoot(lock); e != nil {
 		return nil, e
 	}
-	placement, e := admissionPlacement(path)
+	placement, e := admissionPlacementFor(path, g)
 	if e != nil {
 		return nil, e
 	}
-	ready := append(append([]byte("OMCVAWR2"), pin[:]...), pub[:]...)
+	ready := admissionReady(g, pin, pub, enrolled)
 	for _, f := range []struct {
 		name string
 		want []byte
@@ -252,6 +271,13 @@ func openAdmissionWitness(path string, g AdmissionGenesis, pin types.Hash, key e
 			return nil, errors.Join(ErrAdmission, e)
 		}
 		w.retain(f.name, b)
+	}
+	if len(enrolled) > 0 {
+		b, e := readFile(filepath.Join(path, "enrollment"), len(enrolled))
+		if e != nil || !bytes.Equal(b, enrolled) {
+			return nil, errors.Join(ErrEnrollmentRequired, e)
+		}
+		w.retain("enrollment", b)
 	}
 	for seq := uint64(1); seq <= MaxAdmissionEntries(g); seq++ {
 		voteName := admissionRecordName(seq, "vote")
@@ -469,7 +495,7 @@ func (w *AdmissionWitness) check() error {
 	if e != nil || !privateFile(li) || li.Size() != 0 || !os.SameFile(li, w.lockInfo) {
 		return errors.Join(ErrAdmission, e)
 	}
-	placement, e := admissionPlacement(w.path)
+	placement, e := admissionPlacementFor(w.path, w.genesis)
 	if e != nil || !bytes.Equal(placement, w.files["placement"]) {
 		return errors.Join(ErrAdmission, e)
 	}
@@ -477,7 +503,7 @@ func (w *AdmissionWitness) check() error {
 	if e != nil {
 		return e
 	}
-	entries, scan := f.ReadDir(int(2*MaxAdmissionEntries(w.genesis) + 5))
+	entries, scan := f.ReadDir(int(2*MaxAdmissionEntries(w.genesis) + 6))
 	closeErr := f.Close()
 	if scan != nil && !errors.Is(scan, io.EOF) {
 		return errors.Join(scan, closeErr)

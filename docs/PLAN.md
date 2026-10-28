@@ -73,8 +73,11 @@ Next required work remains ordered:
    rules](CUSTODY_V2_MIGRATION.md) now have a separate
    [disabled review CLI](CUSTODY_CUTOVER_REVIEW.md): complete retired histories,
    original-source observations, no-refund arithmetic and signed durable
-   preparation. Next enforce protected old-grant exclusion and runtime carry-over
-   of source state/spending; import/activation remain unimplemented.
+   preparation. The [imported accounting stage](CUSTODY_IMPORTED_ACCOUNTING.md)
+   now derives a policy-5 successor, carries spent/source/retention into original
+   admission witnesses and shares the existing registry-2 slot across native and
+   imported choices. Next enforce protected old-grant exclusion and original-source
+   handoff at every effect/acceptance path. Imported execution remains disabled.
 4. Specify safe progress for split votes and its quorum/rollback assumptions;
    never reset a retained slot to recover availability.
 5. Establish protected execution/key deployment, activation/migration rules and

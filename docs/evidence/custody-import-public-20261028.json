@@ -1,0 +1,84 @@
+{
+  "archive": {
+    "bytes": 9736,
+    "name": "custody-import-public-20261028.tar.gz",
+    "sha256": "d587a84e32305e220ab741011bc030812c8446ed93314786557a691617005e32"
+  },
+  "files": [
+    {
+      "bytes": 13780,
+      "name": "accounting-history",
+      "sha256": "637ac0c663e1285842e93c85fdf3f0d65735cd09edc076258a3965b41a56f83d"
+    },
+    {
+      "bytes": 3250,
+      "name": "admission-certificate",
+      "sha256": "51d5f86f056edc144e1e2d2cab9a23ba069df153cec7a65bfad9419ab2191c06"
+    },
+    {
+      "bytes": 2823,
+      "name": "admission-entry",
+      "sha256": "e19f0f32a09ec2971150a5f4f2111f766bf9c1c1e7180c89d33d3d4ddf60e72c"
+    },
+    {
+      "bytes": 2673,
+      "name": "context",
+      "sha256": "708f85beadb1579b7a05ddc399e818afda68c93ecb8ebfc68f9c62c2321147bb"
+    },
+    {
+      "bytes": 11660,
+      "name": "enrollment",
+      "sha256": "2e7cb59d892ab1104238e57b1fcba5aaaec3e17692f1c532752392469a08c770"
+    },
+    {
+      "bytes": 10512,
+      "name": "genesis",
+      "sha256": "d15b86a7d7854a0e61aa9c71ba8ff5603819b21d102a4a12bbbce60e7242d2e7"
+    },
+    {
+      "bytes": 2503,
+      "name": "historical-accounting.json",
+      "sha256": "0e1ba582cdbb1aebaa55593e4b96f17d52e943c464714b6893cb8214d7ff06c0"
+    },
+    {
+      "bytes": 2407,
+      "name": "initial-accounting.json",
+      "sha256": "a231398ebd10c502c779a98b4abb964bd64e4c5cf58458e50fe75ed902c981cc"
+    },
+    {
+      "bytes": 10500,
+      "name": "proposal",
+      "sha256": "ca98e4ab315c540adbbbf01d6bde49bd0e12ee4efeea011f1bed453fc68d7818"
+    },
+    {
+      "bytes": 247,
+      "name": "registry",
+      "sha256": "5e73f753cf92e265ebc72793b2660f87dcf5678b7688548b470e1248272e140a"
+    },
+    {
+      "bytes": 10780,
+      "name": "selection",
+      "sha256": "ef6c7cc9f42f9675b634075ed50e5f49240f819f6b705b8ccca03783e66fd647"
+    },
+    {
+      "bytes": 11399,
+      "name": "selection-certificate",
+      "sha256": "46bf37db7d56ce1931da6de756274e9bf991919be64f385bc06c16eb47f72903"
+    }
+  ],
+  "format": "outcomemesh-custody-import-public-v1",
+  "pins": {
+    "enrollment_artifact_id": "57865bac1425c2e6c9aa7d423bca19c9612146540d3451a4f05d4e2a00744d14",
+    "genesis_descriptor_id": "a0c047fac0c0fd508562b78994b5673216ef41a3284f6d4d27c485c034ccf6f9",
+    "genesis_id": "aba0ce0390dbc718258d66eefa9f93c41c058e7606c617fc71a1c3504825c136",
+    "history_artifact_id": "5b4b49e86b233c26d1a4e499dbcf7118285794ab070867e0f8d99385234370f6",
+    "legacy_id": "6d3c16a23ee62d458365bf245e538b6f5a0a30d8df6a59f57c267917b5c85ae1",
+    "proposal_id": "f9a3d9ca2ea1d32584d09757cff59c76518f2779260698fef9e793ae45a71a17",
+    "registry_descriptor_id": "49c76d480f2d1226f678d5c174be45a04ee7512256df36e4c34db80ee7f3a19c",
+    "registry_id": "8f6036b943a5c084dcb3198e877069ac786c41fcd3e968edc9bcc20ff07adddb",
+    "retired_head": "07657ba790c4543fe236eb39d478ebb9ad184468b46832207a71f472d5b57b6a",
+    "retired_sequence": 8,
+    "selection_certificate_artifact_id": "cb939803a1e68f30a0e2098a13f874159f378f306932015873b8142e1a989ba5"
+  },
+  "scope": "Historical accounting import and one-choice selection; execution disabled; no deployment keys or original owners."
+}

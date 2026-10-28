@@ -155,6 +155,9 @@ func (b AdmissionBinding) admissionID() (types.Hash, error) {
 	return b.Chain[len(b.Chain)-1].Entry.ID()
 }
 func freezeRequiredBinding(c Context, b *AdmissionBinding) (frozen *AdmissionBinding, raw []byte, id types.Hash, err error) {
+	if c.Assignment.Policy.Version == PolicyVersionImported {
+		return nil, nil, id, ErrImportInactive
+	}
 	if !requiresAdmission(c.Assignment.Policy.Version) {
 		if b != nil {
 			return nil, nil, id, ErrAdmissionRequired

@@ -1,4 +1,4 @@
-package custodycutover
+package review
 
 import (
 	"bytes"
@@ -90,6 +90,13 @@ func (o Observation) Verify(e Evidence, anchor types.Hash) error {
 	if err != nil {
 		return err
 	}
+	return o.verifyAssessment(e, anchor, assess)
+}
+
+// verifyAssessment is used only after this same complete Evidence was verified.
+// It shares that immutable assessment across the two observations in a proposal.
+func (o Observation) verifyAssessment(e Evidence, anchor types.Hash, assess Assessment) error {
+	id, _ := e.Assignment.ID()
 	eid, _ := e.ID()
 	if o.AnchorID != anchor || o.EvidenceID != eid || o.AssignmentID != id || o.RetirementID != assess.RetirementID || o.SourceSequence != assess.SourceSequence || o.SourceHeadID != assess.SourceHeadID || o.ReceiptID != assess.ReceiptID || o.MinimumRetainUntil != assess.MinimumRetainUntil {
 		return ErrPreparation
@@ -228,7 +235,7 @@ func (p Proposal) ValidateDraft(anchorID, descriptorID, legacyID types.Hash, end
 		return result, ErrPreparation
 	}
 	for _, o := range []Observation{p.A, p.B} {
-		if e := o.Verify(p.Evidence, anchorID); e != nil {
+		if e := o.verifyAssessment(p.Evidence, anchorID, assess); e != nil {
 			return result, e
 		}
 	}
@@ -285,7 +292,7 @@ func (p Proposal) unsigned() ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		if len(e.Bytes())+len(raw)+256 > MaximumProposalBytes {
+		if e.Len()+len(raw)+256 > MaximumProposalBytes {
 			return nil, ErrPreparation
 		}
 		e.BytesField(raw)
@@ -413,4 +420,25 @@ func (p Proposal) Verify(anchorID, descriptorID, legacyID types.Hash, end a.Posi
 		}
 	}
 	return b, nil
+}
+
+// Sign creates a historical observation. It cannot establish current ownership.
+func (o Observation) Sign(e Evidence, anchor types.Hash, key ed25519.PrivateKey) (Observation, error) {
+	pub := e.Assignment.AuthorityPublicKey
+	if o.Role == Target {
+		pub = e.Assignment.RemoteControlPublicKey
+	}
+	if !validKey(key, pub) {
+		return Observation{}, ErrPreparation
+	}
+	raw, err := o.unsigned()
+	if err != nil {
+		return Observation{}, err
+	}
+	h := types.DomainHash(domain+"observation/signature", raw)
+	copy(o.Signature[:], ed25519.Sign(key, h[:]))
+	if err := o.Verify(e, anchor); err != nil {
+		return Observation{}, err
+	}
+	return o, nil
 }

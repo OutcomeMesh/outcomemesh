@@ -1,12 +1,14 @@
 # Legacy V1 to V2 cutover rules
 
-Status: requirements for a future explicit cutover. The separate
-[disabled review preparation](CUSTODY_CUTOVER_REVIEW.md) now implements bounded
-legacy replay, original-source observations, no-refund review arithmetic and a
-signed, retained non-runtime proposal. There is still no V1-to-V2 import, enforced
-accounting carry-over, global cutover certificate or activation command. The implemented [V2 job](CUSTODY_V2.md) and
-[Serve disposition](CUSTODY_V2_SERVE.md) operate in their own versioned scope.
-Assignment-wide V2 admission accounting does not itself migrate a legacy ticket.
+Status: activation requirements plus an implemented
+[imported accounting stage](CUSTODY_IMPORTED_ACCOUNTING.md). The
+[review preparation](CUSTODY_CUTOVER_REVIEW.md) supplies bounded legacy replay,
+original-source observations, no-refund arithmetic and the signed proposal.
+Profile5 now enforces historical spending/source carry-over in the existing
+admission ledger, with one shared registry selection slot. Active source handoff,
+protected old-grant exclusion and execution activation remain unimplemented.
+The [V2 job](CUSTODY_V2.md) and [Serve disposition](CUSTODY_V2_SERVE.md) continue to
+operate in their supported native scopes; they cannot settle unresolved old tickets.
 
 The rules below use MUST/MUST NOT as requirements for that future implementation.
 They do not grant present permission to move, reinitialize or discard an owner.
@@ -92,7 +94,9 @@ A future canonical cutover artifact MUST bind the exact old retirement and
 source/accounting evidence to exactly one successor assignment and its initial
 admission/witness pins. It needs a separate bounded format and signature/ID
 domains, strict decoding, compatibility decision and canonical vectors before
-implementation. This document intentionally assigns no bytes or domain names.
+implementation. The implemented accounting-only bytes and signature domains are specified in
+[CUSTODY_IMPORTED_ACCOUNTING.md](CUSTODY_IMPORTED_ACCOUNTING.md). They provide no
+activation certificate.
 A second successor cannot be selected merely by signing another artifact.
 Uniqueness must be enforced by the independently retained monotone cutover state.
 
@@ -106,7 +110,8 @@ The future lifecycle is:
 | `cutover-pending` | Durably retain the exact selected cutover before publication; missing output requires exact recovery, never another successor or reset budget. |
 | `activated` | Only after independently confirmed irreversible cutover and all protected-path checks may the successor admit fresh V2 jobs. Legacy remains retired. |
 
-These are specification labels, not current Go enums or CLI modes. A future
+These are activation specification labels, not current Go enums or CLI modes. The
+implemented accounting selection must not be labelled `activated`. A future
 implementation MUST make each interrupted transition explicit and reviewable.
 Opening, inspection, a timeout or an unreachable signer must not advance it.
 Failure after durable selection retains the chosen successor and budget bridge;

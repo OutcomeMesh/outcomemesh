@@ -231,7 +231,10 @@ complete proofs with durable acknowledgement and explicit owner handoff.
 The [disabled legacy review CLI](docs/CUSTODY_CUTOVER_REVIEW.md) now verifies
 complete retired V1 histories, observes original A/B sources and retains a signed
 transition proposal without refunding spent allowance. It enables no source or
-spending import. Protected deployment, legacy cutover and mainnet activation remain gated. The [joint two-host V2
+spending import by itself. The separate [imported accounting path](docs/CUSTODY_IMPORTED_ACCOUNTING.md)
+now carries spending/source/retention into selected profile-5 admission witnesses,
+with one shared registry choice across native and imported successors. Protected
+old-grant exclusion, active source handoff and execution activation remain gated. The [joint two-host V2
 fault campaign](docs/CUSTODY_V2_WAN.md) covers lost replies, process kills,
 quorum outages and expired results, with public signed evidence and original
 source checks.

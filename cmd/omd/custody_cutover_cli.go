@@ -20,6 +20,7 @@ import (
 	s "github.com/outcomemesh/outcomemesh/node/custodyauthority/store"
 	cut "github.com/outcomemesh/outcomemesh/node/custodycutover"
 	wire "github.com/outcomemesh/outcomemesh/node/custodyregistry/registrywire"
+	v2 "github.com/outcomemesh/outcomemesh/node/custodyv2"
 )
 
 const custodyCutoverCommand = "work-archive-custody-cutover-review"
@@ -150,7 +151,7 @@ func runCustodyCutover(ctx context.Context, args []string, out io.Writer) (retur
 	fs := flag.NewFlagSet(args[0], flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	mode := fs.String("mode", "review", "review or run")
-	action := fs.String("action", "", "history-export, assess, source-location, observe, proposal, sign-proposal, verify-proposal, prepare, read-preparation, recover-preparation")
+	action := fs.String("action", "", "import-genesis, history-export, assess, source-location, observe, proposal, sign-proposal, verify-proposal, prepare, read-preparation, recover-preparation")
 	evidencePath := fs.String("evidence", "", "complete canonical legacy evidence")
 	template := fs.String("template", "", "complete Evidence JSON with empty history and zero end")
 	source := fs.String("source", "", "complete SourceLocation JSON; independently retained placement pin required for observe")
@@ -187,6 +188,7 @@ func runCustodyCutover(ctx context.Context, args []string, out io.Writer) (retur
 		"observe":       {"evidence", "source", "anchor-id", "placement-id", "nonce", "sign-key"},
 		"proposal":      {"evidence", "anchor", "anchor-id", "descriptor-id", "a-observation", "b-observation", "blueprint", "allowance"},
 		"sign-proposal": {"proposal", "anchor-id", "descriptor-id", "role", "sign-key"}, "verify-proposal": {"proposal", "anchor-id", "descriptor-id"},
+		"import-genesis":   {"proposal", "anchor-id", "descriptor-id", "proposal-id"},
 		"prepare":          {"proposal", "anchor-id", "descriptor-id", "proposal-id", "root"},
 		"read-preparation": {"anchor-id", "descriptor-id", "proposal-id", "root"}, "recover-preparation": {"anchor-id", "descriptor-id", "proposal-id", "root"},
 	}
@@ -301,7 +303,7 @@ func runCustodyCutover(ctx context.Context, args []string, out io.Writer) (retur
 				return err
 			}
 		}
-		if *action == "prepare" {
+		if *action == "prepare" || *action == "import-genesis" {
 			id, _ := proposal.ID()
 			if id != pin.ProposalID {
 				return cut.ErrPreparation
@@ -429,6 +431,17 @@ func runCustodyCutover(ctx context.Context, args []string, out io.Writer) (retur
 			return err
 		}
 	}
+	if *action == "import-genesis" {
+		g, e := v2.NewImportedAdmissionGenesis(proposal, v2.ImportPins{RegistryID: pin.AnchorID, RegistryDescriptorID: pin.DescriptorID, LegacyID: pin.LegacyID, Retirement: pin.Retired, ProposalID: pin.ProposalID})
+		if e != nil {
+			return e
+		}
+		prepared, err = g.CanonicalBytes()
+		if err != nil {
+			return err
+		}
+	}
+
 	if *action == "assess" {
 		prepared, err = json.Marshal(assessment)
 		if err != nil {

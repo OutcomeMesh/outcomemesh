@@ -2,7 +2,10 @@
 
 Format 2 now selects fresh profile-4 owners under the
 [mandatory enrollment runtime](CUSTODY_V2_ENROLLED.md). The format-1 behavior below
-remains selection-only and cannot be upgraded in place.
+remains selection-only and cannot be upgraded in place. The
+[imported accounting extension](CUSTODY_IMPORTED_ACCOUNTING.md) adds Selection3
+for policy5 to the same Descriptor2 slot. Native and imported choices cannot
+consume separate slots. This does not activate imported execution.
 
 Status: experimental selection-only library, original witness journals and
 reviewed operator CLI. It records one profile-3 assignment under an independently

@@ -621,5 +621,30 @@ successor Blueprint and a three-role signed proposal. The node can retain this
 preparation under exact original local pins. None of these objects is a V2 job,
 admission genesis, registry selection, source import or execution permission.
 Consensus bytes/rules and custody V0/V1, V2 policy 2/3/4 and registry 1/2 execution
-semantics remain unchanged. Enforced spending carry-over and protected exclusion
-of old grants remain unimplemented activation gates.
+semantics remain unchanged for those artifacts. The accounting extension below
+implements spending carry-over; protected exclusion of old grants remains an
+unimplemented activation gate.
+
+
+## Inactive imported custody accounting
+
+[Profile5](CUSTODY_IMPORTED_ACCOUNTING.md) deterministically derives a successor
+from the complete signed legacy review and retains historical spending, the
+accepted source predecessor and retention floor in the existing admission machine.
+Its lifetime cap is old spending plus authorized remainder; ordinary closure never
+refunds spending. Native Genesis2 cannot initialize the same profile5 at zero.
+Policy5 commits the full Proposal ID and original resource/descriptor identities.
+Genesis5 encodes the complete Proposal and validates every derived assignment field.
+
+Registry Selection3 uses separate version-3 signature domains while sharing the
+original Descriptor2 namespace, witness owners and one permanent choice with
+Selection2. Descriptor3 does not exist. A pending/final native choice cannot be
+reset to import, and an import cannot allocate another native budget in that slot.
+The full Selection3 quorum is mandatory for imported admission witness creation,
+open and recovery, and is retained with a format-5 ready marker.
+
+The exact formats, bounds, role requirements and fixed vectors are specified in
+the linked contract. Profile5 remains rejected by all execution owner constructors
+and existing delivery profiles. No active source journal, legacy ticket exception,
+key revocation or consensus change is introduced. Protected deployment, every-path
+version enforcement and original-source handoff remain activation requirements.

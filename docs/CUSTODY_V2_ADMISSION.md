@@ -8,6 +8,11 @@ legacy policy-2 owners, migrate old tickets, grant an effect or change consensus
 Every CLI review/output explicitly reports `coordinator_only=true` and
 `execution_granted=false`.
 
+The [profile-5 accounting import](CUSTODY_IMPORTED_ACCOUNTING.md) additionally
+seeds this same machine with verified old spending/source/retention and requires
+full registry selection in durable imported witnesses. Native genesis behavior
+and historical bytes remain unchanged. Imported execution is disabled.
+
 ## One assignment, one budget history
 
 Separate job Claim and Serve slots cannot impose an aggregate budget: every new

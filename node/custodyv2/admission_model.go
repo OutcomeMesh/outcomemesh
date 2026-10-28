@@ -7,11 +7,13 @@ import (
 
 	"github.com/outcomemesh/outcomemesh/core/codec"
 	"github.com/outcomemesh/outcomemesh/core/types"
+	review "github.com/outcomemesh/outcomemesh/node/custodycutover/review"
 	"github.com/outcomemesh/outcomemesh/node/custodyfence"
 	"github.com/outcomemesh/outcomemesh/node/workarchive"
 )
 
-const MaximumAdmissionGenesisBytes = MaximumAssignmentBytes + workarchive.MaximumManifestBytes + workarchive.MaximumReplicaReceiptBytes + 4096
+const MaximumNativeAdmissionGenesisBytes = MaximumAssignmentBytes + workarchive.MaximumManifestBytes + workarchive.MaximumReplicaReceiptBytes + 4096
+const MaximumAdmissionGenesisBytes = max(MaximumNativeAdmissionGenesisBytes, review.MaximumProposalBytes+20)
 const MaximumAdmissionClosureBytes = MaximumServeCertificateBytes + 2*ServeReceiptBytes + 32
 const MaximumAdmissionEntryBytes = MaximumContextBytes + MaximumAdmissionClosureBytes + 256
 const AdmissionVoteBytes = 10 + 2*32 + 64
@@ -26,6 +28,7 @@ var ErrAdmissionActive = errors.New("custody V2 assignment still has an active j
 // coordinator. This does not activate admission in existing raw V2 runtimes.
 // Enrollment and original source ownership remain separate deployment duties.
 type AdmissionGenesis struct {
+	Import        *review.Proposal
 	Version       uint16
 	Assignment    Assignment
 	Manifest      workarchive.Manifest
@@ -48,6 +51,12 @@ func NewAdmissionGenesis(c Context) (AdmissionGenesis, error) {
 	return DecodeAdmissionGenesis(b)
 }
 func (g AdmissionGenesis) Validate() error {
+	if g.Version == PolicyVersionImported {
+		return g.validateImported()
+	}
+	if g.Import != nil || g.Assignment.Policy.Version == PolicyVersionImported {
+		return ErrAdmission
+	}
 	if g.Version != Version2 || len(g.CustodyPolicy.TrustedAuditors) > 64 {
 		return ErrAdmission
 	}
@@ -67,6 +76,9 @@ func (g AdmissionGenesis) Validate() error {
 	return nil
 }
 func (g AdmissionGenesis) CanonicalBytes() ([]byte, error) {
+	if g.Version == PolicyVersionImported {
+		return g.importedBytes()
+	}
 	if e := g.Validate(); e != nil {
 		return nil, e
 	}
@@ -88,14 +100,17 @@ func (g AdmissionGenesis) CanonicalBytes() ([]byte, error) {
 		e.Fixed(key[:])
 	}
 	b := e.Bytes()
-	if len(b) > MaximumAdmissionGenesisBytes {
+	if len(b) > MaximumNativeAdmissionGenesisBytes {
 		return nil, ErrAdmission
 	}
 	return b, nil
 }
 func DecodeAdmissionGenesis(b []byte) (AdmissionGenesis, error) {
+	if len(b) >= 8 && string(b[:8]) == "OMCVAGN5" {
+		return decodeImportedGenesis(b)
+	}
 	var g AdmissionGenesis
-	if len(b) > MaximumAdmissionGenesisBytes {
+	if len(b) > MaximumNativeAdmissionGenesisBytes {
 		return g, ErrAdmission
 	}
 	d := codec.NewDecoder(b)
@@ -149,6 +164,11 @@ func (g AdmissionGenesis) ID() (types.Hash, error) {
 	if e := g.Validate(); e != nil {
 		return types.Hash{}, e
 	}
+	return g.assignmentGenesisID()
+}
+
+// assignmentGenesisID is called only after complete genesis validation.
+func (g AdmissionGenesis) assignmentGenesisID() (types.Hash, error) {
 	aid, e := g.Assignment.ID()
 	if e != nil {
 		return types.Hash{}, e
@@ -167,8 +187,14 @@ func (g AdmissionGenesis) DescriptorID() (types.Hash, error) {
 // admission exhausts the two-units-per-job operation budget. Two spare slots
 // reserve future terminal capacity; no Stop/Retire transition exists here.
 func MaxAdmissionEntries(g AdmissionGenesis) uint64 {
-	if g.Version != Version2 || g.Assignment.Version != Version2 {
+	if (g.Version != Version2 && g.Version != PolicyVersionImported) || g.Assignment.Version != Version2 {
 		return 0
+	}
+	if g.Version == PolicyVersionImported {
+		if g.Import == nil {
+			return 0
+		}
+		return uint64(g.Import.Allowance) + 2
 	}
 	return uint64(g.Assignment.Base.MaximumOperations) + 2
 }
@@ -362,7 +388,11 @@ func (e AdmissionEntry) validateUnsigned(g AdmissionGenesis) error {
 	if _, err := e.unsignedBytes(); err != nil {
 		return err
 	}
-	id, err := g.ID()
+	gb, err := g.CanonicalBytes()
+	if err != nil {
+		return err
+	}
+	id, err := g.assignmentGenesisID()
 	if err != nil || id != e.GenesisID || e.ExpectedSequence >= MaxAdmissionEntries(g) {
 		return ErrAdmission
 	}
@@ -371,14 +401,16 @@ func (e AdmissionEntry) validateUnsigned(g AdmissionGenesis) error {
 	if aid != actual {
 		return ErrAdmission
 	}
-	gb, err := g.CanonicalBytes()
-	if err != nil {
-		return err
-	}
-	derived := AdmissionGenesis{Version: Version2, Assignment: e.Context.Assignment, Manifest: e.Context.Manifest, Initial: e.Context.Initial, CustodyPolicy: e.Context.CustodyPolicy}
-	cb, err := derived.CanonicalBytes()
-	if err != nil || !bytes.Equal(gb, cb) {
-		return ErrAdmission
+	derived := AdmissionGenesis{Version: g.Version, Assignment: e.Context.Assignment, Manifest: e.Context.Manifest, Initial: e.Context.Initial, CustodyPolicy: e.Context.CustodyPolicy, Import: g.Import}
+	if g.Import != nil {
+		if !sameAdmissionFields(derived, g) {
+			return ErrAdmission
+		}
+	} else {
+		cb, err := derived.CanonicalBytes()
+		if err != nil || !bytes.Equal(gb, cb) {
+			return ErrAdmission
+		}
 	}
 	if e.Closure != nil {
 		return e.Closure.Verify(e.Context)

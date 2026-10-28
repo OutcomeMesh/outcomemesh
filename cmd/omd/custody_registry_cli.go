@@ -48,7 +48,7 @@ func runCustodyRegistry(ctx context.Context, args []string, out io.Writer) (retu
 	flags := flag.NewFlagSet(args[0], flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	mode := flags.String("mode", "review", "review or run")
-	action := flags.String("action", "", "genesis, selection, sign-selection, certificate, witness-create, witness-vote, witness-commit, witness-status")
+	action := flags.String("action", "", "genesis, selection, sign-selection, certificate, import-enrollment, witness-create, witness-vote, witness-commit, witness-status")
 	draft := flags.String("draft", "", "strict public registry Genesis JSON; genesis only")
 	registryPath := flags.String("registry", "", "exact canonical registry Genesis")
 	registryID := flags.String("registry-id", "", "independent stable resource registry ID")
@@ -76,14 +76,15 @@ func runCustodyRegistry(ctx context.Context, args []string, out io.Writer) (retu
 		return reg.ErrRegistry
 	}
 	selectors := map[string][]string{
-		"genesis":        {"draft"},
-		"selection":      {"candidate", "candidate-id", "candidate-descriptor-id"},
-		"sign-selection": {"in", "in-id", "sign-role", "sign-key"},
-		"certificate":    {"in", "in-id", "votes", "vote-ids"},
-		"witness-create": {"root", "witness", "sign-key", "sequence", "head-id", "pending-id"},
-		"witness-vote":   {"root", "witness", "sign-key", "sequence", "head-id", "pending-id", "in", "in-id"},
-		"witness-commit": {"root", "witness", "sign-key", "sequence", "head-id", "pending-id", "in", "in-id"},
-		"witness-status": {"root", "witness", "sign-key", "sequence", "head-id", "pending-id"},
+		"genesis":           {"draft"},
+		"selection":         {"candidate", "candidate-id", "candidate-descriptor-id"},
+		"sign-selection":    {"in", "in-id", "sign-role", "sign-key"},
+		"certificate":       {"in", "in-id", "votes", "vote-ids"},
+		"import-enrollment": {"in", "in-id"},
+		"witness-create":    {"root", "witness", "sign-key", "sequence", "head-id", "pending-id"},
+		"witness-vote":      {"root", "witness", "sign-key", "sequence", "head-id", "pending-id", "in", "in-id"},
+		"witness-commit":    {"root", "witness", "sign-key", "sequence", "head-id", "pending-id", "in", "in-id"},
+		"witness-status":    {"root", "witness", "sign-key", "sequence", "head-id", "pending-id"},
 	}
 	selected, ok := selectors[*action]
 	if !ok {
@@ -199,6 +200,9 @@ func runCustodyRegistry(ctx context.Context, args []string, out io.Writer) (retu
 			return reg.ErrSelection
 		}
 		s = reg.Selection{Version: g.Version, RegistryID: gid, DescriptorID: did, Initial: initial}
+		if initial.Version == v2.PolicyVersionImported {
+			s.Version = reg.SelectionVersionImported
+		}
 		if e := s.ValidateDraft(g); e != nil {
 			return e
 		}
@@ -242,7 +246,7 @@ func runCustodyRegistry(ctx context.Context, args []string, out io.Writer) (retu
 		if *votes == "" || len(paths) != len(ids) || len(paths) > len(g.Witnesses) {
 			return reg.ErrQuorum
 		}
-		cert = reg.Certificate{Version: g.Version, Selection: s}
+		cert = reg.Certificate{Version: s.Version, Selection: s}
 		for i, path := range paths {
 			if ids[i] == "" {
 				return reg.ErrQuorum
@@ -265,7 +269,7 @@ func runCustodyRegistry(ctx context.Context, args []string, out io.Writer) (retu
 			return e
 		}
 	}
-	if *action == "witness-commit" {
+	if *action == "witness-commit" || *action == "import-enrollment" {
 		if *inID == "" {
 			return reg.ErrQuorum
 		}
@@ -281,6 +285,21 @@ func runCustodyRegistry(ctx context.Context, args []string, out io.Writer) (retu
 			return e
 		}
 	}
+	if *action == "import-enrollment" {
+		raw, e := cert.CanonicalBytes()
+		if e != nil {
+			return e
+		}
+		binding := v2.EnrollmentBinding{Version: v2.PolicyVersionImported, Registry: g, Certificate: raw}
+		if e := binding.VerifyImported(cert.Selection.Initial); e != nil {
+			return e
+		}
+		prepared, e = binding.CanonicalBytes()
+		if e != nil {
+			return e
+		}
+	}
+
 	isWitness := strings.HasPrefix(*action, "witness-")
 	var placement types.Hash
 	if isWitness {

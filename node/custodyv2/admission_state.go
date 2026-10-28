@@ -42,12 +42,26 @@ func NewAdmissionState(g AdmissionGenesis, pin types.Hash) (*AdmissionState, err
 	if e != nil {
 		return nil, e
 	}
-	id, e := g.ID()
+	id, e := g.assignmentGenesisID()
 	if e != nil || pin.IsZero() || pin != id {
 		return nil, ErrAdmission
 	}
 	rid, _ := g.Initial.ID()
-	return &AdmissionState{genesis: g, snapshot: AdmissionSnapshot{GenesisID: id, Position: custodyfence.Position{HeadID: id}, SourceReceiptID: rid, CurrentReceipt: g.Initial, RetainUntil: g.Initial.RetainUntil}, usedContexts: make(map[types.Hash]bool), usedPlans: make(map[types.Hash]bool)}, nil
+	x := AdmissionSnapshot{GenesisID: id, Position: custodyfence.Position{HeadID: id}, SourceReceiptID: rid, CurrentReceipt: g.Initial, RetainUntil: g.Initial.RetainUntil}
+	if g.Import != nil {
+		lid, _ := g.Import.Evidence.Assignment.ID()
+		old, e := g.Import.Evidence.Verify(lid, g.Import.Evidence.End)
+		if e != nil {
+			return nil, e
+		}
+		x.SpentOperations = old.SpentOperations
+		x.SourceSequence = old.SourceSequence
+		x.SourceHeadID = old.SourceHeadID
+		x.SourceReceiptID = old.ReceiptID
+		x.CurrentReceipt = old.CurrentReceipt
+		x.RetainUntil = old.MinimumRetainUntil
+	}
+	return &AdmissionState{genesis: g, snapshot: x, usedContexts: make(map[types.Hash]bool), usedPlans: make(map[types.Hash]bool)}, nil
 }
 func (s *AdmissionState) Snapshot() AdmissionSnapshot {
 	if s == nil {

@@ -24,6 +24,11 @@ func ValidateRegistryCandidate(g wire.Genesis, initial AdmissionGenesis) error {
 	if e := initial.Validate(); e != nil {
 		return e
 	}
+	return validateRegistryCandidateFields(g, initial)
+}
+
+// Requires validated resource and admission descriptors.
+func validateRegistryCandidateFields(g wire.Genesis, initial AdmissionGenesis) error {
 	a := initial.Assignment.Base
 	p := initial.Assignment.Policy
 	if initial.Initial.Version != workarchive.ReplicaReceiptVersion0 || a.NetworkID != g.NetworkID || a.GenesisID != g.ChainGenesisID || a.MaximumOperations > g.MaximumOperations || a.MaximumPending > g.MaximumPending {
@@ -37,7 +42,7 @@ func ValidateRegistryCandidate(g wire.Genesis, initial AdmissionGenesis) error {
 	case wire.Version2:
 		id, _ := g.ID()
 		did, _ := g.DescriptorID()
-		if p.Version != PolicyVersionEnrolled || p.RegistryID != id || p.RegistryDescriptorID != did {
+		if (p.Version != PolicyVersionEnrolled && p.Version != PolicyVersionImported) || p.RegistryID != id || p.RegistryDescriptorID != did {
 			return ErrEnrollmentRequired
 		}
 	default:
@@ -73,7 +78,7 @@ type EnrollmentBinding struct {
 }
 
 func (b EnrollmentBinding) CanonicalBytes() ([]byte, error) {
-	if b.Version != PolicyVersionEnrolled || b.Registry.Version != wire.Version2 {
+	if (b.Version != PolicyVersionEnrolled && b.Version != PolicyVersionImported) || b.Registry.Version != wire.Version2 {
 		return nil, ErrEnrollmentRequired
 	}
 	g, e := b.Registry.CanonicalBytes()
@@ -81,11 +86,15 @@ func (b EnrollmentBinding) CanonicalBytes() ([]byte, error) {
 		return nil, e
 	}
 	q, e := wire.DecodeCertificate(b.Certificate)
-	if e != nil || q.Version != wire.Version2 {
+	if e != nil || (b.Version == PolicyVersionEnrolled && q.Version != wire.Version2) || (b.Version == PolicyVersionImported && q.Version != wire.SelectionVersionImported) {
 		return nil, ErrEnrollmentRequired
 	}
 	e2 := codec.NewEncoder(len(g) + len(b.Certificate) + 32)
-	e2.Fixed([]byte("OMCVENR4"))
+	if b.Version == PolicyVersionImported {
+		e2.Fixed([]byte("OMCVENR5"))
+	} else {
+		e2.Fixed([]byte("OMCVENR4"))
+	}
 	e2.U16(b.Version)
 	e2.BytesField(g)
 	e2.BytesField(b.Certificate)
@@ -101,10 +110,14 @@ func DecodeEnrollmentBinding(raw []byte) (EnrollmentBinding, error) {
 		return b, ErrEnrollmentRequired
 	}
 	d := codec.NewDecoder(raw)
-	if !magic(d, "OMCVENR4") {
+	m, e := d.Fixed(8)
+	if e != nil || (string(m) != "OMCVENR4" && string(m) != "OMCVENR5") {
 		return b, ErrEnrollmentRequired
 	}
 	b.Version, _ = d.U16()
+	if (string(m) == "OMCVENR5") != (b.Version == PolicyVersionImported) {
+		return b, ErrEnrollmentRequired
+	}
 	g, e := d.BytesField(wire.MaximumGenesisBytes)
 	if e != nil {
 		return b, e
@@ -128,10 +141,14 @@ func (b EnrollmentBinding) ID() (types.Hash, error) {
 	if e != nil {
 		return types.Hash{}, e
 	}
-	return types.DomainHash("OMESH/custody/v4/enrollment-binding/id", raw), nil
+	domain := "OMESH/custody/v4/enrollment-binding/id"
+	if b.Version == PolicyVersionImported {
+		domain = "OMESH/custody/v5/enrollment-binding/id"
+	}
+	return types.DomainHash(domain, raw), nil
 }
 func (b EnrollmentBinding) Verify(c Context, admission AdmissionBinding) error {
-	if c.Assignment.Policy.Version != PolicyVersionEnrolled {
+	if c.Assignment.Policy.Version != PolicyVersionEnrolled || b.Version != PolicyVersionEnrolled {
 		return ErrEnrollmentRequired
 	}
 	if e := admission.Verify(c); e != nil {

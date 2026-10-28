@@ -10,6 +10,38 @@ Full planned production readiness is approximately **44/100**, using the weighte
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
 
+## 2026-10-28: imported accounting under the original registry slot
+
+- Added [profile-5 accounting import](CUSTODY_IMPORTED_ACCOUNTING.md) from the
+  complete signed retired V1 evidence. The final assignment and initial admission
+  state are derived exactly: previous spending, current accepted source receipt,
+  sequence/head and maximum retention deadline carry forward. The lifetime cap
+  is old spending plus the explicitly authorized remainder; completion never
+  refunds it. Native genesis cannot reset the same imported assignment.
+- Selection3 competes with native Selection2 in the same original Descriptor2
+  witness slot. There is no Descriptor3, new resource namespace or roster reset.
+  Pending votes and final selections reject another successor across both formats;
+  minority votes remain retained when learning the selected quorum.
+- Imported accounting witness creation/open/recovery requires the full exact
+  registry proof and retains it with the genesis and format-5 ready marker.
+  Original placement includes permanent-lock change time. Cold copies, stale
+  external pins, changed enrollment and lock replacement refuse. Interrupted
+  vote/commit recovery can only resume the exact retained attempt.
+- Reviewed CLI now derives imported genesis, exports the selected import binding,
+  operates imported witnesses and replays complete public accounting histories.
+  Public inspection loads no key and opens no owner. The successful campaign
+  imports spent=2/source=1, admits one job, and restarts with spent=4/pending=2.
+- [Acceptance evidence](evidence/custody-import-20261028.json) records the frozen
+  source inventory, focused tests, seven race groups, separate-process lost-output
+  recovery, codec fuzzing, helper tests and native Linux acceptance. The
+  [public corpus](evidence/custody-import-public-20261028.json) retains twelve
+  public artifacts, verified by the production CLI without deployment keys.
+- Imported execution remains disabled. Accounting selection and ordinary local
+  copy checks do not revoke all old raw keys or fence complete VM rollback.
+  Protected every-path version enforcement, original-source handoff, independent
+  deployment, external review and sustained testnet gates remain open.
+  Readiness remains **44/100**.
+
 ## 2026-10-28: disabled legacy cutover review and original-source checks
 
 - [Cutover review](CUSTODY_CUTOVER_REVIEW.md) now verifies bounded complete V1

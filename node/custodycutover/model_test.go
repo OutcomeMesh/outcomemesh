@@ -2,13 +2,11 @@ package custodycutover
 
 import (
 	"bytes"
-	"crypto/ed25519"
 	"os"
 	"path/filepath"
 	"sort"
 	"testing"
 
-	"github.com/outcomemesh/outcomemesh/core/types"
 	f "github.com/outcomemesh/outcomemesh/internal/fencetest"
 	a "github.com/outcomemesh/outcomemesh/node/custodyauthority"
 	w "github.com/outcomemesh/outcomemesh/node/custodyauthority/remoteworker"
@@ -189,12 +187,10 @@ func proposalFixture(t testing.TB, e Evidence) (Proposal, Pins) {
 	eid, _ := e.ID()
 	observation := func(role Role, seed byte) Observation {
 		o := Observation{Version: Version1, EvidenceID: eid, AssignmentID: lid, RetirementID: e.End.HeadID, SourceHeadID: assessment.SourceHeadID, SourceSequence: assessment.SourceSequence, ReceiptID: assessment.ReceiptID, MinimumRetainUntil: assessment.MinimumRetainUntil, Role: role, PlacementCommitment: f.Hash(string(rune('a' + role))), Nonce: f.Hash("source-observation-nonce"), AnchorID: aid}
-		raw, err := o.unsigned()
+		o, err = o.Sign(e, aid, f.Key(seed))
 		if err != nil {
 			t.Fatal(err)
 		}
-		h := types.DomainHash(domain+"observation/signature", raw)
-		copy(o.Signature[:], ed25519.Sign(f.Key(seed), h[:]))
 		return o
 	}
 	p := Proposal{Version: Version1, Anchor: anchor, Evidence: e, A: observation(Authority, 1), B: observation(Target, 14), Successor: Blueprint{Version: Version1, IncarnationID: f.Hash("successor-incarnation"), Authority: f.Public(101), Control: f.Public(102), Transport: f.Public(103), Threshold: 3, Witnesses: testWitnesses(70), MaximumPending: 2}, Allowance: assessment.RemainingOperations}

@@ -107,7 +107,7 @@ func (s Selection) Verify(g Genesis, authority, control [32]byte) error {
 		return e
 	}
 	did, _ := g.DescriptorID()
-	if s.Version != g.Version || s.RegistryID != id || s.DescriptorID != did {
+	if !SupportsSelection(g.Version, s.Version) || s.RegistryID != id || s.DescriptorID != did {
 		return ErrSelection
 	}
 	b, e := s.UnsignedBytes()

@@ -15,6 +15,7 @@ import (
 
 const Version1 = wire.Version1
 const Version2 = wire.Version2
+const SelectionVersionImported = wire.SelectionVersionImported
 const MaximumGenesisBytes = wire.MaximumGenesisBytes
 const MaximumSelectionBytes = wire.MaximumSelectionBytes
 const VoteBytes = wire.VoteBytes
@@ -60,7 +61,7 @@ func (s Selection) CanonicalBytes() ([]byte, error) {
 	if e != nil {
 		return nil, e
 	}
-	if (s.Version == Version1 && s.Initial.Assignment.Policy.Version != v2.PolicyVersionAdmission) || (s.Version == Version2 && s.Initial.Assignment.Policy.Version != v2.PolicyVersionEnrolled) {
+	if (s.Version == Version1 && s.Initial.Assignment.Policy.Version != v2.PolicyVersionAdmission) || (s.Version == Version2 && s.Initial.Assignment.Policy.Version != v2.PolicyVersionEnrolled) || (s.Version == SelectionVersionImported && s.Initial.Assignment.Policy.Version != v2.PolicyVersionImported) {
 		return nil, ErrSelection
 	}
 	return x.CanonicalBytes()
@@ -89,7 +90,10 @@ func (s Selection) ID() (types.Hash, error) {
 	return types.DomainHash(wire.Domain(s.Version)+"selection/id", b), nil
 }
 func (s Selection) ValidateDraft(g Genesis) error {
-	if s.Version != g.Version {
+	if _, e := s.CanonicalBytes(); e != nil {
+		return e
+	}
+	if !wire.SupportsSelection(g.Version, s.Version) {
 		return ErrSelection
 	}
 	id, e := g.ID()
@@ -150,7 +154,7 @@ func SignVote(g Genesis, s Selection, key ed25519.PrivateKey) (Vote, error) {
 		return Vote{}, e
 	}
 	id, _ := s.ID()
-	return (Vote{Version: g.Version, RegistryID: s.RegistryID, DescriptorID: s.DescriptorID, SelectionID: id}).Sign(g, key)
+	return (Vote{Version: s.Version, RegistryID: s.RegistryID, DescriptorID: s.DescriptorID, SelectionID: id}).Sign(g, key)
 }
 
 type Certificate struct {
@@ -196,7 +200,7 @@ func (c Certificate) ID() (types.Hash, error) {
 	return types.DomainHash(wire.Domain(c.Version)+"certificate/id", b), nil
 }
 func (c Certificate) Verify(g Genesis) error {
-	if c.Version != g.Version {
+	if !wire.SupportsSelection(g.Version, c.Version) {
 		return ErrQuorum
 	}
 	if e := c.Selection.Verify(g); e != nil {

@@ -530,3 +530,23 @@ time checks. These remain local placement checks. Full successor assignment and
 source/spending import, protected exclusion of old grants, independent deployment,
 physical failures and the wider release gates remain open. This preparatory
 slice closes no additional weighted launch criterion; readiness stays **44/100**.
+
+
+## 2026-10-28 follow-up: imported accounting (score unchanged)
+
+[Profile5](CUSTODY_IMPORTED_ACCOUNTING.md) now imports the verified old lifetime
+spending, accepted source predecessor and retention floor into the existing
+admission machine and durable witnesses. A full Selection3 quorum is required,
+with the same Descriptor2 namespace and one-choice journal used by native
+Selection2. Changing format cannot acquire another slot or reset a retained vote.
+Exact cold recovery keeps imported counters and immutable selection evidence.
+
+This closes the accounting carry-over implementation slice. It does not close
+protected deployment or activation: all imported execution owner constructors
+still refuse policy5. Local copy/lock checks and historical selection cannot
+exclude old raw-key or full-machine copies on paths that never consulted a
+protected gate. Original-source handoff, monotone version enforcement on every
+effect/acceptance path, independently operated protected witnesses, device fault
+acceptance, external audits and the existing M5–M10 launch gates remain required.
+See the [test record](evidence/custody-import-20261028.json). No weighted launch
+criterion is waived; readiness remains **44/100**.
