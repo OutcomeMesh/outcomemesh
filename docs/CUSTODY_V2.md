@@ -163,6 +163,17 @@ archive data, unstarted source fixtures and public draft data come from helpers.
 The [joint two-host fault campaign](CUSTODY_V2_WAN.md) now exercises the normal
 CLI path under reply loss, process kills, quorum outages and expired results.
 
+## Typed per-job Serve disposition
+
+[Serve disposition](CUSTODY_V2_SERVE.md) adds complete typed proposals, a separate
+outcome-independent witness decision slot and original-owner A-then-B apply.
+Fulfilled and certified-unclaimed jobs can close their V2 execution obligation;
+unknown/expired B-only outcomes stay held. Archive retention is separate and
+remains held in every case. Original execution witness history is unchanged.
+This is a standalone reviewed operator CLI, not a new Serve voting RPC or V1
+ledger migration. Historical acceptance receipts alone never close an unused
+original local source.
+
 ## Trust limits and remaining gates
 
 The safety claim assumes original monotone witness histories and fewer than one

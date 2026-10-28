@@ -234,10 +234,10 @@ func (r *root) check() error {
 	if closeErr != nil {
 		return closeErr
 	}
-	if len(entries) > 6 {
+	if len(entries) > 8 {
 		return ErrProtocol
 	}
-	allowed := map[string]bool{"context": true, "placement": true, "ready": true, "owner.lock": true}
+	allowed := map[string]bool{"context": true, "placement": true, "ready": true, "owner.lock": true, "serve.pending": true, "serve.settled": true}
 	var placed placement
 	if json.Unmarshal(r.placement, &placed) != nil {
 		return ErrProtocol
@@ -279,7 +279,7 @@ func (r *root) stabilize() (returnErr error) {
 	if e := r.check(); e != nil {
 		return e
 	}
-	for _, name := range []string{"context", "placement", "ready", "owner.lock", "consumed", "result", "pending", "accepted"} {
+	for _, name := range []string{"context", "placement", "ready", "owner.lock", "consumed", "result", "pending", "accepted", "serve.pending", "serve.settled"} {
 		path := filepath.Join(r.path, name)
 		info, e := os.Lstat(path)
 		if errors.Is(e, os.ErrNotExist) {

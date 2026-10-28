@@ -129,6 +129,9 @@ func OpenAcceptor(path string, c Context, pin types.Hash, journal string, key ed
 	if e := a.validateRetained(); e != nil {
 		return nil, e
 	}
+	if e := a.r.validateServe(ServeAuthority, a.checkServe); e != nil {
+		return nil, e
+	}
 	return a, a.r.stabilize()
 }
 func (a *Acceptor) Close() error {
@@ -160,6 +163,9 @@ func (a *Acceptor) Accept(ctx context.Context, b Bundle, now uint64) (Receipt, e
 		}
 		return existing, nil
 	} else if !errors.Is(e, os.ErrNotExist) {
+		return Receipt{}, e
+	}
+	if e := a.r.noServeAttempt(); e != nil {
 		return Receipt{}, e
 	}
 	if _, e := readFile(filepath.Join(a.r.path, "pending"), MaximumBundleBytes+32); e == nil {
@@ -206,6 +212,9 @@ func (a *Acceptor) Resume(ctx context.Context, expectedBundle types.Hash, now ui
 	if existing, e := a.receipt(); e == nil {
 		return existing, existing.Verify(a.r.ctx, b)
 	} else if !errors.Is(e, os.ErrNotExist) {
+		return Receipt{}, e
+	}
+	if e := a.r.noServeAttempt(); e != nil {
 		return Receipt{}, e
 	}
 	return a.finish(ctx, b, checked, now)

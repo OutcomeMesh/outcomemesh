@@ -41,8 +41,13 @@ Next required work remains ordered:
    reply cuts, process failures, cold persistent copies and witness outages.
    Next deploy independently operated/protected domains, retain original witness
    pins outside participant backups and extend adversarial acceptance there.
-2. Define and implement independently certified positive/negative Serve
-   disposition. The current accepted-source receipt alone cannot clear V1 Serve.
+2. The [typed V2 Serve disposition](CUSTODY_V2_SERVE.md) now covers fulfilled
+   work and original-quorum no-claim cancellation, with original-owner A/B
+   application, explicit recovery and retained archive deadlines. Unknown or
+   B-only expired results remain held. Next integrate assignment-wide V2
+   admission/budgets and specify explicit legacy-ticket migration; the adapter
+   cannot clear existing V1 Serve tickets. A dedicated typed Serve RPC is not
+   part of this standalone operator-CLI slice.
 3. Specify safe progress for split votes and its quorum/rollback assumptions;
    never reset a retained slot to recover availability.
 4. Establish protected execution/key deployment, activation/migration rules and

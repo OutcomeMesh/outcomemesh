@@ -432,3 +432,22 @@ This controlled matrix does not establish four independently protected witness
 or execution/key domains, release Serve, solve split votes or complete activation,
 admission, audit and stability gates. It closes the joint prototype acceptance
 slice only. No weighted launch gate is waived; readiness remains **44/100**.
+
+
+## 2026-10-28 follow-up: typed V2 Serve (score unchanged)
+
+The opt-in per-job V2 adapter now closes fulfilled work or original-quorum
+no-claim cancellation through complete typed proposals, both participant role
+signatures, a separate permanent decision quorum and original-owner A-then-B
+application. Unknown and expired B-only work remain pending; archive retention
+is never released. Reviewed standalone CLI, original-source checks, eight local
+persistence boundaries, cold process recovery and the joint two-host matrix are
+recorded in [CUSTODY_V2_SERVE.md](CUSTODY_V2_SERVE.md) and its
+[acceptance index](evidence/custody-v2-serve-20261028.json).
+
+The reserved negative-lifecycle point still requires assignment-wide V2
+admission/budgets and explicit migration/activation rules for legacy tickets.
+No V1 pending Serve is silently closed. Typed Serve RPC, independent protected
+witness deployment, split-vote progress, physical device acceptance and the
+M5–M10 audit/economic/public-testnet gates remain open. No weighted launch gate
+is waived; readiness remains **44/100**.

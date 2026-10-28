@@ -10,6 +10,40 @@ Full planned production readiness is approximately **44/100**, using the weighte
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
 
+## 2026-10-28: typed V2 Serve disposition and original-owner apply
+
+- [V2 Serve disposition](CUSTODY_V2_SERVE.md) now requires a complete typed
+  fulfilled/no-claim proof, separate authority/Serve-consumer signatures and a
+  permanent witness decision quorum. Its outcome-independent slot derives from
+  the original execution scope; existing execution formats/history are unchanged.
+  Typed standalone witness CLI operations verify the full proposal before voting.
+- A applies only against its original accepted bundle/receipt/source (fulfilled)
+  or exact untouched predecessor (certified unclaimed). B additionally requires
+  A's applied receipt and its own original result/source or untouched predecessor.
+  Pending/settled Serve blocks new execution. Archive retention remains held;
+  unknown and expired B-only results cannot manufacture a closing proof.
+- Original owners durably retain pending evidence before the signed settled
+  receipt. Eight A/B before/after-sync fault boundaries require exact explicit
+  recovery; cold open does not finish a pending transition. Retried receipts
+  preserve their original time. Different valid certificate subsets cannot
+  silently replace a pinned attempt. Minimum retention includes an already
+  appended B renewal even if result publication was lost.
+- Reviewed CLI covers draft construction/signing, decision command, typed witness
+  creation/vote/commit, quorum assembly, A/B apply/resume and original-owner status.
+  Unit, race, native process, codec/fuzz and two-host acceptance accompany the
+  [sanitized acceptance index](evidence/custody-v2-serve-20261028.json) and
+  [public signed corpus](evidence/custody-v2-serve-public-20261028.json).
+- The WAN matrix closes fulfilled and original-quorum-unclaimed jobs; lost-session
+  unknown and expired B-only jobs remain held. Broken witness/A/B stdout recovers
+  exact retained signatures in new processes. Two votes, duplicate votes,
+  unsigned typed evidence, absent A application and a B key copy without its
+  original result are refused. Original sources and proof times do not advance.
+- This is a per-job V2 operator adapter, not a dedicated Serve RPC, V1 ledger
+  migration, archive retirement, protected four-domain deployment or mainnet
+  activation. Legacy pending Serve tickets, assignment-wide V2 admission/budgets,
+  split-vote progress and external/device/stability gates remain open. Readiness
+  stays **44/100**.
+
 ## 2026-10-28: joint V2 WAN faults and original-source recovery
 
 - A and B now participate in the same real V2 jobs across two observed Linux

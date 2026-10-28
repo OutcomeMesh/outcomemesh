@@ -203,3 +203,10 @@ func TestProcessCustodyV2LostClientOutputThenKilledTarget(t *testing.T) {
 		t.Fatal(e)
 	}
 }
+
+func TestProcessCustodyV2ServeLifecycleAcrossRestarts(t *testing.T) {
+	runServeCLICampaign(t, func(t testing.TB, args []string) string {
+		t.Helper()
+		return runProcessCommand(t, 15*time.Second, args...)
+	})
+}

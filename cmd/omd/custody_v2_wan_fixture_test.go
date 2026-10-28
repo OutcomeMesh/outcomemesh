@@ -27,13 +27,13 @@ import (
 )
 
 type v2WANMetadata struct {
-	Version                                  int `json:"version"`
-	Scenario, Role                           string
-	ContextID, ScopeID, AssignmentID, PlanID string
-	IssuedAt, ExpiresAt, ProofAge            uint64
-	Keys                                     map[string]string
-	Members                                  []map[string]string
-	OriginalOwnersCreated                    bool
+	Version                                                int `json:"version"`
+	Scenario, Role                                         string
+	ContextID, ScopeID, ServeScopeID, AssignmentID, PlanID string
+	IssuedAt, ExpiresAt, ProofAge                          uint64
+	Keys                                                   map[string]string
+	Members                                                []map[string]string
+	OriginalOwnersCreated                                  bool
 }
 
 func exportV2WAN(t testing.TB, parent, scenario string) string {
@@ -111,7 +111,12 @@ func exportV2WAN(t testing.TB, parent, scenario string) string {
 	for i := byte(0); i < 4; i++ {
 		members = append(members, map[string]string{"signing_public_key": types.Hash(f.Public(70 + i)).String(), "transport_public_key": types.Hash(f.Public(90 + i)).String()})
 	}
-	metadata := v2WANMetadata{Version: 2, Scenario: scenario, ContextID: cid.String(), ScopeID: sid.String(), AssignmentID: aid.String(), PlanID: pid.String(), IssuedAt: now, ExpiresAt: challenge.ExpiresAt, ProofAge: age, Keys: keys, Members: members}
+	serveScope, e := c.ServeScope()
+	if e != nil {
+		t.Fatal(e)
+	}
+	serveID, _ := serveScope.ID()
+	metadata := v2WANMetadata{ServeScopeID: serveID.String(), Version: 2, Scenario: scenario, ContextID: cid.String(), ScopeID: sid.String(), AssignmentID: aid.String(), PlanID: pid.String(), IssuedAt: now, ExpiresAt: challenge.ExpiresAt, ProofAge: age, Keys: keys, Members: members}
 	sourceObjects, e := workarchive.OpenObjectStore(filepath.Join(t.TempDir(), "source-objects"), workarchive.DefaultObjectStorePolicy())
 	if e != nil {
 		t.Fatal(e)

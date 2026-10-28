@@ -40,6 +40,9 @@ func OpenTarget(path string, c Context, pin types.Hash, sources Sources, replica
 	if e := t.validateRetained(); e != nil {
 		return nil, e
 	}
+	if e := t.r.validateServe(ServeTarget, t.checkServe); e != nil {
+		return nil, e
+	}
 	return t, t.r.stabilize()
 }
 func (t *Target) Close() error {
@@ -54,6 +57,9 @@ func (t *Target) Prepare() (Candidate, error) {
 	t.r.mu.Lock()
 	defer t.r.mu.Unlock()
 	if e := t.r.check(); e != nil {
+		return Candidate{}, e
+	}
+	if e := t.r.noServeAttempt(); e != nil {
 		return Candidate{}, e
 	}
 	if _, e := readFile(filepath.Join(t.r.path, "consumed"), 4096); e == nil {
@@ -107,6 +113,9 @@ func (t *Target) Execute(ctx context.Context, claim custodyfence.Certificate, no
 	t.r.mu.Lock()
 	defer t.r.mu.Unlock()
 	if e := t.r.check(); e != nil {
+		return result, e
+	}
+	if e := t.r.noServeAttempt(); e != nil {
 		return result, e
 	}
 	if _, e := readFile(filepath.Join(t.r.path, "consumed"), 4096); e == nil {
