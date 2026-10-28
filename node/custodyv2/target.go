@@ -26,11 +26,14 @@ func CreateTarget(path string, c Context, pin types.Hash, sources Sources) error
 func OpenTarget(path string, c Context, pin types.Hash, sources Sources, replica, control ed25519.PrivateKey) (*Target, error) {
 	return openTargetBound(path, c, pin, sources, nil, replica, control)
 }
-func openTargetBound(path string, c Context, pin types.Hash, sources Sources, binding *AdmissionBinding, replica, control ed25519.PrivateKey) (t *Target, returnErr error) {
+func openTargetBound(path string, c Context, pin types.Hash, sources Sources, binding *AdmissionBinding, replica, control ed25519.PrivateKey) (*Target, error) {
+	return openTargetEnrolled(path, c, pin, sources, binding, nil, replica, control)
+}
+func openTargetEnrolled(path string, c Context, pin types.Hash, sources Sources, binding *AdmissionBinding, enrollment *EnrollmentBinding, replica, control ed25519.PrivateKey) (t *Target, returnErr error) {
 	if !matches(replica, c.Assignment.Base.ReplicaPublicKey) || !matches(control, c.Assignment.Base.RemoteControlPublicKey) {
 		return nil, ErrProtocol
 	}
-	r, e := openRootBound(path, c, pin, "target", sources, binding)
+	r, e := openRootEnrolled(path, c, pin, "target", sources, binding, enrollment)
 	if e != nil {
 		return nil, e
 	}

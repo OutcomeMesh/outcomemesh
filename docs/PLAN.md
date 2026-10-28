@@ -61,8 +61,12 @@ Next required work remains ordered:
    profile-3 candidate under a stable externally provisioned resource anchor,
    with a separate descriptor pin, three-role agreement and permanent quorum
    selection. It grants no activation or profile upgrade; physical anchor
-   uniqueness, mandatory integration and the version/accounting bridge remain
-   required. [Legacy cutover
+   uniqueness and the version/accounting bridge remain required. The
+   [new enrolled profile](CUSTODY_V2_ENROLLED.md) now mandates the full registry-2
+   selection and admission proofs at profile-4 owner creation/open and effect
+   consumption. Registry-1 histories cannot be promoted or reset; protected
+   issuance, old-grant exclusion, profile-4 delivery and joint WAN fault
+   acceptance remain next. [Legacy cutover
    rules](CUSTODY_V2_MIGRATION.md) are specified; import/activation and the
    accounting bridge remain unimplemented.
 4. Specify safe progress for split votes and its quorum/rollback assumptions;

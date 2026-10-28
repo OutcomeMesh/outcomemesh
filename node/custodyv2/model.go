@@ -22,6 +22,14 @@ const Version2 uint16 = 2
 // admission runtime profile. It is a policy version, not a consensus or job
 // encoding upgrade. Version2 policies retain their original behavior and IDs.
 const PolicyVersionAdmission uint16 = 3
+
+// PolicyVersionEnrolled mandates registry-v2 proof before any owner or effect.
+const PolicyVersionEnrolled uint16 = 4
+
+func requiresAdmission(v uint16) bool {
+	return v == PolicyVersionAdmission || v == PolicyVersionEnrolled
+}
+
 const MaximumPolicyBytes = 1024
 const MaximumAssignmentBytes = 16 * 1024
 const MaximumPlanBytes = 4096
@@ -36,13 +44,21 @@ var ErrUncertain = errors.New("custody V2 persistence uncertain; retain the exac
 // PolicyVersionAdmission additionally fixes mandatory assignment-wide admission;
 // clearing that requirement changes the assignment ID and all signed job pins.
 type Policy struct {
-	Version   uint16
-	Threshold uint8
-	Witnesses [][32]byte
+	Version                          uint16
+	Threshold                        uint8
+	Witnesses                        [][32]byte
+	RegistryID, RegistryDescriptorID types.Hash
 }
 
 func (p Policy) CanonicalBytes() ([]byte, error) {
-	if (p.Version != Version2 && p.Version != PolicyVersionAdmission) || len(p.Witnesses) < 4 || len(p.Witnesses) > custodyfence.MaximumWitnesses || int(p.Threshold) > len(p.Witnesses) || 3*int(p.Threshold) <= 2*len(p.Witnesses) {
+	if (p.Version != Version2 && !requiresAdmission(p.Version)) || len(p.Witnesses) < 4 || len(p.Witnesses) > custodyfence.MaximumWitnesses || int(p.Threshold) > len(p.Witnesses) || 3*int(p.Threshold) <= 2*len(p.Witnesses) {
+		return nil, ErrProtocol
+	}
+	if p.Version == PolicyVersionEnrolled {
+		if p.RegistryID.IsZero() || p.RegistryDescriptorID.IsZero() {
+			return nil, ErrProtocol
+		}
+	} else if !p.RegistryID.IsZero() || !p.RegistryDescriptorID.IsZero() {
 		return nil, ErrProtocol
 	}
 	e := codec.NewEncoder(MaximumPolicyBytes)
@@ -56,6 +72,10 @@ func (p Policy) CanonicalBytes() ([]byte, error) {
 		}
 		e.Fixed(k[:])
 	}
+	if p.Version == PolicyVersionEnrolled {
+		e.Fixed(p.RegistryID[:])
+		e.Fixed(p.RegistryDescriptorID[:])
+	}
 	return e.Bytes(), nil
 }
 func (p Policy) ID() (types.Hash, error) {
@@ -66,6 +86,9 @@ func (p Policy) ID() (types.Hash, error) {
 	domain := "OMESH/custody/v2/witness-policy/id"
 	if p.Version == PolicyVersionAdmission {
 		domain = "OMESH/custody/v3/witness-policy/id"
+	}
+	if p.Version == PolicyVersionEnrolled {
+		domain = "OMESH/custody/v4/witness-policy/id"
 	}
 	return types.DomainHash(domain, b), nil
 }
@@ -81,14 +104,22 @@ func DecodePolicy(b []byte) (Policy, error) {
 	p.Version, _ = d.U16()
 	p.Threshold, _ = d.U8()
 	n, e := d.U8()
-	if e != nil || n > custodyfence.MaximumWitnesses || d.Remaining() != int(n)*32 {
+	tail := 0
+	if p.Version == PolicyVersionEnrolled {
+		tail = 64
+	}
+	if e != nil || n > custodyfence.MaximumWitnesses || d.Remaining() != int(n)*32+tail {
 		return p, ErrProtocol
 	}
 	p.Witnesses = make([][32]byte, int(n))
 	for i := range p.Witnesses {
 		fixed(d, p.Witnesses[i][:])
 	}
-	if _, e := p.CanonicalBytes(); e != nil {
+	if p.Version == PolicyVersionEnrolled {
+		fixed(d, p.RegistryID[:])
+		fixed(d, p.RegistryDescriptorID[:])
+	}
+	if _, e := p.CanonicalBytes(); e != nil || d.Finish() != nil {
 		return Policy{}, e
 	}
 	return p, nil

@@ -25,15 +25,24 @@ type requiredCLIFixture struct {
 	c                                                                             v2.Context
 	sid                                                                           types.Hash
 	binding                                                                       v2.AdmissionBinding
+	enrollmentPath                                                                string
+	enrollment                                                                    v2.EnrollmentBinding
 	dir, contextPath, genesisPath, certificatePath, bindingPath, target, acceptor string
 	keys                                                                          map[byte]string
 }
 
 func newRequiredCLIFixture(t testing.TB, drivers ...v2CLIDriver) requiredCLIFixture {
 	t.Helper()
+	return newRequiredCLIFixtureProfile(t, nil, drivers...)
+}
+func newRequiredCLIFixtureProfile(t testing.TB, configure func(v2.Context) v2.Policy, drivers ...v2CLIDriver) requiredCLIFixture {
+	t.Helper()
 	x := newCustodyV2Fixture(t)
 	c := x.context
 	c.Assignment.Policy.Version = v2.PolicyVersionAdmission
+	if configure != nil {
+		c.Assignment.Policy = configure(c)
+	}
 	aid, e := c.Assignment.ID()
 	if e != nil {
 		t.Fatal(e)
@@ -137,10 +146,18 @@ func newRequiredCLIFixture(t testing.TB, drivers ...v2CLIDriver) requiredCLIFixt
 }
 func (z requiredCLIFixture) args(action string, extra ...string) []string {
 	cid, _ := z.c.ID()
-	args := []string{custodyV2RequiredCommand, "--action", action, "--context", z.contextPath, "--context-id", cid.String(), "--scope-id", z.sid.String()}
+	command := custodyV2RequiredCommand
+	if z.c.Assignment.Policy.Version == v2.PolicyVersionEnrolled {
+		command = custodyV2EnrolledCommand
+	}
+	args := []string{command, "--action", action, "--context", z.contextPath, "--context-id", cid.String(), "--scope-id", z.sid.String()}
 	if action != "binding" {
 		id, _ := z.binding.ID()
 		args = append(args, "--binding", z.bindingPath, "--binding-id", id.String())
+	}
+	if z.c.Assignment.Policy.Version == v2.PolicyVersionEnrolled && action != "binding" && action != "enrollment" {
+		id, _ := z.enrollment.ID()
+		args = append(args, "--enrollment", z.enrollmentPath, "--enrollment-id", id.String())
 	}
 	return append(args, extra...)
 }
@@ -164,8 +181,10 @@ func requiredInProcess(t testing.TB, args []string) string {
 	var out bytes.Buffer
 	var err error
 	switch args[0] {
-	case custodyV2RequiredCommand:
+	case custodyV2RequiredCommand, custodyV2EnrolledCommand:
 		err = runCustodyV2Required(t.Context(), args, nil, &out)
+	case custodyRegistryCommand:
+		err = runCustodyRegistry(t.Context(), args, &out)
 	case custodyV2AdmissionCommand:
 		err = runCustodyV2Admission(t.Context(), args, &out)
 	case custodyV2Command:
@@ -194,7 +213,7 @@ func (z requiredCLIFixture) bArgs() []string {
 }
 func (z requiredCLIFixture) execute(t testing.TB) v2.Bundle {
 	t.Helper()
-	target, e := v2.OpenRequiredTarget(z.target, z.c, z.sid, z.x.sources, z.binding, f.Key(61), f.Key(14))
+	target, e := z.openTarget()
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -220,7 +239,9 @@ func (z requiredCLIFixture) execute(t testing.TB) v2.Bundle {
 func initializeRequiredCLI(t testing.TB, z requiredCLIFixture, driver v2CLIDriver) {
 	t.Helper()
 	run := func(args []string) { driver(t, requiredReviewed(t, driver, args)) }
-	run(z.bindingArgs(t))
+	if z.c.Assignment.Policy.Version != v2.PolicyVersionEnrolled {
+		run(z.bindingArgs(t))
+	}
 	run(z.args("create-target", "--root", z.target, "--journal", z.x.sources.Journal, "--objects", z.x.sources.Objects))
 	run(z.args("create-acceptor", "--root", z.acceptor, "--journal", z.x.legacy.base.config.Audit.JournalPath))
 }
@@ -231,6 +252,10 @@ func initializeRequiredCLI(t testing.TB, z requiredCLIFixture, driver v2CLIDrive
 func runRequiredCLICampaign(t *testing.T, driver v2CLIDriver, starts ...v2CLIStart) {
 	t.Helper()
 	z := newRequiredCLIFixture(t, driver)
+	runRequiredCLIFixtureCampaign(t, z, driver, starts...)
+}
+func runRequiredCLIFixtureCampaign(t *testing.T, z requiredCLIFixture, driver v2CLIDriver, starts ...v2CLIStart) {
+	t.Helper()
 	initializeRequiredCLI(t, z, driver)
 	run := func(a []string) { driver(t, requiredReviewed(t, driver, a)) }
 	raw, e := os.ReadFile(z.bindingPath)
@@ -441,7 +466,11 @@ func requiredInProcessStart(t testing.TB, args []string, prefix string) (string,
 func (z requiredCLIFixture) networkBundle(t testing.TB, driver v2CLIDriver, start v2CLIStart) v2.Bundle {
 	t.Helper()
 	serve := z.args("serve-target", append(z.bArgs(), "--transport-key", z.keys[15])...)
-	address, closeTarget := start(t, requiredReviewed(t, driver, serve), "custody_v2_required_serving")
+	prefix := "custody_v2_required_serving"
+	if z.c.Assignment.Policy.Version == v2.PolicyVersionEnrolled {
+		prefix = "custody_v2_enrolled_serving"
+	}
+	address, closeTarget := start(t, requiredReviewed(t, driver, serve), prefix)
 	defer closeTarget()
 	cid, _ := z.c.ID()
 	common := []string{"--context", z.contextPath, "--context-id", cid.String(), "--scope-id", z.sid.String()}
@@ -583,7 +612,7 @@ func (z requiredCLIFixture) closeAccounting(t testing.TB, driver v2CLIDriver, bu
 	}
 	// Historical Admit proof remains structurally valid. Current original owner
 	// state and the execution fence prevent reviving the completed effect.
-	target, e := v2.OpenRequiredTarget(z.target, z.c, z.sid, z.x.sources, z.binding, f.Key(61), f.Key(14))
+	target, e := z.openTarget()
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -591,4 +620,11 @@ func (z requiredCLIFixture) closeAccounting(t testing.TB, driver v2CLIDriver, bu
 	if _, e := target.Prepare(); !errors.Is(e, v2.ErrServeClosed) {
 		t.Fatal("historical binding revived closed required owner", e)
 	}
+}
+
+func (z requiredCLIFixture) openTarget() (*v2.Target, error) {
+	if z.c.Assignment.Policy.Version == v2.PolicyVersionEnrolled {
+		return v2.OpenEnrolledTarget(z.target, z.c, z.sid, z.x.sources, z.binding, z.enrollment, f.Key(61), f.Key(14))
+	}
+	return v2.OpenRequiredTarget(z.target, z.c, z.sid, z.x.sources, z.binding, f.Key(61), f.Key(14))
 }

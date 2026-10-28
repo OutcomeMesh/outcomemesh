@@ -10,6 +10,33 @@ Full planned production readiness is approximately **44/100**, using the weighte
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
 
+## 2026-10-28: registry-bound profile-4 execution
+
+- [Enrolled profile](CUSTODY_V2_ENROLLED.md) fixes stable RegistryID and full
+  descriptor before AssignmentID/Plan. A fresh format-2 registry selects the
+  complete exact profile-4 admission Genesis with issuer/A/B consent and its
+  separate quorum. Format-1 selected histories remain immutable selection-only.
+- Explicit enrolled owners require both complete Admit and enrollment proofs
+  before source access. Retained evidence is exact, including quorum subset.
+  B consumption and A pending records bind admission, Admit and enrollment IDs;
+  unknown consumption cannot replay and acceptance resumes only its exact packet.
+- Reviewed enrolled CLI covers binding/enrollment preparation, owner creation,
+  authenticated target service, A acceptance/recovery, Serve and accounting Close.
+  Lifecycle tests use actual original registry and admission witness histories;
+  per-job Claim/Result/Serve endorsements remain public fixture signatures.
+- New negative/crash/vector/codec tests cover valid foreign assignments, raw and
+  profile-3 bypass, missing/changed evidence, alternate valid quorums, both owner
+  write boundaries, minority registry votes and refusal to reset old histories.
+- [Acceptance report](evidence/custody-v2-enrolled-20261028.json) records all seven
+  race groups, process CLI, integration vet, 56 helper tests and six decoder fuzz
+  runs (539,124 executions). The same offline-built native binaries pass on both
+  Linux hosts; each network lifecycle is loopback, not joint profile-4 WAN fault
+  acceptance. Source/binary hashes and zero task-process cleanup are recorded.
+- Protected physical enrollment, old-grant exclusion/accounting bridge,
+  profile-4 durable proof delivery, joint WAN fault acceptance and independent
+  deployment review remain open. No consensus or mainnet switch is enabled.
+  Readiness remains **44/100**.
+
 ## 2026-10-28: one-choice resource registry foundation
 
 - [Resource enrollment](CUSTODY_REGISTRY.md) separates stable external anchor

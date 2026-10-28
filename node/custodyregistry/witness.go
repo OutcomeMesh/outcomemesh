@@ -76,7 +76,11 @@ func witnessConfig(g Genesis, pin types.Hash, key ed25519.PrivateKey) (Genesis, 
 
 func witnessReady(g Genesis, pin types.Hash, pub [32]byte) []byte {
 	did, _ := g.DescriptorID()
-	b := append([]byte("OMCRWRD1"), pin[:]...)
+	marker := "OMCRWRD1"
+	if g.Version == Version2 {
+		marker = "OMCRWRD2"
+	}
+	b := append([]byte(marker), pin[:]...)
 	b = append(b, did[:]...)
 	return append(b, pub[:]...)
 }

@@ -1,0 +1,156 @@
+{
+  "schema": "outcomemesh/custody-v2-enrolled-acceptance/v1",
+  "date": "2026-10-28",
+  "scope": "fresh registry format 2 / signed policy 4; controlled native acceptance, not independent audit",
+  "source_files": 726,
+  "source_manifest_sha256": "56dbf83199d81c25be56e708bfdc6f6431eac3e6f12b513f586609b4410d6378",
+  "build": {
+    "go": "go version go1.26.7 linux/amd64",
+    "source_manifest": "56dbf83199d81c25be56e708bfdc6f6431eac3e6f12b513f586609b4410d6378",
+    "source_files": 726,
+    "readonly_modules": true,
+    "offline_modules": true,
+    "cgo_enabled": false,
+    "seconds": {
+      "build-omd": 10.704,
+      "build-omd.test": 15.623,
+      "build-registry.test": 3.84,
+      "build-v2.test": 5.451,
+      "test-omd.test": 97.077,
+      "test-registry.test": 1.419,
+      "test-v2.test": 26.32
+    },
+    "binaries": {
+      "omd": "d1a2ae2356f7abe83ef1cb03e2ca1551356004a9cb9c5a6e981ace53deb97ffe",
+      "omd.test": "dfef003955047f90de6e2772dae5e60fb3ecc3605a8e3e67ffceb4fcdc8778a5",
+      "registry.test": "03575f3d9e9b3d13d1cad271c225f26889279befb0b36a8a215858c22fddf917",
+      "v2.test": "60418b8e03047f4bdb768a5ac2957a75cb95e7a62fd4d57c95a6d68523e76164"
+    },
+    "native_log_sha256": "df83bd0f044979eefb42dc6d7963259d78bdeda52c67bb3bb6a3e057302ac627"
+  },
+  "second_host": {
+    "source_manifest": "56dbf83199d81c25be56e708bfdc6f6431eac3e6f12b513f586609b4410d6378",
+    "source_files": 726,
+    "tests_passed": true,
+    "seconds": {
+      "omd.test": 93.203,
+      "registry.test": 1.882,
+      "v2.test": 28.008
+    },
+    "binaries": {
+      "omd": "d1a2ae2356f7abe83ef1cb03e2ca1551356004a9cb9c5a6e981ace53deb97ffe",
+      "omd.test": "dfef003955047f90de6e2772dae5e60fb3ecc3605a8e3e67ffceb4fcdc8778a5",
+      "registry.test": "03575f3d9e9b3d13d1cad271c225f26889279befb0b36a8a215858c22fddf917",
+      "v2.test": "60418b8e03047f4bdb768a5ac2957a75cb95e7a62fd4d57c95a6d68523e76164"
+    },
+    "log_sha256": "25211c3fd0ea1fde1b4eae095c05e3eccdf0d683ac609560f2c02269211558aa"
+  },
+  "native_binaries_identical": true,
+  "joint_wan_profile4_tested": false,
+  "native_network_scope": "Authenticated QUIC lifecycle on loopback separately on each host. Not a cross-host profile-4 fault campaign.",
+  "local_checks": {
+    "focused": {
+      "exit_code": 0,
+      "log_sha256": "24697a9bff4d606e05f25c6cca87c3272b952c76762ad22ee14e96ed97180f1a"
+    },
+    "test-all": {
+      "exit_code": 0,
+      "log_sha256": "f02cf51765a233f08d7fe24c51b3c5a33f7cc2064a00c2af7d99931040245d03"
+    },
+    "integration": {
+      "exit_code": 0,
+      "log_sha256": "1096ea4ba8593bf79098234d952a75c2d18ffc3a6cbaf3983242f88b1c9c13b5"
+    },
+    "python-tests": {
+      "exit_code": 0,
+      "log_sha256": "bc233b87e1fa6b9b57483ae04d62ad7d8c1021b76f0d552b94c27968d30d29f7"
+    },
+    "vet-integration": {
+      "exit_code": 0,
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "fuzz": {
+      "exit_code": 0,
+      "log_sha256": "3732ef3bcd45a58a932b96b856e3b485ee87271a5d5ea12c56860aedfa0a53fa"
+    },
+    "fuzz-registry": {
+      "exit_code": 0,
+      "log_sha256": "ceebb184a6ced478a44867176ef0e1b432c036516433e57b0b87d577aee84850"
+    }
+  },
+  "fuzz": [
+    {
+      "log": "fuzz",
+      "executions": 34732,
+      "sha256": "3732ef3bcd45a58a932b96b856e3b485ee87271a5d5ea12c56860aedfa0a53fa"
+    },
+    {
+      "log": "fuzz-registry",
+      "executions": 369,
+      "sha256": "ceebb184a6ced478a44867176ef0e1b432c036516433e57b0b87d577aee84850"
+    },
+    {
+      "log": "FuzzAdmissionDeliveryPublicPackets",
+      "executions": 1439,
+      "sha256": "ec634877ade0749336b11ef30c62aeea795bb9dc2cf3ed1448d5078a57371893"
+    },
+    {
+      "log": "FuzzDecodeV2Artifacts",
+      "executions": 21939,
+      "sha256": "e8280087d5db13a99a97ab93da2cd9a254f7ff7c2da93d07518f27fa713875f9"
+    },
+    {
+      "log": "FuzzWitnessWireCodecs",
+      "executions": 321702,
+      "sha256": "aebd419ce6e2e21d3322e33a20ead0e18a8b7d035075018c4597b2cbbf5c61a1"
+    },
+    {
+      "log": "FuzzIndependentFenceCodecs",
+      "executions": 158943,
+      "sha256": "3556a3c95ed777c32a17676d40aeb55bcd50486ddfdac1146f7184b93fa88968"
+    }
+  ],
+  "fuzz_total_executions": 539124,
+  "new_top_level_go_tests": 13,
+  "test_race_disjoint_groups": 7,
+  "python_helper_tests": 56,
+  "test_timeouts_extended": false,
+  "coverage": [
+    "exact complete registry certificate required at new target/acceptor creation and open",
+    "valid foreign selected assignment rejected before owner creation",
+    "weak quorum, corrupted signatures and retained markers rejected",
+    "raw and profile-3 constructor/CLI bypass rejected",
+    "alternate sufficient certificate subset cannot replace retained enrollment",
+    "profile-4 consumed and pending records bind enrollment/admission/Admit IDs",
+    "four consumption/result and two acceptance write boundaries recover without replay",
+    "registry minority vote retained across majority selection and cold recovery",
+    "format-2 reuse/reset of selected format-1 witness origin refused",
+    "reviewed process CLI with actual registry/admission witnesses, authenticated QUIC, exact receipt recovery, Serve A/B and accounting closure"
+  ],
+  "per_job_claim_result_serve_endorsements": "public deterministic fixture signatures; registry/admission votes use original witness CLI",
+  "cleanup": {
+    "a": {
+      "processes": 0,
+      "active": [],
+      "scope": "only this stage's native executables",
+      "ssh_master_closed": true
+    },
+    "b": {
+      "processes": 0,
+      "active": [],
+      "scope": "only this stage's native executables",
+      "ssh_master_closed": true
+    }
+  },
+  "remaining_gates": [
+    "protected physical anchor issuance and independent signing histories",
+    "old raw grant exclusion and real legacy accounting bridge",
+    "profile-4 proof inbox/outbox delivery",
+    "joint profile-4 WAN fault campaign",
+    "four independent protected failure domains",
+    "external review and sustained adversarial public testnet",
+    "remaining production plan gates"
+  ],
+  "mainnet_activated": false,
+  "production_readiness_estimate": 44
+}

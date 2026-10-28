@@ -25,7 +25,7 @@ type AdmissionBinding struct {
 }
 
 func (b AdmissionBinding) CanonicalBytes() ([]byte, error) {
-	if b.Version != Version2 || b.Genesis.Assignment.Policy.Version != PolicyVersionAdmission || len(b.Chain) == 0 || uint64(len(b.Chain)) > MaxAdmissionEntries(b.Genesis) {
+	if b.Version != Version2 || !requiresAdmission(b.Genesis.Assignment.Policy.Version) || len(b.Chain) == 0 || uint64(len(b.Chain)) > MaxAdmissionEntries(b.Genesis) {
 		return nil, ErrAdmissionRequired
 	}
 	g, e := b.Genesis.CanonicalBytes()
@@ -109,7 +109,7 @@ func (b AdmissionBinding) ID() (types.Hash, error) {
 	return types.DomainHash("OMESH/custody/v2/required/admission-binding/id", raw), nil
 }
 func (b AdmissionBinding) Verify(c Context) error {
-	if c.Assignment.Policy.Version != PolicyVersionAdmission {
+	if !requiresAdmission(c.Assignment.Policy.Version) {
 		return ErrAdmissionRequired
 	}
 	if e := c.Validate(); e != nil {
@@ -155,7 +155,7 @@ func (b AdmissionBinding) admissionID() (types.Hash, error) {
 	return b.Chain[len(b.Chain)-1].Entry.ID()
 }
 func freezeRequiredBinding(c Context, b *AdmissionBinding) (frozen *AdmissionBinding, raw []byte, id types.Hash, err error) {
-	if c.Assignment.Policy.Version != PolicyVersionAdmission {
+	if !requiresAdmission(c.Assignment.Policy.Version) {
 		if b != nil {
 			return nil, nil, id, ErrAdmissionRequired
 		}
@@ -179,7 +179,7 @@ func freezeRequiredBinding(c Context, b *AdmissionBinding) (frozen *AdmissionBin
 	return &value, raw, id, e
 }
 func (r *root) checkAdmission() error {
-	if r.ctx.Assignment.Policy.Version != PolicyVersionAdmission {
+	if !requiresAdmission(r.ctx.Assignment.Policy.Version) {
 		if r.binding != nil || len(r.bindingBytes) != 0 || !r.bindingID.IsZero() {
 			return ErrAdmissionRequired
 		}
@@ -214,11 +214,26 @@ func (r *root) wrapAdmissionRecord(kind string, raw []byte) ([]byte, error) {
 	} else if kind != "consumed" {
 		return nil, ErrAdmissionRequired
 	}
-	out := codec.NewEncoder(len(raw) + 96)
+	version := PolicyVersionAdmission
+	if r.ctx.Assignment.Policy.Version == PolicyVersionEnrolled {
+		if e := r.checkEnrollment(); e != nil {
+			return nil, e
+		}
+		version = PolicyVersionEnrolled
+		if kind == "pending" {
+			magic = "OMCVPEN4"
+		} else {
+			magic = "OMCVUSE4"
+		}
+	}
+	out := codec.NewEncoder(len(raw) + 128)
 	out.Fixed([]byte(magic))
-	out.U16(PolicyVersionAdmission)
+	out.U16(version)
 	out.Fixed(r.bindingID[:])
 	out.Fixed(aid[:])
+	if version == PolicyVersionEnrolled {
+		out.Fixed(r.enrollmentID[:])
+	}
 	out.BytesField(raw)
 	return out.Bytes(), nil
 }
@@ -233,6 +248,15 @@ func (r *root) unwrapAdmissionRecord(kind string, raw []byte) ([]byte, error) {
 	} else if kind != "consumed" {
 		return nil, ErrAdmissionRequired
 	}
+	wantedVersion := PolicyVersionAdmission
+	if r.ctx.Assignment.Policy.Version == PolicyVersionEnrolled {
+		wantedVersion = PolicyVersionEnrolled
+		if kind == "pending" {
+			m = "OMCVPEN4"
+		} else {
+			m = "OMCVUSE4"
+		}
+	}
 	if !magic(d, m) {
 		return nil, ErrAdmissionRequired
 	}
@@ -241,8 +265,15 @@ func (r *root) unwrapAdmissionRecord(kind string, raw []byte) ([]byte, error) {
 	fixed(d, bid[:])
 	fixed(d, aid[:])
 	expected, e := r.binding.admissionID()
-	if e != nil || version != PolicyVersionAdmission || bid != r.bindingID || aid != expected {
+	if e != nil || version != wantedVersion || bid != r.bindingID || aid != expected {
 		return nil, ErrAdmissionRequired
+	}
+	if wantedVersion == PolicyVersionEnrolled {
+		var enrollment types.Hash
+		fixed(d, enrollment[:])
+		if enrollment != r.enrollmentID || enrollment.IsZero() {
+			return nil, ErrEnrollmentRequired
+		}
 	}
 	body, e := d.BytesField(MaximumBundleBytes + 32)
 	if e != nil || d.Finish() != nil {

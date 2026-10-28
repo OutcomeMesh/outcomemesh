@@ -25,32 +25,42 @@ type placement struct {
 	Files   map[string]fileStamp
 }
 type root struct {
-	mu           sync.Mutex
-	path         string
-	ctx          Context
-	scopeID      types.Hash
-	lock         *os.File
-	identity     map[string]os.FileInfo
-	placement    []byte
-	sources      Sources
-	decision     *workarchive.CustodyJournalDecision
-	objects      *workarchive.ObjectStore
-	failed       bool
-	binding      *AdmissionBinding
-	bindingBytes []byte
-	bindingID    types.Hash
-	hook         func(string) error
+	mu              sync.Mutex
+	path            string
+	ctx             Context
+	scopeID         types.Hash
+	lock            *os.File
+	identity        map[string]os.FileInfo
+	placement       []byte
+	sources         Sources
+	decision        *workarchive.CustodyJournalDecision
+	objects         *workarchive.ObjectStore
+	failed          bool
+	binding         *AdmissionBinding
+	bindingBytes    []byte
+	bindingID       types.Hash
+	enrollment      *EnrollmentBinding
+	enrollmentBytes []byte
+	enrollmentID    types.Hash
+	hook            func(string) error
 }
 
 func createRoot(path string, c Context, pin types.Hash, role string, sources Sources) error {
 	return createRootBound(path, c, pin, role, sources, nil)
 }
-func createRootBound(path string, c Context, pin types.Hash, role string, sources Sources, binding *AdmissionBinding) (returnErr error) {
+func createRootBound(path string, c Context, pin types.Hash, role string, sources Sources, binding *AdmissionBinding) error {
+	return createRootEnrolled(path, c, pin, role, sources, binding, nil)
+}
+func createRootEnrolled(path string, c Context, pin types.Hash, role string, sources Sources, binding *AdmissionBinding, enrollment *EnrollmentBinding) (returnErr error) {
 	c, e := c.freeze()
 	if e != nil {
 		return e
 	}
 	bound, boundRaw, _, e := freezeRequiredBinding(c, binding)
+	if e != nil {
+		return e
+	}
+	enrolled, enrolledRaw, _, e := freezeEnrollment(c, bound, enrollment)
 	if e != nil {
 		return e
 	}
@@ -119,17 +129,29 @@ func createRootBound(path string, c Context, pin types.Hash, role string, source
 			return e
 		}
 	}
+	if enrolled != nil {
+		if e := publish(path, "enrollment", enrolledRaw, nil); e != nil {
+			return e
+		}
+	}
 	return publish(path, "ready", append([]byte("OMCVRDY2"), pin[:]...), nil)
 }
 func openRoot(path string, c Context, pin types.Hash, role string, sources Sources) (*root, error) {
 	return openRootBound(path, c, pin, role, sources, nil)
 }
-func openRootBound(path string, c Context, pin types.Hash, role string, sources Sources, binding *AdmissionBinding) (r *root, returnErr error) {
+func openRootBound(path string, c Context, pin types.Hash, role string, sources Sources, binding *AdmissionBinding) (*root, error) {
+	return openRootEnrolled(path, c, pin, role, sources, binding, nil)
+}
+func openRootEnrolled(path string, c Context, pin types.Hash, role string, sources Sources, binding *AdmissionBinding, enrollment *EnrollmentBinding) (r *root, returnErr error) {
 	c, e := c.freeze()
 	if e != nil {
 		return nil, e
 	}
 	bound, boundRaw, boundID, e := freezeRequiredBinding(c, binding)
+	if e != nil {
+		return nil, e
+	}
+	enrolled, enrolledRaw, enrolledID, e := freezeEnrollment(c, bound, enrollment)
 	if e != nil {
 		return nil, e
 	}
@@ -206,7 +228,7 @@ func openRootBound(path string, c Context, pin types.Hash, role string, sources 
 			returnErr = errors.Join(returnErr, decision.Close())
 		}
 	}()
-	r = &root{path: path, ctx: c, scopeID: pin, lock: lock, identity: map[string]os.FileInfo{path: info, filepath.Join(path, "owner.lock"): held}, placement: p, sources: sources, decision: decision, binding: bound, bindingBytes: boundRaw, bindingID: boundID}
+	r = &root{path: path, ctx: c, scopeID: pin, lock: lock, identity: map[string]os.FileInfo{path: info, filepath.Join(path, "owner.lock"): held}, placement: p, sources: sources, decision: decision, binding: bound, bindingBytes: boundRaw, bindingID: boundID, enrollment: enrolled, enrollmentBytes: enrolledRaw, enrollmentID: enrolledID}
 	for name := range placementFiles(sources) {
 		info, e := os.Lstat(name)
 		if e != nil {
@@ -248,7 +270,7 @@ func (r *root) check() error {
 	if e != nil {
 		return e
 	}
-	entries, scanErr := f.ReadDir(10)
+	entries, scanErr := f.ReadDir(11)
 	closeErr := f.Close()
 	if scanErr != nil && !errors.Is(scanErr, io.EOF) {
 		return errors.Join(scanErr, closeErr)
@@ -257,15 +279,24 @@ func (r *root) check() error {
 		return closeErr
 	}
 	maximum := 8
-	if r.ctx.Assignment.Policy.Version == PolicyVersionAdmission {
+	if requiresAdmission(r.ctx.Assignment.Policy.Version) {
+		maximum++
+	}
+	if r.ctx.Assignment.Policy.Version == PolicyVersionEnrolled {
 		maximum++
 	}
 	if len(entries) > maximum {
 		return ErrProtocol
 	}
 	allowed := map[string]bool{"context": true, "placement": true, "ready": true, "owner.lock": true, "serve.pending": true, "serve.settled": true}
-	if r.ctx.Assignment.Policy.Version == PolicyVersionAdmission {
+	if requiresAdmission(r.ctx.Assignment.Policy.Version) {
 		allowed["admission"] = true
+	}
+	if r.ctx.Assignment.Policy.Version == PolicyVersionEnrolled {
+		allowed["enrollment"] = true
+	}
+	if e := r.checkEnrollment(); e != nil {
+		return e
 	}
 	if e := r.checkAdmission(); e != nil {
 		return e
@@ -311,7 +342,7 @@ func (r *root) stabilize() (returnErr error) {
 	if e := r.check(); e != nil {
 		return e
 	}
-	for _, name := range []string{"context", "placement", "ready", "owner.lock", "consumed", "result", "pending", "accepted", "serve.pending", "serve.settled", "admission"} {
+	for _, name := range []string{"context", "placement", "ready", "owner.lock", "consumed", "result", "pending", "accepted", "serve.pending", "serve.settled", "admission", "enrollment"} {
 		path := filepath.Join(r.path, name)
 		info, e := os.Lstat(path)
 		if errors.Is(e, os.ErrNotExist) {

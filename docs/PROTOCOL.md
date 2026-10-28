@@ -597,3 +597,12 @@ assignment commits an immutable witness policy; signed jobs derive their scope.
 The V2 effect and acceptance adapters reject legacy/no-quorum substitution.
 Legacy V0 fence domains/bytes and existing custody V0/V1 histories remain
 unchanged and are not migrated or resolved by this optional service.
+
+## Experimental registry-bound custody profile
+
+The off-chain [enrolled custody profile](CUSTODY_V2_ENROLLED.md) adds signed policy
+version 4 and registry format 2. It mandates complete exact selection/admission
+proofs at original owners and binds both into consumed/pending evidence. Registry
+semantic identity keeps its version-1 domain across formats; old histories are
+never reset or promoted. These operational formats do not change version-0
+consensus, transactions, emission or account ownership.

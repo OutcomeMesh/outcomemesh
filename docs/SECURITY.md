@@ -1387,3 +1387,15 @@ non-zero so automation cannot interpret a printed warning as success.
 
 Before a public testnet, the repository must publish a security contact, encrypted
 reporting channel, disclosure window, supported versions, and bounty policy.
+
+## Registry-bound custody execution
+
+[Profile 4](CUSTODY_V2_ENROLLED.md) verifies the complete registry-2 certificate
+against the exact admitted assignment before original-source access, retains it
+before ready and binds its ID into both effect boundaries. This closes the
+unsigned approval/hash-only and optional-mode bypass for new enrolled owners.
+It does not establish physical resource uniqueness, exclude older grants or
+prevent extraction/rollback of every key and pin. A protected issuer must bind
+the resource to one independently maintained registry history; disjoint keys
+are not evidence of independent failure domains. Existing registry-1 histories
+remain selected and cannot be reframed as unused format-2 origins.

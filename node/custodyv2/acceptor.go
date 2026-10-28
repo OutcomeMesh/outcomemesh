@@ -115,11 +115,14 @@ func CreateAcceptor(path string, c Context, pin types.Hash, journal string) erro
 func OpenAcceptor(path string, c Context, pin types.Hash, journal string, key ed25519.PrivateKey) (*Acceptor, error) {
 	return openAcceptorBound(path, c, pin, journal, nil, key)
 }
-func openAcceptorBound(path string, c Context, pin types.Hash, journal string, binding *AdmissionBinding, key ed25519.PrivateKey) (a *Acceptor, returnErr error) {
+func openAcceptorBound(path string, c Context, pin types.Hash, journal string, binding *AdmissionBinding, key ed25519.PrivateKey) (*Acceptor, error) {
+	return openAcceptorEnrolled(path, c, pin, journal, binding, nil, key)
+}
+func openAcceptorEnrolled(path string, c Context, pin types.Hash, journal string, binding *AdmissionBinding, enrollment *EnrollmentBinding, key ed25519.PrivateKey) (a *Acceptor, returnErr error) {
 	if !matches(key, c.Assignment.Base.AuthorityPublicKey) {
 		return nil, ErrProtocol
 	}
-	r, e := openRootBound(path, c, pin, "acceptor", Sources{Journal: journal}, binding)
+	r, e := openRootEnrolled(path, c, pin, "acceptor", Sources{Journal: journal}, binding, enrollment)
 	if e != nil {
 		return nil, e
 	}

@@ -1,5 +1,9 @@
 # One-choice resource enrollment foundation
 
+Format 2 now selects fresh profile-4 owners under the
+[mandatory enrollment runtime](CUSTODY_V2_ENROLLED.md). The format-1 behavior below
+remains selection-only and cannot be upgraded in place.
+
 Status: experimental selection-only library, original witness journals and
 reviewed operator CLI. It records one profile-3 assignment under an independently
 provisioned resource anchor. It grants no execution, migration, profile upgrade

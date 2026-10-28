@@ -18,11 +18,13 @@ import (
 
 	"github.com/outcomemesh/outcomemesh/core/types"
 	"github.com/outcomemesh/outcomemesh/node/custodyauthority/remotewire"
+	wire "github.com/outcomemesh/outcomemesh/node/custodyregistry/registrywire"
 	v2 "github.com/outcomemesh/outcomemesh/node/custodyv2"
 	libp2ptransport "github.com/outcomemesh/outcomemesh/node/transport/libp2p"
 )
 
 const custodyV2RequiredCommand = "work-archive-custody-v2-required"
+const custodyV2EnrolledCommand = "work-archive-custody-v2-enrolled"
 
 func runCustodyV2RequiredCLI(args []string) error {
 	broken := make(chan os.Signal, 1)
@@ -43,6 +45,12 @@ func runCustodyV2Required(ctx context.Context, args []string, input io.ReadClose
 	if e := ctx.Err(); e != nil {
 		return e
 	}
+	expectedProfile := v2.PolicyVersionAdmission
+	prefix := "custody_v2_required"
+	if args[0] == custodyV2EnrolledCommand {
+		expectedProfile = v2.PolicyVersionEnrolled
+		prefix = "custody_v2_enrolled"
+	}
 	flags := flag.NewFlagSet(args[0], flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	mode := flags.String("mode", "review", "review or run; exact action review required")
@@ -52,6 +60,11 @@ func runCustodyV2Required(ctx context.Context, args []string, input io.ReadClose
 	scopeID := flags.String("scope-id", "", "independent job scope ID")
 	bindingPath := flags.String("binding", "", "canonical complete admission binding")
 	bindingID := flags.String("binding-id", "", "independent semantic admission binding ID")
+	enrollmentPath := flags.String("enrollment", "", "canonical full registry enrollment proof; profile4 only")
+	enrollmentID := flags.String("enrollment-id", "", "independent enrollment binding semantic ID")
+	registryPath := flags.String("registry", "", "canonical version2 registry genesis; enrollment action")
+	registryCertificate := flags.String("registry-certificate", "", "canonical complete registry certificate; enrollment action")
+	registryCertificateID := flags.String("registry-certificate-id", "", "independent registry-domain artifact ID")
 	genesisPath := flags.String("genesis", "", "canonical assignment admission genesis; binding only")
 	genesisID := flags.String("genesis-id", "", "independent assignment admission genesis ID; binding only")
 	descriptorID := flags.String("genesis-descriptor-id", "", "independent full genesis descriptor ID; binding only")
@@ -85,6 +98,9 @@ func runCustodyV2Required(ctx context.Context, args []string, input io.ReadClose
 		"serve-apply-a": {"root", "journal", "sign-key", "in", "in-id"}, "serve-resume-a": {"root", "journal", "sign-key", "in", "in-id"}, "serve-status-a": {"root", "journal", "sign-key"},
 		"serve-apply-b": {"root", "journal", "objects", "sign-key", "replica-key", "in", "in-id", "proof", "proof-id"}, "serve-resume-b": {"root", "journal", "objects", "sign-key", "replica-key", "in", "in-id", "proof", "proof-id"}, "serve-status-b": {"root", "journal", "objects", "sign-key", "replica-key"},
 	}
+	if expectedProfile == v2.PolicyVersionEnrolled {
+		permitted["enrollment"] = []string{"registry", "registry-certificate", "registry-certificate-id"}
+	}
 	selectors, ok := permitted[*action]
 	if !ok {
 		return v2.ErrAdmission
@@ -94,6 +110,10 @@ func runCustodyV2Required(ctx context.Context, args []string, input io.ReadClose
 	if *action != "binding" {
 		allowed["binding"] = true
 		allowed["binding-id"] = true
+	}
+	if expectedProfile == v2.PolicyVersionEnrolled && *action != "binding" && *action != "enrollment" {
+		allowed["enrollment"] = true
+		allowed["enrollment-id"] = true
 	}
 	for _, s := range selectors {
 		allowed[s] = true
@@ -133,7 +153,7 @@ func runCustodyV2Required(ctx context.Context, args []string, input io.ReadClose
 	if e != nil {
 		return e
 	}
-	if c.Assignment.Policy.Version != v2.PolicyVersionAdmission {
+	if c.Assignment.Policy.Version != expectedProfile {
 		return v2.ErrAdmission
 	}
 	cid, _ := c.ID()
@@ -228,6 +248,56 @@ func runCustodyV2Required(ctx context.Context, args []string, input io.ReadClose
 			return e
 		}
 	}
+	var enrollment v2.EnrollmentBinding
+	var eid types.Hash
+	if expectedProfile == v2.PolicyVersionEnrolled && *action != "binding" {
+		if *action == "enrollment" {
+			raw, e := load(*registryPath, "", wire.MaximumGenesisBytes)
+			if e != nil {
+				return e
+			}
+			g, e := wire.DecodeGenesis(raw)
+			if e != nil {
+				return e
+			}
+			raw, e = load(*registryCertificate, "", wire.MaximumCertificateBytes)
+			if e != nil {
+				return e
+			}
+			want, e := witnessID("registry-certificate-id", *registryCertificateID)
+			if e != nil || want != custodyRegistryArtifactID(raw) {
+				return v2.ErrEnrollmentRequired
+			}
+			enrollment = v2.EnrollmentBinding{Version: v2.PolicyVersionEnrolled, Registry: g, Certificate: raw}
+		} else {
+			raw, e := load(*enrollmentPath, "", v2.MaximumEnrollmentBindingBytes)
+			if e != nil {
+				return e
+			}
+			enrollment, e = v2.DecodeEnrollmentBinding(raw)
+			if e != nil {
+				return e
+			}
+			eid, e = enrollment.ID()
+			if e != nil {
+				return e
+			}
+			wanted, e := witnessID("enrollment-id", *enrollmentID)
+			if e != nil || wanted != eid {
+				return v2.ErrEnrollmentRequired
+			}
+		}
+		if e := enrollment.Verify(c, binding); e != nil {
+			return e
+		}
+		eid, _ = enrollment.ID()
+		if *action == "enrollment" {
+			prepared, e = enrollment.CanonicalBytes()
+			if e != nil {
+				return e
+			}
+		}
+	}
 	if *root != "" {
 		*root, e = custodyV2RootPath(*root)
 		if e != nil {
@@ -251,8 +321,8 @@ func runCustodyV2Required(ctx context.Context, args []string, input io.ReadClose
 		}
 	}
 	isTarget := *action == "create-target" || *action == "serve-target" || strings.HasSuffix(*action, "-b")
-	isAcceptor := *action != "binding" && !isTarget
-	if *action != "binding" && (*root == "" || *journal == "") {
+	isAcceptor := *action != "binding" && *action != "enrollment" && !isTarget
+	if *action != "binding" && *action != "enrollment" && (*root == "" || *journal == "") {
 		return v2.ErrAdmission
 	}
 	if isTarget && *objects == "" {
@@ -362,14 +432,18 @@ func runCustodyV2Required(ctx context.Context, args []string, input io.ReadClose
 			}
 		}
 	}
-	public := map[string]any{"action": *action, "context_id": cid.String(), "scope_id": sid.String(), "binding_id": bid.String(), "inputs": pins, "root": *root, "journal": *journal, "objects": *objects, "sign_key": *signKey, "replica_key": *replicaKey, "transport_key": *transportKey, "bundle_id": *bundleID, "listen": *listen, "timeout": timeout.String(), "out": *output, "admission_required": true}
+	public := map[string]any{"action": *action, "context_id": cid.String(), "scope_id": sid.String(), "binding_id": bid.String(), "inputs": pins, "root": *root, "journal": *journal, "objects": *objects, "sign_key": *signKey, "replica_key": *replicaKey, "transport_key": *transportKey, "bundle_id": *bundleID, "listen": *listen, "timeout": timeout.String(), "out": *output, "admission_required": true, "enrollment_required": expectedProfile == v2.PolicyVersionEnrolled, "enrollment_id": eid.String()}
 	reviewBytes, e := json.Marshal(public)
 	if e != nil {
 		return e
 	}
-	review := types.DomainHash("OMESH/custody/v2/required/cli/review", reviewBytes)
+	reviewDomain := "OMESH/custody/v2/required/cli/review"
+	if expectedProfile == v2.PolicyVersionEnrolled {
+		reviewDomain = "OMESH/custody/v4/enrolled/cli/review"
+	}
+	review := types.DomainHash(reviewDomain, reviewBytes)
 	if *mode == "review" {
-		return writePruneOutputLine(out, fmt.Sprintf("custody_v2_required_review action=%s review_id=%s scope_id=%s binding_id=%s keys_loaded=false owners_opened=false execution_started=false admission_required=true\n%s\n", *action, review, sid, bid, reviewBytes))
+		return writePruneOutputLine(out, fmt.Sprintf("%s_review action=%s review_id=%s scope_id=%s binding_id=%s keys_loaded=false owners_opened=false execution_started=false admission_required=true enrollment_id=%s\n%s\n", prefix, *action, review, sid, bid, eid, reviewBytes))
 	}
 	wanted, e = witnessID("expected-review-id", *expected)
 	if e != nil || wanted != review {
@@ -387,7 +461,7 @@ func runCustodyV2Required(ctx context.Context, args []string, input io.ReadClose
 		if e := publishCustodyCommandArtifact(*output, b); e != nil {
 			return e
 		}
-		return writePruneOutputLine(out, fmt.Sprintf("custody_v2_required_artifact action=%s artifact_id=%s scope_id=%s binding_id=%s admission_required=true proof_refreshed=false\n", *action, custodyV2ArtifactID(b), sid, bid))
+		return writePruneOutputLine(out, fmt.Sprintf("%s_artifact action=%s artifact_id=%s scope_id=%s binding_id=%s admission_required=true proof_refreshed=false enrollment_id=%s\n", prefix, *action, custodyV2ArtifactID(b), sid, bid, eid))
 	}
 	if prepared != nil {
 		return publish(prepared)
@@ -400,11 +474,31 @@ func runCustodyV2Required(ctx context.Context, args []string, input io.ReadClose
 		}
 		defer clear(key)
 	}
+	openTarget := func(replica, control ed25519.PrivateKey) (*v2.Target, error) {
+		if expectedProfile == v2.PolicyVersionEnrolled {
+			return v2.OpenEnrolledTarget(*root, c, sid, v2.Sources{Journal: *journal, Objects: *objects}, binding, enrollment, replica, control)
+		}
+		return v2.OpenRequiredTarget(*root, c, sid, v2.Sources{Journal: *journal, Objects: *objects}, binding, replica, control)
+	}
+	openAcceptor := func() (*v2.Acceptor, error) {
+		if expectedProfile == v2.PolicyVersionEnrolled {
+			return v2.OpenEnrolledAcceptor(*root, c, sid, *journal, binding, enrollment, key)
+		}
+		return v2.OpenRequiredAcceptor(*root, c, sid, *journal, binding, key)
+	}
 	switch *action {
 	case "create-target":
-		e = v2.CreateRequiredTarget(*root, c, sid, v2.Sources{Journal: *journal, Objects: *objects}, binding)
+		if expectedProfile == v2.PolicyVersionEnrolled {
+			e = v2.CreateEnrolledTarget(*root, c, sid, v2.Sources{Journal: *journal, Objects: *objects}, binding, enrollment)
+		} else {
+			e = v2.CreateRequiredTarget(*root, c, sid, v2.Sources{Journal: *journal, Objects: *objects}, binding)
+		}
 	case "create-acceptor":
-		e = v2.CreateRequiredAcceptor(*root, c, sid, *journal, binding)
+		if expectedProfile == v2.PolicyVersionEnrolled {
+			e = v2.CreateEnrolledAcceptor(*root, c, sid, *journal, binding, enrollment)
+		} else {
+			e = v2.CreateRequiredAcceptor(*root, c, sid, *journal, binding)
+		}
 	case "serve-target":
 		control, e := ownPruneControlInput(input)
 		if e != nil {
@@ -426,7 +520,7 @@ func runCustodyV2Required(ctx context.Context, args []string, input io.ReadClose
 			return e
 		}
 		defer clear(transport)
-		target, e := v2.OpenRequiredTarget(*root, c, sid, v2.Sources{Journal: *journal, Objects: *objects}, binding, replica, key)
+		target, e := openTarget(replica, key)
 		if e != nil {
 			return e
 		}
@@ -438,7 +532,7 @@ func runCustodyV2Required(ctx context.Context, args []string, input io.ReadClose
 			return e
 		}
 		defer func() { returnErr = errors.Join(returnErr, service.Close()) }()
-		if e := writePruneOutputLine(writer, fmt.Sprintf("custody_v2_required_serving scope_id=%s binding_id=%s peer_id=%s address=%s owners_retained=true execution_started=false admission_required=true\n", sid, bid, service.ID(), strings.Join(service.Addresses(), ","))); e != nil {
+		if e := writePruneOutputLine(writer, fmt.Sprintf("%s_serving scope_id=%s binding_id=%s peer_id=%s address=%s owners_retained=true execution_started=false admission_required=true enrollment_id=%s\n", prefix, sid, bid, service.ID(), strings.Join(service.Addresses(), ","), eid)); e != nil {
 			return e
 		}
 		finished := make(chan error, 1)
@@ -462,7 +556,7 @@ func runCustodyV2Required(ctx context.Context, args []string, input io.ReadClose
 		}
 	default:
 		if isAcceptor {
-			a, e := v2.OpenRequiredAcceptor(*root, c, sid, *journal, binding, key)
+			a, e := openAcceptor()
 			if e != nil {
 				return e
 			}
@@ -515,7 +609,7 @@ func runCustodyV2Required(ctx context.Context, args []string, input io.ReadClose
 				return e
 			}
 			defer clear(replica)
-			t, e := v2.OpenRequiredTarget(*root, c, sid, v2.Sources{Journal: *journal, Objects: *objects}, binding, replica, key)
+			t, e := openTarget(replica, key)
 			if e != nil {
 				return e
 			}
@@ -548,5 +642,5 @@ func runCustodyV2Required(ctx context.Context, args []string, input io.ReadClose
 	if e != nil {
 		return e
 	}
-	return writePruneOutputLine(out, fmt.Sprintf("custody_v2_required_created action=%s scope_id=%s binding_id=%s execution_started=false admission_required=true\n", *action, sid, bid))
+	return writePruneOutputLine(out, fmt.Sprintf("%s_created action=%s scope_id=%s binding_id=%s execution_started=false admission_required=true enrollment_id=%s\n", prefix, *action, sid, bid, eid))
 }

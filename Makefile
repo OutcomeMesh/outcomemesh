@@ -27,6 +27,7 @@ test-race:
 	$(GO) test -race ./... -run '^TestAdmissionDelivery'
 
 test-fuzz-smoke:
+	$(GO) test ./node/custodyv2 -run '^$$' -fuzz '^FuzzEnrolledBindingDecoder$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyregistry -run '^$$' -fuzz '^FuzzRegistryPublicArtifacts$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyv2 -run '^$$' -fuzz '^FuzzAdmissionDeliveryPublicPackets$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyv2 -run '^$$' -fuzz '^FuzzDecodeV2Artifacts$$' -fuzztime=$(FUZZTIME)
@@ -120,6 +121,7 @@ test-fuzz-smoke:
 	$(GO) test ./sim/workgraphmodel -run '^$$' -fuzz '^FuzzRunSelfishStrategiesNeverBreakAccounting$$' -fuzztime=$(FUZZTIME)
 
 test-process:
+	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessCustodyV2EnrolledAdmissionAndExecution$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessCustodyRegistryLostVoteAndCommitOutput$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessCustodyV2DeliveryColdStoresAndLostOutput$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessWitnessLostOutputKillAndExactColdRecovery$$' -count=1 -timeout=2m

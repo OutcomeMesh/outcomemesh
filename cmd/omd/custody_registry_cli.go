@@ -198,7 +198,7 @@ func runCustodyRegistry(ctx context.Context, args []string, out io.Writer) (retu
 		if e != nil || actual != want {
 			return reg.ErrSelection
 		}
-		s = reg.Selection{Version: reg.Version1, RegistryID: gid, DescriptorID: did, Initial: initial}
+		s = reg.Selection{Version: g.Version, RegistryID: gid, DescriptorID: did, Initial: initial}
 		if e := s.ValidateDraft(g); e != nil {
 			return e
 		}
@@ -242,7 +242,7 @@ func runCustodyRegistry(ctx context.Context, args []string, out io.Writer) (retu
 		if *votes == "" || len(paths) != len(ids) || len(paths) > len(g.Witnesses) {
 			return reg.ErrQuorum
 		}
-		cert = reg.Certificate{Version: reg.Version1, Selection: s}
+		cert = reg.Certificate{Version: g.Version, Selection: s}
 		for i, path := range paths {
 			if ids[i] == "" {
 				return reg.ErrQuorum

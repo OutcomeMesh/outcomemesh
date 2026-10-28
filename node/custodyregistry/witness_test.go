@@ -43,7 +43,7 @@ func registryWitnessCreate(t testing.TB, g Genesis, seed byte) (string, *Witness
 }
 func registryWitnessCert(t testing.TB, g Genesis, s Selection, seeds ...byte) Certificate {
 	t.Helper()
-	q := Certificate{Version: Version1, Selection: s}
+	q := Certificate{Version: g.Version, Selection: s}
 	for _, seed := range seeds {
 		v, err := SignVote(g, s, f.Key(seed))
 		if err != nil {
@@ -84,6 +84,10 @@ func registryWitnessAlternative(t testing.TB, g Genesis, s Selection, label stri
 
 func TestCustodyRegistryWitnessQuorumKeepsOneSelectionAndMinorityVote(t *testing.T) {
 	g, s := registryFixture(t)
+	runRegistryWitnessQuorum(t, g, s)
+}
+func runRegistryWitnessQuorum(t *testing.T, g Genesis, s Selection) {
+	t.Helper()
 	other := registryWitnessAlternative(t, g, s, "other-assignment")
 	before := registryWitnessBefore(t, g)
 	var paths []string
@@ -115,7 +119,7 @@ func TestCustodyRegistryWitnessQuorumKeepsOneSelectionAndMinorityVote(t *testing
 		}
 	}
 	sort.Slice(votes, func(i, j int) bool { return bytes.Compare(votes[i].Witness[:], votes[j].Witness[:]) < 0 })
-	q := Certificate{Version: Version1, Selection: s, Votes: votes}
+	q := Certificate{Version: g.Version, Selection: s, Votes: votes}
 	if err := q.Verify(g); err != nil {
 		t.Fatal(err)
 	}

@@ -222,7 +222,10 @@ Its CLI supports preparation through exact crash recovery. [Typed Serve](docs/CU
 inbox/outbox distribution and explicit recovery before separate owner creation.
 The [resource registry foundation](docs/CUSTODY_REGISTRY.md) separately records
 one jointly signed assignment selection under an independently pinned anchor;
-its certificates do not activate work or migrate a legacy owner.
+its format-1 certificates remain selection-only. The fresh
+[registry-bound profile](docs/CUSTODY_V2_ENROLLED.md) requires a format-2 selection
+and complete admission proof at profile-4 owners and their effect boundaries;
+it cannot promote an existing selection or migrate a legacy owner.
 Protected deployment, legacy cutover and mainnet activation remain gated. The [joint two-host V2
 fault campaign](docs/CUSTODY_V2_WAN.md) covers lost replies, process kills,
 quorum outages and expired results, with public signed evidence and original
