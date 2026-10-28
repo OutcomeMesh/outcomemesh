@@ -1,8 +1,10 @@
 # Legacy V1 to V2 cutover rules
 
-Status: specification for a future explicit cutover. There is no V1-to-V2 import,
-cutover certificate, activation command or wire format implemented by this
-document. The implemented [V2 job](CUSTODY_V2.md) and
+Status: requirements for a future explicit cutover. The separate
+[disabled review preparation](CUSTODY_CUTOVER_REVIEW.md) now implements bounded
+legacy replay, original-source observations, no-refund review arithmetic and a
+signed, retained non-runtime proposal. There is still no V1-to-V2 import, enforced
+accounting carry-over, global cutover certificate or activation command. The implemented [V2 job](CUSTODY_V2.md) and
 [Serve disposition](CUSTODY_V2_SERVE.md) operate in their own versioned scope.
 Assignment-wide V2 admission accounting does not itself migrate a legacy ticket.
 

@@ -155,7 +155,10 @@ source owners remain unchanged. The new coordinator has its own journal markers,
 IDs, signature domains and roots. It cannot open old roots as empty budget state.
 The separate [V1 cutover specification](CUSTODY_V2_MIGRATION.md) requires complete
 retirement/source/accounting and independently enforced exclusion of old grants;
-it implements no import or activation command. Pending old Serve stays pending.
+its separate [disabled review preparation](CUSTODY_CUTOVER_REVIEW.md) now retains
+full eligible histories, original-source observations and no-refund arithmetic.
+It implements no source/spending import or activation command. Pending old Serve
+stays pending.
 
 The signed policy-3 profile and original-owner runtime binding now implement
 one-use consumption before effects and original source-currentness checks.

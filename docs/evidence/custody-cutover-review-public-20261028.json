@@ -1,0 +1,69 @@
+{
+  "activation_allowed": false,
+  "archive": "custody-cutover-review-public-20261028.tar.gz",
+  "archive_bytes": 6763,
+  "archive_sha256": "89115446f67ebd1983bc3db042853c9279e076382495279c373d09222f13cbf6",
+  "bridge": {
+    "ActivationAllowed": false,
+    "Authorized": 2,
+    "LegacyLimit": 4,
+    "MaximumPending": 2,
+    "MinimumRetainUntil": 1793221583,
+    "ResourceLimit": 4,
+    "Spent": 2,
+    "Unallocated": 0,
+    "WholeJobs": 1
+  },
+  "execution_granted": false,
+  "files": [
+    {
+      "bytes": 347,
+      "name": "a-observation",
+      "sha256": "41ba374457cd6ed7c54a79d9216209dd52a455ce0629c6316399e0e194c5db37"
+    },
+    {
+      "bytes": 247,
+      "name": "anchor",
+      "sha256": "5e73f753cf92e265ebc72793b2660f87dcf5678b7688548b470e1248272e140a"
+    },
+    {
+      "bytes": 2343,
+      "name": "assessment.json",
+      "sha256": "da13592d03a97461883f2870459eba6b622fc064b4e95e6b42c3fcd65068b609"
+    },
+    {
+      "bytes": 347,
+      "name": "b-observation",
+      "sha256": "749a62c254b9ab0f362eff0394dab3518e15c75483884767c1c867b4492cb090"
+    },
+    {
+      "bytes": 167,
+      "name": "bridge.json",
+      "sha256": "46e5426ff43b1c73f6f962728530a03116a5a7a101d55913317993d9d0170c27"
+    },
+    {
+      "bytes": 9073,
+      "name": "evidence",
+      "sha256": "afc5f2f082199182600de09beed944213b7ab386d5c3b491e15ee48858cf22cd"
+    },
+    {
+      "bytes": 10500,
+      "name": "proposal",
+      "sha256": "ca98e4ab315c540adbbbf01d6bde49bd0e12ee4efeea011f1bed453fc68d7818"
+    }
+  ],
+  "fixture": "real managed legacy exchange, two typed completions and retirement; public deterministic test keys only",
+  "format": "outcomemesh-cutover-review-public-v1",
+  "local_paths_or_private_seeds_included": false,
+  "pins": {
+    "anchor_id": "8f6036b943a5c084dcb3198e877069ac786c41fcd3e968edc9bcc20ff07adddb",
+    "descriptor_id": "49c76d480f2d1226f678d5c174be45a04ee7512256df36e4c34db80ee7f3a19c",
+    "evidence_id": "5a5c3cbaf4a275a90175085b81bd9864a661b0800f020def3f6c6596502878b8",
+    "legacy_id": "6d3c16a23ee62d458365bf245e538b6f5a0a30d8df6a59f57c267917b5c85ae1",
+    "proposal_id": "f9a3d9ca2ea1d32584d09757cff59c76518f2779260698fef9e793ae45a71a17",
+    "retired_head": "07657ba790c4543fe236eb39d478ebb9ad184468b46832207a71f472d5b57b6a",
+    "retired_sequence": 8
+  },
+  "protected_enrollment": false,
+  "source_manifest": "d58cd5e6767dcfe990c8a0c179266aa3aba342c62aacf2c3fc444ae4134fd3db"
+}

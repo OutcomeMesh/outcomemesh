@@ -10,6 +10,39 @@ Full planned production readiness is approximately **44/100**, using the weighte
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
 
+## 2026-10-28: disabled legacy cutover review and original-source checks
+
+- [Cutover review](CUSTODY_CUTOVER_REVIEW.md) now verifies bounded complete V1
+  retirement histories, every typed closed Audit/Serve pair and the complete
+  accepted archive lineage. Opaque completions, omitted cycles, unsupported or
+  unresolved obligations and shortened prefixes refuse.
+- Original guarded history export and separately pinned A/B source observations
+  keep the A coordinator or all sealed B workers plus the source decision through
+  signing/publication. A valid copied retirement/terminal with unaccepted A source
+  cannot produce an observation. No source, proof time or retention is advanced.
+- Reviewed CLI calculates remaining allowance after all old lifetime admissions,
+  binds the full evidence/resource descriptor and disabled Blueprint with issuer,
+  old A and old B signatures, and retains one original immutable preparation.
+  Explicit recovery finishes only an exact missing ready marker; it reconstructs
+  no proposal and grants no import, registry selection or execution.
+- Native Linux acceptance caught immediate reuse of an unlinked lock inode.
+  Permanent lock change time now supplements local placement checks. This fixes
+  that ordinary substitution case; it does not supply hardware/VM/raw-key fencing.
+- [Acceptance evidence](evidence/custody-cutover-review-20261028.json) records
+  14 new Go tests, all seven race groups, fresh process/integration checks, 65
+  Python tests and five codec fuzz targets (407,841 executions). The same native binaries pass on two
+  observed Linux kernels. Each native A/B exchange is loopback; no new joint WAN
+  migration or independent protected deployment is claimed. Task processes are
+  zero and both SSH control connections are closed.
+- [Public corpus](evidence/custody-cutover-review-public-20261028.json) retains
+  seven files, including the complete signed proposal. The production CLI
+  verifies spent=2/authorized=2/one possible job with activation disabled. Changed
+  payloads/pins, copied preparation with preserved modes, unexpected files and
+  missing readiness are exercised, with exact explicit recovery where permitted.
+- Full successor assignment/import positions, enforced spending carry-over,
+  protected exclusion of old grants, physical failures, independent review and
+  the wider M5–M10 gates remain open. Readiness remains **44/100**.
+
 ## 2026-10-28: complete profile-4 proof delivery and joint faults
 
 - [Enrolled proof transport](CUSTODY_V2_ENROLLED_DELIVERY.md) carries both full

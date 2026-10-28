@@ -70,8 +70,11 @@ Next required work remains ordered:
    complete proofs with exact retry and explicit owner handoff. Joint WAN
    fault acceptance accompanies that path; protected independent deployment
    and the legacy accounting bridge remain next. [Legacy cutover
-   rules](CUSTODY_V2_MIGRATION.md) are specified; import/activation and the
-   accounting bridge remain unimplemented.
+   rules](CUSTODY_V2_MIGRATION.md) now have a separate
+   [disabled review CLI](CUSTODY_CUTOVER_REVIEW.md): complete retired histories,
+   original-source observations, no-refund arithmetic and signed durable
+   preparation. Next enforce protected old-grant exclusion and runtime carry-over
+   of source state/spending; import/activation remain unimplemented.
 4. Specify safe progress for split votes and its quorum/rollback assumptions;
    never reset a retained slot to recover availability.
 5. Establish protected execution/key deployment, activation/migration rules and

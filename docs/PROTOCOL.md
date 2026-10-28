@@ -612,3 +612,14 @@ both complete registry and admission proofs. Its receiver descriptor and signed
 retention receipt bind the exact registry enrollment ID alongside the admitted
 job. Receipt retention is not execution permission or a current-head assertion.
 Legacy delivery-2 encodings and negotiated protocol remain unchanged.
+
+## Disabled node-side legacy cutover review
+
+The experimental [cutover review](CUSTODY_CUTOVER_REVIEW.md) adds separate
+canonical historical evidence, original-source observations, a non-runtime
+successor Blueprint and a three-role signed proposal. The node can retain this
+preparation under exact original local pins. None of these objects is a V2 job,
+admission genesis, registry selection, source import or execution permission.
+Consensus bytes/rules and custody V0/V1, V2 policy 2/3/4 and registry 1/2 execution
+semantics remain unchanged. Enforced spending carry-over and protected exclusion
+of old grants remain unimplemented activation gates.

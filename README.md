@@ -228,7 +228,10 @@ and complete admission proof at profile-4 owners and their effect boundaries;
 it cannot promote an existing selection or migrate a legacy owner.
 [Enrolled proof delivery](docs/CUSTODY_V2_ENROLLED_DELIVERY.md) transports both
 complete proofs with durable acknowledgement and explicit owner handoff.
-Protected deployment, legacy cutover and mainnet activation remain gated. The [joint two-host V2
+The [disabled legacy review CLI](docs/CUSTODY_CUTOVER_REVIEW.md) now verifies
+complete retired V1 histories, observes original A/B sources and retains a signed
+transition proposal without refunding spent allowance. It enables no source or
+spending import. Protected deployment, legacy cutover and mainnet activation remain gated. The [joint two-host V2
 fault campaign](docs/CUSTODY_V2_WAN.md) covers lost replies, process kills,
 quorum outages and expired results, with public signed evidence and original
 source checks.

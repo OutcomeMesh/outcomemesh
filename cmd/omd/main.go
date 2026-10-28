@@ -132,6 +132,8 @@ func run(arguments []string) error {
 		return runCustodyV2RequiredCLI(arguments)
 	case custodyV2DeliveryCommand, custodyV2EnrolledDeliveryCommand:
 		return runCustodyV2DeliveryCLI(arguments)
+	case custodyCutoverCommand:
+		return runCustodyCutoverCLI(arguments)
 	case custodyRegistryCommand:
 		return runCustodyRegistryCLI(arguments)
 	case custodyV2AdmissionCommand:

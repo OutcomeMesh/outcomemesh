@@ -30,7 +30,7 @@ GOTOOLCHAIN=go1.26.7 go test ./path/to/changed/package -run '^TestRelevantBehavi
 GOTOOLCHAIN=go1.26.7 make -j1 test-all
 ```
 
-`test-all` formats the code, runs vet and covers the test suite in five disjoint
+`test-all` formats the code, runs vet and covers the test suite in seven disjoint
 race-enabled groups. Run the focused checks while developing, then the required
 repository gates before submitting a core change. Do not raise timeouts or
 weaken assertions to hide a regression. Document a failure and its cause.

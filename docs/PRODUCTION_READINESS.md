@@ -518,3 +518,15 @@ required. The terminal profile-3 selection cannot be reset or silently promoted
 into another assignment/profile. This is a prototype selection component; the
 reserved lifecycle point and all launch blockers remain open. Readiness stays
 **44/100**.
+
+2026-10-28 disabled legacy cutover review: complete bounded V1 replay, original
+A/B source observations, no-refund review arithmetic, three-role agreement and
+immutable non-runtime preparation now have a reviewed CLI. Fourteen new Go tests,
+seven race groups, 65 helper tests, five decoder fuzz targets and native checks on
+two Linux kernels are recorded in
+[custody-cutover-review-20261028.json](evidence/custody-cutover-review-20261028.json).
+Linux inode reuse found during acceptance is covered by permanent lock change
+time checks. These remain local placement checks. Full successor assignment and
+source/spending import, protected exclusion of old grants, independent deployment,
+physical failures and the wider release gates remain open. This preparatory
+slice closes no additional weighted launch criterion; readiness stays **44/100**.

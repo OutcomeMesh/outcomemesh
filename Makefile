@@ -27,6 +27,7 @@ test-race:
 	$(GO) test -race ./... -run '^TestAdmissionDelivery'
 
 test-fuzz-smoke:
+	$(GO) test ./node/custodycutover -run '^$$' -fuzz '^FuzzCutoverPublicArtifacts$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyv2 -run '^$$' -fuzz '^FuzzEnrolledDeliveryPublicPackets$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyv2 -run '^$$' -fuzz '^FuzzEnrolledBindingDecoder$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyregistry -run '^$$' -fuzz '^FuzzRegistryPublicArtifacts$$' -fuzztime=$(FUZZTIME)
@@ -123,6 +124,7 @@ test-fuzz-smoke:
 
 test-process:
 	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessCustodyV2EnrolledDeliveryColdStoresAndLostOutput$$' -count=1 -timeout=2m
+	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessRemoteCutoverColdPreparationAndLostOutput$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessCustodyV2EnrolledAdmissionAndExecution$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessCustodyRegistryLostVoteAndCommitOutput$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessCustodyV2DeliveryColdStoresAndLostOutput$$' -count=1 -timeout=2m
