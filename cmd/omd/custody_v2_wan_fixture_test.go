@@ -21,6 +21,7 @@ import (
 	"github.com/outcomemesh/outcomemesh/node/custodyauthority"
 	"github.com/outcomemesh/outcomemesh/node/custodyauthority/remotewire"
 	"github.com/outcomemesh/outcomemesh/node/custodyfence"
+	reg "github.com/outcomemesh/outcomemesh/node/custodyregistry"
 	v2 "github.com/outcomemesh/outcomemesh/node/custodyv2"
 	libp2ptransport "github.com/outcomemesh/outcomemesh/node/transport/libp2p"
 	"github.com/outcomemesh/outcomemesh/node/workarchive"
@@ -34,6 +35,9 @@ type v2WANMetadata struct {
 	Keys                                                   map[string]string
 	Members                                                []map[string]string
 	OriginalOwnersCreated                                  bool
+	RegistryID                                             string              `json:"RegistryID,omitempty"`
+	RegistryDescriptorID                                   string              `json:"RegistryDescriptorID,omitempty"`
+	RegistryMembers                                        []map[string]string `json:"RegistryMembers,omitempty"`
 }
 
 func exportV2WAN(t testing.TB, parent, scenario string) string {
@@ -74,6 +78,16 @@ func exportV2WANWithPolicy(t testing.TB, parent, scenario string, policyVersion 
 		t.Fatal(e)
 	}
 	a := v2.Assignment{Version: 2, Base: base, Policy: v2.Policy{Version: policyVersion, Threshold: 3, Witnesses: f.Scope().Witnesses}}
+	var registry reg.Genesis
+	if policyVersion == v2.PolicyVersionEnrolled {
+		registry = reg.Genesis{Version: reg.Version2, NetworkID: base.NetworkID, ChainGenesisID: base.GenesisID, ResourceID: remoteCustodyRandomHash(t), Issuer: f.Public(110), Threshold: 3, MaximumOperations: 16, MaximumPending: 4}
+		for seed := byte(111); seed <= 114; seed++ {
+			registry.Witnesses = append(registry.Witnesses, f.Public(seed))
+		}
+		sort.Slice(registry.Witnesses, func(i, j int) bool { return bytes.Compare(registry.Witnesses[i][:], registry.Witnesses[j][:]) < 0 })
+		a.Policy.RegistryID, _ = registry.ID()
+		a.Policy.RegistryDescriptorID, _ = registry.DescriptorID()
+	}
 	aid, e := a.ID()
 	if e != nil {
 		t.Fatal(e)
@@ -120,6 +134,13 @@ func exportV2WANWithPolicy(t testing.TB, parent, scenario string, policyVersion 
 	}
 	serveID, _ := serveScope.ID()
 	metadata := v2WANMetadata{ServeScopeID: serveID.String(), Version: 2, Scenario: scenario, ContextID: cid.String(), ScopeID: sid.String(), AssignmentID: aid.String(), PlanID: pid.String(), IssuedAt: now, ExpiresAt: challenge.ExpiresAt, ProofAge: age, Keys: keys, Members: members}
+	if policyVersion == v2.PolicyVersionEnrolled {
+		metadata.RegistryID = a.Policy.RegistryID.String()
+		metadata.RegistryDescriptorID = a.Policy.RegistryDescriptorID.String()
+		for seed := byte(111); seed <= 114; seed++ {
+			metadata.RegistryMembers = append(metadata.RegistryMembers, map[string]string{"seed": fmt.Sprint(seed), "signing_public_key": types.Hash(f.Public(seed)).String()})
+		}
+	}
 	sourceObjects, e := workarchive.OpenObjectStore(filepath.Join(t.TempDir(), "source-objects"), workarchive.DefaultObjectStorePolicy())
 	if e != nil {
 		t.Fatal(e)
@@ -138,6 +159,22 @@ func exportV2WANWithPolicy(t testing.TB, parent, scenario string, policyVersion 
 		metadata.Role = role
 		writeRemoteCustodyFixtureJSON(t, filepath.Join(dir, "public.json"), metadata)
 		writeRemoteCustodyFixtureFile(t, filepath.Join(dir, "expected-context"), contextBytes)
+		if policyVersion == v2.PolicyVersionEnrolled {
+			raw, e := registry.CanonicalBytes()
+			if e != nil {
+				t.Fatal(e)
+			}
+			writeRemoteCustodyFixtureFile(t, filepath.Join(dir, "registry"), raw)
+			writeRemoteCustodyFixtureJSON(t, filepath.Join(dir, "registry-draft.json"), registry)
+			if role == "a" {
+				writeRemoteCustodyFixtureFile(t, filepath.Join(dir, "keys", "registry-issuer.seed"), f.Key(110).Seed())
+			}
+			for seed := byte(111); seed <= 114; seed++ {
+				if (role == "a" && seed <= 112) || (role == "b" && seed >= 113) {
+					writeRemoteCustodyFixtureFile(t, filepath.Join(dir, "keys", fmt.Sprintf("registry-%d.seed", seed)), f.Key(seed).Seed())
+				}
+			}
+		}
 		if _, _, e := workarchive.OpenOrCreateCustodyJournal(filepath.Join(dir, "journal"), m, receipt, policy); e != nil {
 			t.Fatal(e)
 		}
@@ -430,4 +467,124 @@ func TestCustodyV2WANProbe(t *testing.T) {
 		t.Fatal("hostile execution request succeeded")
 	}
 	fmt.Printf("custody_v2_probe kind=%s refused=true\n", probe.Kind)
+}
+
+func TestExportCustodyV2EnrolledWANFixture(t *testing.T) {
+	parent := os.Getenv("OUTCOMEMESH_REMOTE_FIXTURE_OUT")
+	if parent == "" {
+		t.Skip("explicit never-started registry-bound fixture")
+	}
+	root := exportV2WANWithPolicy(t, parent, os.Getenv("OMESH_V2_SCENARIO"), v2.PolicyVersionEnrolled)
+	fmt.Printf("custody_v2_fixture root=%s owners_created=false test_keys_public=true admission_required=true enrollment_required=true\n", root)
+}
+func TestAdmissionDeliveryEnrolledWANFixtureHasFreshSourcesAndPinnedRegistry(t *testing.T) {
+	parent := t.TempDir()
+	if e := os.Chmod(parent, 0700); e != nil {
+		t.Fatal(e)
+	}
+	root := exportV2WANWithPolicy(t, parent, "lost-result", v2.PolicyVersionEnrolled)
+	for _, role := range []string{"a", "b", "clone"} {
+		dir := filepath.Join(root, role)
+		raw, e := os.ReadFile(filepath.Join(dir, "expected-context"))
+		if e != nil {
+			t.Fatal(e)
+		}
+		c, e := v2.DecodeContext(raw)
+		if e != nil || c.Assignment.Policy.Version != v2.PolicyVersionEnrolled {
+			t.Fatal(e)
+		}
+		raw, e = os.ReadFile(filepath.Join(dir, "registry"))
+		if e != nil {
+			t.Fatal(e)
+		}
+		g, e := reg.DecodeGenesis(raw)
+		if e != nil {
+			t.Fatal(e)
+		}
+		id, _ := g.ID()
+		did, _ := g.DescriptorID()
+		if id != c.Assignment.Policy.RegistryID || did != c.Assignment.Policy.RegistryDescriptorID {
+			t.Fatal("fixture lost pre-assignment anchor")
+		}
+		for _, name := range []string{"owner", "registry-owner-111", "delivery-inbox"} {
+			if _, e := os.Stat(filepath.Join(dir, name)); !os.IsNotExist(e) {
+				t.Fatal("exported a live owner", e)
+			}
+		}
+	}
+}
+
+// This verifier replays public proofs with production decoders/cryptography.
+// It never opens retained owners or treats a historical receipt as a live grant.
+func TestVerifyCustodyV2EnrolledDeliveryPublicEvidence(t *testing.T) {
+	root := os.Getenv("OUTCOMEMESH_ENROLLED_PUBLIC_CORPUS")
+	if root == "" {
+		t.Skip("explicit public corpus verification")
+	}
+	type publicCase struct {
+		Context, Admission, Registry, Delivery     string
+		Receipts                                   []string
+		ContextID, BindingID, RegistryEnrollmentID string
+	}
+	var manifest struct{ Cases []publicCase }
+	read := func(name string, limit int) []byte {
+		t.Helper()
+		if name == "" || filepath.Base(name) != name || name == "." {
+			t.Fatal("nonlocal public artifact")
+		}
+		raw, e := readRegularArtifact(filepath.Join(root, name), limit)
+		if e != nil {
+			t.Fatal(e)
+		}
+		return raw
+	}
+	if e := json.Unmarshal(read("verify.json", 65536), &manifest); e != nil {
+		t.Fatal(e)
+	}
+	if len(manifest.Cases) != 2 {
+		t.Fatal("both independent cases required")
+	}
+	total := 0
+	for _, item := range manifest.Cases {
+		c, e := v2.DecodeContext(read(item.Context, v2.MaximumContextBytes))
+		if e != nil || c.Assignment.Policy.Version != v2.PolicyVersionEnrolled {
+			t.Fatal("wrong public context", e)
+		}
+		b, e := v2.DecodeAdmissionBinding(read(item.Admission, v2.MaximumAdmissionBindingBytes))
+		if e != nil || b.Verify(c) != nil {
+			t.Fatal("invalid public admission", e)
+		}
+		r, e := v2.DecodeEnrollmentBinding(read(item.Registry, v2.MaximumEnrollmentBindingBytes))
+		if e != nil || r.Verify(c, b) != nil {
+			t.Fatal("invalid public registry proof", e)
+		}
+		d, e := v2.DecodeAdmissionDelivery(read(item.Delivery, v2.MaximumAdmissionDeliveryBytes))
+		if e != nil || d.Version != v2.PolicyVersionEnrolled || d.Validate() != nil {
+			t.Fatal("invalid complete public delivery", e)
+		}
+		cid, _ := c.ID()
+		bid, _ := b.ID()
+		rid, _ := r.ID()
+		dcid, _ := d.Context.ID()
+		if cid.String() != item.ContextID || bid.String() != item.BindingID || rid.String() != item.RegistryEnrollmentID || dcid != cid || d.Enrollment.BindingID != bid || d.Enrollment.RegistryEnrollmentID != rid {
+			t.Fatal("public proof identities disagree")
+		}
+		if len(item.Receipts) < 3 {
+			t.Fatal("missing lost-output/cold receipts")
+		}
+		var first []byte
+		for _, name := range item.Receipts {
+			raw := read(name, v2.EnrolledDeliveryReceiptBytes)
+			ack, e := v2.DecodeAdmissionDeliveryReceipt(raw)
+			if e != nil || ack.Verify(d) != nil {
+				t.Fatal("invalid retained public receipt", e)
+			}
+			if first != nil && !bytes.Equal(first, raw) {
+				t.Fatal("recovery changed original public receipt")
+			}
+			first = raw
+			total++
+		}
+	}
+	fmt.Printf("custody_enrolled_public_verified cases=%d receipts=%d execution_granted=false\n", len(manifest.Cases), total)
 }

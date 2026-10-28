@@ -148,6 +148,18 @@ func (b EnrollmentBinding) Verify(c Context, admission AdmissionBinding) error {
 	if e := ValidateRegistryCandidate(b.Registry, admission.Genesis); e != nil {
 		return e
 	}
+	// The client transport is chosen by a later job Plan, not by the selected
+	// assignment Genesis. Enforce its registry-role separation when it is known.
+	client := c.Plan.ClientTransportPublicKey
+	if client == b.Registry.Issuer {
+		return ErrEnrollmentRequired
+	}
+	for _, member := range b.Registry.Witnesses {
+		if client == member {
+			return ErrEnrollmentRequired
+		}
+	}
+
 	q, e := wire.DecodeCertificate(b.Certificate)
 	if e != nil {
 		return e

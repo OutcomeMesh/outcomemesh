@@ -65,8 +65,11 @@ Next required work remains ordered:
    [new enrolled profile](CUSTODY_V2_ENROLLED.md) now mandates the full registry-2
    selection and admission proofs at profile-4 owner creation/open and effect
    consumption. Registry-1 histories cannot be promoted or reset; protected
-   issuance, old-grant exclusion, profile-4 delivery and joint WAN fault
-   acceptance remain next. [Legacy cutover
+   issuance and old-grant exclusion remain required. The separate
+   [profile-4 proof delivery](CUSTODY_V2_ENROLLED_DELIVERY.md) now retains both
+   complete proofs with exact retry and explicit owner handoff. Joint WAN
+   fault acceptance accompanies that path; protected independent deployment
+   and the legacy accounting bridge remain next. [Legacy cutover
    rules](CUSTODY_V2_MIGRATION.md) are specified; import/activation and the
    accounting bridge remain unimplemented.
 4. Specify safe progress for split votes and its quorum/rollback assumptions;

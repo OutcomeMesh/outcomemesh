@@ -24,8 +24,18 @@ type managedCustodyServeCLIFixture struct {
 
 // Reuse the real archive generator, but give custody its own original owner,
 // initial receipt, journal and objects. No prune owner participates in serving.
-func newManagedCustodyServeCLIFixture(t testing.TB) *managedCustodyServeCLIFixture {
+func newManagedCustodyServeCLIFixture(t testing.TB, lifetimes ...uint64) *managedCustodyServeCLIFixture {
 	t.Helper()
+	lifetime := uint64(60)
+	if len(lifetimes) > 1 {
+		t.Fatal("one fixture challenge lifetime expected")
+	}
+	if len(lifetimes) == 1 {
+		lifetime = lifetimes[0]
+	}
+	if lifetime == 0 || lifetime > 600 {
+		t.Fatal("fixture lifetime exceeds the existing protocol limit")
+	}
 	archive := newPruneEffectCLIFixture(t, false)
 	f := &managedCustodyServeCLIFixture{root: archive.root, manifestPath: archive.manifestPath}
 	manifest, err := loadArchiveManifest(f.manifestPath)
@@ -41,14 +51,14 @@ func newManagedCustodyServeCLIFixture(t testing.TB) *managedCustodyServeCLIFixtu
 		t.Fatal(err)
 	}
 	policy := workarchive.CustodyPolicy{TrustedAuditors: [][ed25519.PublicKeySize]byte{pruneCLIPublic(3)},
-		MaximumChallengeLifetime: 60, MaximumProofAge: 100, MaximumRenewalTerm: 20_000}
+		MaximumChallengeLifetime: lifetime, MaximumProofAge: 100, MaximumRenewalTerm: 20_000}
 	assignment, err := workarchive.CreateCustodyAuthorityAssignment(manifest, receipt, policy, pruneCLIHash(114), pruneCLIPublic(1),
 		[]custodyauthority.Consumer{{PublicKey: pruneCLIPublic(4), Purposes: custodyauthority.AllPurposes}}, 16, 4)
 	if err != nil {
 		t.Fatal(err)
 	}
 	assignmentID, _ := assignment.ID()
-	f.challenge, err = workarchive.CreateCustodyChallenge(manifest, receipt, pruneCLIKey(3), now, 60, 1, receipt.RetainUntil+1)
+	f.challenge, err = workarchive.CreateCustodyChallenge(manifest, receipt, pruneCLIKey(3), now, lifetime, 1, receipt.RetainUntil+1)
 	if err != nil {
 		t.Fatal(err)
 	}

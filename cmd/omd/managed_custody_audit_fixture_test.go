@@ -17,9 +17,9 @@ type managedCustodyAuditCLIFixture struct {
 	intentPath, admissionPath, auditorKey, transportKey string
 }
 
-func newManagedCustodyAuditCLIFixture(t testing.TB) *managedCustodyAuditCLIFixture {
+func newManagedCustodyAuditCLIFixture(t testing.TB, lifetimes ...uint64) *managedCustodyAuditCLIFixture {
 	t.Helper()
-	s := newManagedCustodyServeCLIFixture(t)
+	s := newManagedCustodyServeCLIFixture(t, lifetimes...)
 	c := s.config.Session
 	initialID, _ := c.InitialReceipt.ID()
 	i := workarchive.CustodyAuditIntent{AssignmentID: c.AssignmentID, ConsumerPublicKey: pruneCLIPublic(4), AuditorPublicKey: pruneCLIPublic(3), ReplicaPeerID: s.config.ServerPeerID,

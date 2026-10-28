@@ -10,6 +10,46 @@ Full planned production readiness is approximately **44/100**, using the weighte
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
 
+## 2026-10-28: complete profile-4 proof delivery and joint faults
+
+- [Enrolled proof transport](CUSTODY_V2_ENROLLED_DELIVERY.md) carries both full
+  registry selection and admission proofs under an independently pinned receiver
+  descriptor. Separate version-4 domains/protocol, exact proof IDs and complete
+  EOF/close checks preserve old delivery-2 histories and prohibit fallback.
+- Explicit original inbox/outbox APIs retain packet before acknowledgement and
+  acknowledgement before sender confirmation. Unknown writes/sends recover the
+  exact same intent. Reviewed CLI exports both received proofs for separate real
+  owner creation; intake opens no chunks, consumes no session and appends no source.
+- Registry-role separation now also checks the later job's client transport key
+  at full proof verification. Issuer/all four registry-key reuse cases refuse.
+  Previously prepared colliding contexts retain their evidence; no replacement
+  history, migration or fresh allowance is implicit.
+- [Joint acceptance](evidence/custody-v2-enrolled-delivery-20261028.json) records
+  fresh registry/admission witness histories, cross-host delivery, sender output
+  loss, receiver death/offline retry and original execution/Serve/accounting
+  faults. The fulfilled case recovers exact bytes and closes; the lost-session
+  case holds Serve, archive and pending budget. Neither case releases archives.
+- Two controller preparation errors were fixed without overwriting a retained
+  file or bypassing the inbox lock. Those original preparations were audited
+  read-only and retain their two-unit admission reservations and zero source
+  appends. Final acceptance used fresh independent fixture sources/anchors.
+- [Public proof corpus](evidence/custody-v2-enrolled-delivery-public-20261028.json)
+  retains 27 files. Production Go APIs reverify both complete proof packets and
+  12 identical original/cold receipts. The final long CLI fixture chooses the
+  already permitted 600-second signed lifetime before construction; default old
+  fixtures stay at 60 seconds. Production network bounds and Go test process timeouts do not
+  change. Production sources match the native/WAN snapshot; the later fixture
+  adjustment and both complete source manifests are recorded separately.
+- Validation passes on the final snapshot: seven race groups, 14 new Go tests,
+  fresh process integration, integration vet, 60 helper tests and six decoder
+  fuzz runs (459,167 executions). Production sources match the verified native
+  and WAN build; test-only fixture changes and both full source snapshots are
+  recorded explicitly. Both task connections are closed and all remote native
+  processes/Python supervisors are zero.
+- Protected physical enrollment, four independent protected domains, old-grant
+  exclusion/accounting bridge, actual device faults, external review and
+  sustained adversarial public-testnet gates remain open. Readiness **44/100**.
+
 ## 2026-10-28: registry-bound profile-4 execution
 
 - [Enrolled profile](CUSTODY_V2_ENROLLED.md) fixes stable RegistryID and full

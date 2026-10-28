@@ -18,7 +18,7 @@ import (
 
 func deliveryInProcess(t testing.TB, args []string) string {
 	t.Helper()
-	if args[0] != custodyV2DeliveryCommand {
+	if args[0] != custodyV2DeliveryCommand && args[0] != custodyV2EnrolledDeliveryCommand {
 		return requiredInProcess(t, args)
 	}
 	var out bytes.Buffer
@@ -40,7 +40,16 @@ func deliveryReviewed(t testing.TB, driver v2CLIDriver, args []string) []string 
 func deliveryArgs(z requiredCLIFixture, action string, extra ...string) []string {
 	cid, _ := z.c.ID()
 	bid, _ := z.binding.ID()
-	return append([]string{custodyV2DeliveryCommand, "--action", action, "--context", z.contextPath, "--context-id", cid.String(), "--scope-id", z.sid.String(), "--binding-id", bid.String()}, extra...)
+	command := custodyV2DeliveryCommand
+	if z.c.Assignment.Policy.Version == v2.PolicyVersionEnrolled {
+		command = custodyV2EnrolledDeliveryCommand
+		id, _ := z.enrollment.ID()
+		extra = append(append([]string{}, extra...), "--registry-enrollment-id", id.String())
+		if action == "delivery" {
+			extra = append(extra, "--registry-enrollment", z.enrollmentPath)
+		}
+	}
+	return append([]string{command, "--action", action, "--context", z.contextPath, "--context-id", cid.String(), "--scope-id", z.sid.String(), "--binding-id", bid.String()}, extra...)
 }
 
 func deliveryInProcessStart(t testing.TB, args []string, prefix string) (string, func()) {
@@ -97,6 +106,10 @@ func runAdmissionDeliveryCLICampaign(t *testing.T, driver v2CLIDriver, start v2C
 	t.Helper()
 	z := newRequiredCLIFixture(t, driver)
 	driver(t, requiredReviewed(t, driver, z.bindingArgs(t)))
+	runAdmissionDeliveryCLIFixtureCampaign(t, z, driver, start)
+}
+func runAdmissionDeliveryCLIFixtureCampaign(t *testing.T, z requiredCLIFixture, driver v2CLIDriver, start v2CLIStart, workStarts ...v2CLIStart) {
+	t.Helper()
 	run := func(args []string) { driver(t, deliveryReviewed(t, driver, args)) }
 	key47 := filepath.Join(z.dir, "authority-transport.seed")
 	writePruneCLIFile(t, key47, f.Key(47).Seed())
@@ -151,7 +164,11 @@ func runAdmissionDeliveryCLICampaign(t *testing.T, driver v2CLIDriver, start v2C
 		did, _ := d.ID()
 		inboxArgs := append(append(append([]string{}, paths...), enrolled...), "--sign-key", signKey)
 		serve := deliveryArgs(z, "inbox-serve", append(append([]string{}, inboxArgs...), "--transport-key", transportKey)...)
-		address, closeInbox := start(t, deliveryReviewed(t, driver, serve), "custody_v2_delivery_serving")
+		prefix := "custody_v2_delivery_serving"
+		if z.c.Assignment.Policy.Version == v2.PolicyVersionEnrolled {
+			prefix = "custody_v2_enrolled_delivery_serving"
+		}
+		address, closeInbox := start(t, deliveryReviewed(t, driver, serve), prefix)
 		outboxArgs := []string{"--root", outbox, "--delivery", deliveryPath, "--delivery-id", did.String(), "--address", address}
 		run(deliveryArgs(z, "outbox-create", outboxArgs...))
 		first := filepath.Join(roleDir, "sent-receipt")
@@ -193,11 +210,33 @@ func runAdmissionDeliveryCLICampaign(t *testing.T, driver v2CLIDriver, start v2C
 		if !bytes.Equal(original, after) {
 			t.Fatal("delivered proof changed")
 		}
+		if z.c.Assignment.Policy.Version == v2.PolicyVersionEnrolled {
+			proof := filepath.Join(roleDir, "delivered-registry-enrollment")
+			run(deliveryArgs(z, "inbox-registry-enrollment", append(append([]string{}, inboxArgs...), "--out", proof)...))
+			a, _ := os.ReadFile(proof)
+			b, _ := os.ReadFile(z.enrollmentPath)
+			if !bytes.Equal(a, b) {
+				t.Fatal("delivered registry proof changed")
+			}
+			if role == "target" {
+				z.targetBindingPath, z.targetEnrollmentPath = binding, proof
+			} else {
+				z.acceptorBindingPath, z.acceptorEnrollmentPath = binding, proof
+			}
+		}
 		for _, owner := range []string{z.target, z.acceptor} {
 			if _, e := os.Lstat(owner); !errors.Is(e, os.ErrNotExist) {
 				t.Fatal("delivery implicitly created execution owner", owner, e)
 			}
 		}
+	}
+	if z.c.Assignment.Policy.Version == v2.PolicyVersionEnrolled {
+		workStart := v2CLIStart(requiredInProcessStart)
+		if len(workStarts) > 0 {
+			workStart = workStarts[0]
+		}
+		runRequiredCLIFixtureCampaign(t, z, driver, workStart)
+		return
 	}
 	// Explicit runtime enrollment still verifies the predecessor and complete
 	// binding; the later real effect and acceptance remain exactly once.

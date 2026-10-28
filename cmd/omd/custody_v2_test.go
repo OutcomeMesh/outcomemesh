@@ -24,9 +24,9 @@ type custodyV2Fixture struct {
 	sources          v2.Sources
 }
 
-func newCustodyV2Fixture(t testing.TB) *custodyV2Fixture {
+func newCustodyV2Fixture(t testing.TB, lifetimes ...uint64) *custodyV2Fixture {
 	t.Helper()
-	f := newRemoteCLIFixture(t)
+	f := newRemoteCLIFixture(t, lifetimes...)
 	a := v2.Assignment{Version: v2.Version2, Base: f.scope.Worker.Assignment, Policy: v2.Policy{Version: v2.Version2, Threshold: 3, Witnesses: fencetest.Scope().Witnesses}}
 	aid, e := a.ID()
 	if e != nil {

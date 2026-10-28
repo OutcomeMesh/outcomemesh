@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/ed25519"
 	"errors"
+	"fmt"
 
 	"github.com/outcomemesh/outcomemesh/core/codec"
 	"github.com/outcomemesh/outcomemesh/core/types"
@@ -16,6 +17,45 @@ import (
 const MaximumAdmissionDeliveryBytes = 8 << 20
 const MaximumAdmissionDeliveryEnrollmentBytes = 10 + 7*types.HashSize + 1 + ed25519.PublicKeySize
 const AdmissionDeliveryReceiptBytes = 10 + 5*types.HashSize + 1 + ed25519.SignatureSize
+const MaximumEnrolledDeliveryEnrollmentBytes = MaximumAdmissionDeliveryEnrollmentBytes + types.HashSize
+const EnrolledDeliveryReceiptBytes = AdmissionDeliveryReceiptBytes + types.HashSize
+
+func deliveryDomain(version uint16) string {
+	if version == PolicyVersionEnrolled {
+		return "OMESH/custody/v4/enrolled/proof-delivery"
+	}
+	return "OMESH/custody/v2/required/admission-delivery"
+}
+func deliveryMagic(prefix string, version uint16) string { return fmt.Sprintf("%s%d", prefix, version) }
+func deliveryVersion(d *codec.Decoder, prefix string) (uint16, error) {
+	raw, e := d.Fixed(8)
+	if e != nil {
+		return 0, e
+	}
+	v, e := d.U16()
+	if e != nil || (v != Version2 && v != PolicyVersionEnrolled) || string(raw) != deliveryMagic(prefix, v) {
+		return 0, ErrAdmissionDelivery
+	}
+	return v, nil
+}
+func deliveryProfile(version uint16) uint16 {
+	if version == PolicyVersionEnrolled {
+		return PolicyVersionEnrolled
+	}
+	return PolicyVersionAdmission
+}
+func deliveryPlacementDomain(version uint16) string {
+	if version == PolicyVersionEnrolled {
+		return "OMESH/custody/v4/enrolled/proof-delivery/placement"
+	}
+	return "OMESH/custody/v2/delivery/placement"
+}
+func deliveryReceiptLimit(version uint16) int {
+	if version == PolicyVersionEnrolled {
+		return EnrolledDeliveryReceiptBytes
+	}
+	return AdmissionDeliveryReceiptBytes
+}
 
 var ErrAdmissionDelivery = errors.New("invalid pinned custody V2 admission proof delivery")
 
@@ -37,39 +77,50 @@ type AdmissionDeliveryEnrollment struct {
 	PlacementID, Nonce                                           types.Hash
 	Role                                                         AdmissionDeliveryRole
 	ReceiptPublicKey                                             [32]byte
+	RegistryEnrollmentID                                         types.Hash
 }
 
 func (e AdmissionDeliveryEnrollment) CanonicalBytes() ([]byte, error) {
-	if e.Version != Version2 || e.ContextID.IsZero() || e.ScopeID.IsZero() || e.BindingID.IsZero() || e.SenderPeerID.IsZero() || e.RecipientPeerID.IsZero() || e.SenderPeerID == e.RecipientPeerID || e.PlacementID.IsZero() || e.Nonce.IsZero() || types.Hash(e.ReceiptPublicKey).IsZero() || (e.Role != AdmissionDeliveryAuthority && e.Role != AdmissionDeliveryTarget) {
+	if (e.Version != Version2 && e.Version != PolicyVersionEnrolled) || e.ContextID.IsZero() || e.ScopeID.IsZero() || e.BindingID.IsZero() || e.SenderPeerID.IsZero() || e.RecipientPeerID.IsZero() || e.SenderPeerID == e.RecipientPeerID || e.PlacementID.IsZero() || e.Nonce.IsZero() || types.Hash(e.ReceiptPublicKey).IsZero() || (e.Role != AdmissionDeliveryAuthority && e.Role != AdmissionDeliveryTarget) {
 		return nil, ErrAdmissionDelivery
 	}
-	out := codec.NewEncoder(MaximumAdmissionDeliveryEnrollmentBytes)
-	out.Fixed([]byte("OMCVDEN2"))
+	if (e.Version == Version2 && !e.RegistryEnrollmentID.IsZero()) || (e.Version == PolicyVersionEnrolled && e.RegistryEnrollmentID.IsZero()) {
+		return nil, ErrAdmissionDelivery
+	}
+	out := codec.NewEncoder(MaximumEnrolledDeliveryEnrollmentBytes)
+	out.Fixed([]byte(deliveryMagic("OMCVDEN", e.Version)))
 	out.U16(e.Version)
 	for _, id := range []types.Hash{e.ContextID, e.ScopeID, e.BindingID, e.SenderPeerID, e.RecipientPeerID, e.PlacementID, e.Nonce} {
 		out.Fixed(id[:])
 	}
 	out.U8(uint8(e.Role))
 	out.Fixed(e.ReceiptPublicKey[:])
+	if e.Version == PolicyVersionEnrolled {
+		out.Fixed(e.RegistryEnrollmentID[:])
+	}
 	return out.Bytes(), nil
 }
 
 func DecodeAdmissionDeliveryEnrollment(raw []byte) (AdmissionDeliveryEnrollment, error) {
 	var e AdmissionDeliveryEnrollment
-	if len(raw) != MaximumAdmissionDeliveryEnrollmentBytes {
+	if len(raw) != MaximumAdmissionDeliveryEnrollmentBytes && len(raw) != MaximumEnrolledDeliveryEnrollmentBytes {
 		return e, ErrAdmissionDelivery
 	}
 	d := codec.NewDecoder(raw)
-	if !magic(d, "OMCVDEN2") {
-		return e, ErrAdmissionDelivery
+	version, err := deliveryVersion(d, "OMCVDEN")
+	if err != nil {
+		return e, err
 	}
-	e.Version, _ = d.U16()
+	e.Version = version
 	for _, id := range []*types.Hash{&e.ContextID, &e.ScopeID, &e.BindingID, &e.SenderPeerID, &e.RecipientPeerID, &e.PlacementID, &e.Nonce} {
 		fixed(d, id[:])
 	}
 	role, _ := d.U8()
 	e.Role = AdmissionDeliveryRole(role)
 	fixed(d, e.ReceiptPublicKey[:])
+	if e.Version == PolicyVersionEnrolled {
+		fixed(d, e.RegistryEnrollmentID[:])
+	}
 	again, err := e.CanonicalBytes()
 	if err != nil || d.Finish() != nil || !bytes.Equal(again, raw) {
 		return AdmissionDeliveryEnrollment{}, ErrAdmissionDelivery
@@ -82,14 +133,14 @@ func (e AdmissionDeliveryEnrollment) ID() (types.Hash, error) {
 	if err != nil {
 		return types.Hash{}, err
 	}
-	return types.DomainHash("OMESH/custody/v2/required/admission-delivery/enrollment/id", raw), nil
+	return types.DomainHash(deliveryDomain(e.Version)+"/enrollment/id", raw), nil
 }
 
 func (e AdmissionDeliveryEnrollment) Verify(c Context) error {
 	if _, err := e.CanonicalBytes(); err != nil {
 		return err
 	}
-	if c.Assignment.Policy.Version != PolicyVersionAdmission {
+	if c.Assignment.Policy.Version != deliveryProfile(e.Version) {
 		return ErrAdmissionDelivery
 	}
 	cid, err := c.ID()
@@ -127,10 +178,11 @@ func (e AdmissionDeliveryEnrollment) Verify(c Context) error {
 // AdmissionDelivery transfers one exact public proof. Its validation neither
 // queries the current admission head nor grants any physical custody effect.
 type AdmissionDelivery struct {
-	Version    uint16
-	Enrollment AdmissionDeliveryEnrollment
-	Context    Context
-	Binding    AdmissionBinding
+	Version            uint16
+	Enrollment         AdmissionDeliveryEnrollment
+	Context            Context
+	Binding            AdmissionBinding
+	RegistryEnrollment EnrollmentBinding
 }
 
 func deliveryFieldBytes(n int) int {
@@ -167,7 +219,7 @@ func deliveryBindingBytes(b AdmissionBinding, limit int) ([]byte, error) {
 }
 
 func (d AdmissionDelivery) CanonicalBytes() ([]byte, error) {
-	if d.Version != Version2 {
+	if (d.Version != Version2 && d.Version != PolicyVersionEnrolled) || d.Enrollment.Version != d.Version {
 		return nil, ErrAdmissionDelivery
 	}
 	enrollment, err := d.Enrollment.CanonicalBytes()
@@ -178,15 +230,36 @@ func (d AdmissionDelivery) CanonicalBytes() ([]byte, error) {
 	if err != nil {
 		return nil, errors.Join(ErrAdmissionDelivery, err)
 	}
+	var registry []byte
+	if d.Version == PolicyVersionEnrolled {
+		registry, err = d.RegistryEnrollment.CanonicalBytes()
+		if err != nil {
+			return nil, err
+		}
+		id, err := d.RegistryEnrollment.ID()
+		if err != nil || id != d.Enrollment.RegistryEnrollmentID {
+			return nil, ErrAdmissionDelivery
+		}
+	} else if d.RegistryEnrollment.Version != 0 || len(d.RegistryEnrollment.Certificate) != 0 || d.RegistryEnrollment.Registry.Version != 0 {
+		return nil, ErrAdmissionDelivery
+	}
 	// Reserve at least the binding field's length prefix now and enforce its
 	// complete canonical length below. The preflight allocation stays bounded.
 	remaining := MaximumAdmissionDeliveryBytes - 10 - deliveryFieldBytes(len(enrollment)) - deliveryFieldBytes(len(c)) - 1
+	if d.Version == PolicyVersionEnrolled {
+		remaining -= deliveryFieldBytes(len(registry))
+	}
 	if remaining <= 0 {
 		return nil, ErrAdmissionDelivery
 	}
 	b, err := deliveryBindingBytes(d.Binding, remaining)
 	if err != nil {
 		return nil, err
+	}
+	if d.Version == PolicyVersionEnrolled {
+		if err := d.RegistryEnrollment.Verify(d.Context, d.Binding); err != nil {
+			return nil, err
+		}
 	}
 	if err := d.Enrollment.Verify(d.Context); err != nil {
 		return nil, err
@@ -198,12 +271,15 @@ func (d AdmissionDelivery) CanonicalBytes() ([]byte, error) {
 	if bid != d.Enrollment.BindingID {
 		return nil, ErrAdmissionDelivery
 	}
-	out := codec.NewEncoder(10 + len(enrollment) + len(c) + len(b) + 30)
-	out.Fixed([]byte("OMCVDLV2"))
+	out := codec.NewEncoder(10 + len(enrollment) + len(c) + len(b) + len(registry) + 40)
+	out.Fixed([]byte(deliveryMagic("OMCVDLV", d.Version)))
 	out.U16(d.Version)
 	out.BytesField(enrollment)
 	out.BytesField(c)
 	out.BytesField(b)
+	if d.Version == PolicyVersionEnrolled {
+		out.BytesField(registry)
+	}
 	raw := out.Bytes()
 	if len(raw) > MaximumAdmissionDeliveryBytes {
 		return nil, ErrAdmissionDelivery
@@ -221,7 +297,7 @@ func (d AdmissionDelivery) ID() (types.Hash, error) {
 	if err != nil {
 		return types.Hash{}, err
 	}
-	return types.DomainHash("OMESH/custody/v2/required/admission-delivery/id", raw), nil
+	return types.DomainHash(deliveryDomain(d.Version)+"/id", raw), nil
 }
 
 func DecodeAdmissionDelivery(raw []byte) (AdmissionDelivery, error) {
@@ -230,11 +306,12 @@ func DecodeAdmissionDelivery(raw []byte) (AdmissionDelivery, error) {
 		return value, ErrAdmissionDelivery
 	}
 	d := codec.NewDecoder(raw)
-	if !magic(d, "OMCVDLV2") {
-		return value, ErrAdmissionDelivery
+	version, err := deliveryVersion(d, "OMCVDLV")
+	if err != nil {
+		return value, err
 	}
-	value.Version, _ = d.U16()
-	e, err := d.BytesField(MaximumAdmissionDeliveryEnrollmentBytes)
+	value.Version = version
+	e, err := d.BytesField(MaximumEnrolledDeliveryEnrollmentBytes)
 	if err != nil {
 		return value, err
 	}
@@ -251,12 +328,25 @@ func DecodeAdmissionDelivery(raw []byte) (AdmissionDelivery, error) {
 		return value, err
 	}
 	b, err := d.BytesField(MaximumAdmissionDeliveryBytes)
-	if err != nil || d.Finish() != nil {
-		return AdmissionDelivery{}, ErrAdmissionDelivery
+	if err != nil {
+		return AdmissionDelivery{}, err
 	}
 	value.Binding, err = DecodeAdmissionBinding(b)
 	if err != nil {
 		return value, err
+	}
+	if value.Version == PolicyVersionEnrolled {
+		raw, err := d.BytesField(MaximumEnrollmentBindingBytes)
+		if err != nil {
+			return AdmissionDelivery{}, err
+		}
+		value.RegistryEnrollment, err = DecodeEnrollmentBinding(raw)
+		if err != nil {
+			return AdmissionDelivery{}, err
+		}
+	}
+	if d.Finish() != nil {
+		return AdmissionDelivery{}, ErrAdmissionDelivery
 	}
 	again, err := value.CanonicalBytes()
 	if err != nil || !bytes.Equal(again, raw) {
@@ -272,17 +362,24 @@ type AdmissionDeliveryReceipt struct {
 	DeliveryID, EnrollmentID, ContextID, ScopeID, BindingID types.Hash
 	Role                                                    AdmissionDeliveryRole
 	Signature                                               [64]byte
+	RegistryEnrollmentID                                    types.Hash
 }
 
 func (r AdmissionDeliveryReceipt) unsignedBytes() ([]byte, error) {
-	if r.Version != Version2 || r.DeliveryID.IsZero() || r.EnrollmentID.IsZero() || r.ContextID.IsZero() || r.ScopeID.IsZero() || r.BindingID.IsZero() || (r.Role != AdmissionDeliveryAuthority && r.Role != AdmissionDeliveryTarget) {
+	if (r.Version != Version2 && r.Version != PolicyVersionEnrolled) || r.DeliveryID.IsZero() || r.EnrollmentID.IsZero() || r.ContextID.IsZero() || r.ScopeID.IsZero() || r.BindingID.IsZero() || (r.Role != AdmissionDeliveryAuthority && r.Role != AdmissionDeliveryTarget) {
 		return nil, ErrAdmissionDelivery
 	}
-	out := codec.NewEncoder(AdmissionDeliveryReceiptBytes - ed25519.SignatureSize)
-	out.Fixed([]byte("OMCVDAR2"))
+	if (r.Version == Version2 && !r.RegistryEnrollmentID.IsZero()) || (r.Version == PolicyVersionEnrolled && r.RegistryEnrollmentID.IsZero()) {
+		return nil, ErrAdmissionDelivery
+	}
+	out := codec.NewEncoder(EnrolledDeliveryReceiptBytes - ed25519.SignatureSize)
+	out.Fixed([]byte(deliveryMagic("OMCVDAR", r.Version)))
 	out.U16(r.Version)
 	for _, id := range []types.Hash{r.DeliveryID, r.EnrollmentID, r.ContextID, r.ScopeID, r.BindingID} {
 		out.Fixed(id[:])
+	}
+	if r.Version == PolicyVersionEnrolled {
+		out.Fixed(r.RegistryEnrollmentID[:])
 	}
 	out.U8(uint8(r.Role))
 	return out.Bytes(), nil
@@ -298,16 +395,20 @@ func (r AdmissionDeliveryReceipt) CanonicalBytes() ([]byte, error) {
 
 func DecodeAdmissionDeliveryReceipt(raw []byte) (AdmissionDeliveryReceipt, error) {
 	var r AdmissionDeliveryReceipt
-	if len(raw) != AdmissionDeliveryReceiptBytes {
+	if len(raw) != AdmissionDeliveryReceiptBytes && len(raw) != EnrolledDeliveryReceiptBytes {
 		return r, ErrAdmissionDelivery
 	}
 	d := codec.NewDecoder(raw)
-	if !magic(d, "OMCVDAR2") {
-		return r, ErrAdmissionDelivery
+	version, err := deliveryVersion(d, "OMCVDAR")
+	if err != nil {
+		return r, err
 	}
-	r.Version, _ = d.U16()
+	r.Version = version
 	for _, id := range []*types.Hash{&r.DeliveryID, &r.EnrollmentID, &r.ContextID, &r.ScopeID, &r.BindingID} {
 		fixed(d, id[:])
+	}
+	if r.Version == PolicyVersionEnrolled {
+		fixed(d, r.RegistryEnrollmentID[:])
 	}
 	role, _ := d.U8()
 	r.Role = AdmissionDeliveryRole(role)
@@ -324,7 +425,7 @@ func (r AdmissionDeliveryReceipt) ID() (types.Hash, error) {
 	if err != nil {
 		return types.Hash{}, err
 	}
-	return types.DomainHash("OMESH/custody/v2/required/admission-delivery/receipt/id", raw), nil
+	return types.DomainHash(deliveryDomain(r.Version)+"/receipt/id", raw), nil
 }
 
 func deliveryReceiptFor(d AdmissionDelivery) (AdmissionDeliveryReceipt, error) {
@@ -336,7 +437,7 @@ func deliveryReceiptFor(d AdmissionDelivery) (AdmissionDeliveryReceipt, error) {
 	if err != nil {
 		return AdmissionDeliveryReceipt{}, err
 	}
-	return AdmissionDeliveryReceipt{Version: Version2, DeliveryID: did, EnrollmentID: eid, ContextID: d.Enrollment.ContextID, ScopeID: d.Enrollment.ScopeID, BindingID: d.Enrollment.BindingID, Role: d.Enrollment.Role}, nil
+	return AdmissionDeliveryReceipt{Version: d.Version, RegistryEnrollmentID: d.Enrollment.RegistryEnrollmentID, DeliveryID: did, EnrollmentID: eid, ContextID: d.Enrollment.ContextID, ScopeID: d.Enrollment.ScopeID, BindingID: d.Enrollment.BindingID, Role: d.Enrollment.Role}, nil
 }
 
 // Sign derives every receipt field from the validated delivery rather than
@@ -354,7 +455,7 @@ func (AdmissionDeliveryReceipt) Sign(d AdmissionDelivery, key ed25519.PrivateKey
 	if err != nil {
 		return AdmissionDeliveryReceipt{}, err
 	}
-	h := types.DomainHash("OMESH/custody/v2/required/admission-delivery/receipt/signature", raw)
+	h := types.DomainHash(deliveryDomain(r.Version)+"/receipt/signature", raw)
 	copy(r.Signature[:], ed25519.Sign(key, h[:]))
 	return r, nil
 }
@@ -369,7 +470,7 @@ func (r AdmissionDeliveryReceipt) Verify(d AdmissionDelivery) error {
 	if err != nil || !bytes.Equal(raw, wanted) {
 		return errors.Join(ErrAdmissionDelivery, err)
 	}
-	h := types.DomainHash("OMESH/custody/v2/required/admission-delivery/receipt/signature", raw)
+	h := types.DomainHash(deliveryDomain(r.Version)+"/receipt/signature", raw)
 	if !ed25519.Verify(d.Enrollment.ReceiptPublicKey[:], h[:], r.Signature[:]) {
 		return ErrAdmissionDelivery
 	}

@@ -23,6 +23,7 @@ import (
 )
 
 const custodyV2DeliveryCommand = "work-archive-custody-v2-delivery"
+const custodyV2EnrolledDeliveryCommand = "work-archive-custody-v2-enrolled-delivery"
 
 func runCustodyV2DeliveryCLI(args []string) error {
 	broken := make(chan os.Signal, 1)
@@ -42,6 +43,14 @@ func runCustodyV2Delivery(ctx context.Context, args []string, input io.ReadClose
 	if e := ctx.Err(); e != nil {
 		return e
 	}
+	version := v2.Version2
+	prefix := "custody_v2_delivery"
+	profile := v2.PolicyVersionAdmission
+	if args[0] == custodyV2EnrolledDeliveryCommand {
+		version = v2.PolicyVersionEnrolled
+		profile = v2.PolicyVersionEnrolled
+		prefix = "custody_v2_enrolled_delivery"
+	}
 	flags := flag.NewFlagSet(args[0], flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	mode := flags.String("mode", "review", "review or run")
@@ -51,6 +60,8 @@ func runCustodyV2Delivery(ctx context.Context, args []string, input io.ReadClose
 	scopeID := flags.String("scope-id", "", "independent job scope ID")
 	bindingID := flags.String("binding-id", "", "independent exact admission binding ID")
 	bindingPath := flags.String("binding", "", "complete admission binding; delivery only")
+	registryEnrollmentPath := flags.String("registry-enrollment", "", "complete registry enrollment proof; profile4 delivery only")
+	registryEnrollmentID := flags.String("registry-enrollment-id", "", "independent exact registry proof ID; profile4 only")
 	enrollmentPath := flags.String("enrollment", "", "original public receiver enrollment")
 	enrollmentID := flags.String("enrollment-id", "", "independent semantic enrollment ID")
 	deliveryPath := flags.String("delivery", "", "exact public delivery intent")
@@ -84,11 +95,18 @@ func runCustodyV2Delivery(ctx context.Context, args []string, input io.ReadClose
 		"outbox-send":      {"root", "delivery", "delivery-id", "address", "transport-key", "listen", "timeout", "out"},
 		"outbox-receipt":   {"root", "delivery", "delivery-id", "address", "out"},
 	}
+	if version == v2.PolicyVersionEnrolled {
+		selectors["inbox-registry-enrollment"] = selectors["inbox-binding"]
+		selectors["delivery"] = append(selectors["delivery"], "registry-enrollment")
+	}
 	selected, ok := selectors[*action]
 	if !ok {
 		return v2.ErrAdmission
 	}
 	allowed := map[string]bool{"mode": true, "action": true, "context": true, "context-id": true, "scope-id": true, "binding-id": true, "expected-review-id": true}
+	if version == v2.PolicyVersionEnrolled {
+		allowed["registry-enrollment-id"] = true
+	}
 	for _, name := range selected {
 		allowed[name] = true
 	}
@@ -117,7 +135,7 @@ func runCustodyV2Delivery(ctx context.Context, args []string, input io.ReadClose
 		return e
 	}
 	c, e := v2.DecodeContext(raw)
-	if e != nil || c.Assignment.Policy.Version != v2.PolicyVersionAdmission {
+	if e != nil || c.Assignment.Policy.Version != profile {
 		return errors.Join(v2.ErrAdmission, e)
 	}
 	cid, _ := c.ID()
@@ -138,6 +156,13 @@ func runCustodyV2Delivery(ctx context.Context, args []string, input io.ReadClose
 	if e != nil {
 		return e
 	}
+	var registryID types.Hash
+	if version == v2.PolicyVersionEnrolled {
+		registryID, e = witnessID("registry-enrollment-id", *registryEnrollmentID)
+		if e != nil {
+			return e
+		}
+	}
 	var enrollment v2.AdmissionDeliveryEnrollment
 	var d v2.AdmissionDelivery
 	var prepared []byte
@@ -154,7 +179,7 @@ func runCustodyV2Delivery(ctx context.Context, args []string, input io.ReadClose
 			return v2.ErrAdmission
 		}
 	} else if strings.HasPrefix(*action, "inbox-") || *action == "delivery" {
-		raw, e := load(*enrollmentPath, v2.MaximumAdmissionDeliveryEnrollmentBytes)
+		raw, e := load(*enrollmentPath, v2.MaximumEnrolledDeliveryEnrollmentBytes)
 		if e != nil {
 			return e
 		}
@@ -164,7 +189,7 @@ func runCustodyV2Delivery(ctx context.Context, args []string, input io.ReadClose
 		}
 		eid, _ = enrollment.ID()
 		want, e := witnessID("enrollment-id", *enrollmentID)
-		if e != nil || eid != want || enrollment.BindingID != bid {
+		if e != nil || eid != want || enrollment.BindingID != bid || enrollment.Version != version || enrollment.RegistryEnrollmentID != registryID {
 			return v2.ErrAdmission
 		}
 		if e := enrollment.Verify(c); e != nil {
@@ -186,7 +211,7 @@ func runCustodyV2Delivery(ctx context.Context, args []string, input io.ReadClose
 		did, _ = d.ID()
 		want, e := witnessID("delivery-id", *deliveryID)
 		actual, _ := d.Context.ID()
-		if e != nil || did != want || actual != cid || d.Enrollment.BindingID != bid {
+		if e != nil || did != want || actual != cid || d.Enrollment.BindingID != bid || d.Version != version || d.Enrollment.RegistryEnrollmentID != registryID {
 			return v2.ErrAdmission
 		}
 		enrollment = d.Enrollment
@@ -205,7 +230,21 @@ func runCustodyV2Delivery(ctx context.Context, args []string, input io.ReadClose
 		if actual != bid {
 			return v2.ErrAdmission
 		}
-		d = v2.AdmissionDelivery{Version: v2.Version2, Enrollment: enrollment, Context: c, Binding: b}
+		d = v2.AdmissionDelivery{Version: version, Enrollment: enrollment, Context: c, Binding: b}
+		if version == v2.PolicyVersionEnrolled {
+			raw, e := load(*registryEnrollmentPath, v2.MaximumEnrollmentBindingBytes)
+			if e != nil {
+				return e
+			}
+			d.RegistryEnrollment, e = v2.DecodeEnrollmentBinding(raw)
+			if e != nil {
+				return e
+			}
+			id, e := d.RegistryEnrollment.ID()
+			if e != nil || id != registryID {
+				return v2.ErrEnrollmentRequired
+			}
+		}
 		if e := d.Validate(); e != nil {
 			return e
 		}
@@ -307,13 +346,20 @@ func runCustodyV2Delivery(ctx context.Context, args []string, input io.ReadClose
 		}
 	}
 	public := map[string]any{"action": *action, "context_id": cid.String(), "scope_id": sid.String(), "binding_id": bid.String(), "enrollment_id": eid.String(), "delivery_id": did.String(), "inputs": pins, "root": *root, "role": *role, "recipient_peer_id": *peerID, "journal": *journal, "objects": *objects, "placement_id": placement.String(), "sign_key": *signKey, "transport_key": *transportKey, "address": *address, "listen": *listen, "timeout": timeout.String(), "out": *output, "proof_only": true}
+	if version == v2.PolicyVersionEnrolled {
+		public["registry_enrollment_id"] = registryID.String()
+	}
 	reviewBytes, e := json.Marshal(public)
 	if e != nil {
 		return e
 	}
-	review := types.DomainHash("OMESH/custody/v2/required/admission-delivery/cli/review", reviewBytes)
+	reviewDomain := "OMESH/custody/v2/required/admission-delivery/cli/review"
+	if version == v2.PolicyVersionEnrolled {
+		reviewDomain = "OMESH/custody/v4/enrolled/proof-delivery/cli/review"
+	}
+	review := types.DomainHash(reviewDomain, reviewBytes)
 	if *mode == "review" {
-		return writePruneOutputLine(out, fmt.Sprintf("custody_v2_delivery_review action=%s review_id=%s context_id=%s binding_id=%s keys_loaded=false stores_opened=false execution_granted=false proof_only=true\n%s\n", *action, review, cid, bid, reviewBytes))
+		return writePruneOutputLine(out, fmt.Sprintf("%s_review action=%s review_id=%s context_id=%s binding_id=%s keys_loaded=false stores_opened=false execution_granted=false proof_only=true\n%s\n", prefix, *action, review, cid, bid, reviewBytes))
 	}
 	want, e = witnessID("expected-review-id", *expected)
 	if e != nil || want != review {
@@ -331,7 +377,7 @@ func runCustodyV2Delivery(ctx context.Context, args []string, input io.ReadClose
 		if e := publishCustodyCommandArtifact(*output, raw); e != nil {
 			return e
 		}
-		return writePruneOutputLine(out, fmt.Sprintf("custody_v2_delivery_artifact action=%s artifact_id=%s context_id=%s binding_id=%s enrollment_id=%s delivery_id=%s enrollment_candidate=%t execution_granted=false proof_only=true\n", *action, custodyV2ArtifactID(raw), cid, bid, eid, did, *action == "inbox-enrollment"))
+		return writePruneOutputLine(out, fmt.Sprintf("%s_artifact action=%s artifact_id=%s context_id=%s binding_id=%s enrollment_id=%s delivery_id=%s enrollment_candidate=%t execution_granted=false proof_only=true\n", prefix, *action, custodyV2ArtifactID(raw), cid, bid, eid, did, *action == "inbox-enrollment"))
 	}
 	if prepared != nil {
 		return publish(prepared)
@@ -339,11 +385,19 @@ func runCustodyV2Delivery(ctx context.Context, args []string, input io.ReadClose
 	sources := v2.Sources{Journal: *journal, Objects: *objects}
 	if selectEnrollment {
 		if *action == "inbox-create" {
-			enrollment, e = v2.CreateAdmissionInbox(*root, c, sid, bid, inboxRole, sources, recipient)
+			if version == v2.PolicyVersionEnrolled {
+				enrollment, e = v2.CreateEnrolledAdmissionInbox(*root, c, sid, bid, registryID, inboxRole, sources, recipient)
+			} else {
+				enrollment, e = v2.CreateAdmissionInbox(*root, c, sid, bid, inboxRole, sources, recipient)
+			}
 		} else {
 			// This diagnostic exports a candidate, never an automatically adopted
 			// enrollment pin or proof that all external pins survived rollback.
-			enrollment, e = v2.ReadAdmissionInboxEnrollment(*root, c, sid, bid, inboxRole, sources, recipient)
+			if version == v2.PolicyVersionEnrolled {
+				enrollment, e = v2.ReadEnrolledAdmissionInboxEnrollment(*root, c, sid, bid, registryID, inboxRole, sources, recipient)
+			} else {
+				enrollment, e = v2.ReadAdmissionInboxEnrollment(*root, c, sid, bid, inboxRole, sources, recipient)
+			}
 		}
 		if e != nil {
 			return e
@@ -356,13 +410,21 @@ func runCustodyV2Delivery(ctx context.Context, args []string, input io.ReadClose
 		return publish(raw)
 	}
 	if *action == "outbox-create" {
-		if e := v2.CreateAdmissionOutbox(*root, d, *address); e != nil {
+		create := v2.CreateAdmissionOutbox
+		if version == v2.PolicyVersionEnrolled {
+			create = v2.CreateEnrolledAdmissionOutbox
+		}
+		if e := create(*root, d, *address); e != nil {
 			return e
 		}
-		return writePruneOutputLine(out, fmt.Sprintf("custody_v2_delivery_created enrollment_id=%s delivery_id=%s sent=false execution_granted=false\n", eid, did))
+		return writePruneOutputLine(out, fmt.Sprintf("%s_created enrollment_id=%s delivery_id=%s sent=false execution_granted=false\n", prefix, eid, did))
 	}
 	if strings.HasPrefix(*action, "outbox-") {
-		box, e := v2.OpenAdmissionOutbox(*root, d, *address)
+		open := v2.OpenAdmissionOutbox
+		if version == v2.PolicyVersionEnrolled {
+			open = v2.OpenEnrolledAdmissionOutbox
+		}
+		box, e := open(*root, d, *address)
 		if e != nil {
 			return e
 		}
@@ -382,7 +444,11 @@ func runCustodyV2Delivery(ctx context.Context, args []string, input io.ReadClose
 				return er
 			}
 			defer func() { returnErr = errors.Join(returnErr, host.Close()) }()
-			receipt, e = v2.DeliverAdmission(ctx, host, box, *timeout)
+			send := v2.DeliverAdmission
+			if version == v2.PolicyVersionEnrolled {
+				send = v2.DeliverEnrolledAdmission
+			}
+			receipt, e = send(ctx, host, box, *timeout)
 		}
 		if e != nil {
 			return e
@@ -398,7 +464,11 @@ func runCustodyV2Delivery(ctx context.Context, args []string, input io.ReadClose
 		return e
 	}
 	defer clear(key)
-	inbox, e := v2.OpenAdmissionInbox(*root, c, sid, sources, enrollment, key)
+	open := v2.OpenAdmissionInbox
+	if version == v2.PolicyVersionEnrolled {
+		open = v2.OpenEnrolledAdmissionInbox
+	}
+	inbox, e := open(*root, c, sid, sources, enrollment, key)
 	if e != nil {
 		return e
 	}
@@ -414,7 +484,7 @@ func runCustodyV2Delivery(ctx context.Context, args []string, input io.ReadClose
 			return e
 		}
 		return publish(raw)
-	case "inbox-binding":
+	case "inbox-binding", "inbox-registry-enrollment":
 		// Require the actual retained receipt as well as a delivery record: a
 		// partial receive is not silently exported as completed delivery.
 		if _, e := inbox.ReadReceipt(); e != nil {
@@ -425,7 +495,12 @@ func runCustodyV2Delivery(ctx context.Context, args []string, input io.ReadClose
 			return e
 		}
 		did, _ = d.ID()
-		raw, e := d.Binding.CanonicalBytes()
+		var raw []byte
+		if *action == "inbox-registry-enrollment" {
+			raw, e = d.RegistryEnrollment.CanonicalBytes()
+		} else {
+			raw, e = d.Binding.CanonicalBytes()
+		}
 		if e != nil {
 			return e
 		}
@@ -457,14 +532,20 @@ func serveAdmissionInboxCLI(ctx context.Context, input io.ReadCloser, out io.Wri
 	defer clear(key)
 	config := libp2ptransport.DefaultConfig()
 	config.Listen = []string{listen}
-	service, e := v2.StartAdmissionDelivery(ctx, inbox, key, config, timeout)
+	start := v2.StartAdmissionDelivery
+	prefix := "custody_v2_delivery"
+	if inbox.Enrollment().Version == v2.PolicyVersionEnrolled {
+		start = v2.StartEnrolledAdmissionDelivery
+		prefix = "custody_v2_enrolled_delivery"
+	}
+	service, e := start(ctx, inbox, key, config, timeout)
 	if e != nil {
 		return e
 	}
 	defer func() { returnErr = errors.Join(returnErr, service.Close()) }()
 	enrollment := inbox.Enrollment()
 	eid, _ := enrollment.ID()
-	if e := writePruneOutputLine(writer, fmt.Sprintf("custody_v2_delivery_serving enrollment_id=%s peer_id=%s address=%s execution_granted=false proof_only=true\n", eid, service.ID(), strings.Join(service.Addresses(), ","))); e != nil {
+	if e := writePruneOutputLine(writer, fmt.Sprintf("%s_serving enrollment_id=%s peer_id=%s address=%s execution_granted=false proof_only=true\n", prefix, eid, service.ID(), strings.Join(service.Addresses(), ","))); e != nil {
 		return e
 	}
 	finished := make(chan error, 1)

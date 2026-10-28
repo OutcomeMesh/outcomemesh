@@ -54,7 +54,7 @@ def once(host, args, prefix=None, check=True):
 
 
 def reviewed(host, args, witness=False, mode="run"):
-    prefix = "custody_witness_review" if witness else ("custody_v2_required_review" if args[0] == "work-archive-custody-v2-required" else "custody_v2_review")
+    prefix = "custody_witness_review" if witness else {"work-archive-custody-v2-required": "custody_v2_required_review", "work-archive-custody-v2-enrolled": "custody_v2_enrolled_review"}.get(args[0], "custody_v2_review")
     record = once(host, args, prefix)
     require(record["keys_loaded"] == "false", "review loaded private keys")
     return args + ["--mode", mode, "--expected-review-id", record["review_id"]]

@@ -76,9 +76,10 @@ outside original roots and sources.
   Four original witness histories, exact vote/commit recovery and immutable
   sequence/head/pending pins retain their existing behavior.
 
-The profile-3 proof inbox/outbox protocol remains explicitly profile 3. Delivering
-profile-4 enrollment/admission through that channel is not implemented; operators
-must supply and independently pin the full public proof files above.
+The profile-3 inbox/outbox protocol remains explicitly profile 3. The separate
+[enrolled proof delivery](CUSTODY_V2_ENROLLED_DELIVERY.md) now carries both complete
+profile-4 proofs under an independently pinned receiver descriptor. Intake
+retains proof only; owners still require their separate explicit action.
 
 ## Compatibility and remaining gates
 
@@ -90,7 +91,7 @@ stable. There is no upgrade, reset, import or second selection API.
 This is a mandatory check for newly signed profile-4 owners, not exclusion of
 all old raw grants on the same disks. Independently protected anchor issuance,
 key/VM rollback resistance, legacy-grant exclusion, a real accounting bridge,
-profile-4 proof delivery, joint WAN fault acceptance and independent review
+joint WAN fault acceptance and independent review
 remain open. Four keys on two operator-controlled hosts do not establish four
 independent protected failure domains. Production readiness remains **44/100**.
 

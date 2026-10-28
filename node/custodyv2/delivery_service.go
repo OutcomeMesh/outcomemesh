@@ -33,6 +33,15 @@ type AdmissionDeliveryService struct {
 }
 
 func StartAdmissionDelivery(ctx context.Context, inbox *AdmissionInbox, key ed25519.PrivateKey, config libp2ptransport.Config, timeout time.Duration) (*AdmissionDeliveryService, error) {
+	return startAdmissionDelivery(ctx, inbox, key, config, timeout, Version2)
+}
+func StartEnrolledAdmissionDelivery(ctx context.Context, inbox *AdmissionInbox, key ed25519.PrivateKey, config libp2ptransport.Config, timeout time.Duration) (*AdmissionDeliveryService, error) {
+	return startAdmissionDelivery(ctx, inbox, key, config, timeout, PolicyVersionEnrolled)
+}
+func startAdmissionDelivery(ctx context.Context, inbox *AdmissionInbox, key ed25519.PrivateKey, config libp2ptransport.Config, timeout time.Duration, version uint16) (*AdmissionDeliveryService, error) {
+	if inbox != nil && inbox.Enrollment().Version != version {
+		return nil, ErrAdmissionDelivery
+	}
 	if ctx == nil || inbox == nil || len(key) != ed25519.PrivateKeySize || timeout < remotewire.MinimumTimeout || timeout > remotewire.MaximumTimeout {
 		return nil, ErrProtocol
 	}
@@ -54,7 +63,11 @@ func StartAdmissionDelivery(ctx context.Context, inbox *AdmissionInbox, key ed25
 		return nil, e
 	}
 	s := &AdmissionDeliveryService{inbox: inbox, host: host, run: run, cancel: cancel, timeout: timeout, done: make(chan struct{})}
-	if e := host.SetAdmissionDeliveryHandler(enrollment.SenderPeerID, s.handle); e != nil {
+	setHandler := host.SetAdmissionDeliveryHandler
+	if version == PolicyVersionEnrolled {
+		setHandler = host.SetEnrolledAdmissionDeliveryHandler
+	}
+	if e := setHandler(enrollment.SenderPeerID, s.handle); e != nil {
 		cancel()
 		return nil, errors.Join(e, host.Close())
 	}
@@ -147,6 +160,15 @@ func (s *AdmissionDeliveryService) handle(_ context.Context, peer types.Hash, st
 // admission/currentness/physical execution permission. A cached valid receipt
 // is returned without opening a network channel, including when h is nil.
 func DeliverAdmission(ctx context.Context, h *libp2ptransport.Host, outbox *AdmissionOutbox, timeout time.Duration) (AdmissionDeliveryReceipt, error) {
+	return deliverAdmission(ctx, h, outbox, timeout, Version2)
+}
+func DeliverEnrolledAdmission(ctx context.Context, h *libp2ptransport.Host, outbox *AdmissionOutbox, timeout time.Duration) (AdmissionDeliveryReceipt, error) {
+	return deliverAdmission(ctx, h, outbox, timeout, PolicyVersionEnrolled)
+}
+func deliverAdmission(ctx context.Context, h *libp2ptransport.Host, outbox *AdmissionOutbox, timeout time.Duration, version uint16) (AdmissionDeliveryReceipt, error) {
+	if outbox != nil && outbox.Delivery().Version != version {
+		return AdmissionDeliveryReceipt{}, ErrAdmissionDelivery
+	}
 	if ctx == nil || outbox == nil || timeout < remotewire.MinimumTimeout || timeout > remotewire.MaximumTimeout {
 		return AdmissionDeliveryReceipt{}, ErrProtocol
 	}
@@ -170,7 +192,11 @@ func DeliverAdmission(ctx context.Context, h *libp2ptransport.Host, outbox *Admi
 	}
 	run, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	stream, peer, e := h.OpenAdmissionDeliveryStream(run, outbox.Route(), delivery.Enrollment.RecipientPeerID)
+	openStream := h.OpenAdmissionDeliveryStream
+	if version == PolicyVersionEnrolled {
+		openStream = h.OpenEnrolledAdmissionDeliveryStream
+	}
+	stream, peer, e := openStream(run, outbox.Route(), delivery.Enrollment.RecipientPeerID)
 	if e != nil {
 		return AdmissionDeliveryReceipt{}, errors.Join(ErrUncertain, e)
 	}

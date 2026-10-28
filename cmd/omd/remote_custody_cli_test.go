@@ -45,9 +45,9 @@ func signRemoteCLI(t testing.TB, c custodyauthority.Command, actor byte) custody
 	return entry
 }
 
-func newRemoteCLIFixture(t testing.TB) *remoteCLIFixture {
+func newRemoteCLIFixture(t testing.TB, lifetimes ...uint64) *remoteCLIFixture {
 	t.Helper()
-	base := newManagedCustodyAuditCLIFixture(t)
+	base := newManagedCustodyAuditCLIFixture(t, lifetimes...)
 	c := base.config.Audit
 	f := &remoteCLIFixture{base: base, public: t.TempDir(), authority: filepath.Join(t.TempDir(), "authority"), pins: filepath.Join(t.TempDir(), "pins"), worker: filepath.Join(t.TempDir(), "worker"), keyPaths: make(map[byte]string)}
 	a, err := workarchive.CreateRemoteCustodyAuthorityAssignment(c.Manifest, c.InitialReceipt, c.CustodyPolicy, pruneCLIHash(233), pruneCLIPublic(1), base.config.Assignment.Consumers, 4, 2, pruneCLIPublic(14), pruneCLIPublic(15))

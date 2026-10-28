@@ -30,11 +30,11 @@ func WriteAdmissionDeliveryReceipt(w io.Writer, receipt AdmissionDeliveryReceipt
 	if e != nil {
 		return e
 	}
-	return writeFrame(w, b, AdmissionDeliveryReceiptBytes)
+	return writeFrame(w, b, EnrolledDeliveryReceiptBytes)
 }
 
 func ReadAdmissionDeliveryReceipt(r io.Reader) (AdmissionDeliveryReceipt, error) {
-	b, e := readFrame(r, AdmissionDeliveryReceiptBytes)
+	b, e := readFrame(r, EnrolledDeliveryReceiptBytes)
 	if e != nil {
 		return AdmissionDeliveryReceipt{}, e
 	}

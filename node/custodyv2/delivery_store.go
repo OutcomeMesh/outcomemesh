@@ -82,7 +82,7 @@ func admissionDeliveryFreeze(d AdmissionDelivery) (AdmissionDelivery, []byte, er
 	return frozen, raw, nil
 }
 
-func admissionDeliveryContext(c Context, scopeID types.Hash) (Context, error) {
+func admissionDeliveryContext(c Context, scopeID types.Hash, version uint16) (Context, error) {
 	c, e := c.freeze()
 	if e != nil {
 		return Context{}, e
@@ -92,7 +92,7 @@ func admissionDeliveryContext(c Context, scopeID types.Hash) (Context, error) {
 		return Context{}, e
 	}
 	id, e := scope.ID()
-	if e != nil || scopeID.IsZero() || id != scopeID || c.Assignment.Policy.Version != PolicyVersionAdmission {
+	if e != nil || scopeID.IsZero() || id != scopeID || c.Assignment.Policy.Version != deliveryProfile(version) {
 		return Context{}, errors.Join(ErrAdmissionDelivery, e)
 	}
 	return c, nil
@@ -126,8 +126,16 @@ func admissionDeliverySources(sources Sources, role string) (Sources, error) {
 // CreateAdmissionInbox is explicit enrollment against an independently selected
 // binding ID. The opaque public placement commitment salts private source paths
 // and inode stamps; canonical proof has not been delivered yet.
-func CreateAdmissionInbox(path string, c Context, scopeID, bindingID types.Hash, role AdmissionDeliveryRole, sources Sources, recipientPeerID types.Hash) (enrollment AdmissionDeliveryEnrollment, returnErr error) {
-	c, e := admissionDeliveryContext(c, scopeID)
+func CreateAdmissionInbox(path string, c Context, scopeID, bindingID types.Hash, role AdmissionDeliveryRole, sources Sources, recipientPeerID types.Hash) (AdmissionDeliveryEnrollment, error) {
+	return createAdmissionInbox(path, c, scopeID, bindingID, types.Hash{}, role, sources, recipientPeerID, Version2)
+}
+
+// CreateEnrolledAdmissionInbox pins both exact proof IDs before any network receive.
+func CreateEnrolledAdmissionInbox(path string, c Context, scopeID, bindingID, registryEnrollmentID types.Hash, role AdmissionDeliveryRole, sources Sources, recipientPeerID types.Hash) (AdmissionDeliveryEnrollment, error) {
+	return createAdmissionInbox(path, c, scopeID, bindingID, registryEnrollmentID, role, sources, recipientPeerID, PolicyVersionEnrolled)
+}
+func createAdmissionInbox(path string, c Context, scopeID, bindingID, registryEnrollmentID types.Hash, role AdmissionDeliveryRole, sources Sources, recipientPeerID types.Hash, version uint16) (enrollment AdmissionDeliveryEnrollment, returnErr error) {
+	c, e := admissionDeliveryContext(c, scopeID, version)
 	if e != nil {
 		return enrollment, e
 	}
@@ -151,7 +159,7 @@ func CreateAdmissionInbox(path string, c Context, scopeID, bindingID types.Hash,
 	if e != nil {
 		return enrollment, e
 	}
-	enrollment = AdmissionDeliveryEnrollment{Version: Version2, ContextID: cid, ScopeID: scopeID, BindingID: bindingID, SenderPeerID: sender, RecipientPeerID: recipientPeerID, Role: role}
+	enrollment = AdmissionDeliveryEnrollment{Version: version, RegistryEnrollmentID: registryEnrollmentID, ContextID: cid, ScopeID: scopeID, BindingID: bindingID, SenderPeerID: sender, RecipientPeerID: recipientPeerID, Role: role}
 	if role == AdmissionDeliveryAuthority {
 		enrollment.ReceiptPublicKey = c.Assignment.Base.AuthorityPublicKey
 	} else {
@@ -162,7 +170,7 @@ func CreateAdmissionInbox(path string, c Context, scopeID, bindingID types.Hash,
 	}
 	// Validate all public selectors before creating a directory. The real
 	// placement commitment is calculated only after its lock inode exists.
-	enrollment.PlacementID = types.DomainHash("OMESH/custody/v2/delivery/placement", enrollment.Nonce[:])
+	enrollment.PlacementID = types.DomainHash(deliveryPlacementDomain(enrollment.Version), enrollment.Nonce[:])
 	if e := enrollment.Verify(c); e != nil {
 		return AdmissionDeliveryEnrollment{}, e
 	}
@@ -184,7 +192,7 @@ func CreateAdmissionInbox(path string, c Context, scopeID, bindingID types.Hash,
 	if e != nil {
 		return AdmissionDeliveryEnrollment{}, e
 	}
-	enrollment.PlacementID = types.DomainHash("OMESH/custody/v2/delivery/placement", enrollment.Nonce[:], placed)
+	enrollment.PlacementID = types.DomainHash(deliveryPlacementDomain(enrollment.Version), enrollment.Nonce[:], placed)
 	raw, e := enrollment.CanonicalBytes()
 	if e != nil {
 		return AdmissionDeliveryEnrollment{}, e
@@ -199,14 +207,23 @@ func CreateAdmissionInbox(path string, c Context, scopeID, bindingID types.Hash,
 		}
 	}
 	id, _ := enrollment.ID()
-	if e := publish(path, "ready", append([]byte("OMCVIDY2"), id[:]...), nil); e != nil {
+	if e := publish(path, "ready", append([]byte(deliveryMagic("OMCVIDY", enrollment.Version)), id[:]...), nil); e != nil {
 		return AdmissionDeliveryEnrollment{}, e
 	}
 	return enrollment, nil
 }
 
-func OpenAdmissionInbox(path string, c Context, scopeID types.Hash, sources Sources, enrollment AdmissionDeliveryEnrollment, key ed25519.PrivateKey) (inbox *AdmissionInbox, returnErr error) {
-	c, e := admissionDeliveryContext(c, scopeID)
+func OpenAdmissionInbox(path string, c Context, scopeID types.Hash, sources Sources, enrollment AdmissionDeliveryEnrollment, key ed25519.PrivateKey) (*AdmissionInbox, error) {
+	return openAdmissionInbox(path, c, scopeID, sources, enrollment, key, Version2)
+}
+func OpenEnrolledAdmissionInbox(path string, c Context, scopeID types.Hash, sources Sources, enrollment AdmissionDeliveryEnrollment, key ed25519.PrivateKey) (*AdmissionInbox, error) {
+	return openAdmissionInbox(path, c, scopeID, sources, enrollment, key, PolicyVersionEnrolled)
+}
+func openAdmissionInbox(path string, c Context, scopeID types.Hash, sources Sources, enrollment AdmissionDeliveryEnrollment, key ed25519.PrivateKey, version uint16) (inbox *AdmissionInbox, returnErr error) {
+	if enrollment.Version != version {
+		return nil, ErrAdmissionDelivery
+	}
+	c, e := admissionDeliveryContext(c, scopeID, version)
 	if e != nil {
 		return nil, e
 	}
@@ -235,13 +252,13 @@ func OpenAdmissionInbox(path string, c Context, scopeID types.Hash, sources Sour
 	if e != nil {
 		return nil, e
 	}
-	if types.DomainHash("OMESH/custody/v2/delivery/placement", enrollment.Nonce[:], placed) != enrollment.PlacementID {
+	if types.DomainHash(deliveryPlacementDomain(enrollment.Version), enrollment.Nonce[:], placed) != enrollment.PlacementID {
 		return nil, ErrAdmissionDelivery
 	}
 	raw, _ := enrollment.CanonicalBytes()
 	contextRaw, _ := c.CanonicalBytes()
 	id, _ := enrollment.ID()
-	s, e := admissionDeliveryOpenDirectory(path, placed, map[string][]byte{"context": contextRaw, "placement": placed, "enrollment": raw, "ready": append([]byte("OMCVIDY2"), id[:]...)}, map[string]int{"delivery": MaximumAdmissionDeliveryBytes, "receipt": AdmissionDeliveryReceiptBytes}, placementFiles(sources))
+	s, e := admissionDeliveryOpenDirectory(path, placed, map[string][]byte{"context": contextRaw, "placement": placed, "enrollment": raw, "ready": append([]byte(deliveryMagic("OMCVIDY", enrollment.Version)), id[:]...)}, map[string]int{"delivery": MaximumAdmissionDeliveryBytes, "receipt": deliveryReceiptLimit(enrollment.Version)}, placementFiles(sources))
 	if e != nil {
 		return nil, e
 	}
@@ -275,8 +292,14 @@ func OpenAdmissionInbox(path string, c Context, scopeID types.Hash, sources Sour
 // output was lost. It does not adopt that descriptor as an independent pin,
 // sign, flush, send, recreate or resume anything. The caller must independently
 // review and retain its ID before opening an inbox or constructing a delivery.
-func ReadAdmissionInboxEnrollment(path string, c Context, scopeID, bindingID types.Hash, role AdmissionDeliveryRole, sources Sources, recipientPeerID types.Hash) (enrollment AdmissionDeliveryEnrollment, returnErr error) {
-	c, e := admissionDeliveryContext(c, scopeID)
+func ReadAdmissionInboxEnrollment(path string, c Context, scopeID, bindingID types.Hash, role AdmissionDeliveryRole, sources Sources, recipientPeerID types.Hash) (AdmissionDeliveryEnrollment, error) {
+	return readAdmissionInboxEnrollment(path, c, scopeID, bindingID, types.Hash{}, role, sources, recipientPeerID, Version2)
+}
+func ReadEnrolledAdmissionInboxEnrollment(path string, c Context, scopeID, bindingID, registryEnrollmentID types.Hash, role AdmissionDeliveryRole, sources Sources, recipientPeerID types.Hash) (AdmissionDeliveryEnrollment, error) {
+	return readAdmissionInboxEnrollment(path, c, scopeID, bindingID, registryEnrollmentID, role, sources, recipientPeerID, PolicyVersionEnrolled)
+}
+func readAdmissionInboxEnrollment(path string, c Context, scopeID, bindingID, registryEnrollmentID types.Hash, role AdmissionDeliveryRole, sources Sources, recipientPeerID types.Hash, version uint16) (enrollment AdmissionDeliveryEnrollment, returnErr error) {
+	c, e := admissionDeliveryContext(c, scopeID, version)
 	if e != nil {
 		return enrollment, e
 	}
@@ -295,7 +318,7 @@ func ReadAdmissionInboxEnrollment(path string, c Context, scopeID, bindingID typ
 	if e := disjoint(path, sources); e != nil {
 		return enrollment, e
 	}
-	raw, e := readFile(filepath.Join(path, "enrollment"), MaximumAdmissionDeliveryEnrollmentBytes)
+	raw, e := readFile(filepath.Join(path, "enrollment"), MaximumEnrolledDeliveryEnrollmentBytes)
 	if e != nil {
 		return enrollment, e
 	}
@@ -306,19 +329,19 @@ func ReadAdmissionInboxEnrollment(path string, c Context, scopeID, bindingID typ
 	if e := enrollment.Verify(c); e != nil {
 		return AdmissionDeliveryEnrollment{}, e
 	}
-	if enrollment.ScopeID != scopeID || enrollment.BindingID != bindingID || enrollment.Role != role || enrollment.RecipientPeerID != recipientPeerID {
+	if enrollment.Version != version || enrollment.RegistryEnrollmentID != registryEnrollmentID || enrollment.ScopeID != scopeID || enrollment.BindingID != bindingID || enrollment.Role != role || enrollment.RecipientPeerID != recipientPeerID {
 		return AdmissionDeliveryEnrollment{}, ErrAdmissionDelivery
 	}
 	placed, e := sourcePlacement(roleName, sources, path)
 	if e != nil {
 		return AdmissionDeliveryEnrollment{}, e
 	}
-	if types.DomainHash("OMESH/custody/v2/delivery/placement", enrollment.Nonce[:], placed) != enrollment.PlacementID {
+	if types.DomainHash(deliveryPlacementDomain(enrollment.Version), enrollment.Nonce[:], placed) != enrollment.PlacementID {
 		return AdmissionDeliveryEnrollment{}, ErrAdmissionDelivery
 	}
 	contextRaw, _ := c.CanonicalBytes()
 	id, _ := enrollment.ID()
-	s, e := admissionDeliveryOpenDirectory(path, placed, map[string][]byte{"context": contextRaw, "placement": placed, "enrollment": raw, "ready": append([]byte("OMCVIDY2"), id[:]...)}, map[string]int{"delivery": MaximumAdmissionDeliveryBytes, "receipt": AdmissionDeliveryReceiptBytes}, placementFiles(sources))
+	s, e := admissionDeliveryOpenDirectory(path, placed, map[string][]byte{"context": contextRaw, "placement": placed, "enrollment": raw, "ready": append([]byte(deliveryMagic("OMCVIDY", enrollment.Version)), id[:]...)}, map[string]int{"delivery": MaximumAdmissionDeliveryBytes, "receipt": deliveryReceiptLimit(enrollment.Version)}, placementFiles(sources))
 	if e != nil {
 		return AdmissionDeliveryEnrollment{}, e
 	}
@@ -377,7 +400,7 @@ func (i *AdmissionInbox) validateRetained() error {
 		return e
 	}
 	i.s.retained["delivery"] = append([]byte(nil), raw...)
-	raw, e = readFile(filepath.Join(i.s.path, "receipt"), AdmissionDeliveryReceiptBytes)
+	raw, e = readFile(filepath.Join(i.s.path, "receipt"), deliveryReceiptLimit(i.enrollment.Version))
 	if errors.Is(e, os.ErrNotExist) {
 		return i.s.check()
 	}
@@ -512,7 +535,16 @@ func ValidateAdmissionDeliveryRoute(address string, expected types.Hash) error {
 	return nil
 }
 
-func CreateAdmissionOutbox(path string, d AdmissionDelivery, address string) (returnErr error) {
+func CreateAdmissionOutbox(path string, d AdmissionDelivery, address string) error {
+	return createAdmissionOutbox(path, d, address, Version2)
+}
+func CreateEnrolledAdmissionOutbox(path string, d AdmissionDelivery, address string) error {
+	return createAdmissionOutbox(path, d, address, PolicyVersionEnrolled)
+}
+func createAdmissionOutbox(path string, d AdmissionDelivery, address string, version uint16) (returnErr error) {
+	if d.Version != version {
+		return ErrAdmissionDelivery
+	}
 	d, raw, e := admissionDeliveryFreeze(d)
 	if e != nil {
 		return e
@@ -542,10 +574,19 @@ func CreateAdmissionOutbox(path string, d AdmissionDelivery, address string) (re
 		}
 	}
 	id, _ := d.ID()
-	return publish(path, "ready", append([]byte("OMCVODY2"), id[:]...), nil)
+	return publish(path, "ready", append([]byte(deliveryMagic("OMCVODY", d.Version)), id[:]...), nil)
 }
 
-func OpenAdmissionOutbox(path string, d AdmissionDelivery, address string) (outbox *AdmissionOutbox, returnErr error) {
+func OpenAdmissionOutbox(path string, d AdmissionDelivery, address string) (*AdmissionOutbox, error) {
+	return openAdmissionOutbox(path, d, address, Version2)
+}
+func OpenEnrolledAdmissionOutbox(path string, d AdmissionDelivery, address string) (*AdmissionOutbox, error) {
+	return openAdmissionOutbox(path, d, address, PolicyVersionEnrolled)
+}
+func openAdmissionOutbox(path string, d AdmissionDelivery, address string, version uint16) (outbox *AdmissionOutbox, returnErr error) {
+	if d.Version != version {
+		return nil, ErrAdmissionDelivery
+	}
 	d, raw, e := admissionDeliveryFreeze(d)
 	if e != nil {
 		return nil, e
@@ -562,7 +603,7 @@ func OpenAdmissionOutbox(path string, d AdmissionDelivery, address string) (outb
 		return nil, e
 	}
 	id, _ := d.ID()
-	s, e := admissionDeliveryOpenDirectory(path, placed, map[string][]byte{"delivery": raw, "route": []byte(address), "placement": placed, "ready": append([]byte("OMCVODY2"), id[:]...)}, map[string]int{"receipt": AdmissionDeliveryReceiptBytes}, nil)
+	s, e := admissionDeliveryOpenDirectory(path, placed, map[string][]byte{"delivery": raw, "route": []byte(address), "placement": placed, "ready": append([]byte(deliveryMagic("OMCVODY", d.Version)), id[:]...)}, map[string]int{"receipt": deliveryReceiptLimit(d.Version)}, nil)
 	if e != nil {
 		return nil, e
 	}
@@ -572,7 +613,7 @@ func OpenAdmissionOutbox(path string, d AdmissionDelivery, address string) (outb
 		}
 	}()
 	outbox = &AdmissionOutbox{s: s, delivery: d, route: address}
-	receiptRaw, e := readFile(filepath.Join(path, "receipt"), AdmissionDeliveryReceiptBytes)
+	receiptRaw, e := readFile(filepath.Join(path, "receipt"), deliveryReceiptLimit(d.Version))
 	if e == nil {
 		r, e := DecodeAdmissionDeliveryReceipt(receiptRaw)
 		if e != nil {

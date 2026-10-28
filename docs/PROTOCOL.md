@@ -606,3 +606,9 @@ proofs at original owners and binds both into consumed/pending evidence. Registr
 semantic identity keeps its version-1 domain across formats; old histories are
 never reset or promoted. These operational formats do not change version-0
 consensus, transactions, emission or account ownership.
+
+The separate [format-4 proof transport](CUSTODY_V2_ENROLLED_DELIVERY.md) carries
+both complete registry and admission proofs. Its receiver descriptor and signed
+retention receipt bind the exact registry enrollment ID alongside the admitted
+job. Receipt retention is not execution permission or a current-head assertion.
+Legacy delivery-2 encodings and negotiated protocol remain unchanged.

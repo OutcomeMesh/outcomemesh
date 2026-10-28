@@ -11,10 +11,17 @@ import (
 )
 
 func TestProcessCustodyV2DeliveryColdStoresAndLostOutput(t *testing.T) {
+	runProcessAdmissionDeliveryCampaign(t, false)
+}
+func TestProcessCustodyV2EnrolledDeliveryColdStoresAndLostOutput(t *testing.T) {
+	runProcessAdmissionDeliveryCampaign(t, true)
+}
+func runProcessAdmissionDeliveryCampaign(t *testing.T, enrolled bool) {
+	t.Helper()
 	lost := false
 	driver := func(t testing.TB, args []string) string {
 		t.Helper()
-		if args[0] != custodyV2DeliveryCommand || admissionProcessFlag(args, "--action") != "outbox-send" || admissionProcessFlag(args, "--mode") != "run" || lost {
+		if (args[0] != custodyV2DeliveryCommand && args[0] != custodyV2EnrolledDeliveryCommand) || admissionProcessFlag(args, "--action") != "outbox-send" || admissionProcessFlag(args, "--mode") != "run" || lost {
 			return runProcessCommand(t, 15*time.Second, args...)
 		}
 		ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
@@ -54,7 +61,12 @@ func TestProcessCustodyV2DeliveryColdStoresAndLostOutput(t *testing.T) {
 			_ = p.output.Close()
 		}
 	}
-	runAdmissionDeliveryCLICampaign(t, driver, start)
+	if enrolled {
+		z := newEnrolledCLIFixtureWithLifetime(t, driver, 600)
+		runAdmissionDeliveryCLIFixtureCampaign(t, z, driver, start, start)
+	} else {
+		runAdmissionDeliveryCLICampaign(t, driver, start)
+	}
 	if !lost {
 		t.Fatal("native lost output boundary not exercised")
 	}

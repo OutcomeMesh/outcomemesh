@@ -37,17 +37,19 @@ def retained_record(raw, magic, binding, admission):
 class RequiredCase(Case):
     export_test = "TestExportCustodyV2RequiredWANFixture"
     serving_prefix = "custody_v2_required_serving"
+    runtime_cli = CLI
+    runtime_prefix = "custody_v2_required"
 
     def prepare_context(self):
         super().prepare_context()
         self.required_checks = {}
         self.admission = Admission(self)
         self.admission_report = copy.deepcopy(self.admission.run())
-        args = [CLI, "--action", "binding", "--context", self.a.root + "/context", "--context-id", self.public["ContextID"],
+        args = [self.runtime_cli, "--action", "binding", "--context", self.a.root + "/context", "--context-id", self.public["ContextID"],
                 "--scope-id", self.scope, "--genesis", self.a.root + "/admission-genesis", "--genesis-id", self.admission.gid,
                 "--genesis-descriptor-id", self.admission.did, "--certificates", self.a.root + "/admission-certificate",
                 "--certificate-ids", artifact(self.a.read("admission-certificate")), "--out", self.a.root + "/required-binding"]
-        emitted = once(self.a, reviewed(self.a, args), "custody_v2_required_artifact")
+        emitted = once(self.a, reviewed(self.a, args), self.runtime_prefix + "_artifact")
         raw = self.a.read("required-binding")
         self.binding_id = digest("OMESH/custody/v2/required/admission-binding/id", raw)
         require(emitted["binding_id"] == self.binding_id and emitted["admission_required"] == "true", "binding CLI changed proof identity/mode")
@@ -56,7 +58,7 @@ class RequiredCase(Case):
 
     def args(self, h, action, extra=()):
         if action not in OWNER_ACTIONS: return super().args(h, action, extra)
-        return [CLI, "--action", action, "--context", h.root + "/context", "--context-id", self.public["ContextID"],
+        return [self.runtime_cli, "--action", action, "--context", h.root + "/context", "--context-id", self.public["ContextID"],
                 "--scope-id", self.scope, "--binding", h.root + "/required-binding", "--binding-id", self.binding_id] + list(extra)
 
     def act(self, h, action, extra=(), fail=False):
@@ -64,7 +66,7 @@ class RequiredCase(Case):
         args = self.args(h, action, extra)
         if fail:
             result = once(h, args, check=False); require(result.returncode != 0, "invalid required input accepted"); return result
-        prefix = "custody_v2_required_created" if action.startswith("create-") else "custody_v2_required_artifact"
+        prefix = self.runtime_prefix + "_created" if action.startswith("create-") else self.runtime_prefix + "_artifact"
         emitted = once(h, reviewed(h, args), prefix)
         require(emitted["admission_required"] == "true" and emitted["binding_id"] == self.binding_id, "owner lost required binding")
         return emitted
@@ -113,15 +115,19 @@ class RequiredCase(Case):
             require(h.read("owner/admission") == h.read("required-binding"), "job replaced its admission binding")
         self.required_checks["binding_bytes_retained_after_job"] = True
         if self.scenario == "lost-result":
-            retained_record(self.b.read("owner/consumed"), "OMCVUSE3", self.binding_id, self.admission.eid)
-            retained_record(self.a.read("owner/pending"), "OMCVPEN3", self.binding_id, self.admission.eid)
+            self.validate_retained_records()
             self.required_checks["consumption_and_acceptance_bind_exact_admission"] = True
+
+
+    def validate_retained_records(self):
+        retained_record(self.b.read("owner/consumed"), "OMCVUSE3", self.binding_id, self.admission.eid)
+        retained_record(self.a.read("owner/pending"), "OMCVPEN3", self.binding_id, self.admission.eid)
 
 
 class RequiredServe(Serve):
     def args(self, h, action, extra=()):
         if action not in SERVE_ACTIONS: return super().args(h, action, extra)
-        return [CLI, "--action", "serve-" + action, "--context", h.root + "/context", "--context-id", self.c.public["ContextID"],
+        return [self.c.runtime_cli, "--action", "serve-" + action, "--context", h.root + "/context", "--context-id", self.c.public["ContextID"],
                 "--scope-id", self.c.scope, "--binding", h.root + "/required-binding", "--binding-id", self.c.binding_id] + list(extra)
 
     def act(self, h, action, extra=(), fail=False, lose=False):
@@ -129,14 +135,14 @@ class RequiredServe(Serve):
         args = self.args(h, action, extra)
         review = once(h, args, check=not fail)
         if fail and review.returncode != 0: self.checks[action + "_refused"] = True; return
-        r = fields(review.stdout.decode(), "custody_v2_required_review")
+        r = fields(review.stdout.decode(), self.c.runtime_prefix + "_review")
         require(r["keys_loaded"] == r["owners_opened"] == "false" and r["admission_required"] == "true", "Serve owner review bypassed admission")
         args += ["--mode", "run", "--expected-review-id", r["review_id"]]
         if lose: broken(h, args)
         else:
             result = once(h, args, check=not fail)
             if fail: require(result.returncode != 0, "invalid required Serve applied"); self.checks[action + "_refused"] = True; return
-            record = fields(result.stdout.decode(), "custody_v2_required_artifact")
+            record = fields(result.stdout.decode(), self.c.runtime_prefix + "_artifact")
             require(record["admission_required"] == "true" and record["binding_id"] == self.c.binding_id, "Serve owner lost binding")
         name = extra[list(extra).index("--out") + 1]
         self.artifacts.append({"host": "a" if h.root == self.a.root else "b", "path": name,

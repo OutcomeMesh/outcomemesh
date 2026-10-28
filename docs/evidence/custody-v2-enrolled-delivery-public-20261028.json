@@ -1,0 +1,196 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-28",
+  "scope": "two-host profile-4 complete proof delivery, historical receipt retention only",
+  "archive": "custody-v2-enrolled-delivery-public-20261028.tar.gz",
+  "archive_bytes": 6751,
+  "archive_sha256": "504a47b2b6fcf72338a427d013a6f82bbd7e295d88b509a9877116ee426fd1ff",
+  "source_manifest": "bd1ae956520ce0c8b8e732205e58ac634e69f7cff650c6fc5232e0a78145aa09",
+  "mainnet_activated": false,
+  "files": [
+    {
+      "file": "case-0-context",
+      "kind": "context",
+      "bytes": 2610,
+      "sha256": "2c1f9dd7d09c066e54f5ab6447519dae519662d5de8974c678251d4c8a68e9f9",
+      "semantic_id": "476ba253cfd33f0cd0485525c8959ba289697971fe24b51eff6836e878f3d70e"
+    },
+    {
+      "file": "case-0-admission",
+      "kind": "admission-binding",
+      "bytes": 4622,
+      "sha256": "d342f47c911d930d99b933f71818db3d0bd2c75ff2696a304ad2c752d86de7b6",
+      "semantic_id": "bc4220137f336ff299c1e506dd3adb588c459bc90e5c9d968841bb0814d720bd"
+    },
+    {
+      "file": "case-0-registry",
+      "kind": "registry-enrollment",
+      "bytes": 2565,
+      "sha256": "fa20c1147e0ef3f883f6dfcda7b51eecb72e05eec2a63863ce1c07aeb4f546ea",
+      "semantic_id": "0ec78913622b6e69e7d7ecc6513173b4ddc377756d22e047d7dd258ecdbd5bfc"
+    },
+    {
+      "file": "case-0-delivery",
+      "kind": "complete-delivery",
+      "bytes": 10114,
+      "sha256": "7a1ff14bb5463363b21cbbee05032ed0f74086fe0ece2fb60eb3f56e3d5675f6",
+      "semantic_id": "ebdb0a0f0e59d37d5c6d43916b5290a4aed4131e1e2e2c3a01473ad7e6199ea2"
+    },
+    {
+      "file": "case-0-receiver",
+      "kind": "receiver-descriptor",
+      "bytes": 299,
+      "sha256": "228da2ede8936d086ac29b397cbd31be8cf211f4b739f428df432b6b2071584d",
+      "semantic_id": "d17715fbb47fcd421ccda8854c5f9fd481bbad54a376b9fa3448ad69ee7b1a35"
+    },
+    {
+      "file": "case-0-registry-certificate",
+      "kind": "registry-certificate",
+      "bytes": 2304,
+      "sha256": "aebfab301520813d80569de3473225d087d9ad79c35bf19e4558ea6f5194818b"
+    },
+    {
+      "file": "case-0-admission-certificate",
+      "kind": "admission-certificate",
+      "bytes": 3187,
+      "sha256": "adab4ec310e87b80694c4e30bd4d7343bddcbf45a6d0455e4fd89a8c039d8a18"
+    },
+    {
+      "file": "case-0-receipt-0",
+      "kind": "retention-receipt",
+      "bytes": 267,
+      "sha256": "1bdff50630cb626a3ec2b33b650d236ce788605c670b7814aadab48c0a35383c",
+      "semantic_id": "ee39015cddb288bc02416d2c33865e99e20ddd36377ffd4b10e0b070bcb737db"
+    },
+    {
+      "file": "case-0-receipt-1",
+      "kind": "retention-receipt",
+      "bytes": 267,
+      "sha256": "1bdff50630cb626a3ec2b33b650d236ce788605c670b7814aadab48c0a35383c",
+      "semantic_id": "ee39015cddb288bc02416d2c33865e99e20ddd36377ffd4b10e0b070bcb737db"
+    },
+    {
+      "file": "case-0-receipt-2",
+      "kind": "retention-receipt",
+      "bytes": 267,
+      "sha256": "1bdff50630cb626a3ec2b33b650d236ce788605c670b7814aadab48c0a35383c",
+      "semantic_id": "ee39015cddb288bc02416d2c33865e99e20ddd36377ffd4b10e0b070bcb737db"
+    },
+    {
+      "file": "case-0-receipt-3",
+      "kind": "retention-receipt",
+      "bytes": 267,
+      "sha256": "1bdff50630cb626a3ec2b33b650d236ce788605c670b7814aadab48c0a35383c",
+      "semantic_id": "ee39015cddb288bc02416d2c33865e99e20ddd36377ffd4b10e0b070bcb737db"
+    },
+    {
+      "file": "case-0-receipt-4",
+      "kind": "retention-receipt",
+      "bytes": 267,
+      "sha256": "1bdff50630cb626a3ec2b33b650d236ce788605c670b7814aadab48c0a35383c",
+      "semantic_id": "ee39015cddb288bc02416d2c33865e99e20ddd36377ffd4b10e0b070bcb737db"
+    },
+    {
+      "file": "case-0-receipt-5",
+      "kind": "retention-receipt",
+      "bytes": 267,
+      "sha256": "1bdff50630cb626a3ec2b33b650d236ce788605c670b7814aadab48c0a35383c",
+      "semantic_id": "ee39015cddb288bc02416d2c33865e99e20ddd36377ffd4b10e0b070bcb737db"
+    },
+    {
+      "file": "case-1-context",
+      "kind": "context",
+      "bytes": 2610,
+      "sha256": "5f446fcfb4c37ab829db419a9d49fe84824e45f4467dc5737ac5ec7944121b46",
+      "semantic_id": "610cc9960986b60678ac853d94b7cd1dd63e840b31dac77b98b2d2e5967124c2"
+    },
+    {
+      "file": "case-1-admission",
+      "kind": "admission-binding",
+      "bytes": 4622,
+      "sha256": "17965996be3989c5099bbd098e7f81a328f0e492c72535cb809f9219f3fe1d8c",
+      "semantic_id": "118bc71a4aaa5fa0739bffbe3abeed4f1175c266b62b7dd6c94aa121b37a4ff9"
+    },
+    {
+      "file": "case-1-registry",
+      "kind": "registry-enrollment",
+      "bytes": 2565,
+      "sha256": "ecba7de11b340c91ef1e5b673b7d333134faf9074dd86edd98c63489fbe03bac",
+      "semantic_id": "d969838f50a0e089bdaf07843fa77e7a5af3437a317e7440388a5aa829782039"
+    },
+    {
+      "file": "case-1-delivery",
+      "kind": "complete-delivery",
+      "bytes": 10114,
+      "sha256": "ba49004beba3f42657d59c1555c7a8732f555ee83d94c9a446a852ea52aed14e",
+      "semantic_id": "9f02cc32dbd0dc3384740d385164fb8dd4c8519cc40f080ab45fbfd08cdaaf59"
+    },
+    {
+      "file": "case-1-receiver",
+      "kind": "receiver-descriptor",
+      "bytes": 299,
+      "sha256": "da3a41899cbafdf6329a4ffdd05e9ceef67743c22d1c7fe2a2b08e31c4dbb5e1",
+      "semantic_id": "044a8575aa2295d13d3a354ae0124006cbc0af0a3d73d64e1d3ab5a7a4b6b93c"
+    },
+    {
+      "file": "case-1-registry-certificate",
+      "kind": "registry-certificate",
+      "bytes": 2304,
+      "sha256": "12c12cbd510dc473c663aec5e922292c34aeb319addeb4c4ae0003a089f245eb"
+    },
+    {
+      "file": "case-1-admission-certificate",
+      "kind": "admission-certificate",
+      "bytes": 3187,
+      "sha256": "4522cf17e7745076ca7f70c1ad18035110a4da0a9429f943cbc4fd9478318373"
+    },
+    {
+      "file": "case-1-receipt-0",
+      "kind": "retention-receipt",
+      "bytes": 267,
+      "sha256": "1c542e110f68bdef3ba40aef6ba1b13b55737db01899c59cef303a0339dbf2f8",
+      "semantic_id": "5686bbe333c3d9c5c85366d09d636aaf9246b78af3e4a61944684381af6564fa"
+    },
+    {
+      "file": "case-1-receipt-1",
+      "kind": "retention-receipt",
+      "bytes": 267,
+      "sha256": "1c542e110f68bdef3ba40aef6ba1b13b55737db01899c59cef303a0339dbf2f8",
+      "semantic_id": "5686bbe333c3d9c5c85366d09d636aaf9246b78af3e4a61944684381af6564fa"
+    },
+    {
+      "file": "case-1-receipt-2",
+      "kind": "retention-receipt",
+      "bytes": 267,
+      "sha256": "1c542e110f68bdef3ba40aef6ba1b13b55737db01899c59cef303a0339dbf2f8",
+      "semantic_id": "5686bbe333c3d9c5c85366d09d636aaf9246b78af3e4a61944684381af6564fa"
+    },
+    {
+      "file": "case-1-receipt-3",
+      "kind": "retention-receipt",
+      "bytes": 267,
+      "sha256": "1c542e110f68bdef3ba40aef6ba1b13b55737db01899c59cef303a0339dbf2f8",
+      "semantic_id": "5686bbe333c3d9c5c85366d09d636aaf9246b78af3e4a61944684381af6564fa"
+    },
+    {
+      "file": "case-1-receipt-4",
+      "kind": "retention-receipt",
+      "bytes": 267,
+      "sha256": "1c542e110f68bdef3ba40aef6ba1b13b55737db01899c59cef303a0339dbf2f8",
+      "semantic_id": "5686bbe333c3d9c5c85366d09d636aaf9246b78af3e4a61944684381af6564fa"
+    },
+    {
+      "file": "case-1-receipt-5",
+      "kind": "retention-receipt",
+      "bytes": 267,
+      "sha256": "1c542e110f68bdef3ba40aef6ba1b13b55737db01899c59cef303a0339dbf2f8",
+      "semantic_id": "5686bbe333c3d9c5c85366d09d636aaf9246b78af3e4a61944684381af6564fa"
+    },
+    {
+      "file": "verify.json",
+      "kind": "verification-input",
+      "bytes": 1276,
+      "sha256": "e2ebd73f4c4d9b758e267ad5036122ae70adbafff25e50ae0d16ff13a1ffb366"
+    }
+  ]
+}

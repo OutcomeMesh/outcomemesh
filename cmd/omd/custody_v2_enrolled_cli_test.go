@@ -20,8 +20,12 @@ import (
 // histories. Per-job execution endorsements remain public fixture signatures.
 func newEnrolledCLIFixture(t testing.TB, driver v2CLIDriver) requiredCLIFixture {
 	t.Helper()
+	return newEnrolledCLIFixtureWithLifetime(t, driver, 60)
+}
+func newEnrolledCLIFixtureWithLifetime(t testing.TB, driver v2CLIDriver, lifetime uint64) requiredCLIFixture {
+	t.Helper()
 	var g reg.Genesis
-	z := newRequiredCLIFixtureProfile(t, func(c v2.Context) v2.Policy {
+	z := newRequiredCLIFixtureProfileAtLifetime(t, lifetime, func(c v2.Context) v2.Policy {
 		g = reg.Genesis{Version: reg.Version2, NetworkID: c.Assignment.Base.NetworkID, ChainGenesisID: c.Assignment.Base.GenesisID, ResourceID: f.Hash("fresh-externally-enrolled-cli-resource"), Issuer: f.Public(110), Threshold: 3, MaximumOperations: 32, MaximumPending: 8}
 		for seed := byte(111); seed <= 114; seed++ {
 			g.Witnesses = append(g.Witnesses, f.Public(seed))

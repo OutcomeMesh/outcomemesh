@@ -58,7 +58,7 @@ def decode_receipt(raw):
 
 
 def reviewed(host, args):
-    record = once(host, args, "custody_v2_delivery_review")
+    record = once(host, args, "custody_v2_enrolled_delivery_review" if args[0]=="work-archive-custody-v2-enrolled-delivery" else "custody_v2_delivery_review")
     require(record["keys_loaded"] == record["stores_opened"] == record["execution_granted"] == "false" and record["proof_only"] == "true", "delivery review crossed a private/effect boundary")
     return args + ["--mode", "run", "--expected-review-id", record["review_id"]]
 
@@ -69,8 +69,17 @@ def unchanged(before, after):
 
 
 class DeliveryCase(required.RequiredCase):
+    delivery_cli = CLI
+    delivery_protocol = PROTOCOL
+    delivery_domain = DOMAIN
+    delivery_prefix = "custody_v2_delivery"
+    decode_delivery_enrollment = staticmethod(decode_enrollment)
+    decode_delivery_receipt = staticmethod(decode_receipt)
     def prepare_context(self):
         super().prepare_context()
+        self.prepare_delivery()
+
+    def prepare_delivery(self):
         self.delivery_server = None
         self.delivery_checks, self.delivery_artifacts = {}, []
         port = self.config.get("delivery_port")
@@ -93,7 +102,7 @@ class DeliveryCase(required.RequiredCase):
         self.delivery_checks["no_owner_or_session_created_by_delivery"] = True
 
     def delivery_args(self, h, action, extra=()):
-        return [CLI, "--action", action, "--context", h.root + "/context", "--context-id", self.public["ContextID"],
+        return [self.delivery_cli, "--action", action, "--context", h.root + "/context", "--context-id", self.public["ContextID"],
                 "--scope-id", self.scope, "--binding-id", self.binding_id] + list(extra)
 
     def delivery_act(self, h, action, extra=(), lose=False, fail=False):
@@ -106,7 +115,7 @@ class DeliveryCase(required.RequiredCase):
             if fail:
                 require(result.returncode != 0, "failed delivery attempt was confirmed")
                 return result
-            prefix = "custody_v2_delivery_created" if action == "outbox-create" else "custody_v2_delivery_artifact"
+            prefix = self.delivery_prefix + "_created" if action == "outbox-create" else self.delivery_prefix + "_artifact"
             record = fields(result.stdout.decode(), prefix)
             require(record["execution_granted"] == "false", "delivery granted execution")
         if "--out" in extra:
@@ -130,7 +139,7 @@ class DeliveryCase(required.RequiredCase):
         args = self.delivery_args(self.b, "inbox-serve", self.inbox() + ["--transport-key", self.b.root + "/keys/transport.seed",
                    "--listen", "/ip4/0.0.0.0/udp/%d/quic-v1" % self.delivery_port, "--timeout", "15s"])
         self.delivery_server = Supervisor(self.b, {"delivery": {"argv": [self.b.binary] + reviewed(self.b, args)}})
-        record = self.delivery_server.start("delivery", "custody_v2_delivery_serving")
+        record = self.delivery_server.start("delivery", self.delivery_prefix + "_serving")
         require(record["enrollment_id"] == self.enrollment["enrollment_id"] and record["peer_id"] == self.enrollment["recipient_peer_id"] and
                 record["execution_granted"] == "false" and record["proof_only"] == "true", "delivery service changed enrollment or permission")
         return "/ip4/%s/udp/%d/quic-v1/p2p/%s" % (self.b.config["public_ip"], self.delivery_port, record["address"].rsplit("/p2p/", 1)[1])
@@ -153,7 +162,7 @@ class DeliveryCase(required.RequiredCase):
         peer = digest("OMESH/p2p/ed25519/v0", bytes.fromhex(self.public["Keys"]["transport"]))
         self.delivery_act(b, "inbox-create", ["--root", b.root + "/delivery-inbox", "--role", "target", "--journal", b.root + "/journal",
                           "--objects", b.root + "/objects", "--recipient-peer-id", peer, "--out", b.root + "/delivery-enrollment"])
-        self.enrollment = decode_enrollment(b.read("delivery-enrollment"))
+        self.enrollment = self.decode_delivery_enrollment(b.read("delivery-enrollment"))
         require(self.enrollment["context_id"] == self.public["ContextID"] and self.enrollment["scope_id"] == self.scope and
                 self.enrollment["binding_id"] == self.binding_id and self.enrollment["recipient_peer_id"] == peer and
                 self.enrollment["sender_peer_id"] == self.public["Keys"]["client-peer"] and self.enrollment["role"] == 2 and
@@ -162,7 +171,7 @@ class DeliveryCase(required.RequiredCase):
         transfer(b, a, "delivery-enrollment")
         self.delivery_act(a, "delivery", ["--binding", a.root + "/required-binding", "--enrollment", a.root + "/delivery-enrollment",
                           "--enrollment-id", self.enrollment["enrollment_id"], "--out", a.root + "/delivery-intent"])
-        self.delivery_id = digest(DOMAIN + "/id", a.read("delivery-intent"))
+        self.delivery_id = digest(self.delivery_domain + "/id", a.read("delivery-intent"))
         self.delivery_address = self.start_delivery()
         wrong = self.delivery_args(a, "outbox-create", ["--root", a.root + "/delivery-wrong-pin", "--delivery", a.root + "/delivery-intent",
                                    "--delivery-id", "f" * 64, "--address", self.delivery_address])
@@ -173,7 +182,7 @@ class DeliveryCase(required.RequiredCase):
         send = ["--transport-key", a.root + "/keys/client.seed", "--listen", "/ip4/0.0.0.0/udp/0/quic-v1", "--timeout", "15s"]
         self.delivery_act(a, "outbox-send", self.outbox("delivery-outbox") + send + ["--out", a.root + "/delivery-sender-first"], lose=True)
         first = a.read("delivery-sender-first")
-        self.delivery_receipt = decode_receipt(first)
+        self.delivery_receipt = self.decode_delivery_receipt(first)
         self.delivery_checks["sender_stdout_lost_after_confirmation"] = True
         self.delivery_act(a, "outbox-receipt", self.outbox("delivery-outbox") + ["--out", a.root + "/delivery-sender-cold"])
         require(a.read("delivery-sender-cold") == first, "cold sender readback changed receipt")
@@ -213,7 +222,7 @@ class DeliveryCase(required.RequiredCase):
 
     def delivery_report(self):
         return {"proof_only": True, "execution_granted": False, "runtime_owner_created_by_delivery": False,
-                "protocol": PROTOCOL, "context_id": self.public["ContextID"], "scope_id": self.scope, "binding_id": self.binding_id,
+                "protocol": self.delivery_protocol, "context_id": self.public["ContextID"], "scope_id": self.scope, "binding_id": self.binding_id,
                 "enrollment": self.enrollment, "delivery_id": self.delivery_id, "receipt": self.delivery_receipt,
                 "route_sha256": hashlib.sha256(self.delivery_address.encode()).hexdigest(), "network_attempts": 3,
                 "outboxes": 2, "receivers": 1, "checks": copy.deepcopy(self.delivery_checks), "sources_before": self.delivery_before,
@@ -221,16 +230,16 @@ class DeliveryCase(required.RequiredCase):
                 "observed_kernel_boot_sha256": copy.deepcopy(self.boots), "cleanup_complete": self.delivery_server is None}
 
 
-def validate(report):
+def validate(report, *, protocol=PROTOCOL, checks=CHECKS):
     summary = required.validate(report)
     require(report.get("durable_admission_delivery") is True, "campaign omitted durable delivery")
     enrollments, deliveries = set(), set()
     for case in report["cases"]:
         d = case.get("delivery", {})
         require(d.get("proof_only") is True and d.get("execution_granted") is False and d.get("runtime_owner_created_by_delivery") is False and
-                d.get("cleanup_complete") is True and d.get("protocol") == PROTOCOL, "delivery overstated execution/currentness or left receiver active")
+                d.get("cleanup_complete") is True and d.get("protocol") == protocol, "delivery overstated execution/currentness or left receiver active")
         require(d.get("context_id") == case["context_id"] and d.get("scope_id") == case["scope_id"] and d.get("binding_id") == case["binding_id"], "delivery selected another admitted job")
-        require(CHECKS <= d.get("checks", {}).keys() and all(value is True for value in d["checks"].values()), "missing delivery fault check")
+        require(checks <= d.get("checks", {}).keys() and all(value is True for value in d["checks"].values()), "missing delivery fault check")
         require(d.get("network_attempts") == 3 and d.get("outboxes") == 2 and d.get("receivers") == 1, "delivery attempt/receiver provenance changed")
         e, r = d.get("enrollment", {}), d.get("receipt", {})
         for key in ("context_id", "scope_id", "binding_id"):

@@ -1399,3 +1399,11 @@ prevent extraction/rollback of every key and pin. A protected issuer must bind
 the resource to one independently maintained registry history; disjoint keys
 are not evidence of independent failure domains. Existing registry-1 histories
 remain selected and cannot be reframed as unused format-2 origins.
+
+[Enrolled proof delivery](CUSTODY_V2_ENROLLED_DELIVERY.md) checks both complete
+proofs before retention, pins sender/recipient identities and requires full
+request/reply EOF before receive/confirmation. Unknown sends keep the exact
+intent unresolved. The profile-4 proof verifier also checks separation of later
+job client transport keys from registry signing roles. Neither a historical
+receipt nor proof delivery can create an owner, reset an unknown effect or
+supply protected physical enrollment.

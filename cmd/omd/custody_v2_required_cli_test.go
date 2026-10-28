@@ -21,14 +21,15 @@ import (
 )
 
 type requiredCLIFixture struct {
-	x                                                                             *custodyV2Fixture
-	c                                                                             v2.Context
-	sid                                                                           types.Hash
-	binding                                                                       v2.AdmissionBinding
-	enrollmentPath                                                                string
-	enrollment                                                                    v2.EnrollmentBinding
-	dir, contextPath, genesisPath, certificatePath, bindingPath, target, acceptor string
-	keys                                                                          map[byte]string
+	targetBindingPath, targetEnrollmentPath, acceptorBindingPath, acceptorEnrollmentPath string
+	x                                                                                    *custodyV2Fixture
+	c                                                                                    v2.Context
+	sid                                                                                  types.Hash
+	binding                                                                              v2.AdmissionBinding
+	enrollmentPath                                                                       string
+	enrollment                                                                           v2.EnrollmentBinding
+	dir, contextPath, genesisPath, certificatePath, bindingPath, target, acceptor        string
+	keys                                                                                 map[byte]string
 }
 
 func newRequiredCLIFixture(t testing.TB, drivers ...v2CLIDriver) requiredCLIFixture {
@@ -37,7 +38,11 @@ func newRequiredCLIFixture(t testing.TB, drivers ...v2CLIDriver) requiredCLIFixt
 }
 func newRequiredCLIFixtureProfile(t testing.TB, configure func(v2.Context) v2.Policy, drivers ...v2CLIDriver) requiredCLIFixture {
 	t.Helper()
-	x := newCustodyV2Fixture(t)
+	return newRequiredCLIFixtureProfileAtLifetime(t, 60, configure, drivers...)
+}
+func newRequiredCLIFixtureProfileAtLifetime(t testing.TB, lifetime uint64, configure func(v2.Context) v2.Policy, drivers ...v2CLIDriver) requiredCLIFixture {
+	t.Helper()
+	x := newCustodyV2Fixture(t, lifetime)
 	c := x.context
 	c.Assignment.Policy.Version = v2.PolicyVersionAdmission
 	if configure != nil {
@@ -151,13 +156,30 @@ func (z requiredCLIFixture) args(action string, extra ...string) []string {
 		command = custodyV2EnrolledCommand
 	}
 	args := []string{command, "--action", action, "--context", z.contextPath, "--context-id", cid.String(), "--scope-id", z.sid.String()}
+	bindingPath, enrollmentPath := z.bindingPath, z.enrollmentPath
+	target := action == "create-target" || action == "serve-target" || strings.HasSuffix(action, "-b")
+	if target {
+		if z.targetBindingPath != "" {
+			bindingPath = z.targetBindingPath
+		}
+		if z.targetEnrollmentPath != "" {
+			enrollmentPath = z.targetEnrollmentPath
+		}
+	} else {
+		if z.acceptorBindingPath != "" {
+			bindingPath = z.acceptorBindingPath
+		}
+		if z.acceptorEnrollmentPath != "" {
+			enrollmentPath = z.acceptorEnrollmentPath
+		}
+	}
 	if action != "binding" {
 		id, _ := z.binding.ID()
-		args = append(args, "--binding", z.bindingPath, "--binding-id", id.String())
+		args = append(args, "--binding", bindingPath, "--binding-id", id.String())
 	}
 	if z.c.Assignment.Policy.Version == v2.PolicyVersionEnrolled && action != "binding" && action != "enrollment" {
 		id, _ := z.enrollment.ID()
-		args = append(args, "--enrollment", z.enrollmentPath, "--enrollment-id", id.String())
+		args = append(args, "--enrollment", enrollmentPath, "--enrollment-id", id.String())
 	}
 	return append(args, extra...)
 }
