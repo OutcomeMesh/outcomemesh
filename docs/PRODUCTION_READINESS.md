@@ -4,7 +4,7 @@ Assessment date: 2026-10-28. **Approximately 44/100 toward the full planned laun
 Status remains research/pre-alpha: do not secure real value with this code.
 
 The requested target is **mainnet with real value on 2026-11-01**, recorded on
-2026-10-26. On this reassessment date, five calendar days remain; that does not satisfy the current launch plan.
+2026-10-26. On this reassessment date, four calendar days remain; that does not satisfy the current launch plan.
 In particular, the six-month adversarial public-testnet stability gate has no
 completed qualifying evidence, and independent verification/external audits
 remain open. No release date is certified or gate waived by this target.
@@ -484,4 +484,21 @@ point still requires durable admission distribution/recovery and implemented
 activation/cutover/accounting-bridge evidence. Legacy policies and their pending
 obligations are not promoted. Independent protected deployment, physical-storage,
 audit and sustained adversarial public-testnet conditions are unchanged.
+Readiness remains **44/100**.
+
+
+## 2026-10-28 follow-up: retained proof delivery (score unchanged)
+
+[Durable admission delivery](CUSTODY_V2_DELIVERY.md) now fixes an original
+receiver enrollment, full proof intent and route in retained inbox/outbox roots.
+Authenticated delivery, original-source checks, deterministic acknowledgements,
+explicit lost-output/cold recovery and reviewed operator CLI are implemented.
+Proof delivery neither creates an execution owner nor clears a pending budget
+or archive obligation; the required runtime remains independently gated.
+
+This closes the prototype distribution/recovery slice for bounded new profile-3
+jobs. Protected independent enrollment and original external pins, implemented
+legacy exclusion/activation/accounting bridge, physical device acceptance,
+external review and sustained public-testnet evidence are still required. No
+reserved weighted lifecycle point is awarded before its complete gate passes.
 Readiness remains **44/100**.

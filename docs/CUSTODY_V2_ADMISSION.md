@@ -158,9 +158,10 @@ retirement/source/accounting and independently enforced exclusion of old grants;
 it implements no import or activation command. Pending old Serve stays pending.
 
 The signed policy-3 profile and original-owner runtime binding now implement
-one-use consumption before effects and original source-currentness checks. Next:
-durable admission delivery/recovery, typed network distribution and activation
-registry integration. Protected
+one-use consumption before effects and original source-currentness checks.
+[Retained proof delivery](CUSTODY_V2_DELIVERY.md) now supplies bounded typed
+network distribution and exact inbox/outbox recovery without creating execution
+owners. Activation registry integration and protected
 independent enrollment, safe split-vote progress, migration/activation, physical
 storage acceptance, external review and the sustained adversarial public-testnet
 conditions remain launch gates. This coordinator does not waive them.

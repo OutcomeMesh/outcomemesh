@@ -17,14 +17,17 @@ test:
 	$(GO) test ./...
 
 test-race:
-	# Five disjoint groups cover all tests without extending timeouts.
+	# Seven disjoint groups keep the growing custody suite within normal timeouts.
 	$(GO) test -race ./... -run '^TestArchive'
 	$(GO) test -race ./... -run '^TestPrune'
-	$(GO) test -race ./... -skip '^(TestArchive|TestPrune|TestRemote|TestManagedCustody)'
+	$(GO) test -race ./... -skip '^(TestArchive|TestPrune|TestRemote|TestManagedCustody|TestAdmission|TestRequired)'
 	$(GO) test -race ./... -run '^TestManagedCustody'
 	$(GO) test -race ./... -run '^TestRemote'
+	$(GO) test -race ./... -run '^Test(Admission|Required)' -skip '^TestAdmissionDelivery'
+	$(GO) test -race ./... -run '^TestAdmissionDelivery'
 
 test-fuzz-smoke:
+	$(GO) test ./node/custodyv2 -run '^$$' -fuzz '^FuzzAdmissionDeliveryPublicPackets$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyv2 -run '^$$' -fuzz '^FuzzDecodeV2Artifacts$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyfence/witnesswire -run '^$$' -fuzz '^FuzzWitnessWireCodecs$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./cmd/omd -run '^$$' -fuzz '^FuzzWitnessResultBundleCodec$$' -fuzztime=$(FUZZTIME)
@@ -116,6 +119,7 @@ test-fuzz-smoke:
 	$(GO) test ./sim/workgraphmodel -run '^$$' -fuzz '^FuzzRunSelfishStrategiesNeverBreakAccounting$$' -fuzztime=$(FUZZTIME)
 
 test-process:
+	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessCustodyV2DeliveryColdStoresAndLostOutput$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessWitnessLostOutputKillAndExactColdRecovery$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./node/custodyfence -run '^TestIndependentWitnessProcessDeathKeepsVoteLock$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessRemoteCustody(CLI|Offline|FromZero|Negative)' -count=1 -timeout=2m

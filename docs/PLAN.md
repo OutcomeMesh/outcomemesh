@@ -53,7 +53,9 @@ Next required work remains ordered:
    Admit prefix to original Target/Acceptor owners, rejects raw-owner bypass,
    consumes binding/admission IDs before current archive-object reads and retains
    exact acceptance/Serve/accounting recovery. Legacy policy 2 is unchanged;
-   this does not activate or migrate it. Next complete durable admission delivery,
+   this does not activate or migrate it. [Durable proof delivery](CUSTODY_V2_DELIVERY.md)
+   now retains exact inbox/outbox intents, authenticated recipient acknowledgements
+   and explicit cold recovery without creating execution owners. Next complete
    protected enrollment and activation/cutover registry rules. [Legacy cutover
    rules](CUSTODY_V2_MIGRATION.md) are specified; import/activation and the
    accounting bridge remain unimplemented.

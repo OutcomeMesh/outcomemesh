@@ -212,8 +212,12 @@ assembles quorum certificates and binds complete historical custody results.
 The separate experimental [custody V2 job path](docs/CUSTODY_V2.md) now mandates
 assignment witness policy, a signed derived job, live-session claim consumption
 at the actual target, and a full result quorum before original-source acceptance.
-Its CLI supports preparation through exact crash recovery; protected deployment,
-Serve settlement and mainnet activation remain gated. The [joint two-host V2
+Its CLI supports preparation through exact crash recovery. [Typed Serve](docs/CUSTODY_V2_SERVE.md),
+[shared admission](docs/CUSTODY_V2_ADMISSION.md) and the signed
+[required profile](docs/CUSTODY_V2_REQUIRED.md) bind accounting to original owners.
+[Retained proof delivery](docs/CUSTODY_V2_DELIVERY.md) provides authenticated
+inbox/outbox distribution and explicit recovery before separate owner creation.
+Protected deployment, legacy cutover and mainnet activation remain gated. The [joint two-host V2
 fault campaign](docs/CUSTODY_V2_WAN.md) covers lost replies, process kills,
 quorum outages and expired results, with public signed evidence and original
 source checks.

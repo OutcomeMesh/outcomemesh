@@ -10,6 +10,39 @@ Full planned production readiness is approximately **44/100**, using the weighte
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
 
+## 2026-10-28: durable admission proof delivery and explicit recovery
+
+- [Retained delivery](CUSTODY_V2_DELIVERY.md) adds a separately pinned receiver
+  enrollment, full immutable proof intent and deterministic role-signed receipt.
+  Exact binding bytes, both authenticated peers and original source placement
+  remain fixed. A receipt means historical proof retention only.
+- Original inbox/outbox roots persist proof and acknowledgement before success,
+  reject replacement/copy/move and retain unknown sends for explicit exact
+  recovery. Cold Open validates/resyncs existing records without sending or
+  inventing missing acknowledgements. First Receive still requires the source
+  predecessor; a cached receipt remains historical after source advancement.
+- A separate authenticated QUIC protocol checks sender, resource bounds and
+  full request EOF before Receive. Complete response EOF/close and receipt
+  validation precede durable sender confirmation. Lost replies do not unlock
+  accounting. Delivery opens no archive chunks and creates no execution owner.
+- Reviewed CLI covers receiver enrollment/service, immutable intent/outbox,
+  sending, cold receipts and explicit binding export. Physical source metadata
+  participates in initial creation review. Lost enrollment output has a
+  read-only candidate export that requires independent review/pinning.
+- Unit/race, malformed wire, sync-failure, real QUIC lost-reply and native CLI
+  process tests cover exact recovery and later explicit required-owner execution.
+- [Two-host acceptance](evidence/custody-v2-delivery-20261028.json) verifies
+  durable delivery, sender output loss, receiver death, unresolved offline sends
+  and exact cold retry before the existing required execution/Serve/accounting
+  matrix. The published 272-artifact corpus is checked through production APIs.
+- Final review also removed eager allocation from a declared binding count:
+  a 66,874-byte malformed packet now allocates about 138 KB before refusal,
+  instead of a 165 MiB certificate slice. A memory regression and fuzz seed guard
+  this without changing valid bytes/IDs; native/WAN acceptance was rerun fresh.
+  Heavy race tests now run in seven disjoint groups within unchanged timeouts.
+  The reserved lifecycle point still needs protected enrollment and implemented
+  activation/cutover/accounting-bridge acceptance. Readiness stays **44/100**.
+
 ## 2026-10-28: signed admission requirement at the real effect boundary
 
 - [Required profile](CUSTODY_V2_REQUIRED.md) adds immutable policy version 3 to

@@ -77,16 +77,20 @@ func DecodeAdmissionBinding(raw []byte) (AdmissionBinding, error) {
 	if e != nil || n == 0 || uint64(n) > MaxAdmissionEntries(b.Genesis) || uint64(n) > uint64(d.Remaining()) {
 		return b, ErrAdmissionRequired
 	}
-	b.Chain = make([]AdmissionCertificate, int(n))
-	for i := range b.Chain {
+	// A declared count is not evidence that complete certificates are present.
+	// Context is a large value: eagerly allocating the maximum 65,538 slots
+	// allowed a small malformed binding to reserve over 160 MiB before the
+	// first certificate was decoded. Grow only from fully decoded evidence.
+	for i := uint32(0); i < n; i++ {
 		q, e := d.BytesField(MaximumAdmissionCertificateBytes)
 		if e != nil {
 			return AdmissionBinding{}, e
 		}
-		b.Chain[i], e = DecodeAdmissionCertificate(q)
+		certificate, e := DecodeAdmissionCertificate(q)
 		if e != nil {
 			return AdmissionBinding{}, e
 		}
+		b.Chain = append(b.Chain, certificate)
 	}
 	if d.Finish() != nil {
 		return AdmissionBinding{}, ErrAdmissionRequired

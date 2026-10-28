@@ -183,7 +183,10 @@ It is a separate reviewed CLI and journal. Its certificates alone do not
 establish current original source ownership or grant execution. The
 [required profile](CUSTODY_V2_REQUIRED.md) now binds them to signed policy-3
 Target/Acceptor owners and consumes them before archive work. Legacy policy-2
-raw owners are unchanged; durable delivery and activation remain gates.
+raw owners are unchanged. [Retained proof delivery](CUSTODY_V2_DELIVERY.md)
+now adds a bounded authenticated inbox/outbox channel with exact cold recovery;
+its acknowledgements do not create an owner or grant execution. Protected
+enrollment and activation remain gates.
 [Legacy migration rules](CUSTODY_V2_MIGRATION.md) are a specification, with no
 import/activation implementation and no release of old pending tickets.
 

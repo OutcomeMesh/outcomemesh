@@ -164,9 +164,12 @@ outside all owner/source roots. Recover lost output to a fresh path.
    and A/B applied evidence. An unknown/expired/unaccepted result cannot close
    it; nothing in this command waives that hold.
 
-Admission distribution currently uses the explicit operator channel. There is no
-new autonomous delivery outbox/RPC, forced adoption, clock override, private
-session import or automatic legacy transition in this stage.
+Admission distribution can now use the separately reviewed
+[retained proof-delivery channel](CUSTODY_V2_DELIVERY.md). Its inbox/outbox and
+authenticated acknowledgements preserve exact lost-output recovery. Delivery
+retains public proof only; required-owner creation remains explicit. The operator
+channel also remains available. Neither channel imports private sessions or
+activates a legacy transition.
 
 ## Validation and remaining gates
 
@@ -186,7 +189,7 @@ on two kernels remain two observed hosts, with public fixture keys.
 
 Mainnet/old-owner activation remains gated by protected independent enrollment,
 one-successor exclusion of legacy grants, implemented accounting/migration bridge,
-durable admission delivery, safe split-vote progress, physical-storage acceptance,
+protected delivery enrollment, safe split-vote progress, physical-storage acceptance,
 external review and the sustained adversarial public testnet. Raw policy-2/V1
 histories and their pending obligations remain unchanged. This signed profile
 implements required execution for new jobs; it does not waive those launch gates.

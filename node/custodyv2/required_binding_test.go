@@ -5,10 +5,13 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"testing"
 
+	"github.com/outcomemesh/outcomemesh/core/codec"
 	f "github.com/outcomemesh/outcomemesh/internal/fencetest"
+	"github.com/outcomemesh/outcomemesh/node/custodyauthority"
 	"github.com/outcomemesh/outcomemesh/node/custodyfence"
 	"github.com/outcomemesh/outcomemesh/node/workarchive"
 )
@@ -436,6 +439,58 @@ func TestRequiredBindingClaimQuorumConsumptionAndSourceAdvance(t *testing.T) {
 	}
 }
 
+func requiredBindingForgedCount(t testing.TB) []byte {
+	t.Helper()
+	g, err := NewAdmissionGenesis(requiredProfileContext(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Genesis is a public descriptor, not a signed Plan. A remote malformed
+	// packet can advertise the largest legal budget without signing any new
+	// job, before the complete delivery's Context comparison takes place.
+	g.Assignment.Base.MaximumOperations = custodyauthority.MaximumOperations
+	raw, err := g.CanonicalBytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	count := MaxAdmissionEntries(g)
+	if count != 65_538 {
+		t.Fatal("unexpected maximum admission entry count", count)
+	}
+	out := codec.NewEncoder(len(raw) + int(count) + 32)
+	out.Fixed([]byte("OMCVBND2"))
+	out.U16(Version2)
+	out.BytesField(raw)
+	out.U32(uint32(count))
+	// One byte for every declared entry satisfies the outer remaining-byte
+	// guard. Every zero advertises an empty, consequently invalid certificate.
+	out.Fixed(make([]byte, int(count)))
+	return out.Bytes()
+}
+
+func TestRequiredBindingForgedCountDoesNotAllocateDeclaredHistory(t *testing.T) {
+	raw := requiredBindingForgedCount(t)
+	if len(raw) >= 128<<10 {
+		t.Fatal("small malicious-count regression fixture grew unexpectedly", len(raw))
+	}
+	// These package tests are sequential. The generous bound tolerates minor
+	// background/runtime allocations while catching the former eager 65,538
+	// Context-bearing slots (over 160 MiB) in one decode, without repeatedly
+	// allocating that regression amount in a benchmark calibration loop.
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	_, err := DecodeAdmissionBinding(raw)
+	runtime.ReadMemStats(&after)
+	if err == nil {
+		t.Fatal("forged maximum certificate count decoded")
+	}
+	allocated := after.TotalAlloc - before.TotalAlloc
+	if allocated >= 16<<20 {
+		t.Fatal("malformed binding allocated the advertised history", allocated)
+	}
+	t.Logf("%d-byte malformed binding allocated %d bytes before refusal", len(raw), allocated)
+}
+
 func FuzzRequiredBindingDecoder(fz *testing.F) {
 	c := bindingTestContext(fz)
 	b, _ := bindingTestAdmission(fz, c)
@@ -447,6 +502,7 @@ func FuzzRequiredBindingDecoder(fz *testing.F) {
 	fz.Add([]byte("OMCVBND2"))
 	fz.Add(append(append([]byte{}, raw...), 0))
 	fz.Add(append([]byte("OMCVBND2\x00\x03"), raw[10:]...))
+	fz.Add(requiredBindingForgedCount(fz))
 	fz.Fuzz(func(t *testing.T, raw []byte) {
 		if b, e := DecodeAdmissionBinding(raw); e == nil {
 			again, e := b.CanonicalBytes()
