@@ -265,6 +265,9 @@ func (a *Acceptor) finish(ctx context.Context, b Bundle, checked, now uint64) (R
 	if e := ctx.Err(); e != nil {
 		return Receipt{}, e
 	}
+	if e := a.r.decision.CheckAccess(); e != nil {
+		return Receipt{}, e
+	}
 	aid, _ := a.r.ctx.Assignment.ID()
 	pid, _ := a.r.ctx.Plan.ID()
 	rid, _ := b.Result.ID()

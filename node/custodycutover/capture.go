@@ -216,22 +216,27 @@ func CaptureSource(ctx context.Context, e Evidence, legacyID, anchorID types.Has
 		}
 		return check()
 	}
+	returnErr = withSourceOwners(ctx, e, l, legacyID, capture)
+	return observation, returnErr
+}
+func withSourceOwners(ctx context.Context, e Evidence, l SourceLocation, legacyID types.Hash, capture func() error) (returnErr error) {
+
 	if l.Role == Authority {
 		owner, err := s.OpenCoordinator(l.Authority, l.AuthorityPins, e.Assignment, legacyID)
 		if err != nil {
-			return observation, err
+			return err
 		}
 		defer func() { returnErr = errors.Join(returnErr, owner.Close()) }()
-		returnErr = owner.WithConfirmedRetirement(ctx, end, MaximumHistoryEntries, func(assignment a.Assignment, history []a.Entry) error {
+		returnErr = owner.WithConfirmedRetirement(ctx, e.End, MaximumHistoryEntries, func(assignment a.Assignment, history []a.Entry) error {
 			if err := compareHistory(e, assignment, history); err != nil {
 				return err
 			}
 			return capture()
 		})
-		return observation, returnErr
+		return returnErr
 	}
 	if l.Role != Target || len(l.Workers) != len(e.Cycles) {
-		return observation, ErrPreparation
+		return ErrPreparation
 	}
 	// The same fixed source order is used by every capture. Live B services own
 	// worker before source; capture follows that order and exposes no callbacks
@@ -239,17 +244,17 @@ func CaptureSource(ctx context.Context, e Evidence, legacyID, anchorID types.Has
 	for i, path := range l.Workers {
 		worker, err := w.Open(ctx, path, e.Scope(e.Cycles[i]).Worker)
 		if err != nil {
-			return observation, err
+			return err
 		}
 		defer func() { returnErr = errors.Join(returnErr, worker.Close()) }()
 		state, err := worker.Snapshot(ctx)
 		if err != nil {
-			return observation, err
+			return err
 		}
 		if state.Stage != w.Sealed || state.Pending != 0 || state.Seal == nil || *state.Seal != e.Cycles[i].Terminal.Seal {
-			return observation, ErrBlocked
+			return ErrBlocked
 		}
 	}
 	returnErr = capture()
-	return observation, returnErr
+	return returnErr
 }

@@ -19,12 +19,18 @@ const custodyRetirementFileName = "retirement.omcrt"
 // cannot commit until the scope has drained; this does not fence remote copies,
 // raw signing helpers, legacy sessions or operators who replace journal files.
 type CustodyJournalDecision struct {
-	mu      sync.Mutex
-	journal *CustodyJournal
-	lock    *os.File
+	mu       sync.Mutex
+	journal  *CustodyJournal
+	lock     *os.File
+	handoff  *CustodySourceHandoff
+	rootInfo os.FileInfo
+	failed   bool
 }
 
 func (journal *CustodyJournal) AcquireDecision() (*CustodyJournalDecision, error) {
+	return journal.acquireDecision(nil)
+}
+func (journal *CustodyJournal) acquireDecision(handoff *CustodySourceHandoff) (*CustodyJournalDecision, error) {
 	if journal == nil {
 		return nil, ErrCustodyJournal
 	}
@@ -34,7 +40,7 @@ func (journal *CustodyJournal) AcquireDecision() (*CustodyJournalDecision, error
 	journal.mu.Lock()
 	lock, err := acquireCustodyEvidenceLock(journal.path, custodyJournalLockName, false)
 	if err == nil {
-		err = requireActiveCustodyJournal(journal.path)
+		err = requireCustodySourceAccess(journal.path, handoff)
 	}
 	if err == nil {
 		_, err = journal.scan()
@@ -46,7 +52,13 @@ func (journal *CustodyJournal) AcquireDecision() (*CustodyJournalDecision, error
 		journal.mu.Unlock()
 		return nil, err
 	}
-	return &CustodyJournalDecision{journal: journal, lock: lock}, nil
+	info, err := os.Lstat(journal.path)
+	if err != nil {
+		lock.Close()
+		journal.mu.Unlock()
+		return nil, err
+	}
+	return &CustodyJournalDecision{journal: journal, lock: lock, handoff: handoff, rootInfo: info}, nil
 }
 
 func (decision *CustodyJournalDecision) Close() error {
@@ -70,8 +82,11 @@ func (decision *CustodyJournalDecision) State() (CustodyJournalState, error) {
 	}
 	decision.mu.Lock()
 	defer decision.mu.Unlock()
-	if decision.journal == nil {
-		return CustodyJournalState{}, ErrCustodyJournal
+	if err := decision.check(); err != nil {
+		return CustodyJournalState{}, err
+	}
+	if decision.handoff != nil {
+		return decision.journal.handoffState()
 	}
 	return decision.journal.scan()
 }
@@ -82,8 +97,8 @@ func (decision *CustodyJournalDecision) Head() (CustodyJournalEntry, bool, error
 	}
 	decision.mu.Lock()
 	defer decision.mu.Unlock()
-	if decision.journal == nil {
-		return CustodyJournalEntry{}, false, ErrCustodyJournal
+	if err := decision.check(); err != nil {
+		return CustodyJournalEntry{}, false, err
 	}
 	return decision.journal.headLocked()
 }
@@ -94,8 +109,11 @@ func (decision *CustodyJournalDecision) Append(record CustodyRecord) (CustodyJou
 	}
 	decision.mu.Lock()
 	defer decision.mu.Unlock()
-	if decision.journal == nil {
-		return CustodyJournalEntry{}, false, ErrCustodyJournal
+	if err := decision.check(); err != nil {
+		return CustodyJournalEntry{}, false, err
+	}
+	if decision.handoff != nil {
+		return CustodyJournalEntry{}, false, ErrCustodySourceHandedOff
 	}
 	return decision.journal.appendLocked(record, custodyJournalHooks{})
 }
@@ -106,8 +124,11 @@ func (decision *CustodyJournalDecision) Rotate() (bool, error) {
 	}
 	decision.mu.Lock()
 	defer decision.mu.Unlock()
-	if decision.journal == nil {
-		return false, ErrCustodyJournal
+	if err := decision.check(); err != nil {
+		return false, err
+	}
+	if decision.handoff != nil {
+		return false, ErrCustodySourceHandedOff
 	}
 	return decision.journal.rotateLocked(custodyJournalHooks{})
 }
@@ -118,8 +139,8 @@ func (decision *CustodyJournalDecision) Usage() (CustodyJournalUsage, error) {
 	}
 	decision.mu.Lock()
 	defer decision.mu.Unlock()
-	if decision.journal == nil {
-		return CustodyJournalUsage{}, ErrCustodyJournal
+	if err := decision.check(); err != nil {
+		return CustodyJournalUsage{}, err
 	}
 	return inventoryCustodyJournal(decision.journal.path)
 }
@@ -127,10 +148,36 @@ func (decision *CustodyJournalDecision) Usage() (CustodyJournalUsage, error) {
 // Any named retirement path blocks live use, even an incomplete/corrupt file,
 // symlink or directory. Never repair, remove or trust it as an active marker.
 func requireActiveCustodyJournal(root string) error {
-	if _, err := os.Lstat(filepath.Join(root, custodyRetirementFileName)); err == nil {
-		return ErrCustodyJournalRetired
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
+	return requireCustodySourceAccess(root, nil)
+}
+
+// CheckAccess rechecks the source version and permanent lock while the action
+// owns its decision. Call before object reads, signing or output publication.
+func (d *CustodyJournalDecision) CheckAccess() error {
+	if d == nil {
+		return ErrCustodyJournal
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.check()
+}
+func (d *CustodyJournalDecision) check() error {
+	if d.journal == nil || d.lock == nil {
+		return ErrCustodyJournal
+	}
+	if d.failed {
+		return ErrCustodySourceHandoff
+	}
+	root, re := os.Lstat(d.journal.path)
+	current, ce := os.Lstat(filepath.Join(d.journal.path, custodyJournalLockName))
+	held, he := d.lock.Stat()
+	if re != nil || ce != nil || he != nil || !os.SameFile(root, d.rootInfo) || !current.Mode().IsRegular() || current.Size() != 0 || !os.SameFile(current, held) {
+		d.failed = true
+		return errors.Join(ErrCustodySourceHandoff, re, ce, he)
+	}
+	if e := requireCustodySourceAccess(d.journal.path, d.handoff); e != nil {
+		d.failed = true
+		return e
 	}
 	return nil
 }

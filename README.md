@@ -233,7 +233,9 @@ complete retired V1 histories, observes original A/B sources and retains a signe
 transition proposal without refunding spent allowance. It enables no source or
 spending import by itself. The separate [imported accounting path](docs/CUSTODY_IMPORTED_ACCOUNTING.md)
 now carries spending/source/retention into selected profile-5 admission witnesses,
-with one shared registry choice across native and imported successors. Protected
+with one shared registry choice across native and imported successors. The
+[sealed source handoff](docs/CUSTODY_SOURCE_HANDOFF.md) retains the selected
+successor in original A/B journals and closes their legacy access. Protected
 old-grant exclusion, active source handoff and execution activation remain gated. The [joint two-host V2
 fault campaign](docs/CUSTODY_V2_WAN.md) covers lost replies, process kills,
 quorum outages and expired results, with public signed evidence and original

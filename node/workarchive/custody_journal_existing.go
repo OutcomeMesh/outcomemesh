@@ -21,6 +21,9 @@ func OpenExistingCustodyJournalWithLimits(
 	policy CustodyPolicy,
 	limits CustodyJournalLimits,
 ) (openedJournal *CustodyJournal, openedState CustodyJournalState, returnErr error) {
+	return openExistingCustodyJournal(ctx, path, manifest, initialReceipt, policy, limits, nil)
+}
+func openExistingCustodyJournal(ctx context.Context, path string, manifest Manifest, initialReceipt ReplicaReceipt, policy CustodyPolicy, limits CustodyJournalLimits, handoff *CustodySourceHandoff) (openedJournal *CustodyJournal, openedState CustodyJournalState, returnErr error) {
 	if ctx == nil || path == "" {
 		return nil, CustodyJournalState{}, ErrCustodyJournal
 	}
@@ -105,7 +108,7 @@ func OpenExistingCustodyJournalWithLimits(
 	if err := checkIdentity(); err != nil {
 		return nil, CustodyJournalState{}, err
 	}
-	if err := requireActiveCustodyJournal(path); err != nil {
+	if err := requireCustodySourceAccess(path, handoff); err != nil {
 		return nil, CustodyJournalState{}, err
 	}
 	headerBytes, err := readRegularArchiveFile(filepath.Join(path, custodyJournalHeaderName), MaximumCustodyJournalHeaderBytes)
@@ -130,7 +133,7 @@ func OpenExistingCustodyJournalWithLimits(
 	if err := checkIdentity(); err != nil {
 		return nil, CustodyJournalState{}, err
 	}
-	if err := requireActiveCustodyJournal(path); err != nil {
+	if err := requireCustodySourceAccess(path, handoff); err != nil {
 		return nil, CustodyJournalState{}, err
 	}
 	return journal, state, nil

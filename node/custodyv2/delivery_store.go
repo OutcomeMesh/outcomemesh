@@ -363,7 +363,7 @@ func (i *AdmissionInbox) Enrollment() AdmissionDeliveryEnrollment { return i.enr
 func (i *AdmissionInbox) Check() error {
 	i.mu.Lock()
 	defer i.mu.Unlock()
-	return i.s.check()
+	return i.checkSource()
 }
 
 func (i *AdmissionInbox) validateDelivery(d AdmissionDelivery) error {
@@ -387,7 +387,7 @@ func (i *AdmissionInbox) validateRetained() error {
 		if _, err := os.Lstat(filepath.Join(i.s.path, "receipt")); !errors.Is(err, os.ErrNotExist) {
 			return errors.Join(ErrAdmissionDelivery, err)
 		}
-		return i.s.check()
+		return i.checkSource()
 	}
 	if e != nil {
 		return e
@@ -402,7 +402,7 @@ func (i *AdmissionInbox) validateRetained() error {
 	i.s.retained["delivery"] = append([]byte(nil), raw...)
 	raw, e = readFile(filepath.Join(i.s.path, "receipt"), deliveryReceiptLimit(i.enrollment.Version))
 	if errors.Is(e, os.ErrNotExist) {
-		return i.s.check()
+		return i.checkSource()
 	}
 	if e != nil {
 		return e
@@ -415,13 +415,13 @@ func (i *AdmissionInbox) validateRetained() error {
 		return e
 	}
 	i.s.retained["receipt"] = append([]byte(nil), raw...)
-	return i.s.check()
+	return i.checkSource()
 }
 
 func (i *AdmissionInbox) Delivery() (AdmissionDelivery, error) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
-	if e := i.s.check(); e != nil {
+	if e := i.checkSource(); e != nil {
 		return AdmissionDelivery{}, e
 	}
 	raw, ok := i.s.retained["delivery"]
@@ -434,7 +434,7 @@ func (i *AdmissionInbox) Delivery() (AdmissionDelivery, error) {
 func (i *AdmissionInbox) ReadReceipt() (AdmissionDeliveryReceipt, error) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
-	if e := i.s.check(); e != nil {
+	if e := i.checkSource(); e != nil {
 		return AdmissionDeliveryReceipt{}, e
 	}
 	raw, ok := i.s.retained["receipt"]
@@ -457,7 +457,7 @@ func (i *AdmissionInbox) Receive(ctx context.Context, delivery AdmissionDelivery
 	}
 	i.mu.Lock()
 	defer i.mu.Unlock()
-	if e := i.s.check(); e != nil {
+	if e := i.checkSource(); e != nil {
 		return AdmissionDeliveryReceipt{}, e
 	}
 	if e := ctx.Err(); e != nil {
@@ -483,6 +483,9 @@ func (i *AdmissionInbox) Receive(ctx context.Context, delivery AdmissionDelivery
 		return AdmissionDeliveryReceipt{}, e
 	}
 	if e := ctx.Err(); e != nil {
+		return AdmissionDeliveryReceipt{}, e
+	}
+	if e := i.checkSource(); e != nil {
 		return AdmissionDeliveryReceipt{}, e
 	}
 	receipt, e := (AdmissionDeliveryReceipt{}).Sign(delivery, i.key)
@@ -920,4 +923,14 @@ func (s *admissionDeliveryStore) close() error {
 	e := s.lock.Close()
 	s.lock = nil
 	return e
+}
+
+func (i *AdmissionInbox) checkSource() error {
+	if i.decision == nil {
+		return ErrAdmissionDelivery
+	}
+	if e := i.decision.CheckAccess(); e != nil {
+		return e
+	}
+	return i.s.check()
 }

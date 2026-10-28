@@ -550,3 +550,15 @@ effect/acceptance path, independently operated protected witnesses, device fault
 acceptance, external audits and the existing M5–M10 launch gates remain required.
 See the [test record](evidence/custody-import-20261028.json). No weighted launch
 criterion is waived; readiness remains **44/100**.
+
+
+## 2026-10-29: sealed source transfer (score unchanged)
+
+Original A/B sources now retain one exact selected imported successor and its
+complete proof, with ordered permanent sealing, cold recovery and checks on held
+action paths. [Source handoff](CUSTODY_SOURCE_HANDOFF.md) preserves spending,
+source lineage and retention. Tests verify failures before archive reads and
+receipt publication, original guards, root/lock replacement and lost CLI output.
+This does not establish independent protected execution/key deployment, global
+revocation of arbitrary old copies, or active imported execution. Those and the
+existing M5–M10 gates remain required. Readiness remains **44/100**.

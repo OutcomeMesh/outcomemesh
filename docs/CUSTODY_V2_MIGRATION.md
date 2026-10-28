@@ -6,7 +6,9 @@ Status: activation requirements plus an implemented
 original-source observations, no-refund arithmetic and the signed proposal.
 Profile5 now enforces historical spending/source carry-over in the existing
 admission ledger, with one shared registry selection slot. Active source handoff,
-protected old-grant exclusion and execution activation remain unimplemented.
+protected old-grant exclusion and execution activation remain unimplemented. The
+[sealed source handoff](CUSTODY_SOURCE_HANDOFF.md) now implements the original
+local journal transfer and version checks; it grants no active successor access.
 The [V2 job](CUSTODY_V2.md) and [Serve disposition](CUSTODY_V2_SERVE.md) continue to
 operate in their supported native scopes; they cannot settle unresolved old tickets.
 

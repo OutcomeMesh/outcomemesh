@@ -4,7 +4,9 @@ Status: experimental accounting import, with execution disabled. The existing
 admission state machine and durable witnesses now carry verified V1 spending,
 source position and retention forward. Selection shares the original resource
 registry slot with native candidates. This is not protected global exclusion of
-old keys, an active source-journal handoff, or a mainnet cutover.
+old keys, active successor execution, or a mainnet cutover. The subsequent
+[sealed source handoff](CUSTODY_SOURCE_HANDOFF.md) now closes legacy access on
+original A/B sources; protected activation remains required.
 
 ## Import rule
 

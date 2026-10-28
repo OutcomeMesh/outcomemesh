@@ -1,6 +1,6 @@
 # Implementation status
 
-Updated: 2026-10-28
+Updated: 2026-10-29
 
 This file records evidence against `PLAN.md`. A milestone remains open until all
 of its exit gates pass; implementing most deliverables does not close it.
@@ -9,6 +9,27 @@ Full planned production readiness is approximately **44/100**, using the weighte
 [readiness baseline](PRODUCTION_READINESS.md). This is an engineering estimate,
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
+
+## 2026-10-29: sealed original sources and checks on held actions
+
+The [source handoff](CUSTODY_SOURCE_HANDOFF.md) now fixes one selected successor
+in the original A/B journal roots. It retains source position/receipt, spending,
+retention and the complete selection proof under the original retired authority
+or sealed worker guards. Seal-first publication blocks legacy use during partial
+failure; only an exact cold retry can finish it. Pair verification requires both
+roles and the same complete selected import.
+
+Held source decisions and current V2 Target/Acceptor/Serve/proof-intake actions
+recheck source version and permanent lock identity. Additional checks precede
+archive reads, acceptance signing and delivery acknowledgement signing. Ordinary
+local root/lock substitution poisons the held handle. Tests include lost process
+output, partial writes, copied roots and the real retained V1 source lineage.
+
+This is enforced exclusion at the original local source boundary. Arbitrary old
+binaries with raw filesystem/key or VM-clone access are not fenced by this layer.
+Imported execution remains disabled; independent protected version authority and
+an active successor adapter remain open. [Evidence](evidence/custody-source-handoff-20261029.json).
+Production readiness remains **44/100**.
 
 ## 2026-10-28: imported accounting under the original registry slot
 

@@ -441,6 +441,10 @@ func (journal *CustodyJournal) State() (CustodyJournalState, error) {
 		return CustodyJournalState{}, err
 	}
 	defer lock.Close()
+	if err := requireNoCustodyHandoff(journal.path); err != nil {
+		return CustodyJournalState{}, err
+	}
+
 	return journal.scan()
 }
 
@@ -457,6 +461,10 @@ func (journal *CustodyJournal) Head() (CustodyJournalEntry, bool, error) {
 		return CustodyJournalEntry{}, false, err
 	}
 	defer lock.Close()
+	if err := requireNoCustodyHandoff(journal.path); err != nil {
+		return CustodyJournalEntry{}, false, err
+	}
+
 	return journal.headLocked()
 }
 
@@ -884,7 +892,7 @@ func (journal *CustodyJournal) validateLayoutContext(ctx context.Context) error 
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if entry.Name() == custodyRetirementFileName {
+		if entry.Name() == custodyRetirementFileName || entry.Name() == custodySourceHandoffName || entry.Name() == custodySourceHandoffProofName {
 			if entry.Type()&os.ModeSymlink != 0 || entry.IsDir() {
 				return ErrCustodyRetirement
 			}

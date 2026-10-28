@@ -252,6 +252,14 @@ func (r *root) check() error {
 	if r.lock == nil || r.failed {
 		return ErrUncertain
 	}
+	if r.decision == nil {
+		return ErrProtocol
+	}
+	if err := r.decision.CheckAccess(); err != nil {
+		r.failed = true
+		return err
+	}
+
 	for path, old := range r.identity {
 		now, e := os.Lstat(path)
 		if e != nil || !os.SameFile(old, now) || now.Mode()&os.ModeSymlink != 0 {
@@ -380,6 +388,10 @@ func (r *root) close() error {
 	return e
 }
 func (r *root) write(name string, b []byte) error {
+	if e := r.decision.CheckAccess(); e != nil {
+		r.failed = true
+		return e
+	}
 	if e := publish(r.path, name, b, r.hook); e != nil {
 		r.failed = true
 		return errors.Join(ErrUncertain, e)

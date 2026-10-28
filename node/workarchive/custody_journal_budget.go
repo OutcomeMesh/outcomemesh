@@ -79,6 +79,10 @@ func (journal *CustodyJournal) Usage() (CustodyJournalUsage, error) {
 		return CustodyJournalUsage{}, err
 	}
 	defer lock.Close()
+	if err := requireNoCustodyHandoff(journal.path); err != nil {
+		return CustodyJournalUsage{}, err
+	}
+
 	return inventoryCustodyJournal(journal.path)
 }
 

@@ -648,3 +648,17 @@ the linked contract. Profile5 remains rejected by all execution owner constructo
 and existing delivery profiles. No active source journal, legacy ticket exception,
 key revocation or consensus change is introduced. Protected deployment, every-path
 version enforcement and original-source handoff remain activation requirements.
+
+
+## Sealed original custody sources
+
+The [source handoff](CUSTODY_SOURCE_HANDOFF.md) binds the full selected import to
+original A/B journal roots, spending, accepted source position and retention.
+It publishes a permanent seal before the complete selected proof. Ordinary live
+source access refuses either named handoff file, and exact recovery cannot select
+another successor or discard pending/orphan evidence. Held source decisions and
+current V2 execution, acceptance, Serve and proof-intake paths recheck that source
+boundary. The new record/pair formats, strict bounds, domains and fixed vectors
+are specified in the linked contract. Existing consensus and artifact bytes remain
+unchanged. This is local original-source exclusion; protected independent version
+authority and an active imported adapter remain activation requirements.

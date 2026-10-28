@@ -180,6 +180,9 @@ func (t *Target) Execute(ctx context.Context, claim custodyfence.Certificate, no
 			return result, e
 		}
 	}
+	if e := t.r.decision.CheckAccess(); e != nil {
+		return result, e
+	}
 	c := t.r.ctx
 	if t.r.objects == nil {
 		// Required owners open no current archive objects before durable consumption.
