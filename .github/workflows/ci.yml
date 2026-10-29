@@ -102,7 +102,7 @@ jobs:
       - run: cd "$RUNNER_TEMP/outcomemesh-archives" && sha256sum --check SHA256SUMS
 
   required:
-    if: always()
+    if: ${{ !cancelled() }}
     needs: [prepare, hygiene, race, macos, archives]
     runs-on: ubuntu-24.04
     steps:
