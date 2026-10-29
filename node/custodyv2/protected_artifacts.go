@@ -68,7 +68,14 @@ func VerifyProtectedEffect(c Context, e *gateway.Effect, kind uint8, artifact, h
 	if kind == gateway.EffectExecute || kind == gateway.EffectServeB {
 		key = d.B.Gateway
 	}
-	if _, err = e.CanonicalBytes(); err != nil || e.DeploymentID != did || e.ScopeID != sid || e.Kind != kind || e.ArtifactID != artifact || e.SourceSequence != seq || e.SourceHead != head || e.CheckedAt != at || e.Signer != key {
+	if e.Replacement != nil && !ReplacementRoleAllowed(c, e.Signer) {
+		return ErrProtocol
+	}
+	principal, err := e.Principal(d.Guard)
+	if err != nil || principal != key {
+		return ErrProtocol
+	}
+	if _, err = e.CanonicalBytes(); err != nil || e.DeploymentID != did || e.ScopeID != sid || e.Kind != kind || e.ArtifactID != artifact || e.SourceSequence != seq || e.SourceHead != head || e.CheckedAt != at {
 		return ErrProtocol
 	}
 	return e.VerifyGuard(d.Guard)
@@ -206,4 +213,29 @@ func VerifyProtectedBinding(b AdmissionBinding, enrollment EnrollmentBinding, d 
 		return ErrAdmissionRequired
 	}
 	return nil
+}
+
+// ReplacementRoleAllowed prevents a successor from collapsing independently
+// signed assignment, witness, service and transport roles into one key.
+func ReplacementRoleAllowed(c Context, key [32]byte) bool {
+	a := c.Assignment.Base
+	roles := [][32]byte{a.AuthorityPublicKey, a.RemoteControlPublicKey, a.RemoteTransportPublicKey, a.ReplicaPublicKey, c.Plan.ServeConsumer, c.Plan.ClientTransportPublicKey}
+	roles = append(roles, c.Assignment.Policy.Witnesses...)
+	roles = append(roles, a.Auditors...)
+	roles = append(roles, c.CustodyPolicy.TrustedAuditors...)
+	for _, consumer := range a.Consumers {
+		roles = append(roles, consumer.PublicKey)
+	}
+	if d := c.Plan.Deployment; d != nil {
+		roles = append(roles, d.A.Issuer, d.B.Issuer, d.Authority, d.Control, d.Guard, d.A.Gateway, d.B.Gateway)
+	}
+	if key == ([32]byte{}) {
+		return false
+	}
+	for _, role := range roles {
+		if role == key {
+			return false
+		}
+	}
+	return true
 }

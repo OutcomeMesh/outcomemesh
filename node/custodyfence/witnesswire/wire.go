@@ -3,6 +3,7 @@
 package witnesswire
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"io"
@@ -10,11 +11,12 @@ import (
 	"github.com/outcomemesh/outcomemesh/core/codec"
 	"github.com/outcomemesh/outcomemesh/core/types"
 	"github.com/outcomemesh/outcomemesh/node/custodyfence"
+	guard "github.com/outcomemesh/outcomemesh/node/custodyguard/guardwire"
 )
 
 const Version0 uint16 = 0
 const Version1 uint16 = 1
-const MaxFrameBytes = 4096
+const MaxFrameBytes = custodyfence.MaximumCertificateBytes + custodyfence.MaximumObservationBytes + 1024
 
 type Kind uint8
 
@@ -172,7 +174,11 @@ func (r Response) CanonicalBytes() ([]byte, error) {
 		}
 	}
 	e := codec.NewEncoder(MaxFrameBytes)
-	e.Fixed([]byte("OMCFWS00"))
+	if r.Observation.Replacement != nil {
+		e.Fixed([]byte("OMCFWSR1"))
+	} else {
+		e.Fixed([]byte("OMCFWS00"))
+	}
 	e.U16(r.Version)
 	e.Fixed(obs)
 	e.BytesField(vote)
@@ -185,13 +191,17 @@ func DecodeResponse(b []byte) (Response, error) {
 	}
 	d := codec.NewDecoder(b)
 	magic, _ := d.Fixed(8)
-	if string(magic) != "OMCFWS00" {
+	replaced := string(magic) == "OMCFWSR1"
+	if string(magic) != "OMCFWS00" && !replaced {
 		return r, ErrProtocol
 	}
 	r.Version, _ = d.U16()
 	obsSize := custodyfence.ObservationBytes
 	if r.Version == Version1 {
 		obsSize = custodyfence.ObservationBytesV1
+	}
+	if replaced {
+		obsSize += guard.ReplacementReceiptBytes
 	}
 	obs, err := d.Fixed(obsSize)
 	if err != nil {
@@ -211,8 +221,8 @@ func DecodeResponse(b []byte) (Response, error) {
 			return Response{}, err
 		}
 	}
-	if _, err := r.CanonicalBytes(); err != nil {
-		return Response{}, err
+	if canonical, err := r.CanonicalBytes(); err != nil || !bytes.Equal(canonical, b) {
+		return Response{}, ErrProtocol
 	}
 	return r, nil
 }
@@ -239,7 +249,8 @@ func ValidateResponse(s custodyfence.Scope, r Request, response Response, witnes
 			return ErrProtocol
 		}
 		cid, _ := r.Command.ID()
-		if response.Version != r.Version || actual.Position != r.Expected.Position || actual.PendingID != cid || response.Vote.CommandID != cid || response.Vote.Witness != witness {
+		principal, err := response.Vote.Principal(s.Guard)
+		if err != nil || response.Version != r.Version || actual.Position != r.Expected.Position || actual.PendingID != cid || response.Vote.CommandID != cid || principal != witness {
 			return ErrProtocol
 		}
 	case Commit:
@@ -281,13 +292,14 @@ func Assemble(s custodyfence.Scope, requests []Request, responses []Response) (c
 	seen := map[[32]byte]bool{}
 	for i, r := range requests {
 		v := responses[i].Vote
-		if r.Kind != Vote || r.Command != out.Command || seen[v.Witness] {
+		principal, err := v.Principal(s.Guard)
+		if err != nil || r.Kind != Vote || r.Command != out.Command || seen[principal] {
 			return custodyfence.Certificate{}, ErrProtocol
 		}
-		if err := ValidateResponse(s, r, responses[i], v.Witness); err != nil {
+		if err := ValidateResponse(s, r, responses[i], principal); err != nil {
 			return custodyfence.Certificate{}, err
 		}
-		seen[v.Witness] = true
+		seen[principal] = true
 		out.Votes = append(out.Votes, v)
 	}
 	for i := 1; i < len(out.Votes); i++ {

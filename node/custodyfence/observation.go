@@ -1,25 +1,29 @@
 package custodyfence
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"errors"
 
 	"github.com/outcomemesh/outcomemesh/core/codec"
 	"github.com/outcomemesh/outcomemesh/core/types"
+	guard "github.com/outcomemesh/outcomemesh/node/custodyguard/guardwire"
 )
 
 const ObservationBytes = 308
 const ObservationBytesV1 = ObservationBytes + 32
+const MaximumObservationBytes = ObservationBytesV1 + guard.ReplacementReceiptBytes
 
 // Observation authenticates exact current local metadata for one request ID.
 // It is historical upon release, never an execution grant or an external pin.
 type Observation struct {
-	Version   uint16
-	RequestID types.Hash
-	Witness   [32]byte
-	Snapshot  Snapshot
-	PendingID types.Hash
-	Signature [64]byte
+	Replacement *guard.ReplacementReceipt
+	Version     uint16
+	RequestID   types.Hash
+	Witness     [32]byte
+	Snapshot    Snapshot
+	PendingID   types.Hash
+	Signature   [64]byte
 }
 
 func (o Observation) unsignedBytes() ([]byte, error) {
@@ -91,14 +95,34 @@ func (o Observation) CanonicalBytes() ([]byte, error) {
 	if !ed25519.Verify(o.Witness[:], h[:], o.Signature[:]) {
 		return nil, ErrWitness
 	}
-	return append(b, o.Signature[:]...), nil
+	raw := append(b, o.Signature[:]...)
+	if o.Replacement != nil {
+		proof, err := o.Replacement.CanonicalBytes()
+		if err != nil || o.Replacement.Request.Successor != o.Witness {
+			return nil, ErrWitness
+		}
+		copy(raw[:8], []byte("OMCFOR01"))
+		raw = append(raw, proof...)
+	}
+	return raw, nil
 }
 func (o Observation) Verify(s Scope, request types.Hash, witness [32]byte) error {
 	if _, err := o.CanonicalBytes(); err != nil {
 		return err
 	}
+	principal := o.Witness
+	if o.Replacement != nil {
+		if !s.ReplacementSignerAllowed(o.Witness) {
+			return ErrWitness
+		}
+		var err error
+		principal, err = o.Replacement.Principal(s.Guard, o.Witness)
+		if err != nil {
+			return err
+		}
+	}
 	id, err := s.ID()
-	if err != nil || o.Snapshot.ScopeID != id || o.Version != s.Version || o.RequestID != request || o.Witness != witness {
+	if err != nil || o.Snapshot.ScopeID != id || o.Version != s.Version || o.RequestID != request || principal != witness {
 		return ErrWitness
 	}
 	for _, k := range s.Witnesses {
@@ -110,16 +134,21 @@ func (o Observation) Verify(s Scope, request types.Hash, witness [32]byte) error
 }
 func DecodeObservation(b []byte) (Observation, error) {
 	var o Observation
-	if len(b) != ObservationBytes && len(b) != ObservationBytesV1 {
+	if len(b) < ObservationBytes || len(b) > MaximumObservationBytes {
 		return o, ErrWitness
 	}
 	d := codec.NewDecoder(b)
 	magic, _ := d.Fixed(8)
-	if string(magic) != "OMCFOB00" {
+	replaced := string(magic) == "OMCFOR01"
+	if string(magic) != "OMCFOB00" && !replaced {
 		return o, ErrWitness
 	}
 	o.Version, _ = d.U16()
-	if (o.Version == Version0 && len(b) != ObservationBytes) || (o.Version == Version1 && len(b) != ObservationBytesV1) {
+	extra := 0
+	if replaced {
+		extra = guard.ReplacementReceiptBytes
+	}
+	if (o.Version == Version0 && len(b) != ObservationBytes+extra) || (o.Version == Version1 && len(b) != ObservationBytesV1+extra) {
 		return o, ErrWitness
 	}
 	for _, v := range [][]byte{o.RequestID[:], o.Witness[:], o.Snapshot.ScopeID[:]} {
@@ -141,8 +170,19 @@ func DecodeObservation(b []byte) (Observation, error) {
 		readFixed(d, o.Snapshot.SessionID[:])
 	}
 	readFixed(d, o.Signature[:])
-	if _, err := o.CanonicalBytes(); err != nil {
-		return Observation{}, err
+	if replaced {
+		b, err := d.Fixed(guard.ReplacementReceiptBytes)
+		if err != nil {
+			return Observation{}, err
+		}
+		r, err := guard.DecodeReplacementReceipt(b)
+		if err != nil {
+			return Observation{}, err
+		}
+		o.Replacement = &r
+	}
+	if raw, err := o.CanonicalBytes(); err != nil || !bytes.Equal(raw, b) {
+		return Observation{}, ErrWitness
 	}
 	return o, nil
 }
@@ -174,6 +214,11 @@ func (w *Witness) Observe(request types.Hash) (Observation, error) {
 		return Observation{}, err
 	}
 	o := Observation{Version: w.state.scope.Version, RequestID: request, Witness: w.public, Snapshot: w.state.Snapshot(), PendingID: w.pin().PendingID}
+	if w.replacement != nil {
+		r := *w.replacement
+		o.Replacement = &r
+		o.Witness = r.Request.Successor
+	}
 	b, err := o.unsignedBytes()
 	if err != nil {
 		return Observation{}, err

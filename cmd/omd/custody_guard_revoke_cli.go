@@ -38,6 +38,7 @@ func runCustodyGuardRevoke(ctx context.Context, args []string, out io.Writer) er
 	reason := f.String("reason-id", "", "sign: nonzero incident evidence ID")
 	key := f.String("key", "", "sign: private offline revocation seed (32 raw bytes), unused by review")
 	request := f.String("request", "", "send/inspect: exact signed revocation artifact")
+	replacement := f.String("replacement", "", "public replacement receipt when revoking a successor")
 	receipt := f.String("receipt", "", "inspect: signed guard receipt")
 	url := f.String("guard-url", "", "send: guard base URL")
 	output := f.String("out", "", "fresh request, receipt or inspection artifact")
@@ -86,6 +87,18 @@ func runCustodyGuardRevoke(ctx context.Context, args []string, out io.Writer) er
 	if guard.ValidateIdentity(cfg, id) != nil || types.Hash(cfg.Revoker).IsZero() {
 		return wire.ErrGuard
 	}
+	var successor *wire.ReplacementReceipt
+	if *replacement != "" {
+		b, err = load(replacement, wire.ReplacementReceiptBytes)
+		if err != nil {
+			return err
+		}
+		r, err := wire.DecodeReplacementReceipt(b)
+		if err != nil || guard.ValidateReplacementDraft(cfg, id, r.Request) != nil || r.Verify(id.PublicKey, id.ID(), r.Request) != nil {
+			return wire.ErrGuard
+		}
+		successor = &r
+	}
 	var q wire.Revocation
 	var r wire.RevocationReceipt
 	if sign {
@@ -103,6 +116,9 @@ func runCustodyGuardRevoke(ctx context.Context, args []string, out io.Writer) er
 				found = true
 			}
 		}
+		if successor != nil {
+			found = successor.Request.Successor == [32]byte(sub)
+		}
 		if !found {
 			return wire.ErrGuard
 		}
@@ -119,7 +135,11 @@ func runCustodyGuardRevoke(ctx context.Context, args []string, out io.Writer) er
 			return err
 		}
 		q, err = wire.DecodeRevocation(b)
-		if err != nil || guard.ValidateRevocation(cfg, id, q) != nil {
+		valid := guard.ValidateRevocation(cfg, id, q)
+		if successor != nil {
+			valid = guard.ValidateSuccessorRevocation(cfg, id, q, *successor)
+		}
+		if err != nil || valid != nil {
 			return wire.ErrGuard
 		}
 	}
@@ -149,7 +169,8 @@ func runCustodyGuardRevoke(ctx context.Context, args []string, out io.Writer) er
 		Identity                 guard.Identity
 		Config                   guard.Config
 		Request                  wire.Revocation
-	}{*action, *url, *output, *key, inputs, id, cfg, q})
+		Replacement              *wire.ReplacementReceipt `json:",omitzero"`
+	}{*action, *url, *output, *key, inputs, id, cfg, q, successor})
 	if err != nil {
 		return err
 	}

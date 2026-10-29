@@ -34,6 +34,7 @@ type WitnessPin struct {
 // Commit requires a quorum, not merely the local witness's vote. There are at
 // most three transitions; no expiry, unlock, force-reset or view change exists.
 type Witness struct {
+	replacement        *guard.ReplacementReceipt
 	guard              guard.Chooser
 	mu                 sync.Mutex
 	path               string
@@ -51,12 +52,12 @@ type Witness struct {
 // Create explicitly enrolls a new witness root. It must not be used as recovery
 // for a lost root/key. Only the deployment's independently protected enrollment
 // process can ensure that the same witness key is not enrolled twice.
-func Create(path string, s Scope, pin types.Hash, key ed25519.PrivateKey) (_ *Witness, returnErr error) {
+func Create(path string, s Scope, pin types.Hash, key ed25519.PrivateKey, replacement ...guard.ReplacementReceipt) (_ *Witness, returnErr error) {
 	state, err := NewState(s, pin)
 	if err != nil {
 		return nil, err
 	}
-	public, err := witnessKey(s, key)
+	public, proof, err := witnessSigner(s, key, replacement)
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +83,7 @@ func Create(path string, s Scope, pin types.Hash, key ed25519.PrivateKey) (_ *Wi
 	if err := lockWitness(lock); err != nil {
 		return nil, err
 	}
-	w := &Witness{path: path, key: append(ed25519.PrivateKey(nil), key...), public: public, lock: lock, state: state, files: make(map[string][]byte)}
+	w := &Witness{path: path, key: append(ed25519.PrivateKey(nil), key...), public: public, replacement: proof, lock: lock, state: state, files: make(map[string][]byte)}
 	if err := lock.Sync(); err != nil {
 		return nil, err
 	}
@@ -107,8 +108,8 @@ func Create(path string, s Scope, pin types.Hash, key ed25519.PrivateKey) (_ *Wi
 
 // Open only replays a complete existing root at an independently retained exact
 // position including any pending vote. It never creates files or signs.
-func Open(path string, s Scope, pin types.Hash, key ed25519.PrivateKey, expected WitnessPin) (*Witness, error) {
-	return openWitness(path, s, pin, key, func(w *Witness) error {
+func Open(path string, s Scope, pin types.Hash, key ed25519.PrivateKey, expected WitnessPin, replacement ...guard.ReplacementReceipt) (*Witness, error) {
+	return openWitness(path, s, pin, key, replacement, func(w *Witness) error {
 		if w.pin() != expected {
 			return ErrTransition
 		}
@@ -119,7 +120,7 @@ func Open(path string, s Scope, pin types.Hash, key ed25519.PrivateKey, expected
 // RecoverVote permits only the retained pre-attempt state or its exact pending
 // proposal. It signs nothing; the caller must explicitly call Vote afterward.
 // The full attempted command and before pin must have been retained separately.
-func RecoverVote(path string, s Scope, pin types.Hash, key ed25519.PrivateKey, before WitnessPin, attempt Command) (*Witness, error) {
+func RecoverVote(path string, s Scope, pin types.Hash, key ed25519.PrivateKey, before WitnessPin, attempt Command, replacement ...guard.ReplacementReceipt) (*Witness, error) {
 	id, err := attempt.ID()
 	if err != nil {
 		return nil, err
@@ -130,7 +131,7 @@ func RecoverVote(path string, s Scope, pin types.Hash, key ed25519.PrivateKey, b
 	if attempt.ExpectedSequence != before.Position.Sequence || attempt.ExpectedHead != before.Position.HeadID || (!before.PendingID.IsZero() && before.PendingID != id) {
 		return nil, ErrTransition
 	}
-	return openWitness(path, s, pin, key, func(w *Witness) error {
+	return openWitness(path, s, pin, key, replacement, func(w *Witness) error {
 		x := w.pin()
 		if x.Position != before.Position || (x.PendingID != before.PendingID && x.PendingID != id) {
 			return ErrTransition
@@ -141,7 +142,7 @@ func RecoverVote(path string, s Scope, pin types.Hash, key ed25519.PrivateKey, b
 
 // RecoverCommit accepts only the pre-attempt state or its one-transition quorum
 // extension. A later prefix is rejected, even if otherwise validly signed.
-func RecoverCommit(path string, s Scope, pin types.Hash, key ed25519.PrivateKey, before WitnessPin, attempt Certificate) (*Witness, error) {
+func RecoverCommit(path string, s Scope, pin types.Hash, key ed25519.PrivateKey, before WitnessPin, attempt Certificate, replacement ...guard.ReplacementReceipt) (*Witness, error) {
 	if err := attempt.Verify(s); err != nil {
 		return nil, err
 	}
@@ -150,7 +151,7 @@ func RecoverCommit(path string, s Scope, pin types.Hash, key ed25519.PrivateKey,
 	if c.ExpectedSequence != before.Position.Sequence || c.ExpectedHead != before.Position.HeadID {
 		return nil, ErrTransition
 	}
-	return openWitness(path, s, pin, key, func(w *Witness) error {
+	return openWitness(path, s, pin, key, replacement, func(w *Witness) error {
 		x := w.pin()
 		if x == before {
 			return w.state.ValidateNext(c)
@@ -165,12 +166,16 @@ func RecoverCommit(path string, s Scope, pin types.Hash, key ed25519.PrivateKey,
 	})
 }
 
-func openWitness(path string, s Scope, pin types.Hash, key ed25519.PrivateKey, accept func(*Witness) error) (_ *Witness, returnErr error) {
-	public, err := witnessKey(s, key)
+func openWitness(path string, s Scope, pin types.Hash, key ed25519.PrivateKey, replacement []guard.ReplacementReceipt, accept func(*Witness) error) (_ *Witness, returnErr error) {
+	public, proof, err := witnessSigner(s, key, replacement)
 	if err != nil {
 		return nil, err
 	}
-	return openMember(path, s, pin, public, key, accept)
+	w, err := openMember(path, s, pin, public, key, accept)
+	if err == nil {
+		w.replacement = proof
+	}
+	return w, err
 }
 
 func openMember(path string, s Scope, pin types.Hash, public [32]byte, key ed25519.PrivateKey, accept func(*Witness) error) (_ *Witness, returnErr error) {
@@ -306,9 +311,13 @@ func (w *Witness) voteLocked(command Command) (Vote, error) {
 		return Vote{}, e
 	}
 	if w.state.scope.Guard != ([32]byte{}) {
+		if w.replacement != nil {
+			r := *w.replacement
+			v.Replacement = &r
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		v.GuardSeal, e = guard.Obtain(ctx, w.guard, w.state.scope.Guard, VoteGuardRequest(command, w.public), w.key)
+		v.GuardSeal, e = guard.Obtain(ctx, w.guard, w.state.scope.Guard, VoteGuardRequest(command, v.Witness), w.key)
 		if e != nil {
 			return Vote{}, e
 		}
@@ -500,6 +509,32 @@ func witnessKey(s Scope, key ed25519.PrivateKey) ([32]byte, error) {
 		}
 	}
 	return public, ErrWitness
+}
+
+func witnessSigner(s Scope, key ed25519.PrivateKey, proofs []guard.ReplacementReceipt) ([32]byte, *guard.ReplacementReceipt, error) {
+	if len(proofs) == 0 {
+		pub, err := witnessKey(s, key)
+		return pub, nil, err
+	}
+	if len(proofs) != 1 || !validKey(key) {
+		return [32]byte{}, nil, ErrWitness
+	}
+	r := proofs[0]
+	var signer [32]byte
+	copy(signer[:], key[32:])
+	if !s.ReplacementSignerAllowed(signer) {
+		return [32]byte{}, nil, ErrWitness
+	}
+	pub, err := r.Principal(s.Guard, signer)
+	if err != nil {
+		return [32]byte{}, nil, err
+	}
+	for _, member := range s.Witnesses {
+		if member == pub {
+			return pub, &r, nil
+		}
+	}
+	return [32]byte{}, nil, ErrWitness
 }
 func recordName(sequence uint64, kind string) string { return fmt.Sprintf("%02d.%s", sequence, kind) }
 func canonicalPath(path string) (string, error) {

@@ -23,6 +23,7 @@ import (
 	"github.com/outcomemesh/outcomemesh/node/custodyfence/witnessnet"
 	"github.com/outcomemesh/outcomemesh/node/custodyfence/witnesswire"
 	guardclient "github.com/outcomemesh/outcomemesh/node/custodyguard"
+	guard "github.com/outcomemesh/outcomemesh/node/custodyguard/guardwire"
 	libp2ptransport "github.com/outcomemesh/outcomemesh/node/transport/libp2p"
 )
 
@@ -80,6 +81,7 @@ func runWitness(ctx context.Context, args []string, input io.ReadCloser, out io.
 	}
 	f := flag.NewFlagSet(args[0], flag.ContinueOnError)
 	f.SetOutput(io.Discard)
+	replacementPath := f.String("replacement", "", "public guard receipt for successor signing the original witness history")
 	guardURL := f.String("guard-url", "", "external guard endpoint; verification key comes from the signed policy")
 	mode := f.String("mode", "review", "review by default; explicit create, serve, exchange, publish, vote, commit or recovery")
 	scopePath := f.String("scope", "", "existing canonical independent witness scope")
@@ -163,6 +165,38 @@ func runWitness(ctx context.Context, args []string, input io.ReadCloser, out io.
 	var command custodyfence.Command
 	var cert custodyfence.Certificate
 	inputs := []string{scopeFile}
+	var replacement *guard.ReplacementReceipt
+	var proofs []guard.ReplacementReceipt
+	signer := member
+	if *replacementPath != "" {
+		if args[0] != witnessServerCommand {
+			return custodyfence.ErrWitness
+		}
+		file, err := custodyCommandFile(*replacementPath)
+		if err != nil {
+			return err
+		}
+		*replacementPath = file
+		raw, err := readRegularArtifact(file, guard.ReplacementReceiptBytes)
+		if err != nil {
+			return err
+		}
+		r, err := guard.DecodeReplacementReceipt(raw)
+		if err != nil {
+			return err
+		}
+		principal, err := r.Principal(scope.Guard, r.Request.Successor)
+		if err != nil || principal != member {
+			return custodyfence.ErrWitness
+		}
+		replacement = &r
+		proofs = []guard.ReplacementReceipt{r}
+		signer = r.Request.Successor
+		if *transportText == types.Hash(signer).String() {
+			return custodyfence.ErrWitness
+		}
+		inputs = append(inputs, file)
+	}
 	if *commandPath != "" {
 		file, err := custodyCommandFile(*commandPath)
 		if err != nil {
@@ -449,7 +483,9 @@ func runWitness(ctx context.Context, args []string, input io.ReadCloser, out io.
 	public, err := json.Marshal(struct {
 		Command, Action, GuardURL string
 		Context                   any
-	}{args[0], action, *guardURL, descriptor})
+		ReplacementPath           string                    `json:",omitzero"`
+		Replacement               *guard.ReplacementReceipt `json:",omitzero"`
+	}{args[0], action, *guardURL, descriptor, *replacementPath, replacement})
 	if err != nil {
 		return err
 	}
@@ -558,20 +594,20 @@ func runWitness(ctx context.Context, args []string, input io.ReadCloser, out io.
 		b, _ := response.CanonicalBytes()
 		return publish("response", b)
 	}
-	key, err := witnessKey(*keyPath, member)
+	key, err := witnessKey(*keyPath, signer)
 	if err != nil {
 		return err
 	}
 	var w *custodyfence.Witness
 	switch *mode {
 	case "create":
-		w, err = custodyfence.Create(root, scope, sid, key)
+		w, err = custodyfence.Create(root, scope, sid, key, proofs...)
 	case "recover-vote":
-		w, err = custodyfence.RecoverVote(root, scope, sid, key, expected, command)
+		w, err = custodyfence.RecoverVote(root, scope, sid, key, expected, command, proofs...)
 	case "recover-commit":
-		w, err = custodyfence.RecoverCommit(root, scope, sid, key, expected, cert)
+		w, err = custodyfence.RecoverCommit(root, scope, sid, key, expected, cert, proofs...)
 	case "serve", "vote", "commit":
-		w, err = custodyfence.Open(root, scope, sid, key, expected)
+		w, err = custodyfence.Open(root, scope, sid, key, expected, proofs...)
 	default:
 		return errors.New("unsupported witness action")
 	}

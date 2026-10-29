@@ -11,7 +11,7 @@ import (
 
 const RevocationBytes = 8 + 32*4 + 64
 const RevocationReceiptBytes = 8 + RevocationBytes + 4 + 32 + 32 + 64
-const MaximumEvents = 4096 + 32
+const MaximumEvents = 4096 + 3*32
 
 type Position struct {
 	Sequence uint32
@@ -29,6 +29,14 @@ type Revocation struct {
 	Subject, Authority [32]byte
 	ReasonID           types.Hash
 	Signature          [64]byte
+}
+
+func (q Revocation) ID() (types.Hash, error) {
+	b, err := q.CanonicalBytes()
+	if err != nil {
+		return types.Hash{}, err
+	}
+	return types.DomainHash(Domain+"revocation/id", b), nil
 }
 
 func (q Revocation) body() ([]byte, error) {

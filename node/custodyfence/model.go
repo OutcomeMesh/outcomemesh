@@ -22,8 +22,9 @@ const (
 	MaximumScopeBytes              = 32 + 8 + 2 + 4*32 + 2*32 + 2 + MaximumWitnesses*32
 	CommandBytes                   = 8 + 2 + 32 + 8 + 32 + 1 + 2*32 + 64
 	VoteBytes                      = 8 + 2 + 32 + 32 + 64
-	MaximumVoteBytes               = VoteBytes + guard.SealBytes
-	MaximumCertificateBytes        = 8 + 2 + CommandBytes + 1 + MaximumWitnesses*MaximumVoteBytes
+	GuardedVoteBytes               = VoteBytes + guard.SealBytes
+	MaximumVoteBytes               = GuardedVoteBytes + guard.ReplacementReceiptBytes
+	MaximumCertificateBytes        = 8 + 2 + CommandBytes + 1 + MaximumWitnesses*(MaximumVoteBytes+4)
 )
 
 var (
@@ -257,11 +258,12 @@ func DecodeCommand(b []byte) (Command, error) {
 // Vote is a durable witness's endorsement, not permission to execute an effect.
 // Its signing API is deliberately private; Witness.Vote persists the lock first.
 type Vote struct {
-	GuardSeal [64]byte
-	Version   uint16
-	CommandID types.Hash
-	Witness   [32]byte
-	Signature [64]byte
+	Replacement *guard.ReplacementReceipt
+	GuardSeal   [64]byte
+	Version     uint16
+	CommandID   types.Hash
+	Witness     [32]byte
+	Signature   [64]byte
 }
 
 func (v Vote) CanonicalBytes() ([]byte, error) {
@@ -279,6 +281,14 @@ func (v Vote) CanonicalBytes() ([]byte, error) {
 		return nil, ErrQuorum
 	}
 	raw := append(b, v.Signature[:]...)
+	if v.Replacement != nil {
+		proof, err := v.Replacement.CanonicalBytes()
+		if err != nil || v.Replacement.Request.Successor != v.Witness || v.GuardSeal == ([64]byte{}) {
+			return nil, ErrQuorum
+		}
+		copy(raw[:8], []byte("OMCFVR01"))
+		return append(append(raw, proof...), v.GuardSeal[:]...), nil
+	}
 	if v.GuardSeal != ([64]byte{}) {
 		copy(raw[:8], []byte("OMCFVG01"))
 		raw = append(raw, v.GuardSeal[:]...)
@@ -303,19 +313,30 @@ func signVote(c Command, key ed25519.PrivateKey) (Vote, error) {
 }
 func DecodeVote(b []byte) (Vote, error) {
 	var v Vote
-	if len(b) != VoteBytes && len(b) != MaximumVoteBytes {
+	if len(b) != VoteBytes && len(b) != GuardedVoteBytes && len(b) != MaximumVoteBytes {
 		return v, ErrQuorum
 	}
 	d := codec.NewDecoder(b)
 	magic, _ := d.Fixed(8)
-	if string(magic) != "OMCFVT00" && string(magic) != "OMCFVG01" {
+	if string(magic) != "OMCFVT00" && string(magic) != "OMCFVG01" && string(magic) != "OMCFVR01" {
 		return v, ErrQuorum
 	}
 	v.Version, _ = d.U16()
 	readFixed(d, v.CommandID[:])
 	readFixed(d, v.Witness[:])
 	readFixed(d, v.Signature[:])
-	if string(magic) == "OMCFVG01" {
+	if string(magic) == "OMCFVR01" {
+		b, err := d.Fixed(guard.ReplacementReceiptBytes)
+		if err != nil {
+			return Vote{}, ErrQuorum
+		}
+		r, err := guard.DecodeReplacementReceipt(b)
+		if err != nil {
+			return Vote{}, err
+		}
+		v.Replacement = &r
+	}
+	if string(magic) == "OMCFVG01" || string(magic) == "OMCFVR01" {
 		readFixed(d, v.GuardSeal[:])
 		if v.GuardSeal == ([64]byte{}) {
 			return Vote{}, ErrQuorum
@@ -347,7 +368,13 @@ func (c Certificate) CanonicalBytes() ([]byte, error) {
 	id, _ := c.Command.ID()
 	e := codec.NewEncoder(MaximumCertificateBytes)
 	guarded := c.Votes[0].GuardSeal != ([64]byte{})
-	if guarded {
+	replaced := false
+	for _, v := range c.Votes {
+		replaced = replaced || v.Replacement != nil
+	}
+	if replaced {
+		e.Fixed([]byte("OMCFQR01"))
+	} else if guarded {
 		e.Fixed([]byte("OMCFQG01"))
 	} else {
 		e.Fixed([]byte("OMCFQC00"))
@@ -363,7 +390,11 @@ func (c Certificate) CanonicalBytes() ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		e.Fixed(b)
+		if replaced {
+			e.BytesField(b)
+		} else {
+			e.Fixed(b)
+		}
 	}
 	return e.Bytes(), nil
 }
@@ -377,13 +408,19 @@ func (c Certificate) Verify(s Scope) error {
 	if len(c.Votes) < int(s.Threshold) {
 		return ErrQuorum
 	}
+	seen := map[[32]byte]bool{}
 	for _, v := range c.Votes {
 		if v.VerifyGuard(s, c.Command) != nil {
 			return ErrQuorum
 		}
+		principal, err := v.Principal(s.Guard)
+		if err != nil || seen[principal] {
+			return ErrQuorum
+		}
+		seen[principal] = true
 		found := false
 		for _, key := range s.Witnesses {
-			if v.Witness == key {
+			if principal == key {
 				found = true
 				break
 			}
@@ -401,7 +438,8 @@ func DecodeCertificate(b []byte) (Certificate, error) {
 	}
 	d := codec.NewDecoder(b)
 	magic, _ := d.Fixed(8)
-	if string(magic) != "OMCFQC00" && string(magic) != "OMCFQG01" {
+	replaced := string(magic) == "OMCFQR01"
+	if string(magic) != "OMCFQC00" && string(magic) != "OMCFQG01" && !replaced {
 		return c, ErrQuorum
 	}
 	c.Version, _ = d.U16()
@@ -416,21 +454,29 @@ func DecodeCertificate(b []byte) (Certificate, error) {
 	n, err := d.U8()
 	size := VoteBytes
 	if string(magic) == "OMCFQG01" {
-		size = MaximumVoteBytes
+		size = GuardedVoteBytes
 	}
-	if err != nil || n > MaximumWitnesses || d.Remaining() != int(n)*size {
+	if err != nil || n == 0 || n > MaximumWitnesses || !replaced && d.Remaining() != int(n)*size {
 		return Certificate{}, ErrQuorum
 	}
 	c.Votes = make([]Vote, int(n))
 	for i := range c.Votes {
-		raw, _ := d.Fixed(size)
+		var raw []byte
+		if replaced {
+			raw, err = d.BytesField(MaximumVoteBytes)
+		} else {
+			raw, err = d.Fixed(size)
+		}
+		if err != nil {
+			return Certificate{}, err
+		}
 		c.Votes[i], err = DecodeVote(raw)
 		if err != nil {
 			return Certificate{}, err
 		}
 	}
-	if _, err := c.CanonicalBytes(); err != nil {
-		return Certificate{}, err
+	if raw, err := c.CanonicalBytes(); err != nil || !bytes.Equal(raw, b) {
+		return Certificate{}, ErrQuorum
 	}
 	return c, nil
 }
@@ -458,10 +504,36 @@ func (v Vote) VerifyGuard(s Scope, c Command) error {
 		return ErrQuorum
 	}
 	if s.Guard == ([32]byte{}) {
-		if v.GuardSeal != ([64]byte{}) {
+		if v.GuardSeal != ([64]byte{}) || v.Replacement != nil {
 			return ErrQuorum
 		}
 		return nil
 	}
+	if v.Replacement != nil && !s.ReplacementSignerAllowed(v.Witness) {
+		return ErrQuorum
+	}
+	if _, e := v.Principal(s.Guard); e != nil {
+		return e
+	}
 	return VoteGuardRequest(c, v.Witness).VerifySeal(s.Guard, v.GuardSeal)
+}
+
+func (v Vote) Principal(key [32]byte) ([32]byte, error) {
+	if v.Replacement == nil {
+		return v.Witness, nil
+	}
+	return v.Replacement.Principal(key, v.Witness)
+}
+
+// ReplacementSignerAllowed preserves the independent roles of the original scope.
+func (s Scope) ReplacementSignerAllowed(key [32]byte) bool {
+	if key == ([32]byte{}) || key == s.Guard || key == s.Owner || key == s.Controller {
+		return false
+	}
+	for _, member := range s.Witnesses {
+		if key == member {
+			return false
+		}
+	}
+	return true
 }

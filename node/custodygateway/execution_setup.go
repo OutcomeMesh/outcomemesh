@@ -70,6 +70,13 @@ func PrepareDeployment(p DeploymentPreparation) (wire.Deployment, error) {
 	d.MinimumRetainUntil = pair.A.RetainUntil
 	d.Authority = g.Assignment.Base.AuthorityPublicKey
 	d.Control = g.Assignment.Base.RemoteControlPublicKey
+	d.Guard = d.A.Guard
+	if d.B.Guard != ([32]byte{}) {
+		if d.Guard != ([32]byte{}) && d.Guard != d.B.Guard {
+			return d, ErrExecution
+		}
+		d.Guard = d.B.Guard
+	}
 	_, e = d.CanonicalBytes()
 	return d, e
 }
@@ -134,6 +141,11 @@ func (o *Owner) verifyDeployment(d wire.Deployment, pair cut.SourceHandoffPair) 
 	return nil
 }
 func (o *Owner) endorse(ctx context.Context, raw []byte) ([]byte, error) {
+	// The original deployment remains fixed across replacement; a successor
+	// never signs a new initial deployment using the retired identity.
+	if o.replacement != nil {
+		return nil, ErrExecution
+	}
 	d, pair, e := decodeEndorsement(raw)
 	if e != nil {
 		return nil, e
@@ -346,5 +358,8 @@ func (o *Owner) openExecution() error {
 		return e
 	}
 	o.execution = r
+	if o.replacement != nil && o.replacementRoleConflict(o.replacement.Request.Successor) {
+		return ErrExecution
+	}
 	return o.checkExecution()
 }

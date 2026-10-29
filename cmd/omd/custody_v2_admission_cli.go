@@ -19,6 +19,7 @@ import (
 	"github.com/outcomemesh/outcomemesh/core/types"
 	"github.com/outcomemesh/outcomemesh/node/custodyfence"
 	guardclient "github.com/outcomemesh/outcomemesh/node/custodyguard"
+	guard "github.com/outcomemesh/outcomemesh/node/custodyguard/guardwire"
 	v2 "github.com/outcomemesh/outcomemesh/node/custodyv2"
 )
 
@@ -44,6 +45,8 @@ func runCustodyV2Admission(ctx context.Context, args []string, out io.Writer) (r
 	}
 	flags := flag.NewFlagSet(args[0], flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
+	replacementPath := flags.String("replacement", "", "public replacement receipt; opens original witness history only")
+	replacementID := flags.String("replacement-id", "", "independently retained replacement artifact pin")
 	guardURL := flags.String("guard-url", "", "external guard endpoint; verification key comes from the signed policy")
 	mode := flags.String("mode", "review", "review or run")
 	action := flags.String("action", "", "genesis, inspect-genesis, inspect-history, admit-entry, close-entry, witness-create, witness-vote, witness-commit, witness-status, certificate")
@@ -101,6 +104,13 @@ func runCustodyV2Admission(ctx context.Context, args []string, out io.Writer) (r
 	}
 	for _, s := range selectors {
 		allowed[s] = true
+	}
+	if *action == "witness-vote" {
+		allowed["guard-url"] = true
+	}
+	if *action == "witness-vote" || *action == "witness-commit" || *action == "witness-status" {
+		allowed["replacement"] = true
+		allowed["replacement-id"] = true
 	}
 	for s := range present {
 		if !allowed[s] {
@@ -397,6 +407,28 @@ func runCustodyV2Admission(ctx context.Context, args []string, out io.Writer) (r
 			return e
 		}
 	}
+	var replacement *guard.ReplacementReceipt
+	if (*replacementPath == "") != (*replacementID == "") {
+		return v2.ErrAdmission
+	}
+	if *replacementPath != "" {
+		raw, err := load(*replacementPath, *replacementID, guard.ReplacementReceiptBytes)
+		if err != nil {
+			return err
+		}
+		r, err := guard.DecodeReplacementReceipt(raw)
+		if err != nil {
+			return err
+		}
+		principal, err := r.Principal(r.Guard, r.Request.Successor)
+		if err != nil || principal != signing {
+			return v2.ErrAdmission
+		}
+		if *action == "witness-vote" && r.Guard != v2.AdmissionGuard(entry) || *action == "witness-commit" && r.Guard != v2.AdmissionGuard(cert.Entry) {
+			return v2.ErrAdmission
+		}
+		replacement = &r
+	}
 	*output, e = custodyCommandOutput(*output)
 	if e != nil {
 		return e
@@ -415,6 +447,9 @@ func runCustodyV2Admission(ctx context.Context, args []string, out io.Writer) (r
 		return v2.ErrAdmission
 	}
 	public := map[string]any{"guard_url": *guardURL, "action": *action, "genesis_id": gid.String(), "genesis_descriptor_id": did.String(), "inputs": pins, "root": *root, "sign_key": *signKey, "witness": *witness, "sequence": *sequence, "head_id": *head, "pending_id": *pending, "out": *output, "coordinator_only": true, "execution_granted": false}
+	if replacement != nil {
+		public["replacement"] = replacement
+	}
 	reviewBytes, e := json.Marshal(public)
 	if e != nil {
 		return e
@@ -444,7 +479,11 @@ func runCustodyV2Admission(ctx context.Context, args []string, out io.Writer) (r
 	}
 	var key ed25519.PrivateKey
 	if signing != ([32]byte{}) {
-		key, e = witnessKey(*signKey, signing)
+		signer := signing
+		if replacement != nil {
+			signer = replacement.Request.Successor
+		}
+		key, e = witnessKey(*signKey, signer)
 		if e != nil {
 			return e
 		}
@@ -467,11 +506,23 @@ func runCustodyV2Admission(ctx context.Context, args []string, out io.Writer) (r
 		case "witness-create":
 			w, e = v2.CreateAdmissionWitness(*root, g, gid, key, enrollments...)
 		case "witness-vote":
-			w, e = v2.RecoverAdmissionVote(*root, g, gid, key, before, entry, enrollments...)
+			if replacement != nil {
+				w, e = v2.RecoverReplacementAdmissionVote(*root, g, gid, key, before, entry, *replacement, enrollments...)
+			} else {
+				w, e = v2.RecoverAdmissionVote(*root, g, gid, key, before, entry, enrollments...)
+			}
 		case "witness-commit":
-			w, e = v2.RecoverAdmissionCommit(*root, g, gid, key, before, cert, enrollments...)
+			if replacement != nil {
+				w, e = v2.RecoverReplacementAdmissionCommit(*root, g, gid, key, before, cert, *replacement, enrollments...)
+			} else {
+				w, e = v2.RecoverAdmissionCommit(*root, g, gid, key, before, cert, enrollments...)
+			}
 		case "witness-status":
-			w, e = v2.OpenAdmissionWitness(*root, g, gid, key, before, enrollments...)
+			if replacement != nil {
+				w, e = v2.OpenReplacementAdmissionWitness(*root, g, gid, key, before, *replacement, enrollments...)
+			} else {
+				w, e = v2.OpenAdmissionWitness(*root, g, gid, key, before, enrollments...)
+			}
 		}
 		if e != nil {
 			return e

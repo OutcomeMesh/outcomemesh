@@ -22,7 +22,7 @@ func (id Identity) ID() types.Hash {
 // private guard root. Omitting Revoker preserves legacy ConfigID bytes.
 func ValidateIdentity(c Config, id Identity) error {
 	b, err := json.Marshal(c)
-	if err != nil || c.validate() != nil || id.ID().IsZero() || c.Revoker == id.PublicKey || types.DomainHash(wire.Domain+"config", b) != id.ConfigID {
+	if err != nil || c.validate() != nil || id.ID().IsZero() || c.Revoker == id.PublicKey || c.Replacer == id.PublicKey || types.DomainHash(wire.Domain+"config", b) != id.ConfigID {
 		return ErrStore
 	}
 	for _, k := range c.Subjects {
@@ -56,11 +56,23 @@ func (s *Store) replay(b []byte) error {
 		if _, revoked := s.revoked[q.Subject]; err != nil || !s.allowed(q) || revoked || len(s.choices) >= int(s.config.Limit) {
 			return ErrStore
 		}
-		slot, _ := q.SlotID()
+		slot, _ := s.slotID(q)
 		if _, exists := s.choices[slot]; exists {
 			return ErrStore
 		}
 		s.choices[slot] = q
+		return nil
+	}
+	if len(b) == wire.ReplacementBytes {
+		q, err := wire.DecodeReplacement(b)
+		if err != nil || !s.replacementAllowed(q) || q.Before != s.position {
+			return ErrStore
+		}
+		if _, exists := s.replacements[q.Subject]; exists {
+			return ErrStore
+		}
+		s.replacements[q.Subject] = q
+		s.successors[q.Successor] = q.Subject
 		return nil
 	}
 	q, err := wire.DecodeRevocation(b)

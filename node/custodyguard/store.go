@@ -27,6 +27,7 @@ type Config struct {
 	Subjects [][32]byte
 	Limit    uint32
 	Revoker  [32]byte `json:",omitzero"`
+	Replacer [32]byte `json:",omitzero"`
 }
 type Identity struct {
 	PublicKey        [32]byte
@@ -39,29 +40,35 @@ type revokedSubject struct {
 	Before  Position
 }
 type Store struct {
-	observer           func(Position, wire.Request) error
-	revocationObserver func(Position, wire.Revocation) error
-	mu                 sync.Mutex
-	root               string
-	identity           Identity
-	config             Config
-	configBytes        []byte
-	key                ed25519.PrivateKey
-	lock               *os.File
-	position           Position
-	records            [][]byte
-	choices            map[types.Hash]wire.Request
-	revoked            map[[32]byte]revokedSubject
-	poisoned           bool
-	hook               func(string) error
+	observer            func(Position, wire.Request) error
+	revocationObserver  func(Position, wire.Revocation) error
+	replacementObserver func(Position, wire.Replacement) error
+	mu                  sync.Mutex
+	root                string
+	identity            Identity
+	config              Config
+	configBytes         []byte
+	key                 ed25519.PrivateKey
+	lock                *os.File
+	position            Position
+	records             [][]byte
+	choices             map[types.Hash]wire.Request
+	revoked             map[[32]byte]revokedSubject
+	replacements        map[[32]byte]wire.Replacement
+	successors          map[[32]byte][32]byte
+	poisoned            bool
+	hook                func(string) error
 }
 
 func (c Config) validate() error {
 	if c.Limit == 0 || c.Limit > MaximumChoices || len(c.Subjects) == 0 || len(c.Subjects) > MaximumSubjects {
 		return ErrStore
 	}
+	if c.Replacer != ([32]byte{}) && c.Revoker == ([32]byte{}) {
+		return ErrStore
+	}
 	for i, k := range c.Subjects {
-		if types.Hash(k).IsZero() || k == c.Revoker || i > 0 && bytes.Compare(c.Subjects[i-1][:], k[:]) >= 0 {
+		if types.Hash(k).IsZero() || k == c.Revoker || k == c.Replacer || i > 0 && bytes.Compare(c.Subjects[i-1][:], k[:]) >= 0 {
 			return ErrStore
 		}
 	}
@@ -108,7 +115,7 @@ func Create(root string, c Config) (s *Store, err error) {
 	if err = publish(filepath.Join(root, "key"), key); err != nil {
 		return nil, err
 	}
-	if bytes.Equal(c.Revoker[:], pub) {
+	if bytes.Equal(c.Revoker[:], pub) || bytes.Equal(c.Replacer[:], pub) {
 		return nil, ErrStore
 	}
 	for _, k := range c.Subjects {
@@ -140,7 +147,7 @@ func Create(root string, c Config) (s *Store, err error) {
 	if err = syncDir(filepath.Dir(root)); err != nil {
 		return nil, err
 	}
-	s = &Store{root: root, identity: id, config: c, configBytes: cb, key: append(ed25519.PrivateKey(nil), key...), lock: lock, choices: make(map[types.Hash]wire.Request), revoked: make(map[[32]byte]revokedSubject)}
+	s = newStoreState(root, id, c, cb, key, lock)
 	return s, nil
 }
 func (s *Store) Identity() Identity { return s.identity }
@@ -220,28 +227,17 @@ func open(root string, id Identity, p Position, attempt []byte) (s *Store, err e
 		return nil, err
 	}
 	var c Config
-	if strictJSON(cb, &c) != nil || c.validate() != nil || c.Revoker == id.PublicKey || types.DomainHash(wire.Domain+"config", cb) != id.ConfigID {
+	if strictJSON(cb, &c) != nil || ValidateIdentity(c, id) != nil || types.DomainHash(wire.Domain+"config", cb) != id.ConfigID {
 		return nil, ErrStore
 	}
-	s = &Store{root: root, identity: id, config: c, configBytes: cb, key: append(ed25519.PrivateKey(nil), key...), lock: lock, choices: make(map[types.Hash]wire.Request), revoked: make(map[[32]byte]revokedSubject)}
-	// Recovery attempts are authenticated even when no extra event was written.
-	if len(attempt) != 0 {
-		if len(attempt) == wire.RevocationBytes {
-			q, e := wire.DecodeRevocation(attempt)
-			if e != nil || !s.revocationAllowed(q) {
-				return s, ErrStore
-			}
-		} else {
-			q, e := wire.DecodeRequest(attempt)
-			if e != nil || !s.allowed(q) {
-				return s, ErrStore
-			}
-		}
-	}
+	s = newStoreState(root, id, c, cb, key, lock)
 	entries, err := os.ReadDir(filepath.Join(root, "events"))
 	limit := int(c.Limit)
 	if !types.Hash(c.Revoker).IsZero() {
 		limit += len(c.Subjects)
+	}
+	if c.Replacer != ([32]byte{}) {
+		limit += 2 * len(c.Subjects)
 	}
 	if err != nil || len(entries) > limit {
 		return s, ErrStore
@@ -252,7 +248,7 @@ func open(root string, id Identity, p Position, attempt []byte) (s *Store, err e
 		if ent.Name() != eventName(i+1) {
 			return s, ErrStore
 		}
-		b, e := privateRead(filepath.Join(root, "events", ent.Name()), wire.RevocationBytes)
+		b, e := privateRead(filepath.Join(root, "events", ent.Name()), wire.ReplacementBytes)
 		if e != nil {
 			return s, e
 		}
@@ -263,6 +259,11 @@ func open(root string, id Identity, p Position, attempt []byte) (s *Store, err e
 		}
 		s.position = next(s.position, b)
 		s.records = append(s.records, b)
+	}
+	// Validate against the fully replayed roster, including an enrolled successor.
+	// This authenticates attempts even when they did not append an extra event.
+	if len(attempt) != 0 && !s.validAttempt(attempt) {
+		return s, ErrStore
 	}
 	if s.position != p {
 		if len(attempt) == 0 || beforeLast != p || s.position.Sequence != p.Sequence+1 || !bytes.Equal(last, attempt) {
@@ -275,6 +276,9 @@ func open(root string, id Identity, p Position, attempt []byte) (s *Store, err e
 	return s, nil
 }
 func (s *Store) allowed(q wire.Request) bool {
+	if _, ok := s.successors[q.Subject]; ok {
+		return true
+	}
 	for _, k := range s.config.Subjects {
 		if q.Subject == k && k != s.identity.PublicKey {
 			return true
@@ -315,7 +319,7 @@ func (s *Store) check() error {
 		if ent.Name() != eventName(i+1) {
 			return ErrStore
 		}
-		b, e := privateRead(filepath.Join(s.root, "events", ent.Name()), wire.RevocationBytes)
+		b, e := privateRead(filepath.Join(s.root, "events", ent.Name()), wire.ReplacementBytes)
 		if e != nil || !bytes.Equal(b, s.records[i]) {
 			return ErrStore
 		}
@@ -341,9 +345,9 @@ func (s *Store) Choose(ctx context.Context, q wire.Request) (seal [64]byte, err 
 	if _, revoked := s.revoked[q.Subject]; !s.allowed(q) || revoked {
 		return seal, wire.ErrGuard
 	}
-	slot, _ := q.SlotID()
+	slot, _ := s.slotID(q)
 	prior, ok := s.choices[slot]
-	if ok && prior != q {
+	if ok && !s.sameChoice(prior, q) {
 		return seal, wire.ErrGuard
 	}
 	if !ok {

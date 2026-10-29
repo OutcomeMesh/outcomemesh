@@ -10,6 +10,7 @@ import (
 
 	"github.com/outcomemesh/outcomemesh/core/codec"
 	"github.com/outcomemesh/outcomemesh/core/types"
+	guard "github.com/outcomemesh/outcomemesh/node/custodyguard/guardwire"
 )
 
 const (
@@ -39,6 +40,7 @@ func (p Position) Valid() bool {
 }
 
 type Descriptor struct {
+	Guard                                                                     [32]byte
 	RootID, SourceID, GenesisID, GenesisDescriptorID, EnrollmentID, ObjectsID types.Hash
 	Gateway, Issuer                                                           [32]byte
 	Clients                                                                   [][32]byte
@@ -52,7 +54,14 @@ func (d Descriptor) body() ([]byte, error) {
 		return nil, ErrArtifact
 	}
 	e := codec.NewEncoder(512)
-	e.Fixed([]byte("OMCGDSC1"))
+	if d.Guard == ([32]byte{}) {
+		e.Fixed([]byte("OMCGDSC1"))
+	} else {
+		if d.Guard == d.Gateway || d.Guard == d.Issuer {
+			return nil, ErrArtifact
+		}
+		e.Fixed([]byte("OMCGDSG1"))
+	}
 	for _, h := range []types.Hash{d.RootID, d.SourceID, d.GenesisID, d.GenesisDescriptorID, d.EnrollmentID, d.ObjectsID} {
 		e.Fixed(h[:])
 	}
@@ -63,10 +72,13 @@ func (d Descriptor) body() ([]byte, error) {
 	e.U32(d.EventLimit)
 	e.U8(uint8(len(d.Clients)))
 	for i, k := range d.Clients {
-		if types.Hash(k).IsZero() || k == d.Gateway || k == d.Issuer || i > 0 && bytes.Compare(d.Clients[i-1][:], k[:]) >= 0 {
+		if types.Hash(k).IsZero() || k == d.Gateway || k == d.Issuer || k == d.Guard || i > 0 && bytes.Compare(d.Clients[i-1][:], k[:]) >= 0 {
 			return nil, ErrArtifact
 		}
 		e.Fixed(k[:])
+	}
+	if d.Guard != ([32]byte{}) {
+		e.Fixed(d.Guard[:])
 	}
 	return e.Bytes(), nil
 }
@@ -170,10 +182,12 @@ func (q Request) Authorize(d Descriptor) error {
 }
 
 type Response struct {
-	Request   Request
-	SourceID  types.Hash
-	Data      []byte
-	Signature [64]byte
+	Replacement *guard.ReplacementReceipt
+	GuardSeal   [64]byte
+	Request     Request
+	SourceID    types.Hash
+	Data        []byte
+	Signature   [64]byte
 }
 
 func (r Response) body() ([]byte, error) {
@@ -186,10 +200,29 @@ func (r Response) body() ([]byte, error) {
 	e2.Fixed(q)
 	e2.Fixed(r.SourceID[:])
 	e2.BytesField(r.Data)
+	if r.Replacement != nil {
+		b, err := r.Replacement.CanonicalBytes()
+		if err != nil {
+			return nil, err
+		}
+		// The replacement certificate is part of the new response's signed body.
+		e2.Fixed(b)
+		b = e2.Bytes()
+		copy(b[:8], []byte("OMCGRSR1"))
+		return b, nil
+	}
 	return e2.Bytes(), nil
 }
 func (r Response) Sign(d Descriptor, key ed25519.PrivateKey) (Response, error) {
-	if len(key) != ed25519.PrivateKeySize || !bytes.Equal(key.Public().(ed25519.PublicKey), d.Gateway[:]) || r.Request.Authorize(d) != nil || r.SourceID != d.SourceID {
+	signer := d.Gateway
+	if r.Replacement != nil {
+		principal, err := r.Replacement.Principal(d.Guard, r.Replacement.Request.Successor)
+		if err != nil || principal != d.Gateway {
+			return Response{}, ErrArtifact
+		}
+		signer = r.Replacement.Request.Successor
+	}
+	if len(key) != ed25519.PrivateKeySize || !bytes.Equal(key.Public().(ed25519.PublicKey), signer[:]) || r.Request.Authorize(d) != nil || r.SourceID != d.SourceID {
 		return Response{}, ErrArtifact
 	}
 	b, e := r.body()
@@ -205,7 +238,16 @@ func (r Response) CanonicalBytes() ([]byte, error) {
 	if e != nil {
 		return nil, e
 	}
-	return append(b, r.Signature[:]...), nil
+	raw := append(b, r.Signature[:]...)
+	if r.GuardSeal != ([64]byte{}) {
+		if r.Replacement != nil {
+			copy(raw[:8], []byte("OMCGRSG2"))
+		} else {
+			copy(raw[:8], []byte("OMCGRSG1"))
+		}
+		raw = append(raw, r.GuardSeal[:]...)
+	}
+	return raw, nil
 }
 func (r Response) Verify(d Descriptor, q Request) error {
 	want, e := q.CanonicalBytes()
@@ -215,10 +257,43 @@ func (r Response) Verify(d Descriptor, q Request) error {
 		return ErrArtifact
 	}
 	h := types.DomainHash(Domain+"response/sign", b)
-	if !ed25519.Verify(d.Gateway[:], h[:], r.Signature[:]) {
+	signer := d.Gateway
+	if r.Replacement != nil {
+		principal, err := r.Replacement.Principal(d.Guard, r.Replacement.Request.Successor)
+		if err != nil || principal != d.Gateway {
+			return ErrArtifact
+		}
+		signer = r.Replacement.Request.Successor
+	}
+	if !ed25519.Verify(signer[:], h[:], r.Signature[:]) {
+		return ErrArtifact
+	}
+	if d.Guard != ([32]byte{}) {
+		q, err := r.GuardRequest(d)
+		if err != nil || q.VerifySeal(d.Guard, r.GuardSeal) != nil {
+			return ErrArtifact
+		}
+	} else if r.Replacement != nil || r.GuardSeal != ([64]byte{}) {
 		return ErrArtifact
 	}
 	return nil
+}
+
+func (r Response) GuardRequest(d Descriptor) (guard.Request, error) {
+	r.GuardSeal = [64]byte{}
+	b, err := r.CanonicalBytes()
+	if err != nil {
+		return guard.Request{}, err
+	}
+	signer := d.Gateway
+	if r.Replacement != nil {
+		principal, err := r.Replacement.Principal(d.Guard, r.Replacement.Request.Successor)
+		if err != nil || principal != d.Gateway {
+			return guard.Request{}, ErrArtifact
+		}
+		signer = r.Replacement.Request.Successor
+	}
+	return guard.Request{Kind: guard.Gateway, Subject: signer, Namespace: r.Request.DescriptorID, Slot: r.Request.Before.Sequence, Choice: types.DomainHash(guard.Domain+"gateway-response", b)}, nil
 }
 func (r Response) Position() (Position, error) {
 	b, e := r.body()
@@ -287,6 +362,12 @@ func DecodeDescriptor(raw []byte) (Descriptor, error) {
 	for i := range d.Clients {
 		r.fixed(d.Clients[i][:])
 	}
+	if string(magic[:]) == "OMCGDSG1" {
+		r.fixed(d.Guard[:])
+		if d.Guard == ([32]byte{}) {
+			return Descriptor{}, ErrArtifact
+		}
+	}
 	r.fixed(d.Signature[:])
 	b, e := d.CanonicalBytes()
 	if r.err != nil || e != nil || !bytes.Equal(b, raw) {
@@ -323,7 +404,9 @@ func DecodeResponse(raw []byte) (Response, error) {
 	}
 	d := codec.NewDecoder(raw)
 	magic, e := d.Fixed(8)
-	if e != nil || string(magic) != "OMCGRSP1" {
+	replaced := string(magic) == "OMCGRSR1" || string(magic) == "OMCGRSG2"
+	sealed := string(magic) == "OMCGRSG1" || string(magic) == "OMCGRSG2"
+	if e != nil || string(magic) != "OMCGRSP1" && !replaced && !sealed {
 		return r, ErrArtifact
 	}
 	q, e := d.Fixed(MaximumRequestBytes)
@@ -343,11 +426,32 @@ func DecodeResponse(raw []byte) (Response, error) {
 	if e != nil {
 		return r, e
 	}
+	if replaced {
+		b, err := d.Fixed(guard.ReplacementReceiptBytes)
+		if err != nil {
+			return r, err
+		}
+		proof, err := guard.DecodeReplacementReceipt(b)
+		if err != nil {
+			return r, err
+		}
+		r.Replacement = &proof
+	}
 	sig, e := d.Fixed(64)
 	if e != nil {
 		return r, e
 	}
 	copy(r.Signature[:], sig)
+	if sealed {
+		b, err := d.Fixed(guard.SealBytes)
+		if err != nil {
+			return r, err
+		}
+		copy(r.GuardSeal[:], b)
+		if r.GuardSeal == ([64]byte{}) {
+			return Response{}, ErrArtifact
+		}
+	}
 	b, e := r.CanonicalBytes()
 	if e != nil || !bytes.Equal(b, raw) {
 		return Response{}, ErrArtifact

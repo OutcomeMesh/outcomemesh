@@ -15,12 +15,13 @@ import (
 )
 
 type processSpec struct {
-	Root              string
-	Identity          Identity
-	Position          Position
-	Attempt           *wire.Request
-	RevocationAttempt *wire.Revocation
-	PauseRevocation   bool
+	Root               string
+	Identity           Identity
+	Position           Position
+	Attempt            *wire.Request
+	RevocationAttempt  *wire.Revocation
+	PauseRevocation    bool
+	ReplacementAttempt *wire.Replacement
 }
 type processNotice struct {
 	Persisted bool
@@ -39,7 +40,9 @@ func TestGuardProcessHelper(t *testing.T) {
 	}
 	var s *Store
 	var e error
-	if spec.RevocationAttempt != nil {
+	if spec.ReplacementAttempt != nil {
+		s, e = RecoverReplacement(spec.Root, spec.Identity, spec.Position, *spec.ReplacementAttempt)
+	} else if spec.RevocationAttempt != nil {
 		s, e = RecoverRevocation(spec.Root, spec.Identity, spec.Position, *spec.RevocationAttempt)
 	} else {
 		s, e = Open(spec.Root, spec.Identity, spec.Position, spec.Attempt)
@@ -65,6 +68,7 @@ func TestGuardProcessHelper(t *testing.T) {
 			return nil
 		}
 	}
+	s.SetReplacementObserver(func(p Position, _ wire.Replacement) error { return out.Encode(processNotice{Position: p}) })
 	s.SetRevocationObserver(func(p Position, _ wire.Revocation) error { return out.Encode(processNotice{Position: p}) })
 	s.SetObserver(func(p Position, _ wire.Request) error { return out.Encode(processNotice{Position: p}) })
 	if e = out.Encode(processNotice{Address: l.Addr().String()}); e != nil {
@@ -192,6 +196,70 @@ func TestGuardProcessKilledAfterRevocationPersistence(t *testing.T) {
 		t.Fatal("cold exact receipt", e)
 	}
 	if e = decoder.Decode(&notice); e != nil || notice.Position.Sequence != 1 {
+		t.Fatal(e)
+	}
+	if e = child.Process.Kill(); e != nil {
+		t.Fatal(e)
+	}
+	_ = child.Wait()
+}
+
+func TestGuardProcessKilledAfterReplacementPersistence(t *testing.T) {
+	if testing.Short() {
+		t.Skip("subprocess acceptance")
+	}
+	s := replaceableStore(t, 4)
+	q := replacementRequest(t, s, 1, 80)
+	id, root := s.Identity(), s.root
+	s.Close()
+	client, child, decoder := startGuardProcess(t, processSpec{Root: root, Identity: id, Position: q.Before, PauseRevocation: true})
+	done := make(chan error, 1)
+	go func() { _, e := client.Replace(t.Context(), q); done <- e }()
+	var notice processNotice
+	if e := decoder.Decode(&notice); e != nil || !notice.Persisted {
+		t.Fatal("persistence barrier", e)
+	}
+	if e := child.Process.Kill(); e != nil {
+		t.Fatal(e)
+	}
+	_ = child.Wait()
+	if e := <-done; e == nil {
+		t.Fatal("kill before reply reported success")
+	}
+	client, child, decoder = startGuardProcess(t, processSpec{Root: root, Identity: id, Position: q.Before, ReplacementAttempt: &q})
+	r, e := wire.ObtainReplacement(t.Context(), client, id.PublicKey, id.ID(), q)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e = decoder.Decode(&notice); e != nil || notice.Position.Sequence != q.Before.Sequence+1 {
+		t.Fatal("durable replacement cursor", e)
+	}
+	old := request(t, "revoked copy")
+	if _, e = client.Choose(t.Context(), old); e == nil {
+		t.Fatal("old key revived")
+	}
+	fresh := old
+	fresh.Subject = subject(80)
+	fresh, e = fresh.Sign(testKey(80))
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, e = client.Choose(t.Context(), fresh); e != nil {
+		t.Fatal(e)
+	}
+	if e = decoder.Decode(&notice); e != nil {
+		t.Fatal(e)
+	}
+	if e = child.Process.Kill(); e != nil {
+		t.Fatal(e)
+	}
+	_ = child.Wait()
+	client, child, decoder = startGuardProcess(t, processSpec{Root: root, Identity: id, Position: notice.Position})
+	again, e := client.Replace(t.Context(), q)
+	if e != nil || again != r {
+		t.Fatal("cold replacement retry", e)
+	}
+	if e = decoder.Decode(&notice); e != nil {
 		t.Fatal(e)
 	}
 	if e = child.Process.Kill(); e != nil {

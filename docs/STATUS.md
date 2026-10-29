@@ -10,6 +10,30 @@ Full planned production readiness is approximately **44/100**, using the weighte
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
 
+## 2026-10-29: replace revoked custody signers without resetting obligations
+
+[Bounded key replacement](CUSTODY_KEY_REPLACEMENT.md) now enrolls one successor
+for a permanently revoked subject using successor consent, offline authorization
+and an exact external guard cursor. The guard retains the original logical
+subject, choices and lifetime budget. The successor can itself be permanently
+revoked; there is no second-generation rotation or un-revoke operation.
+
+Witness votes and observations carry the signed replacement receipt. Quorums
+count original members, so old/new keys cannot double a vote. Admission recovery
+opens the original genesis/enrollment/root and preserves spent/pending accounting.
+Profile-5 service replacement installs one private signer file in the original
+root, retaining descriptor, deployment, source identity and execution history.
+Service descriptors must pin the guard from creation; their outer responses now
+require independent seals as well as their result/Serve effects. Existing legacy
+descriptors do not silently gain this feature.
+
+Reviewed CLI covers successor proposal, offline authorization, delivery,
+inspection, original witness recovery, service activation, lost replacement
+replies and successor revocation. Unknown source outcomes and lost private
+sessions stay held after replacement. Next: independent guard deployment and
+incident settlement for held work, then further key generations and long-retention
+recovery rules. Readiness remains **44/100**; the external launch gates stay open.
+
 ## 2026-10-29: Go 1.27.3 and packaged pre-alpha releases
 
 Go 1.27.3 is now the minimum supported toolchain and the compiler used for

@@ -275,6 +275,7 @@ func (o *Owner) executionEffect(ctx context.Context, c v2.Context, b v2.Admissio
 	if e != nil {
 		return wire.Effect{}, e
 	}
+	ef.Replacement = o.replacementCopy()
 	if key := o.execution.deployment.Guard; key != ([32]byte{}) {
 		q, e := ef.GuardRequest()
 		if e != nil {

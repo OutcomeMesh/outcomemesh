@@ -22,6 +22,10 @@ test-race:
 	GO="$(GO)" python3 scripts/ci.py all
 
 test-fuzz-smoke:
+	$(GO) test ./node/custodyguard/guardwire -run '^$$' -fuzz '^FuzzGuardReplacementCodecs$$' -fuzztime=$(FUZZTIME)
+	$(GO) test ./node/custodyfence/witnesswire -run '^$$' -fuzz '^FuzzReplacementWitnessCodecs$$' -fuzztime=$(FUZZTIME)
+	$(GO) test ./node/custodygateway/gatewaywire -run '^$$' -fuzz '^FuzzReplacementGatewayCodecs$$' -fuzztime=$(FUZZTIME)
+	$(GO) test ./node/custodyv2 -run '^$$' -fuzz '^FuzzReplacementAdmissionCodecs$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyv2 -run '^$$' -fuzz '^FuzzGuardedProofCodecs$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyv2 -run '^$$' -fuzz '^FuzzAdmissionDecoders$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyguard -run '^$$' -fuzz '^FuzzGuardRequest$$' -fuzztime=$(FUZZTIME)

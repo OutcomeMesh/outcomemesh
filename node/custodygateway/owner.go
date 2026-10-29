@@ -37,6 +37,10 @@ type Config struct {
 	Objects             string
 }
 type Owner struct {
+	replacement       *guard.ReplacementReceipt
+	replacementBytes  []byte
+	replacementStamp  types.Hash
+	originalKeyHash   types.Hash
 	guard             guard.Chooser
 	execution         *executionRuntime
 	executionHook     func(string) error
@@ -173,26 +177,8 @@ func validate(c Config, id Identity) (wire.Descriptor, v2.AdmissionGenesis, v2.E
 	} else if c.Objects != "" || !d.ObjectsID.IsZero() {
 		return d, g, b, h, ErrOwner
 	}
-	// The freshly generated service identity cannot reuse any participant or
-	// witness key from either the retired assignment or selected successor.
-	a := g.Assignment.Base
-	old := g.Import.Evidence.Assignment
-	roles := [][32]byte{a.AuthorityPublicKey, a.RemoteControlPublicKey, a.RemoteTransportPublicKey, a.ReplicaPublicKey, old.AuthorityPublicKey, old.RemoteControlPublicKey, old.RemoteTransportPublicKey, old.ReplicaPublicKey}
-	roles = append(roles, b.Registry.Witnesses...)
-	roles = append(roles, g.Assignment.Policy.Witnesses...)
-	roles = append(roles, a.Auditors...)
-	roles = append(roles, old.Auditors...)
-	roles = append(roles, g.CustodyPolicy.TrustedAuditors...)
-	for _, v := range a.Consumers {
-		roles = append(roles, v.PublicKey)
-	}
-	for _, v := range old.Consumers {
-		roles = append(roles, v.PublicKey)
-	}
-	for _, k := range roles {
-		if d.Gateway == k {
-			return d, g, b, h, ErrOwner
-		}
+	if gatewayRoleConflict(g, b, d.Gateway) {
+		return d, g, b, h, ErrOwner
 	}
 	return d, g, b, h, nil
 }
@@ -290,6 +276,10 @@ func Open(root string, descriptorID types.Hash, pin wire.Position, recoverReques
 	if err != nil || len(o.key) != ed25519.PrivateKeySize || !bytes.Equal(ed25519.NewKeyFromSeed(o.key[:32]), o.key) || !bytes.Equal(o.key.Public().(ed25519.PublicKey), o.identity.PublicKey[:]) {
 		return nil, ErrOwner
 	}
+	o.originalKeyHash = types.DomainHash(wire.Domain+"original-key", o.key)
+	if err = o.loadReplacement(); err != nil {
+		return nil, err
+	}
 	if _, err = PlacementID(filepath.Join(root, "events"), true); err != nil {
 		return nil, err
 	}
@@ -368,8 +358,11 @@ func (o *Owner) check() error {
 	}
 	key, e := privateRead(filepath.Join(o.root, "key"), ed25519.PrivateKeySize)
 	defer clear(key)
-	if e != nil || !bytes.Equal(key, o.key) {
+	if e != nil || types.DomainHash(wire.Domain+"original-key", key) != o.originalKeyHash {
 		return ErrOwner
+	}
+	if e = o.checkReplacement(); e != nil {
+		return e
 	}
 	if _, e = PlacementID(filepath.Join(o.root, "events"), true); e != nil {
 		return e
@@ -452,6 +445,9 @@ func (o *Owner) execute(ctx context.Context, q wire.Request, payload []byte) ([]
 	if o.revoked || q.Before != o.position {
 		return nil, wire.ErrAccess
 	}
+	if o.descriptor.Guard != ([32]byte{}) && o.guard == nil {
+		return nil, wire.ErrAccess
+	}
 	// Reserve one final revocation slot and a bounded empty revocation response.
 	if q.Kind != wire.Revoke && (o.position.Sequence+1 >= uint64(o.descriptor.EventLimit) || o.journalBytes+wire.MaximumResponseBytes+1024 > wire.MaximumJournalBytes) {
 		return nil, wire.ErrAccess
@@ -485,9 +481,25 @@ func (o *Owner) execute(ctx context.Context, q wire.Request, payload []byte) ([]
 	if e = o.check(); e != nil {
 		return nil, e
 	}
-	r, e := (wire.Response{Request: q, SourceID: o.descriptor.SourceID, Data: data}).Sign(o.descriptor, o.key)
+	r, e := (wire.Response{Request: q, SourceID: o.descriptor.SourceID, Data: data, Replacement: o.replacementCopy()}).Sign(o.descriptor, o.key)
 	if e != nil {
 		return nil, e
+	}
+	if o.descriptor.Guard != ([32]byte{}) {
+		request, err := r.GuardRequest(o.descriptor)
+		if err != nil {
+			return nil, err
+		}
+		r.GuardSeal, err = guard.Obtain(ctx, o.guard, o.descriptor.Guard, request, o.key)
+		if err != nil {
+			return nil, err
+		}
+		if err = o.check(); err != nil {
+			return nil, err
+		}
+		if err = ctx.Err(); err != nil {
+			return nil, err
+		}
 	}
 	raw, e := r.CanonicalBytes()
 	if e != nil || o.journalBytes+len(raw) > wire.MaximumJournalBytes {
@@ -523,6 +535,7 @@ func (o *Owner) Close() error {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	clear(o.key)
+	clear(o.replacementBytes)
 	if o.execution != nil {
 		clear(o.execution.keys.Replica)
 		clear(o.execution.keys.Control)
@@ -553,7 +566,7 @@ func DecodeConfig(raw []byte) (Config, error) {
 // DraftDescriptor derives public IDs from complete selected evidence and local
 // metadata. It neither opens a source owner nor loads the service private key.
 // Issuer signing and Configure are separate reviewed steps.
-func DraftDescriptor(root string, c Config, participantUID uint32, clients [][32]byte, eventLimit uint32) (wire.Descriptor, error) {
+func DraftDescriptor(root string, c Config, participantUID uint32, clients [][32]byte, eventLimit uint32, guards ...[32]byte) (wire.Descriptor, error) {
 	var d wire.Descriptor
 	id, e := ReadIdentity(root)
 	if e != nil {
@@ -585,8 +598,37 @@ func DraftDescriptor(root string, c Config, participantUID uint32, clients [][32
 		return d, ErrOwner
 	}
 	d = wire.Descriptor{RootID: id.RootID, SourceID: hid, GenesisID: c.Pins.GenesisID, GenesisDescriptorID: c.Pins.GenesisDescriptorID, EnrollmentID: c.Pins.EnrollmentID, ObjectsID: objectsID, Gateway: id.PublicKey, Issuer: b.Registry.Issuer, Clients: append([][32]byte(nil), clients...), OwnerUID: uint32(os.Geteuid()), ParticipantUID: participantUID, EventLimit: eventLimit}
+	if len(guards) > 1 {
+		return wire.Descriptor{}, ErrOwner
+	}
+	if len(guards) == 1 {
+		d.Guard = guards[0]
+	}
 	return d, nil
 }
 
 // SetGuard selects delivery only. The signed policy pins the verification key.
 func (w *Owner) SetGuard(client guard.Chooser) { w.mu.Lock(); defer w.mu.Unlock(); w.guard = client }
+
+func gatewayRoleConflict(g v2.AdmissionGenesis, b v2.EnrollmentBinding, key [32]byte) bool {
+	a := g.Assignment.Base
+	old := g.Import.Evidence.Assignment
+	roles := [][32]byte{a.AuthorityPublicKey, a.RemoteControlPublicKey, a.RemoteTransportPublicKey, a.ReplicaPublicKey, old.AuthorityPublicKey, old.RemoteControlPublicKey, old.RemoteTransportPublicKey, old.ReplicaPublicKey}
+	roles = append(roles, b.Registry.Witnesses...)
+	roles = append(roles, g.Assignment.Policy.Witnesses...)
+	roles = append(roles, a.Auditors...)
+	roles = append(roles, old.Auditors...)
+	roles = append(roles, g.CustodyPolicy.TrustedAuditors...)
+	for _, v := range a.Consumers {
+		roles = append(roles, v.PublicKey)
+	}
+	for _, v := range old.Consumers {
+		roles = append(roles, v.PublicKey)
+	}
+	for _, k := range roles {
+		if key == k {
+			return true
+		}
+	}
+	return false
+}

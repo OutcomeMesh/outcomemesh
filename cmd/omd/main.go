@@ -140,6 +140,10 @@ func run(arguments []string) error {
 		return runCustodyRelayCLI(arguments)
 	case custodyGuardRevokeCommand:
 		return runCustodyGuardRevokeCLI(arguments)
+	case custodyGuardReplaceCommand:
+		return runCustodyGuardReplaceCLI(arguments)
+	case custodyGatewayReplaceCommand:
+		return runCustodyGatewayReplaceCLI(arguments)
 	case custodyGuardCommand:
 		return runCustodyGuardCLI(arguments)
 	case custodyGatewayCommand:
@@ -1630,6 +1634,8 @@ func defaultDevelopmentAddress() types.Address {
 func printUsage() {
 	fmt.Println("version: omd version [--json]")
 	fmt.Printf("custody guard revocation: omd %s --action <sign|send|inspect> --mode <review|run> [flags]\n", custodyGuardRevokeCommand)
+	fmt.Printf("custody guard replacement: omd %s --action <propose|authorize|send|inspect> --mode <review|run> [flags]\n", custodyGuardReplaceCommand)
+	fmt.Printf("custody service replacement: omd %s --mode <review|run> [flags]\n", custodyGatewayReplaceCommand)
 	fmt.Printf("independent custody guard: omd %s --action <create|serve> --mode <review|run> [flags]\n", custodyGuardCommand)
 	fmt.Println("OutcomeMesh standalone development node")
 	fmt.Printf("experimental independent witnesses: omd <%s|%s|%s|%s> [flags]; review by default\n", witnessServerCommand, witnessClientCommand, witnessRequestCommand, witnessQuorumCommand)

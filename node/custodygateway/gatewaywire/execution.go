@@ -11,7 +11,8 @@ import (
 
 const Runtime uint8 = 4
 const MaximumDeploymentBytes = 4096
-const MaximumEffectBytes = EffectBytes + guard.SealBytes
+const GuardedEffectBytes = EffectBytes + guard.SealBytes
+const MaximumEffectBytes = GuardedEffectBytes + guard.ReplacementReceiptBytes
 const EffectBytes = 8 + 1 + 5*32 + 8 + 32 + 8 + 32 + 64
 const MaximumRuntimePayloadBytes = 16 << 20
 const MaximumServiceRequestBytes = MaximumRuntimePayloadBytes + MaximumRequestBytes + 32
@@ -36,7 +37,7 @@ func (p Deployment) body() ([]byte, error) {
 		return nil, ErrArtifact
 	}
 	for _, d := range []Descriptor{p.A, p.B} {
-		if d.GenesisID != p.GenesisID || d.GenesisDescriptorID != p.GenesisDescriptorID || d.EnrollmentID != p.EnrollmentID {
+		if d.GenesisID != p.GenesisID || d.GenesisDescriptorID != p.GenesisDescriptorID || d.EnrollmentID != p.EnrollmentID || d.Guard != ([32]byte{}) && d.Guard != p.Guard {
 			return nil, ErrArtifact
 		}
 	}
@@ -206,6 +207,7 @@ func DecodeDeployment(b []byte) (Deployment, error) {
 // Effect is historical evidence of one completed typed operation. A fresh
 // service signature, job and full admission binding exclude bare old role keys.
 type Effect struct {
+	Replacement                                               *guard.ReplacementReceipt
 	GuardSeal                                                 [64]byte
 	Kind                                                      uint8
 	DeploymentID, ScopeID, AdmissionID, BindingID, ArtifactID types.Hash
@@ -263,6 +265,21 @@ func (e Effect) CanonicalBytes() ([]byte, error) {
 		return nil, ErrArtifact
 	}
 	raw := append(b, e.Signature[:]...)
+	if e.Replacement != nil {
+		proof, err := e.Replacement.CanonicalBytes()
+		if err != nil || e.Replacement.Request.Successor != e.Signer {
+			return nil, ErrArtifact
+		}
+		copy(raw[:8], []byte("OMCGEFR1"))
+		if e.GuardSeal != ([64]byte{}) {
+			copy(raw[:8], []byte("OMCGEFR2"))
+		}
+		raw = append(raw, proof...)
+		if e.GuardSeal != ([64]byte{}) {
+			raw = append(raw, e.GuardSeal[:]...)
+		}
+		return raw, nil
+	}
 	if e.GuardSeal != ([64]byte{}) {
 		copy(raw[:8], []byte("OMCGEFG1"))
 		raw = append(raw, e.GuardSeal[:]...)
@@ -271,7 +288,7 @@ func (e Effect) CanonicalBytes() ([]byte, error) {
 }
 func DecodeEffect(raw []byte) (Effect, error) {
 	var e Effect
-	if len(raw) != EffectBytes && len(raw) != MaximumEffectBytes {
+	if len(raw) != EffectBytes && len(raw) != GuardedEffectBytes && len(raw) != EffectBytes+guard.ReplacementReceiptBytes && len(raw) != MaximumEffectBytes {
 		return e, ErrArtifact
 	}
 	r := reader{d: codec.NewDecoder(raw)}
@@ -286,12 +303,21 @@ func DecodeEffect(raw []byte) (Effect, error) {
 	e.CheckedAt = r.u64()
 	r.fixed(e.Signer[:])
 	r.fixed(e.Signature[:])
-	if string(magic[:]) == "OMCGEFG1" {
+	if string(magic[:]) == "OMCGEFR1" || string(magic[:]) == "OMCGEFR2" {
+		var b [guard.ReplacementReceiptBytes]byte
+		r.fixed(b[:])
+		proof, err := guard.DecodeReplacementReceipt(b[:])
+		if err != nil {
+			return Effect{}, err
+		}
+		e.Replacement = &proof
+	}
+	if string(magic[:]) == "OMCGEFG1" || string(magic[:]) == "OMCGEFR2" {
 		r.fixed(e.GuardSeal[:])
 		if e.GuardSeal == ([64]byte{}) {
 			return Effect{}, ErrArtifact
 		}
-	} else if string(magic[:]) != "OMCGEFF5" {
+	} else if string(magic[:]) != "OMCGEFF5" && string(magic[:]) != "OMCGEFR1" {
 		return Effect{}, ErrArtifact
 	}
 	b, err := e.CanonicalBytes()
@@ -356,14 +382,24 @@ func (e Effect) GuardRequest() (guard.Request, error) {
 }
 func (e Effect) VerifyGuard(key [32]byte) error {
 	if key == ([32]byte{}) {
-		if e.GuardSeal != ([64]byte{}) {
+		if e.GuardSeal != ([64]byte{}) || e.Replacement != nil {
 			return ErrArtifact
 		}
 		return nil
+	}
+	if _, err := e.Principal(key); err != nil {
+		return err
 	}
 	q, err := e.GuardRequest()
 	if err != nil {
 		return err
 	}
 	return q.VerifySeal(key, e.GuardSeal)
+}
+
+func (e Effect) Principal(key [32]byte) ([32]byte, error) {
+	if e.Replacement == nil {
+		return e.Signer, nil
+	}
+	return e.Replacement.Principal(key, e.Signer)
 }

@@ -32,6 +32,7 @@ var ErrAdmissionStorage = errors.New("custody V2 admission journal capacity rese
 // not protect raw keys, rolled-back backups or deliberate re-enrollment.
 // This coordinator does not activate admission in raw V2 execution runtimes.
 type AdmissionWitness struct {
+	replacement        *guard.ReplacementReceipt
 	guard              guard.Chooser
 	mu                 sync.Mutex
 	path               string
@@ -210,6 +211,9 @@ func RecoverAdmissionCommit(path string, g AdmissionGenesis, pin types.Hash, key
 	return openAdmissionWitness(path, g, pin, key, enrollment, func(w *AdmissionWitness) error { return w.canCommitAt(before, attempt, raw) })
 }
 func openAdmissionWitness(path string, g AdmissionGenesis, pin types.Hash, key ed25519.PrivateKey, enrollment []EnrollmentBinding, accept func(*AdmissionWitness) error) (_ *AdmissionWitness, returnErr error) {
+	return openAdmissionMember(path, g, pin, key, enrollment, nil, accept)
+}
+func openAdmissionMember(path string, g AdmissionGenesis, pin types.Hash, key ed25519.PrivateKey, enrollment []EnrollmentBinding, replacement *guard.ReplacementReceipt, accept func(*AdmissionWitness) error) (_ *AdmissionWitness, returnErr error) {
 	enrolled, e := importedEnrollment(g, enrollment)
 	if e != nil {
 		return nil, e
@@ -227,6 +231,21 @@ func openAdmissionWitness(path string, g AdmissionGenesis, pin types.Hash, key e
 		return nil, e
 	}
 	pub, e := admissionMember(g, key)
+	if replacement != nil {
+		if !validKey(key) {
+			return nil, ErrAdmission
+		}
+		var signer [32]byte
+		copy(signer[:], key[32:])
+		pub, e = replacement.Principal(replacement.Guard, signer)
+		found := false
+		for _, member := range g.Assignment.Policy.Witnesses {
+			found = found || member == pub
+		}
+		if !found {
+			return nil, ErrAdmission
+		}
+	}
 	if e != nil {
 		return nil, e
 	}
@@ -247,6 +266,10 @@ func openAdmissionWitness(path string, g AdmissionGenesis, pin types.Hash, key e
 		return nil, e
 	}
 	w := &AdmissionWitness{path: path, genesis: g, public: pub, key: append(ed25519.PrivateKey(nil), key...), lock: lock, rootInfo: info, state: state, files: make(map[string][]byte)}
+	if replacement != nil {
+		r := *replacement
+		w.replacement = &r
+	}
 	defer func() {
 		if returnErr != nil {
 			clear(w.key)
@@ -387,6 +410,14 @@ func (w *AdmissionWitness) VoteAt(before custodyfence.WitnessPin, entry Admissio
 	if e := w.state.ValidateNext(entry); e != nil {
 		return AdmissionVote{}, e
 	}
+	if w.replacement != nil {
+		var signer [32]byte
+		copy(signer[:], w.key[32:])
+		principal, err := w.replacement.Principal(AdmissionGuard(entry), signer)
+		if err != nil || principal != w.public || !ReplacementRoleAllowed(entry.Context, signer) {
+			return AdmissionVote{}, ErrAdmission
+		}
+	}
 	name := admissionRecordName(entry.ExpectedSequence+1, "vote")
 	if e := w.capacity(entry, name, len(raw), true); e != nil {
 		return AdmissionVote{}, e
@@ -405,12 +436,22 @@ func (w *AdmissionWitness) VoteAt(before custodyfence.WitnessPin, entry Admissio
 		return AdmissionVote{}, e
 	}
 	if key := AdmissionGuard(entry); key != ([32]byte{}) {
+		if w.replacement != nil {
+			r := *w.replacement
+			principal, err := r.Principal(key, v.Witness)
+			if err != nil || principal != w.public {
+				return AdmissionVote{}, ErrAdmission
+			}
+			v.Replacement = &r
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		v.GuardSeal, e = guard.Obtain(ctx, w.guard, key, AdmissionGuardRequest(entry, w.public), w.key)
+		v.GuardSeal, e = guard.Obtain(ctx, w.guard, key, AdmissionGuardRequest(entry, v.Witness), w.key)
 		if e != nil {
 			return AdmissionVote{}, e
 		}
+	} else if w.replacement != nil {
+		return AdmissionVote{}, ErrAdmission
 	}
 	return v, nil
 }

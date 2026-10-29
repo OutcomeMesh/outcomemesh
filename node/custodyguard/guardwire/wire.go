@@ -19,6 +19,7 @@ const (
 	Fence uint8 = 1 + iota
 	Effect
 	Admission
+	Gateway
 )
 
 var ErrGuard = errors.New("independent custody guard refused choice")
@@ -38,7 +39,7 @@ type Chooser interface {
 }
 
 func (q Request) body() ([]byte, error) {
-	if q.Kind < Fence || q.Kind > Admission || types.Hash(q.Subject).IsZero() || q.Namespace.IsZero() || q.Choice.IsZero() {
+	if q.Kind < Fence || q.Kind > Gateway || types.Hash(q.Subject).IsZero() || q.Namespace.IsZero() || q.Choice.IsZero() {
 		return nil, ErrGuard
 	}
 	e := codec.NewEncoder(RequestBytes)

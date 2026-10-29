@@ -34,11 +34,12 @@ func runCustodyGuard(ctx context.Context, args []string, out io.Writer) error {
 	action := f.String("action", "", "create or serve")
 	mode := f.String("mode", "review", "review or run")
 	root := f.String("root", "", "independent original guard root")
-	config := f.String("config", "", "create: sorted Subjects, lifetime Limit and optional separate Revoker public key JSON")
+	config := f.String("config", "", "create: sorted Subjects, lifetime Limit and optional offline Revoker/Replacer public keys JSON")
 	identity := f.String("identity", "", "serve: independently retained Identity JSON")
 	position := f.String("position", "", "serve: independently retained exact Position JSON")
 	attempt := f.String("attempt", "", "serve: one exact signed lost-response request")
 	revokeAttempt := f.String("revoke-attempt", "", "serve: one exact signed lost-response revocation")
+	replaceAttempt := f.String("replace-attempt", "", "serve: one exact signed lost-response replacement")
 	listen := f.String("listen", "", "serve: explicit IP:port on the guard network")
 	output := f.String("out", "", "create: fresh public Identity artifact outside guard root")
 	expected := f.String("expected-review-id", "", "exact public review")
@@ -49,7 +50,13 @@ func runCustodyGuard(ctx context.Context, args []string, out io.Writer) error {
 		return wire.ErrGuard
 	}
 	create := *action == "create"
-	if (*config != "") != create || (*output != "") != create || (*identity != "") == create || (*position != "") == create || (*listen != "") == create || create && (*attempt != "" || *revokeAttempt != "") || *attempt != "" && *revokeAttempt != "" {
+	attempts := 0
+	for _, v := range []string{*attempt, *revokeAttempt, *replaceAttempt} {
+		if v != "" {
+			attempts++
+		}
+	}
+	if (*config != "") != create || (*output != "") != create || (*identity != "") == create || (*position != "") == create || (*listen != "") == create || create && attempts != 0 || attempts > 1 {
 		return wire.ErrGuard
 	}
 	abs, e := filepath.Abs(*root)
@@ -88,6 +95,7 @@ func runCustodyGuard(ctx context.Context, args []string, out io.Writer) error {
 	var pos guard.Position
 	var q *wire.Request
 	var revocation *wire.Revocation
+	var replacement *wire.Replacement
 	if create {
 		b, e := load(config, guard.MaximumConfigBytes)
 		if e != nil {
@@ -147,6 +155,17 @@ func runCustodyGuard(ctx context.Context, args []string, out io.Writer) error {
 			}
 			revocation = &v
 		}
+		if *replaceAttempt != "" {
+			b, e = load(replaceAttempt, wire.ReplacementBytes)
+			if e != nil {
+				return e
+			}
+			v, err := wire.DecodeReplacement(b)
+			if err != nil || v.GuardID != id.ID() || v.Before != pos {
+				return wire.ErrGuard
+			}
+			replacement = &v
+		}
 
 	}
 	public, e := json.Marshal(struct {
@@ -156,8 +175,9 @@ func runCustodyGuard(ctx context.Context, args []string, out io.Writer) error {
 		Identity                     guard.Identity
 		Position                     guard.Position
 		Attempt                      *wire.Request
-		Revocation                   *wire.Revocation `json:",omitzero"`
-	}{*action, *root, *listen, *output, inputs, cfg, id, pos, q, revocation})
+		Revocation                   *wire.Revocation  `json:",omitzero"`
+		Replacement                  *wire.Replacement `json:",omitzero"`
+	}{*action, *root, *listen, *output, inputs, cfg, id, pos, q, revocation, replacement})
 	if e != nil {
 		return e
 	}
@@ -188,7 +208,9 @@ func runCustodyGuard(ctx context.Context, args []string, out io.Writer) error {
 		return writePruneOutputLine(out, fmt.Sprintf("custody_guard_created public_key=%x position_sequence=0\n", s.Identity().PublicKey))
 	}
 	var s *guard.Store
-	if revocation != nil {
+	if replacement != nil {
+		s, e = guard.RecoverReplacement(*root, id, pos, *replacement)
+	} else if revocation != nil {
 		s, e = guard.RecoverRevocation(*root, id, pos, *revocation)
 	} else {
 		s, e = guard.Open(*root, id, pos, q)
@@ -216,6 +238,16 @@ func runCustodyGuard(ctx context.Context, args []string, out io.Writer) error {
 			return err
 		}
 		return writePruneOutputLine(out, string(raw)+"\n")
+	})
+	s.SetReplacementObserver(func(p guard.Position, q wire.Replacement) error {
+		b, err := json.Marshal(struct {
+			Position    guard.Position
+			Replacement wire.Replacement
+		}{p, q})
+		if err != nil {
+			return err
+		}
+		return writePruneOutputLine(out, string(b)+"\n")
 	})
 	l, e := net.Listen("tcp", *listen)
 	if e != nil {

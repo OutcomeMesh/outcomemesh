@@ -26,6 +26,7 @@ import (
 )
 
 type protectedFixture struct {
+	replacements map[byte]guardwire.ReplacementReceipt
 	guard        guardwire.Chooser
 	guardStore   *guard.Store
 	source       fixture.Source
@@ -75,14 +76,42 @@ func newProtectedFixture(t testing.TB, guarded ...bool) *protectedFixture {
 	g, b := src.Genesis, src.Enrollment
 	gb, _ := g.CanonicalBytes()
 	eb, _ := b.CanonicalBytes()
+	identities := map[string]Identity{}
+	for _, label := range []string{"a", "b"} {
+		id, e := CreateIdentity(filepath.Join(src.Root, "gateway-"+label))
+		fixture.Require(t, e)
+		identities[label] = id
+	}
+	var descriptorGuard [32]byte
+	if len(guarded) > 0 && guarded[0] {
+		subjects := append([][32]byte{identities["a"].PublicKey, identities["b"].PublicKey}, g.Assignment.Policy.Witnesses...)
+		sort.Slice(subjects, func(i, j int) bool { return bytes.Compare(subjects[i][:], subjects[j][:]) < 0 })
+		parent, e := filepath.EvalSymlinks(t.TempDir())
+		fixture.Require(t, e)
+		config := guard.Config{Subjects: subjects, Limit: 128}
+		if len(guarded) > 1 && guarded[1] {
+			config.Revoker = f.Public(250)
+		}
+		if len(guarded) > 2 && guarded[2] {
+			config.Replacer = f.Public(249)
+		}
+		x.guardStore, e = guard.Create(filepath.Join(parent, "independent-guard"), config)
+		fixture.Require(t, e)
+		t.Cleanup(func() { x.guardStore.Close() })
+		server := httptest.NewServer(guard.Handler(x.guardStore))
+		t.Cleanup(server.Close)
+		x.guard = guard.Client{URL: server.URL}
+		if config.Replacer != ([32]byte{}) {
+			descriptorGuard = x.guardStore.Identity().PublicKey
+		}
+	}
 	configure := func(label string, l cut.SourceLocation, p cut.SourceHandoffPins) (string, wire.Descriptor, *Owner) {
 		root := filepath.Join(src.Root, "gateway-"+label)
-		id, e := CreateIdentity(root)
-		fixture.Require(t, e)
+		id := identities[label]
 		h, e := cut.ReviewSourceHandoff(g, b, p, l.Role)
 		fixture.Require(t, e)
 		hid, _ := h.ID()
-		d := wire.Descriptor{RootID: id.RootID, SourceID: hid, GenesisID: p.GenesisID, GenesisDescriptorID: p.GenesisDescriptorID, EnrollmentID: p.EnrollmentID, Gateway: id.PublicKey, Issuer: b.Registry.Issuer, OwnerUID: uint32(os.Geteuid()), ParticipantUID: 65534, Clients: [][32]byte{f.Public(14)}, EventLimit: 64}
+		d := wire.Descriptor{Guard: descriptorGuard, RootID: id.RootID, SourceID: hid, GenesisID: p.GenesisID, GenesisDescriptorID: p.GenesisDescriptorID, EnrollmentID: p.EnrollmentID, Gateway: id.PublicKey, Issuer: b.Registry.Issuer, OwnerUID: uint32(os.Geteuid()), ParticipantUID: 65534, Clients: [][32]byte{f.Public(14)}, EventLimit: 64}
 		if d.OwnerUID == d.ParticipantUID {
 			d.ParticipantUID = 65533
 		}
@@ -99,6 +128,7 @@ func newProtectedFixture(t testing.TB, guarded ...bool) *protectedFixture {
 		did, _ := d.ID()
 		owner, e := Open(root, did, wire.Position{}, nil)
 		fixture.Require(t, e)
+		owner.SetGuard(x.guard)
 		return root, d, owner
 	}
 	x.aroot, x.ad, x.a = configure("a", src.A, src.AP)
@@ -109,21 +139,7 @@ func newProtectedFixture(t testing.TB, guarded ...bool) *protectedFixture {
 	bb, _ := x.bd.CanonicalBytes()
 	dep, e := PrepareDeployment(DeploymentPreparation{gb, eb, pb, ab, bb})
 	fixture.Require(t, e)
-	if len(guarded) > 0 && guarded[0] {
-		subjects := append([][32]byte{x.ad.Gateway, x.bd.Gateway}, g.Assignment.Policy.Witnesses...)
-		sort.Slice(subjects, func(i, j int) bool { return bytes.Compare(subjects[i][:], subjects[j][:]) < 0 })
-		parent, e := filepath.EvalSymlinks(t.TempDir())
-		fixture.Require(t, e)
-		config := guard.Config{Subjects: subjects, Limit: 128}
-		if len(guarded) > 1 && guarded[1] {
-			config.Revoker = f.Public(250)
-		}
-		x.guardStore, e = guard.Create(filepath.Join(parent, "independent-guard"), config)
-		fixture.Require(t, e)
-		t.Cleanup(func() { x.guardStore.Close() })
-		server := httptest.NewServer(guard.Handler(x.guardStore))
-		t.Cleanup(server.Close)
-		x.guard = guard.Client{URL: server.URL}
+	if x.guardStore != nil {
 		dep.Guard = x.guardStore.Identity().PublicKey
 	}
 	for _, role := range []struct {
@@ -236,7 +252,13 @@ func (x *protectedFixture) claim(t testing.TB) custodyfence.Certificate {
 	sid, _ := s.ID()
 	q := custodyfence.Certificate{Version: 1, Command: candidate.Claim}
 	for _, seed := range []byte{70, 71, 72} {
-		w, e := custodyfence.Create(filepath.Join(x.source.Root, fmt.Sprint("slot-", seed)), s, sid, f.Key(seed))
+		key := f.Key(seed)
+		var proofs []guardwire.ReplacementReceipt
+		if r, ok := x.replacements[seed]; ok {
+			key = f.Key(232)
+			proofs = []guardwire.ReplacementReceipt{r}
+		}
+		w, e := custodyfence.Create(filepath.Join(x.source.Root, fmt.Sprint("slot-", seed)), s, sid, key, proofs...)
 		fixture.Require(t, e)
 		w.SetGuard(x.guard)
 		x.jobWitnesses = append(x.jobWitnesses, w)

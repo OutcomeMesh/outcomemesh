@@ -790,3 +790,12 @@ adopt the current tip, replace a root/key, clear spending or refund unknown work
 The guard serializes signing and revocation, not packet arrival: a previously
 signed seal may arrive after a revocation receipt. This extension changes no
 consensus rule. Legacy roots cannot be upgraded by editing their config.
+
+## Experimental custody signer replacement
+
+The opt-in [custody replacement protocol](CUSTODY_KEY_REPLACEMENT.md) is outside
+consensus activation. A guard-signed successor receipt changes the signer while
+preserving the original subject's slots, quorum membership and obligations.
+Legacy encodings remain unchanged; explicit new magic values carry replacement
+proofs and guarded service responses. No balance, reward, genesis or network
+version changes follow from this recovery mechanism.

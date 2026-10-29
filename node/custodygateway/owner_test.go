@@ -67,7 +67,7 @@ func testOwner(t testing.TB) *Owner {
 	if e != nil {
 		t.Fatal(e)
 	}
-	o := &Owner{root: root, identity: id, descriptor: d, configHash: hash, key: key, lock: lock}
+	o := &Owner{root: root, identity: id, descriptor: d, configHash: hash, key: key, originalKeyHash: types.DomainHash(wire.Domain+"original-key", key), lock: lock}
 	t.Cleanup(func() { o.Close() })
 	return o
 }

@@ -17,9 +17,11 @@ An external, non-rolled-back guard retains one choice for each tuple:
 | --- | --- | --- | --- |
 | Admission witness | Original admission genesis ID | Expected admission sequence | Complete signed entry ID |
 | Execution / Serve witness | Full derived scope ID | Expected command sequence | Complete signed command ID |
-| Gateway effect | Job scope ID | Execute, Accept, ServeA or ServeB | Hash of the complete signed legacy effect |
+| Gateway effect | Job scope ID | Execute, Accept, ServeA or ServeB | Hash of the complete signed effect, including any replacement receipt |
+| Guarded gateway response | Original descriptor ID | Expected service sequence | Hash of the complete signed response |
 
-The tuple also contains the subject public key and operation family. Expected
+The tuple also contains the original logical subject and operation family. A
+registered successor inherits that subject's occupied slots. Expected
 head, proposed choice and caller-selected nonce are **not** slot components:
 competing branches at the same position must collide. The effect choice binds
 its deployment, full admission binding, artifact, original source position,
@@ -40,14 +42,16 @@ first valid choice, consume the finite guard budget, or deny availability. The
 guard does not validate arbitrary execution semantics itself; complete artifact
 verification remains mandatory. It cannot stop someone reading archive bytes
 already copied to their own machine, or prevent a malicious host performing an
-unaccepted physical action outside this runtime. Status observations, candidate
-replies and outer gateway cursors are not independently sealed by this adapter.
+unaccepted physical action outside this runtime. Status observations remain historical assertions. Legacy outer gateway cursors
+are not independently sealed. New descriptors with a pinned `Guard` require
+seals on every outer response, including candidates; see
+[key replacement](CUSTODY_KEY_REPLACEMENT.md).
 The guard does not mirror the gateway's global revocation state. A local Revoke
 alone is not independent revocation of a leaked service key. Use the external
 subject revocation below first, retaining its signed receipt. Legacy guard roots
-without a revocation authority require freezing the entire external guard. Safe
-key replacement remains separate work; never rely on a restored local revocation
-flag to exclude a malicious copy.
+without a revocation authority require freezing the entire external guard. [Bounded replacement](CUSTODY_KEY_REPLACEMENT.md) is available only under an
+original explicit replacement authority; never rely on a restored local
+revocation flag to exclude a malicious copy.
 
 ## External trust boundary
 
@@ -76,6 +80,8 @@ there is no repair, truncate, delete, reset, eviction or automatic re-enrollment
 Exact choice retries remain available after capacity is exhausted unless that
 subject has been revoked. A configured revoker adds one reserved permanent
 revocation record per subject; ordinary choices cannot consume these slots.
+An additionally configured `Replacer` reserves one replacement and one successor
+revocation per original subject, without increasing the choice budget.
 
 Open requires the exact retained identity and sequence/head. Recovery permits
 only the supplied position itself or one additional, identical retained request.
@@ -114,7 +120,8 @@ review. Reviews neither open owner roots, load signing keys nor contact services
 3. Start the guard with `--action serve --identity <identity.json> --position
    <retained-position.json> --root <original-root> --listen <explicit-IP:port>`.
    A lost response may additionally select `--attempt <exact-signed-request>`
-   or `--revoke-attempt <exact-signed-revocation>`, never both.
+   `--revoke-attempt <exact-signed-revocation>` or
+   `--replace-attempt <exact-signed-replacement>`, never more than one.
    Preserve the public cursor/request log on a separate machine.
 4. Add `--guard-url <http(s)://IP:port>` to gateway `--action serve`, original
    admission `--action witness-vote`, and witness server/vote actions. The URL
@@ -151,8 +158,8 @@ not recall previously signed artifacts or prove that an underlying action never
 ran. In the real profile-5 test, execution consumes the session and records source
 evidence, then the revoked service cannot obtain its result seal. The job remains
 spent=2, pending=2 across restart; no result is fabricated, source record changed,
-execution repeated or allowance refunded. Operator settlement/key replacement is
-not automated by this mechanism.
+execution repeated or allowance refunded. [Replacement](CUSTODY_KEY_REPLACEMENT.md) does not settle this outcome or restore
+the lost session. Operator settlement remains a separate protocol.
 
 The revocation request is 200 bytes; its separate HTTP endpoint is
 `/outcomemesh/custody-guard/revoke/1`, with a 340-byte signed receipt. Both require

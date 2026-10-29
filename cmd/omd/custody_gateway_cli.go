@@ -45,6 +45,7 @@ func runCustodyGateway(ctx context.Context, args []string, out io.Writer) error 
 	participantUID := f.Uint("participant-uid", 0, "separate unprivileged Linux participant UID")
 	eventLimit := f.Uint("event-limit", wire.MaximumEvents, "bounded lifetime gateway event count")
 	clients := f.String("clients", "", "comma-separated participant Ed25519 public keys, hexadecimal")
+	guardKeyText := f.String("guard-key", "", "descriptor-prepare: independent guard public key pinned before issuer signature")
 	guardURL := f.String("guard-url", "", "external guard endpoint; verification key comes from the signed policy")
 	mode := f.String("mode", "review", "review or run")
 	root := f.String("root", "", "original private owner root; must be outside participant access")
@@ -67,6 +68,17 @@ func runCustodyGateway(ctx context.Context, args []string, out io.Writer) error 
 	}
 	if *guardURL != "" && (*action != "serve" || guardclient.ValidateURL(*guardURL) != nil) {
 		return wire.ErrArtifact
+	}
+	var descriptorGuard [32]byte
+	if *guardKeyText != "" {
+		if *action != "descriptor-prepare" {
+			return wire.ErrArtifact
+		}
+		k, err := witnessID("guard-key", *guardKeyText)
+		if err != nil {
+			return err
+		}
+		descriptorGuard = [32]byte(k)
 	}
 	valid := map[string]bool{"identity-create": true, "identity-public": true, "descriptor-sign": true, "descriptor-prepare": true, "configure": true, "request-sign": true, "response-inspect": true, "call": true, "serve": true, "cleanup-socket": true}
 	if !valid[*action] {
@@ -295,7 +307,8 @@ func runCustodyGateway(ctx context.Context, args []string, out io.Writer) error 
 		Clients                                     [][32]byte
 		Runtime                                     any
 		Request                                     wire.Request
-	}{*action, *root, *socket, *keyPath, *output, *guardURL, paths, did, socketID, pin, *participantUID, *eventLimit, actorKeys, runtimeSummary, req})
+		Guard                                       [32]byte `json:",omitzero"`
+	}{*action, *root, *socket, *keyPath, *output, *guardURL, paths, did, socketID, pin, *participantUID, *eventLimit, actorKeys, runtimeSummary, req, descriptorGuard})
 	if e != nil {
 		return e
 	}
@@ -318,7 +331,7 @@ func runCustodyGateway(ctx context.Context, args []string, out io.Writer) error 
 	var result []byte
 	switch *action {
 	case "descriptor-prepare":
-		unsigned, e = gateway.DraftDescriptor(*root, config, uint32(*participantUID), actorKeys, uint32(*eventLimit))
+		unsigned, e = gateway.DraftDescriptor(*root, config, uint32(*participantUID), actorKeys, uint32(*eventLimit), descriptorGuard)
 		if e == nil {
 			result, e = json.Marshal(unsigned)
 		}

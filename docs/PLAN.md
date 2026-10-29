@@ -94,9 +94,13 @@ Next required work remains ordered:
    authorized permanent per-subject revocation now reserves durable journal space,
    returns exact signed receipts and survives lost replies/process death through
    reviewed CLI recovery. Previously signed proofs remain historical; unknown work
-   stays held. Next deploy it outside all participant backup/control domains with
-   independent operators and protected monotone/key storage, specify safe key
-   replacement and incident settlement without resetting prior obligations,
+   stays held. [One-generation key replacement](CUSTODY_KEY_REPLACEMENT.md) now
+   preserves logical subjects, original witness/service histories, spent/pending
+   accounting and unknown outcomes through reviewed successor enrollment and
+   activation. New service descriptors pin guarded outer responses from creation.
+   Next deploy it outside all participant backup/control domains with independent
+   operators and protected monotone/key storage, specify incident settlement and
+   further key generations without resetting prior obligations,
    extend physical-failure and long-retention acceptance
    and obtain independent review. No consensus/mainnet activation follows.
 4. Specify safe progress for split votes and its quorum/rollback assumptions;

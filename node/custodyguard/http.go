@@ -18,6 +18,7 @@ import (
 
 const Route = "/outcomemesh/custody-guard/1"
 const RevocationRoute = "/outcomemesh/custody-guard/revoke/1"
+const ReplacementRoute = "/outcomemesh/custody-guard/replace/1"
 
 // Client transports public signed choices. It never follows redirects or uses
 // proxy environment variables. Authenticity comes from the pinned seal key;
@@ -54,6 +55,17 @@ func (c Client) Revoke(ctx context.Context, q wire.Revocation) (wire.RevocationR
 	}
 	return wire.DecodeRevocationReceipt(b)
 }
+func (c Client) Replace(ctx context.Context, q wire.Replacement) (wire.ReplacementReceipt, error) {
+	b, err := q.CanonicalBytes()
+	if err != nil {
+		return wire.ReplacementReceipt{}, err
+	}
+	b, err = c.exchange(ctx, ReplacementRoute, b, wire.ReplacementReceiptBytes)
+	if err != nil {
+		return wire.ReplacementReceipt{}, err
+	}
+	return wire.DecodeReplacementReceipt(b)
+}
 func (c Client) exchange(ctx context.Context, route string, b []byte, size int) ([]byte, error) {
 	if ValidateURL(c.URL) != nil || ctx == nil {
 		return nil, wire.ErrGuard
@@ -87,7 +99,7 @@ func (c Client) exchange(ctx context.Context, route string, b []byte, size int) 
 func Handler(s *Store) http.Handler {
 	active := make(chan struct{}, 8)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || (r.URL.Path != Route && r.URL.Path != RevocationRoute) || r.URL.RawQuery != "" {
+		if r.Method != http.MethodPost || (r.URL.Path != Route && r.URL.Path != RevocationRoute && r.URL.Path != ReplacementRoute) || r.URL.RawQuery != "" {
 			http.Error(w, "refused", http.StatusBadRequest)
 			return
 		}
@@ -102,13 +114,27 @@ func Handler(s *Store) http.Handler {
 		if r.URL.Path == RevocationRoute {
 			size = wire.RevocationBytes
 		}
+		if r.URL.Path == ReplacementRoute {
+			size = wire.ReplacementBytes
+		}
 		b, e := io.ReadAll(io.LimitReader(r.Body, int64(size+1)))
 		if e != nil || len(b) != size {
 			http.Error(w, "refused", http.StatusBadRequest)
 			return
 		}
 		var reply []byte
-		if r.URL.Path == RevocationRoute {
+		if r.URL.Path == ReplacementRoute {
+			q, err := wire.DecodeReplacement(b)
+			if err != nil {
+				http.Error(w, "refused", http.StatusBadRequest)
+				return
+			}
+			var receipt wire.ReplacementReceipt
+			receipt, e = s.Replace(r.Context(), q)
+			if e == nil {
+				reply, e = receipt.CanonicalBytes()
+			}
+		} else if r.URL.Path == RevocationRoute {
 			q, err := wire.DecodeRevocation(b)
 			if err != nil {
 				http.Error(w, "refused", http.StatusBadRequest)
