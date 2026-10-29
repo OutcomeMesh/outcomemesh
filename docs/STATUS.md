@@ -10,6 +10,27 @@ Full planned production readiness is approximately **44/100**, using the weighte
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
 
+## 2026-10-29: archive and protected-storage radix migration
+
+[Archive manifest v2 and statement/checkpoint v1](RADIX_ARCHIVE_STORAGE_MIGRATION.md)
+now commit the radix schedule. A signed successor preserves the original anchor,
+chunk bytes and IDs, advances the statement sequence and requires the original
+attestor trust policy. Original receipts and retention evidence remain attached
+to their original archive. The CLI prepares the statement and publishes the
+separately signed successor into a new directory.
+
+A position-pinned WorkChain can commit a future schedule in its original database
+under an exact review ID. Storage identity, pin history, states, fee queues,
+canonical floor and retained prune effects survive unchanged. Cold reopening
+requires the retained review and matching original journal intent. Explicit
+confirmation can finish an already committed transition; an intent without a
+proven database write remains held. Missing roots and database symlinks are
+rejected rather than initialized or adopted.
+
+Managed custody cutover, schedule-bound receipt renewal/admission and new
+canonical-prefix pruning remain open. Larger histories still require a separate
+streaming migration. Readiness remains **44/100**.
+
 ## 2026-10-29: WorkGraph radix integration and bounded migration
 
 WorkGraph v3 now uses incremental radix state with an explicit activation height.
