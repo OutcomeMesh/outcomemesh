@@ -10,6 +10,26 @@ Full planned production readiness is approximately **44/100**, using the weighte
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
 
+## 2026-10-29: retained-result consent, isolated guard deployment and state costs
+
+[Retained-result consent](CUSTODY_RETAINED_ACCEPTANCE.md) adds explicit authority
+and consumer approval for a complete delayed result in guarded profile 5. The
+service seals that approval into its receipt, preserves original recovery time
+and closes through existing Serve and admission accounting without refunding
+spend or reducing retention. No-result unknown outcomes remain held.
+
+[Guard deployment](CUSTODY_GUARD_DEPLOYMENT.md) now requires loopback HTTP or
+protected remote transport, supplies a restricted service unit and a bounded
+two-host runner with separate guard/participant UIDs and externally retained
+cursors. Shared root administration remains outside this isolation boundary.
+
+[State indexes](STATE_SCALING.md) replace full-map copying and balance scans;
+mempool transitions avoid unused roots and canonical heights update only the
+divergent suffix. Consensus roots remain byte-compatible and changed-root work
+still scales with the full resource set. [Wallet encryption](WALLET_KEYSTORE.md)
+is now the keygen default, with explicit raw-seed migration and no-overwrite
+publication. Readiness remains **44/100**; the weighted launch gates are unchanged.
+
 ## 2026-10-29: replace revoked custody signers without resetting obligations
 
 [Bounded key replacement](CUSTODY_KEY_REPLACEMENT.md) now enrolls one successor

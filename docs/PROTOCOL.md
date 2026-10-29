@@ -799,3 +799,15 @@ preserving the original subject's slots, quorum membership and obligations.
 Legacy encodings remain unchanged; explicit new magic values carry replacement
 proofs and guarded service responses. No balance, reward, genesis or network
 version changes follow from this recovery mechanism.
+
+
+## Guarded retained-result acceptance (experimental, 2026-10-29)
+
+Guarded profile-5 services may accept an already completed and original-quorum
+certified result after ordinary delivery age only under the separately signed,
+bounded [retained acceptance](CUSTODY_RETAINED_ACCEPTANCE.md) rule. New command
+kinds 9/10 and receipt magic OMCVLAC5 are opt-in and rejected by older readers.
+Context, full bundle, both role signatures, source lineage and the independent
+effect seal are mandatory. Unknown work has no closing authorization. The v0
+state commitment and consensus receipt roots are unchanged by the accompanying
+[index optimization](STATE_SCALING.md). No activation rule is waived.

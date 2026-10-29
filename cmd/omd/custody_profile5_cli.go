@@ -48,7 +48,7 @@ func runCustodyProfile5(ctx context.Context, args []string, out io.Writer) error
 	f.SetOutput(io.Discard)
 	descriptorPath := f.String("descriptor", "", "pinned complete gateway descriptor; extract only")
 	descriptorID := f.String("descriptor-id", "", "independent gateway descriptor pin; extract only")
-	action := f.String("action", "", "deployment, sign-deployment, command, sign-request, configure, extract")
+	action := f.String("action", "", "deployment, sign-deployment, command, sign-request, configure, extract, retained-acceptance, sign-retained")
 	guardKey := f.String("guard-key", "", "independently retained external guard public key; deployment only")
 	mode := f.String("mode", "review", "review or run")
 	input := f.String("input", "", "complete public preparation input")
@@ -63,11 +63,11 @@ func runCustodyProfile5(ctx context.Context, args []string, out io.Writer) error
 	if f.NArg() != 0 || (*mode != "review" && *mode != "run") {
 		return gateway.ErrExecution
 	}
-	valid := map[string]bool{"deployment": true, "sign-deployment": true, "command": true, "sign-request": true, "configure": true, "extract": true}
+	valid := map[string]bool{"deployment": true, "sign-deployment": true, "command": true, "sign-request": true, "configure": true, "extract": true, "retained-acceptance": true, "sign-retained": true}
 	if !valid[*action] {
 		return gateway.ErrExecution
 	}
-	if (*root != "") != (*action == "configure") || (*keyPath != "") != (*action == "sign-deployment" || *action == "sign-request") || (*role != "") != (*action == "sign-deployment") {
+	if (*root != "") != (*action == "configure") || (*keyPath != "") != (*action == "sign-deployment" || *action == "sign-request" || *action == "sign-retained") || (*role != "") != (*action == "sign-deployment" || *action == "sign-retained") {
 		return gateway.ErrExecution
 	}
 	if *guardKey != "" && *action != "deployment" {
@@ -129,7 +129,38 @@ func runCustodyProfile5(ctx context.Context, args []string, out io.Writer) error
 	var setup gateway.ExecutionSetup
 	var summary any
 	var keyFiles []string
+	var retained profile5RetainedInput
+	var retainedContext v2.Context
+	var retainedBundle v2.Bundle
 	switch *action {
+	case "retained-acceptance", "sign-retained":
+		if e = cutoverJSON(raw, &retained); e != nil {
+			return e
+		}
+		retainedContext, e = v2.DecodeContext(retained.Context)
+		if e != nil {
+			return e
+		}
+		retainedBundle, e = v2.DecodeBundle(retained.Bundle)
+		if e != nil || retainedBundle.Verify(retainedContext) != nil {
+			return gateway.ErrExecution
+		}
+		cid, _ := retainedContext.ID()
+		bid, _ := retainedBundle.ID()
+		if retained.Consent.ContextID != cid || retained.Consent.BundleID != bid || !v2.ProtectedContext(retainedContext) || retainedContext.Plan.Deployment.Guard == ([32]byte{}) {
+			return gateway.ErrExecution
+		}
+		if *action == "sign-retained" && *role != "authority" && *role != "consumer" {
+			return gateway.ErrExecution
+		}
+		if *action == "retained-acceptance" && retained.Consent.Verify(retainedContext, retainedBundle, retained.Consent.NotBefore) != nil {
+			return gateway.ErrExecution
+		}
+		artifact, e = v2.EncodeRetainedAcceptance(retainedBundle, retained.Consent)
+		if e != nil {
+			return e
+		}
+		summary = retained.Consent
 	case "deployment":
 		var p gateway.DeploymentPreparation
 		if e = cutoverJSON(raw, &p); e != nil {
@@ -317,6 +348,17 @@ func runCustodyProfile5(ctx context.Context, args []string, out io.Writer) error
 		return errors.New("retain existing output and use a fresh path")
 	}
 	switch *action {
+	case "sign-retained":
+		key, err := profile5Seed(*keyPath, false)
+		if err != nil {
+			return err
+		}
+		defer clear(key)
+		retained.Consent, e = retained.Consent.Sign(retainedContext, retainedBundle, *role, key)
+		if e != nil {
+			return e
+		}
+		artifact, e = json.Marshal(retained)
 	case "sign-deployment":
 		key, e := profile5Seed(*keyPath, false)
 		if e != nil {
@@ -408,4 +450,11 @@ func profile5PublicCommand(p v2.ProtectedCommand) any {
 		RequestTime                      uint64
 		ServerClockAuthoritative         bool
 	}{p.Kind, sid, bid, did, p.Now, true}
+}
+
+// Signing retains the complete public input so the other role can verify the
+// same bundle. retained-acceptance extracts canonical command Data from it.
+type profile5RetainedInput struct {
+	Context, Bundle []byte
+	Consent         v2.RetainedAcceptance
 }

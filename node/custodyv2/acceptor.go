@@ -19,6 +19,7 @@ const ReceiptBytes = 10 + 6*32 + 16 + 32 + 64
 var ErrPending = errors.New("custody V2 acceptance attempt is retained; explicit exact resume required")
 
 type Receipt struct {
+	RetainedAcceptance                                              *RetainedAcceptance
 	Protection                                                      *gateway.Effect
 	Version                                                         uint16
 	AssignmentID, PlanID, ScopeID, ResultID, BundleID, SourceHeadID types.Hash
@@ -46,7 +47,7 @@ func (r Receipt) CanonicalBytes() ([]byte, error) {
 	if r.Version == ProtectedVersion {
 		return r.protectedBytes()
 	}
-	if r.Protection != nil {
+	if r.Protection != nil || r.RetainedAcceptance != nil {
 		return nil, ErrProtocol
 	}
 	b, e := r.unsignedBytes()
@@ -61,7 +62,7 @@ func (r Receipt) CanonicalBytes() ([]byte, error) {
 }
 func DecodeReceipt(b []byte) (Receipt, error) {
 	var r Receipt
-	if len(b) >= 8 && string(b[:8]) == "OMCVACK5" {
+	if len(b) >= 8 && (string(b[:8]) == "OMCVACK5" || string(b[:8]) == "OMCVLAC5") {
 		return decodeProtectedReceipt(b)
 	}
 	if len(b) != ReceiptBytes {
@@ -107,7 +108,7 @@ func (r Receipt) Verify(c Context, b Bundle) error {
 		if e != nil || VerifyProtectedEffect(c, r.Protection, gateway.EffectAccept, id, r.SourceHeadID, r.SourceSequence, r.AcceptedAt) != nil {
 			return ErrProtocol
 		}
-	} else if r.Version != Version2 || r.Protection != nil {
+	} else if r.Version != Version2 || r.Protection != nil || r.RetainedAcceptance != nil {
 		return ErrProtocol
 	}
 
@@ -124,6 +125,9 @@ func (r Receipt) Verify(c Context, b Bundle) error {
 	eid, _ := b.Result.Entry.ID()
 	if r.AssignmentID != aid || r.PlanID != pid || r.ScopeID != b.Result.ScopeID || r.ResultID != rid || r.BundleID != bid || r.SourceHeadID != eid || r.SourceSequence != c.Plan.Intent.PriorSequence+1 || r.Authority != c.Assignment.Base.AuthorityPublicKey {
 		return ErrProtocol
+	}
+	if r.RetainedAcceptance != nil {
+		return r.RetainedAcceptance.Verify(c, b, r.AcceptedAt)
 	}
 	return fresh(c, b.Result, r.AcceptedAt)
 }

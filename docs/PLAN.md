@@ -98,8 +98,12 @@ Next required work remains ordered:
    preserves logical subjects, original witness/service histories, spent/pending
    accounting and unknown outcomes through reviewed successor enrollment and
    activation. New service descriptors pin guarded outer responses from creation.
-   Next deploy it outside all participant backup/control domains with independent
-   operators and protected monotone/key storage, specify incident settlement and
+   The [two-host deployment](CUSTODY_GUARD_DEPLOYMENT.md) separates UIDs and uses
+   authenticated tunnels, but shares administrative control. [Retained-result
+   consent](CUSTODY_RETAINED_ACCEPTANCE.md) now closes delayed verifiable results
+   through original Serve/admission accounting. Outcomes without a complete
+   result remain held. Next deploy outside all participant backup/control domains
+   with independent operators and protected monotone/key storage, finish unknown-outcome settlement and
    further key generations without resetting prior obligations,
    extend physical-failure and long-retention acceptance
    and obtain independent review. No consensus/mainnet activation follows.
@@ -109,6 +113,11 @@ Next required work remains ordered:
    independent review before connecting these experimental jobs to mainnet.
 6. Complete the existing M5–M10 audit, economics, calibration and sustained
    adversarial public-testnet exit gates. No software slice waives those gates.
+
+The [state/index work](STATE_SCALING.md) preserves v0 commitments while reducing
+diff, balance and canonical-height costs. [Encrypted wallet keys](WALLET_KEYSTORE.md)
+provide explicit seed migration. A versioned scalable commitment, physical storage
+operations and a reviewed user wallet remain launch work.
 
 ## Product thesis
 

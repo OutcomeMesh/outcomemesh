@@ -10,7 +10,7 @@ import (
 )
 
 const ProtectedVersion uint16 = 5
-const MaximumProtectedReceiptBytes = ReceiptBytes + gateway.MaximumEffectBytes + 32
+const MaximumProtectedReceiptBytes = ReceiptBytes + RetainedAcceptanceBytes + gateway.MaximumEffectBytes + 64
 const MaximumProtectedServeReceiptBytes = ServeReceiptBytes + gateway.MaximumEffectBytes + 32
 
 func ProtectedContext(c Context) bool {
@@ -120,19 +120,68 @@ func SignResultSession(r Result, key ed25519.PrivateKey) (Result, error) {
 	copy(r.SessionSignature[:], ed25519.Sign(key, h[:]))
 	return r, nil
 }
-func (r Receipt) core() Receipt               { r.Version = Version2; r.Protection = nil; return r }
-func (r Receipt) CoreID() (types.Hash, error) { return r.core().ID() }
+func (r Receipt) core() Receipt {
+	r.Version = Version2
+	r.Protection = nil
+	r.RetainedAcceptance = nil
+	return r
+}
+func (r Receipt) CoreID() (types.Hash, error) {
+	id, e := r.core().ID()
+	if e != nil || r.RetainedAcceptance == nil {
+		return id, e
+	}
+	a, e := r.RetainedAcceptance.CanonicalBytes()
+	if e != nil {
+		return types.Hash{}, e
+	}
+	return types.DomainHash("OMESH/custody/v5/retained-accepted-source/core", id[:], a), nil
+}
 func (r Receipt) protectedBytes() ([]byte, error) {
 	b, e := r.core().CanonicalBytes()
 	if e != nil {
 		return nil, e
 	}
-	return protectedEncode("OMCVACK5", b, r.Protection)
+	if r.RetainedAcceptance == nil {
+		return protectedEncode("OMCVACK5", b, r.Protection)
+	}
+	a, e := r.RetainedAcceptance.CanonicalBytes()
+	if e != nil {
+		return nil, e
+	}
+	out := codec.NewEncoder(len(b) + len(a) + 8)
+	out.BytesField(b)
+	out.Fixed(a)
+	return protectedEncode("OMCVLAC5", out.Bytes(), r.Protection)
 }
 func decodeProtectedReceipt(raw []byte) (Receipt, error) {
-	b, ef, e := protectedDecode(raw, "OMCVACK5", ReceiptBytes)
+	late := len(raw) >= 8 && string(raw[:8]) == "OMCVLAC5"
+	magic := "OMCVACK5"
+	max := ReceiptBytes
+	if late {
+		magic = "OMCVLAC5"
+		max += RetainedAcceptanceBytes + 8
+	}
+	b, ef, e := protectedDecode(raw, magic, max)
 	if e != nil {
 		return Receipt{}, e
+	}
+	var authorization *RetainedAcceptance
+	if late {
+		d := codec.NewDecoder(b)
+		b, e = d.BytesField(ReceiptBytes)
+		if e != nil {
+			return Receipt{}, e
+		}
+		ab, e := d.Fixed(RetainedAcceptanceBytes)
+		if e != nil || d.Finish() != nil {
+			return Receipt{}, ErrProtocol
+		}
+		a, e := DecodeRetainedAcceptance(ab)
+		if e != nil {
+			return Receipt{}, e
+		}
+		authorization = &a
 	}
 	if len(b) != ReceiptBytes || string(b[:8]) != "OMCVACK2" {
 		return Receipt{}, ErrProtocol
@@ -143,10 +192,15 @@ func decodeProtectedReceipt(raw []byte) (Receipt, error) {
 	}
 	r.Version = ProtectedVersion
 	r.Protection = ef
+	r.RetainedAcceptance = authorization
+	again, e := r.CanonicalBytes()
+	if e != nil || !bytes.Equal(raw, again) {
+		return Receipt{}, ErrProtocol
+	}
 	return r, nil
 }
 func SignAcceptance(r Receipt, key ed25519.PrivateKey) (Receipt, error) {
-	if r.Version != Version2 || r.Protection != nil || !matches(key, r.Authority) {
+	if r.Version != Version2 || r.Protection != nil || r.RetainedAcceptance != nil || !matches(key, r.Authority) {
 		return Receipt{}, ErrProtocol
 	}
 	b, e := r.unsignedBytes()

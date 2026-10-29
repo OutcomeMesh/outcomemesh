@@ -168,7 +168,9 @@ CLI path under reply loss, process kills, quorum outages and expired results.
 [Serve disposition](CUSTODY_V2_SERVE.md) adds complete typed proposals, a separate
 outcome-independent witness decision slot and original-owner A-then-B apply.
 Fulfilled and certified-unclaimed jobs can close their V2 execution obligation;
-unknown/expired B-only outcomes stay held. Archive retention is separate and
+unknown outcomes and ordinary expired B-only outcomes stay held. Guarded profile
+5 now has a separate [signed retained-result path](CUSTODY_RETAINED_ACCEPTANCE.md)
+for delayed complete proofs. Archive retention is separate and
 remains held in every case. Original execution witness history is unchanged.
 This is a standalone reviewed operator CLI, not a new Serve voting RPC or V1
 ledger migration. Historical acceptance receipts alone never close an unused

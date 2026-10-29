@@ -247,3 +247,13 @@ independent-operator, full-VM clone, physical-failure or audit limitations. A
 retained Prepare response can still be the last committed gateway response after
 a later failed intent; replaying that historical candidate does not recreate the
 volatile session key or grant execution.
+
+
+## Delayed completed results
+
+[Retained-result acceptance](CUSTODY_RETAINED_ACCEPTANCE.md) adds command kinds
+9 and 10 only for guarded deployments. It requires the complete original result
+and quorum plus bounded authority/consumer consent, retains the original pending
+time across recovery, and seals that consent into a distinct receipt. Existing
+Serve/admission closure then preserves spent and retention accounting. Unknown
+outcomes without that result remain held; no new execution session is created.

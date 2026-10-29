@@ -17,6 +17,8 @@ const (
 	ProtectedResumeAccept
 	ProtectedServe
 	ProtectedReadResult
+	ProtectedAcceptRetained
+	ProtectedResumeRetained
 )
 
 type ProtectedCommand struct {
@@ -27,7 +29,7 @@ type ProtectedCommand struct {
 }
 
 func (p ProtectedCommand) CanonicalBytes() ([]byte, error) {
-	if p.Kind < ProtectedEndorse || p.Kind > ProtectedReadResult || p.Now == 0 {
+	if p.Kind < ProtectedEndorse || p.Kind > ProtectedResumeRetained || p.Now == 0 {
 		return nil, ErrProtocol
 	}
 	var raw []byte

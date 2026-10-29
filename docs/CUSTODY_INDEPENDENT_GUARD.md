@@ -96,8 +96,9 @@ subject-signed objects; replies are 64-byte guard seals. Clients verify the pinn
 key and reconstruct the tuple; they do not follow redirects, use environment
 proxies or automatically repeat attempts. The daemon bounds connections (16),
 active requests (8), headers, bodies and deadlines. Request EOF precedes choice
-selection. The native listener is HTTP; use a private network or an independently
-configured TLS terminator for confidentiality and network abuse resistance.
+selection. The native HTTP listener is loopback-only. Remote plain HTTP clients
+are refused; use an authenticated tunnel or an independently configured TLS
+terminator. See [separated deployment](CUSTODY_GUARD_DEPLOYMENT.md).
 Signatures authenticate the public protocol, not the transport address.
 
 ## Reviewed CLI workflow

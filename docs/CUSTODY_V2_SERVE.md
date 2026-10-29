@@ -12,7 +12,11 @@ by itself still does not close Serve.
 | Fulfilled | Complete V2 result bundle and execution quorum chain; A's original accepted-source receipt; authority and Serve-consumer signatures; independent Serve decision quorum | Both contain the exact result entry; A also retains the exact original accepted receipt and bundle, B retains the exact session result | Retain at least through the renewed receipt's deadline |
 | Unclaimed | Original execution scope's initial `CloseUnclaimed` quorum; authority and Serve-consumer signatures; independent Serve decision quorum | Both remain at the exact predecessor, without acceptance/consumption markers | Retain at least through the previous receipt's deadline |
 | Claimed/unknown without a verifiable accepted result | No closing proposal exists | Any existing source/consumed/result history remains authoritative | Serve remains pending and archive remains held |
-| Result retained only at B and expired before A accepts | No fulfilled proposal exists | B's append/renewal remains; A stays at its predecessor | Serve remains pending, including B's renewed retention deadline |
+| Result retained only at B and expired before ordinary A acceptance | No fulfilled proposal exists | B's append/renewal remains; A stays at its predecessor | Serve remains pending, including B's renewed retention deadline |
+
+Guarded profile 5 can first obtain an accepted receipt through the explicit
+[retained-result consent](CUSTODY_RETAINED_ACCEPTANCE.md) workflow. That receipt
+then follows the fulfilled row above; ordinary V2 freshness rules are unchanged.
 
 A timeout, an empty source snapshot, or a participant saying “no work happened”
 cannot replace the original no-claim quorum. A pending original witness vote for
@@ -26,7 +30,8 @@ Split votes may therefore block progress indefinitely.
 The authority and the Context's Serve consumer sign separate domains over the
 whole proposal. Drafts may carry zero or one signature; they are never votes or
 settlement rights. Fulfilled evidence is verified at A's original `AcceptedAt`,
-including proof freshness at that time. Settlement does not refresh that time.
+including proof freshness at that time or the separately sealed retained-result
+consent in guarded profile 5. Settlement does not refresh that time.
 
 The decision scope is derived only from the original execution scope ID, using
 `OMESH/custody/v2/serve/decision-slot`. Its roster/threshold come from the signed

@@ -60,7 +60,7 @@ func (o *Owner) runProtected(ctx context.Context, q wire.Request, payload []byte
 		return o.executeJob(ctx, cmd, c, sid)
 	case v2.ProtectedResultCommand:
 		return o.resultCommand(cmd, c, sid)
-	case v2.ProtectedAccept, v2.ProtectedResumeAccept:
+	case v2.ProtectedAccept, v2.ProtectedResumeAccept, v2.ProtectedAcceptRetained, v2.ProtectedResumeRetained:
 		return o.acceptJob(ctx, cmd, c, sid)
 	case v2.ProtectedServe:
 		return o.applyExecutionServe(ctx, cmd, c, sid)
@@ -189,39 +189,8 @@ func (o *Owner) preflightProtected(ctx context.Context, p v2.ProtectedCommand) e
 		}
 		_, e = o.readExecutionResult(c, sid)
 		return e
-	case v2.ProtectedAccept, v2.ProtectedResumeAccept:
-		b, e := v2.DecodeBundle(p.Data)
-		if e != nil || b.Verify(c) != nil {
-			return ErrExecution
-		}
-		if e = o.checkResultAdmission(p.Admission, b.Result); e != nil {
-			return e
-		}
-		if raw, e := o.jobRead(sid, "accepted", v2.MaximumProtectedReceiptBytes); e == nil {
-			r, e := v2.DecodeReceipt(raw)
-			if e != nil || r.Verify(c, b) != nil {
-				return ErrExecution
-			}
-			return nil
-		} else if !errors.Is(e, os.ErrNotExist) {
-			return e
-		}
-		if p.Kind == v2.ProtectedResumeAccept {
-			raw, e := o.jobRead(sid, "pending", wire.MaximumRuntimePayloadBytes)
-			if e != nil {
-				return e
-			}
-			prior, _, e := decodeExecutionPending(raw)
-			if e != nil {
-				return e
-			}
-			want, _ := b.ID()
-			actual, _ := prior.ID()
-			if want != actual {
-				return ErrExecution
-			}
-		}
-		return workarchive.VerifyCustodyResponse(c.Manifest, c.Previous, c.Plan.Challenge, b.Result.Entry.Record.Batch, b.Result.Entry.Record.Proof, c.CustodyPolicy, p.Now)
+	case v2.ProtectedAccept, v2.ProtectedResumeAccept, v2.ProtectedAcceptRetained, v2.ProtectedResumeRetained:
+		return o.preflightAcceptance(p, c, sid)
 	case v2.ProtectedServe:
 		return o.preflightExecutionServe(p, c, sid)
 	default:
@@ -461,27 +430,27 @@ func (o *Owner) acceptJob(ctx context.Context, p v2.ProtectedCommand, c v2.Conte
 	} else if !errors.Is(e, os.ErrNotExist) {
 		return nil, e
 	}
-	b, e := v2.DecodeBundle(p.Data)
+	b, consent, e := acceptanceData(p)
 	if e != nil {
 		return nil, e
 	}
 	checked := p.Now
 	if raw, e := o.jobRead(sid, "pending", wire.MaximumRuntimePayloadBytes); e == nil {
-		prior, at, e := decodeExecutionPending(raw)
+		prior, priorConsent, at, e := decodeAcceptancePending(raw)
 		if e != nil {
 			return nil, e
 		}
 		pid, _ := prior.ID()
 		bid, _ := b.ID()
-		if pid != bid {
+		if pid != bid || !sameConsent(consent, priorConsent) {
 			return nil, ErrExecution
 		}
 		checked = at
 	} else if errors.Is(e, os.ErrNotExist) {
-		if p.Kind == v2.ProtectedResumeAccept {
+		if resumeAcceptance(p.Kind) {
 			return nil, ErrExecution
 		}
-		raw, e := encodeExecutionPending(b, checked)
+		raw, e := encodeAcceptancePending(b, consent, checked)
 		if e != nil {
 			return nil, e
 		}
@@ -524,6 +493,7 @@ func (o *Owner) acceptJob(ctx context.Context, p v2.ProtectedCommand, c v2.Conte
 	if e != nil {
 		return nil, e
 	}
+	r.RetainedAcceptance = consent
 	id, _ := r.CoreID()
 	ef, e := o.executionEffect(ctx, c, p.Admission, wire.EffectAccept, id, head, r.SourceSequence, checked)
 	if e != nil {

@@ -1,6 +1,7 @@
 GO ?= go
 GOTOOLCHAIN ?= go$(shell cat .go-version)
 export GOTOOLCHAIN
+TEST_TIMEOUT ?= 30m
 FUZZTIME ?= 3s
 WORKROLLOVERCYCLES ?= 256
 
@@ -16,12 +17,16 @@ vet:
 	$(GO) vet ./...
 
 test:
-	$(GO) test ./...
+	$(GO) test ./... -timeout=$(TEST_TIMEOUT)
 
 test-race:
 	GO="$(GO)" python3 scripts/ci.py all
 
 test-fuzz-smoke:
+	$(GO) test ./wallet/keystore -run '^$$' -fuzz '^FuzzKeyEnvelope$$' -fuzztime=$(FUZZTIME)
+	$(GO) test ./core/state -run '^$$' -fuzz '^FuzzIndexAgainstFlatState$$' -fuzztime=$(FUZZTIME)
+	$(GO) test ./node/custodyv2 -run '^$$' -fuzz '^FuzzRetainedAcceptance$$' -fuzztime=$(FUZZTIME)
+	$(GO) test ./node/custodygateway -run '^$$' -fuzz '^FuzzRetainedPending$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyguard/guardwire -run '^$$' -fuzz '^FuzzGuardReplacementCodecs$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyfence/witnesswire -run '^$$' -fuzz '^FuzzReplacementWitnessCodecs$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodygateway/gatewaywire -run '^$$' -fuzz '^FuzzReplacementGatewayCodecs$$' -fuzztime=$(FUZZTIME)
@@ -135,6 +140,7 @@ test-fuzz-smoke:
 	$(GO) test ./sim/workgraphmodel -run '^$$' -fuzz '^FuzzRunSelfishStrategiesNeverBreakAccounting$$' -fuzztime=$(FUZZTIME)
 
 test-process:
+	$(GO) test -tags=integration ./node/custodygateway -run '^TestRetainedAcceptanceCLIReviewSigningAndExtraction$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./cmd/omd -run '^TestProtected5DistributedSetupCreatesOnlySelectedOriginal$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./cmd/omd -run '^TestProtected5ActualExecutionAcceptanceAndAccounting$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessProfile5UIDExecutionLostReplyAndFullClosure$$' -count=1 -timeout=2m
