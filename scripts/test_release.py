@@ -5,6 +5,8 @@ from pathlib import Path
 import tarfile
 import tempfile
 import unittest
+from unittest.mock import patch
+import subprocess
 
 spec = importlib.util.spec_from_file_location('release', Path(__file__).with_name('release.py'))
 release = importlib.util.module_from_spec(spec)
@@ -34,6 +36,26 @@ class ReleaseArtifacts(unittest.TestCase):
                 self.assertEqual(members[1].mtime, 1234567890)
             with self.assertRaises(FileExistsError):
                 release.archive(a, 'release', entries, 1234567890)
+
+    def test_packaging_rejects_changed_or_replaced_source_commit(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.object(release, 'ROOT', Path(temporary)):
+            def git(*args):
+                return subprocess.check_output(['git', *args], cwd=temporary, stderr=subprocess.DEVNULL)
+            git('init', '--quiet')
+            source = Path(temporary) / 'source.go'
+            source.write_text('original source')
+            git('add', 'source.go')
+            git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'original')
+            commit = git('rev-parse', 'HEAD').decode().strip()
+            manifest = release.source_manifest()
+            release.require_source(commit, manifest)
+            source.write_text('changed source')
+            with self.assertRaises(ValueError):
+                release.require_source(commit, manifest)
+            git('add', 'source.go')
+            git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'changed')
+            with self.assertRaises(ValueError):
+                release.require_source(commit, manifest)
 
     def test_archive_refuses_parent_paths(self):
         with tempfile.TemporaryDirectory() as temporary:

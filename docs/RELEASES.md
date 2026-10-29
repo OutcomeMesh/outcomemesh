@@ -77,5 +77,6 @@ history readable. Version tags cannot be force-updated or deleted.
 GitHub Actions defaults to read-only permissions. Only the release job requests
 write access to releases and attestations. External actions are pinned to full
 commit IDs. Dependabot proposes weekly Go dependency and Actions updates; private
-vulnerability reporting and dependency security alerts are enabled. Issues and
+vulnerability reporting, dependency security alerts and CodeQL analysis for
+Go, Python and Actions are enabled. Issues and
 Discussions serve different purposes, with templates for bugs and proposals.

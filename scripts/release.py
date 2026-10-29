@@ -81,6 +81,16 @@ def dependency_notices(env):
     return notices
 
 
+def source_manifest():
+    tracked = run('git', 'ls-files', '-z').split('\0')
+    return ''.join(sha((ROOT / p).read_bytes()) + '  ' + p + '\n' for p in sorted(tracked) if p).encode()
+
+
+def require_source(commit, manifest):
+    if run('git', 'status', '--porcelain', '--untracked-files=normal') or run('git', 'rev-parse', 'HEAD') != commit or source_manifest() != manifest:
+        raise ValueError('source changed during packaging; partial output is not a release')
+
+
 def build(version, destination):
     validate_version(version)
     toolchain = (ROOT / '.go-version').read_text().strip()
@@ -100,12 +110,12 @@ def build(version, destination):
     destination = Path(destination).resolve()
     destination.mkdir(parents=True, exist_ok=False)
     # Keep the complete source manifest without bundling private build paths.
-    tracked = run('git', 'ls-files', '-z').split('\0')
-    manifest = ''.join(sha((ROOT / p).read_bytes()) + '  ' + p + '\n' for p in sorted(tracked) if p).encode()
+    manifest = source_manifest()
     (destination / 'SOURCE_MANIFEST.sha256').write_bytes(manifest)
     metadata = {'version': version, 'commit': commit, 'built_at': date, 'go': 'go' + toolchain, 'cgo_enabled': False, 'source_manifest_sha256': sha(manifest), 'platforms': []}
     ldflags = ' '.join('-X ' + PREFIX + key + '=' + value for key, value in [('Version', version), ('Commit', commit), ('Date', date)])
     for system, arch in PLATFORMS:
+        require_source(commit, manifest)
         platform_env = {**env, 'GOOS': system, 'GOARCH': arch}
         name = f'outcomemesh-{version}-{system}-{arch}'
         binary = destination / (name + '.binary')
@@ -115,10 +125,12 @@ def build(version, destination):
         info.update(os=system, arch=arch, binary_sha256=sha(data))
         entries = dependency_notices(platform_env)
         entries.update({'omd': (data, 0o755), 'LICENSE': ((ROOT / 'LICENSE').read_bytes(), 0o644), 'BUILDINFO.json': (json_bytes(info), 0o644), 'README.md': (f'# OutcomeMesh Core {version}\n\nPre-alpha software for development networks. Not ready to secure real value.\n\nPlatform: {system}/{arch}. Built with Go {toolchain}.\n\nRun `./omd version --json` to identify this binary.\nSource and documentation: https://github.com/OutcomeMesh/outcomemesh/tree/{commit}\n'.encode(), 0o644)})
+        require_source(commit, manifest)
         archive(destination / (name + '.tar.gz'), name, entries, epoch)
         binary.unlink()
         metadata['platforms'].append(info)
         print('Built ' + name, flush=True)
+    require_source(commit, manifest)
     (destination / 'BUILDINFO.json').write_bytes(json_bytes(metadata))
     sums = ''.join(sha(p.read_bytes()) + '  ' + p.name + '\n' for p in sorted(destination.iterdir()))
     (destination / 'SHA256SUMS').write_text(sums)
