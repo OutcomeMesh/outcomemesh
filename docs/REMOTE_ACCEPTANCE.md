@@ -51,7 +51,7 @@ seed from an existing node.
 ## Prepare builds, hosts and transport first
 
 1. Select and record the source revision. Build with the repository's pinned
-   `go1.26.7` toolchain. For a manual toolchain installation, select the matching
+   `go1.27.3` toolchain. For a manual toolchain installation, select the matching
    version/OS/architecture archive and verify its SHA256 against the
    [official Go download metadata](https://go.dev/dl/?mode=json&include=all)
    before unpacking it. Retain the archive name and digest in the run's private

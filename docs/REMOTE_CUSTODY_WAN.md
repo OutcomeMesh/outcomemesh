@@ -69,7 +69,7 @@ fields are:
     "store.test": "LOWERCASE_SHA256"
   },
   "provenance": {
-    "go": "go version go1.26.7 linux/amd64",
+    "go": "go version go1.27.3 linux/amd64",
     "source_manifest": "LOWERCASE_SOURCE_MANIFEST_SHA256"
   }
 }

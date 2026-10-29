@@ -169,7 +169,7 @@ separate open gates.
 
 ## Verification
 
-Use the pinned Go 1.26.7 toolchain. The focused integration/race suite joins
+Use the pinned Go 1.27.3 toolchain. The focused integration/race suite joins
 both record machines, checks V0 delivery refusal and kills original processes
 at publication boundaries:
 

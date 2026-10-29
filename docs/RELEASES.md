@@ -67,8 +67,10 @@ mainnet.
 
 ## Repository policy
 
-`main` uses the required `required` CI check, up-to-date branches, one reviewed
-pull request and code-owner review. Stale approvals are dismissed. Force pushes
+`main` requires every CI job and the aggregate `required` check, up-to-date
+branches, one reviewed pull request and code-owner review. Requiring each job
+also prevents a skipped aggregate after cancellation from admitting a change.
+Stale approvals are dismissed. Force pushes
 and branch deletion are disabled. Repository administrators retain GitHub's
 explicit bypass for exceptional maintenance; ordinary contribution flow uses
 pull requests. Squash merges and automatic deletion of merged branches keep the
