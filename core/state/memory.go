@@ -11,6 +11,7 @@ import (
 )
 
 var (
+	ErrCommitmentVersion = errors.New("unsupported or mismatched state commitment version")
 	ErrDuplicateResource = errors.New("duplicate resource")
 	ErrResourceNotFound  = errors.New("resource not found")
 	ErrResourceExists    = errors.New("resource already exists")
@@ -19,8 +20,10 @@ var (
 
 // Memory is immutable. Resource and owner/asset indexes share unchanged AVL
 // subtrees between snapshots; no mutation can leak into a parent or sibling.
-// The cached root retains the exact sorted-leaf v0 commitment.
+// Root uses the explicitly selected commitment; v0 remains byte-compatible.
 type Memory struct {
+	version   uint16
+	radix     *radixNode
 	resources *indexNode[leaf]
 	accounts  *indexNode[account]
 	rootOnce  sync.Once
@@ -41,9 +44,9 @@ func accountKey(owner types.Address, asset types.AssetID) string {
 	copy(key[32:], asset[:])
 	return string(key[:])
 }
-func Empty() *Memory { return &Memory{} }
-func New(resources []resource.Resource) (*Memory, error) {
-	result := Empty()
+func Empty() *Memory                                     { return &Memory{} }
+func New(resources []resource.Resource) (*Memory, error) { return NewVersion(resources, CommitmentV0) }
+func build(result *Memory, resources []resource.Resource) (*Memory, error) {
 	for i, v := range resources {
 		if err := v.Validate(); err != nil {
 			return nil, fmt.Errorf("resource %d: %w", i, err)
@@ -130,6 +133,10 @@ func (state *Memory) Root() types.Hash {
 		return types.DomainHash(types.DomainStateEmpty)
 	}
 	state.rootOnce.Do(func() {
+		if state.version == CommitmentRadixV1 {
+			state.root = radixRoot(state.radix)
+			return
+		}
 		if state.Len() == 0 {
 			state.root = types.DomainHash(types.DomainStateEmpty)
 			return
@@ -157,6 +164,9 @@ func (state *Memory) Root() types.Hash {
 // and cached resource hashes remain immutable. A 128-bit aggregate preserves
 // overflow detection even when a later diff removes resources from that account.
 func (state *Memory) insert(value resource.Resource) {
+	if state.version == CommitmentRadixV1 {
+		state.radix = radixInsert(state.radix, radixLeaf(value))
+	}
 	v := leaf{value: value, hash: types.DomainHash(types.DomainStateLeaf, value.CanonicalBytes())}
 	key := string(value.ID[:])
 	group := accountKey(value.Owner, value.Asset)
@@ -169,6 +179,9 @@ func (state *Memory) insert(value resource.Resource) {
 	state.resources = put(state.resources, key, v)
 }
 func (state *Memory) erase(value resource.Resource) {
+	if state.version == CommitmentRadixV1 {
+		state.radix = radixRemove(state.radix, value.ID)
+	}
 	key := string(value.ID[:])
 	group := accountKey(value.Owner, value.Asset)
 	a, _ := find(state.accounts, group)
@@ -220,7 +233,7 @@ func (state *Memory) WithChanges(consumed []types.ResourceID, created []resource
 	if len(consumed) == 0 && len(created) == 0 {
 		return state, nil
 	}
-	result := &Memory{resources: state.resources, accounts: state.accounts}
+	result := &Memory{version: state.version, radix: state.radix, resources: state.resources, accounts: state.accounts}
 	for _, id := range consumed {
 		v, _ := state.Get(id)
 		result.erase(v)

@@ -32,6 +32,13 @@ func New(ledger storage.Ledger, parameters block.Parameters) (*Chain, error) {
 	if ledger == nil || parameters.Validate() != nil {
 		return nil, ErrInvalidConfiguration
 	}
+	preState, err := ledger.Snapshot()
+	if err != nil {
+		return nil, err
+	}
+	if preState.CommitmentVersion() != parameters.StateCommitment() {
+		return nil, ErrInvalidConfiguration
+	}
 	return &Chain{
 		ledger:     ledger,
 		parameters: parameters,

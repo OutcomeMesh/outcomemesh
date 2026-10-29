@@ -3,6 +3,7 @@ package block
 import (
 	"github.com/outcomemesh/outcomemesh/core/difficulty"
 	"github.com/outcomemesh/outcomemesh/core/genesis"
+	"github.com/outcomemesh/outcomemesh/core/state"
 	"github.com/outcomemesh/outcomemesh/core/types"
 )
 
@@ -13,6 +14,7 @@ const (
 )
 
 type Parameters struct {
+	ProtocolVersion uint16
 	NetworkID       uint32
 	BlockSubsidy    uint64
 	AnchorTimestamp uint64
@@ -24,6 +26,7 @@ type Parameters struct {
 
 func ParametersFromGenesis(document genesis.Document) Parameters {
 	return Parameters{
+		ProtocolVersion: document.Version,
 		NetworkID:       document.NetworkID,
 		BlockSubsidy:    document.BlockSubsidy,
 		AnchorTimestamp: document.Timestamp,
@@ -46,7 +49,7 @@ func (parameters Parameters) Target(height, timestamp uint64) (types.Hash, error
 }
 
 func (parameters Parameters) valid() bool {
-	return parameters.NetworkID != 0 &&
+	return (parameters.ProtocolVersion == Version0 || parameters.ProtocolVersion == Version2) && parameters.NetworkID != 0 &&
 		parameters.BlockSubsidy != 0 &&
 		parameters.AnchorTimestamp != 0 &&
 		!parameters.AnchorTarget.IsZero() &&
@@ -60,4 +63,12 @@ func (parameters Parameters) Validate() error {
 		return ErrInvalidParameters
 	}
 	return nil
+}
+
+// StateCommitment is used only after validating Parameters.
+func (parameters Parameters) StateCommitment() uint16 {
+	if parameters.ProtocolVersion == Version2 {
+		return state.CommitmentRadixV1
+	}
+	return state.CommitmentV0
 }

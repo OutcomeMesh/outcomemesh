@@ -531,7 +531,7 @@ func prepareArchiveEffectConfig(config PruneArchiveEffectServiceConfig) (PruneAr
 	}
 	config.Base.RecentTimestamps = append([]uint64(nil), config.Base.RecentTimestamps...)
 	config.Base.Tip.CumulativeWork = append([]byte(nil), config.Base.Tip.CumulativeWork...)
-	config.Base.State, err = state.New(config.Base.State.Resources())
+	config.Base.State, err = state.NewVersion(config.Base.State.Resources(), config.Base.State.CommitmentVersion())
 	if err != nil {
 		return invalid(err)
 	}

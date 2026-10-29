@@ -71,7 +71,7 @@ func Prepare(preState *state.Memory, parent Parent, transactions []outcome.Trans
 	}
 	result := Block{
 		Header: Header{
-			Version:     Version0,
+			Version:     parameters.ProtocolVersion,
 			NetworkID:   parameters.NetworkID,
 			Height:      parent.Height + 1,
 			Parent:      parent.ID,
@@ -141,6 +141,9 @@ func ValidateHeaderAt(parent Parent, header Header, parameters Parameters, valid
 	if err := header.ValidateBasic(); err != nil {
 		return err
 	}
+	if header.Version != parameters.ProtocolVersion {
+		return ErrUnsupportedVersion
+	}
 	if header.NetworkID != parameters.NetworkID {
 		return fmt.Errorf("%w: got %d want %d", ErrUnexpectedNetwork, header.NetworkID, parameters.NetworkID)
 	}
@@ -191,6 +194,9 @@ func executeBody(preState *state.Memory, parent Parent, transactions []outcome.T
 	if preState == nil {
 		return nil, nil, 0, resource.Resource{}, execution.ErrStateUnavailable
 	}
+	if preState.CommitmentVersion() != parameters.StateCommitment() {
+		return nil, nil, 0, resource.Resource{}, state.ErrCommitmentVersion
+	}
 	if miner.IsZero() {
 		return nil, nil, 0, resource.Resource{}, ErrMiner
 	}
@@ -200,8 +206,9 @@ func executeBody(preState *state.Memory, parent Parent, transactions []outcome.T
 	var fees uint64
 	for index, transaction := range transactions {
 		result, err := execution.Apply(current, transaction, execution.Context{
-			NetworkID: parameters.NetworkID,
-			Height:    parent.Height + 1,
+			StateCommitment: parameters.StateCommitment(),
+			NetworkID:       parameters.NetworkID,
+			Height:          parent.Height + 1,
 		})
 		if err != nil {
 			return nil, nil, 0, resource.Resource{}, fmt.Errorf("transaction %d: %w", index, err)
@@ -212,7 +219,7 @@ func executeBody(preState *state.Memory, parent Parent, transactions []outcome.T
 		}
 		current = result.State
 		receipts[index] = Receipt{
-			Version:       Version0,
+			Version:       parameters.ProtocolVersion,
 			TxID:          result.TxID,
 			PostStateRoot: result.StateRoot,
 			Fee:           result.Fee,

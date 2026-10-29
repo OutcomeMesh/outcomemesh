@@ -75,6 +75,9 @@ func runWorkEnable(arguments []string) error {
 	if err != nil {
 		return err
 	}
+	if document.Version != genesis.Version0 {
+		return errors.New("WorkGraph requires protocol 0 genesis; protocol 2 activation is not defined")
+	}
 	if !workgraph.ExactShareRatio(document.Target) {
 		return errors.New("genesis target cannot preserve the exact 512:1 WorkGraph threshold ratio; use at least 9 leading difficulty bits")
 	}
@@ -798,6 +801,9 @@ func openWorkRouter(
 }
 
 func validateWorkActivation(profile workActivationProfile, document genesis.Document) error {
+	if document.Version != genesis.Version0 {
+		return errors.New("WorkGraph requires protocol 0 genesis; protocol 2 activation is not defined")
+	}
 	genesisID, err := document.ID()
 	if err != nil {
 		return err

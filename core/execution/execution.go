@@ -28,8 +28,9 @@ var (
 )
 
 type Context struct {
-	NetworkID uint32
-	Height    uint64
+	StateCommitment uint16
+	NetworkID       uint32
+	Height          uint64
 }
 
 type Result struct {
@@ -41,8 +42,9 @@ type Result struct {
 	StateRoot types.Hash
 }
 
-// Transition contains a validated state change without materializing its v0
-// commitment. Admission and transaction selection do not need a receipt root.
+// Transition contains a validated state change without requesting a receipt
+// root. Version 0 avoids a full commitment scan here; radix paths are updated
+// as part of the immutable diff. Admission and selection do not need a root.
 // Consensus block execution must use Apply, which supplies that commitment.
 type Transition struct {
 	State             *state.Memory
@@ -65,6 +67,9 @@ func Apply(preState *state.Memory, transaction outcome.Transaction, context Cont
 func ApplyTransition(preState *state.Memory, transaction outcome.Transaction, context Context) (Transition, error) {
 	if preState == nil {
 		return Transition{}, ErrStateUnavailable
+	}
+	if !state.ValidCommitment(context.StateCommitment) || preState.CommitmentVersion() != context.StateCommitment {
+		return Transition{}, state.ErrCommitmentVersion
 	}
 	if err := transaction.ValidateBasic(); err != nil {
 		return Transition{}, err

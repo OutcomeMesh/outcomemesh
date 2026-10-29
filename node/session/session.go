@@ -64,13 +64,14 @@ func DefaultConfig() Config {
 }
 
 type Node struct {
-	sync        *syncer.Service
-	ledger      storage.Ledger
-	pool        *mempool.Pool
-	networkID   uint32
-	config      Config
-	discoveryMu sync.RWMutex
-	book        *discovery.Book
+	commitmentVersion uint16
+	sync              *syncer.Service
+	ledger            storage.Ledger
+	pool              *mempool.Pool
+	networkID         uint32
+	config            Config
+	discoveryMu       sync.RWMutex
+	book              *discovery.Book
 }
 
 // AttachDiscovery installs the bounded address book used by GetPeers and
@@ -118,7 +119,11 @@ func New(syncService *syncer.Service, ledger storage.Ledger, pool *mempool.Pool,
 	if err != nil {
 		return nil, err
 	}
-	return &Node{sync: syncService, ledger: ledger, pool: pool, networkID: status.NetworkID, config: config}, nil
+	localState, err := ledger.Snapshot()
+	if err != nil {
+		return nil, err
+	}
+	return &Node{commitmentVersion: localState.CommitmentVersion(), sync: syncService, ledger: ledger, pool: pool, networkID: status.NetworkID, config: config}, nil
 }
 
 // Serve performs the responder handshake and processes bounded messages until
@@ -479,12 +484,12 @@ func (node *Node) DownloadSnapshot(ctx context.Context, stream Stream) (*state.M
 	if err != nil {
 		return nil, wire.Status{}, err
 	}
-	collector, err := snapshotprotocol.NewCollector(manifest, snapshotprotocol.Anchor{
+	collector, err := snapshotprotocol.NewCollectorVersion(manifest, snapshotprotocol.Anchor{
 		NetworkID: remote.NetworkID,
 		BlockID:   remote.TipID,
 		Height:    remote.TipHeight,
 		StateRoot: remote.StateRoot,
-	}, node.config.MaxSnapshotResources)
+	}, node.config.MaxSnapshotResources, node.commitmentVersion)
 	if err != nil {
 		return nil, wire.Status{}, err
 	}
@@ -585,7 +590,7 @@ func (node *Node) acceptTransaction(transaction outcome.Transaction) error {
 	if err != nil {
 		return err
 	}
-	_, err = node.pool.Add(preState, transaction, execution.Context{NetworkID: node.networkID, Height: tip.Height + 1})
+	_, err = node.pool.Add(preState, transaction, execution.Context{StateCommitment: node.commitmentVersion, NetworkID: node.networkID, Height: tip.Height + 1})
 	return err
 }
 
@@ -604,7 +609,7 @@ func (node *Node) revalidatePool() error {
 	if err != nil {
 		return err
 	}
-	node.pool.Revalidate(preState, execution.Context{NetworkID: node.networkID, Height: tip.Height + 1})
+	node.pool.Revalidate(preState, execution.Context{StateCommitment: node.commitmentVersion, NetworkID: node.networkID, Height: tip.Height + 1})
 	return nil
 }
 

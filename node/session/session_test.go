@@ -433,7 +433,7 @@ func exchangeTransaction(t testing.TB, sender, receiver *Node, transaction outco
 	return err
 }
 
-func newNodeFixture(t testing.TB, networkID uint32) nodeFixture {
+func newNodeFixture(t testing.TB, networkID uint32, version ...uint16) nodeFixture {
 	t.Helper()
 	var target types.Hash
 	for index := range target {
@@ -458,6 +458,9 @@ func newNodeFixture(t testing.TB, networkID uint32) nodeFixture {
 			Asset:   types.NativeAssetID(),
 			Amount:  10_000,
 		}},
+	}
+	if len(version) > 0 {
+		document.Version = version[0]
 	}
 	store, err := reference.New(document)
 	if err != nil {

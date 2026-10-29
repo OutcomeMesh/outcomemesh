@@ -16,15 +16,14 @@ that account.
 The v0 root is unchanged: sorted resource leaves, paired domain-separated hashes,
 and duplication of an odd final node. Leaf hashes are cached, iteration needs no
 sort, and repeated Root calls on one immutable snapshot share a concurrent cache.
-A changed root still costs O(N) internal hashes. Insertions shift leaf ranks in
+A changed v0 root still costs O(N) internal hashes. Insertions shift leaf ranks in
 this commitment; path copying alone cannot make that cost logarithmic.
 
 Mempool admission, selection and revalidation use ApplyTransition, which does not
-materialize a root. Consensus block and WorkGraph execution still use Apply and
-retain every transaction's original post-state root. Removing those roots or
-switching to a sparse/persistent Merkle commitment requires a versioned protocol
-proposal, activation rules and new independent verification. No such activation
-is part of this change.
+materialize a v0 root. Consensus block and WorkGraph execution retain every
+transaction's post-state root. [Protocol 2](STATE_RADIX_V1.md) now provides a
+separate incremental commitment for explicitly created standalone chains. It does
+not migrate v0 or WorkGraph chains; the costs in this document describe v0.
 
 On an Apple M3, a representative one-input/one-output diff measured about 2.4 µs
 at 1,000 resources and 4.5 µs at 100,000; balance lookup was about 80 ns in both

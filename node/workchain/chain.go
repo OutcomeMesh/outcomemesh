@@ -128,7 +128,7 @@ type Store struct {
 
 func New(base Base, parameters workblock.Parameters) (*Store, error) {
 	_, _, rewardErr := workgraph.RewardRates(parameters.BlockSubsidy)
-	if base.State == nil || base.Tip.Validate() != nil || base.Tip.StateRoot != base.State.Root() ||
+	if base.State == nil || base.State.CommitmentVersion() != state.CommitmentV0 || base.Tip.Validate() != nil || base.Tip.StateRoot != base.State.Root() ||
 		base.Tip.Height == ^uint64(0) || base.Tip.Height+1 != parameters.ActivationHeight ||
 		parameters.NetworkID == 0 || rewardErr != nil || parameters.RewardMaturity == 0 ||
 		parameters.DifficultyAnchorTimestamp == 0 ||

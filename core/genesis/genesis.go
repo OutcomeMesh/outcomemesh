@@ -11,7 +11,9 @@ import (
 )
 
 const (
-	Version0       uint16 = 0
+	Version0 uint16 = 0
+	// Version2 explicitly selects the incremental radix commitment for a new chain.
+	Version2       uint16 = 2
 	MaxAllocations        = 65_536
 )
 
@@ -33,7 +35,7 @@ type Document struct {
 }
 
 func (document Document) Validate() error {
-	if document.Version != Version0 {
+	if document.Version != Version0 && document.Version != Version2 {
 		return fmt.Errorf("%w: %d", ErrUnsupportedVersion, document.Version)
 	}
 	if document.NetworkID == 0 {
@@ -51,7 +53,7 @@ func (document Document) Validate() error {
 	if len(document.Allocations) > MaxAllocations {
 		return fmt.Errorf("genesis allocation count %d exceeds %d", len(document.Allocations), MaxAllocations)
 	}
-	_, err := state.New(document.Allocations)
+	_, err := state.NewVersion(document.Allocations, document.StateCommitment())
 	return err
 }
 
@@ -80,11 +82,19 @@ func (document Document) ID() (types.Hash, error) {
 	return types.DomainHash(types.DomainGenesisID, document.CanonicalBytes()), nil
 }
 
+// StateCommitment is meaningful only for a validated document.
+func (document Document) StateCommitment() uint16 {
+	if document.Version == Version2 {
+		return state.CommitmentRadixV1
+	}
+	return state.CommitmentV0
+}
+
 func (document Document) State() (*state.Memory, error) {
 	if err := document.Validate(); err != nil {
 		return nil, err
 	}
-	return state.New(document.Allocations)
+	return state.NewVersion(document.Allocations, document.StateCommitment())
 }
 
 func (document Document) StateRoot() (types.Hash, error) {

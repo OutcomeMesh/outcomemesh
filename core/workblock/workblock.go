@@ -120,7 +120,7 @@ func PreparePayload(
 	transactions []outcome.Transaction,
 	parameters Parameters,
 ) (*Payload, error) {
-	if preState == nil || !parameters.valid() {
+	if preState == nil || preState.CommitmentVersion() != state.CommitmentV0 || !parameters.valid() {
 		return nil, ErrParameters
 	}
 	if err := validatePosition(position, parameters); err != nil {

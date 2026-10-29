@@ -12,13 +12,14 @@ import (
 )
 
 type Store struct {
-	mu        sync.RWMutex
-	closed    bool
-	tip       storage.Tip
-	nodes     map[types.Hash]storage.Tip
-	states    map[types.Hash]*state.Memory
-	blocks    map[types.Hash]block.Block
-	canonical map[uint64]types.Hash
+	protocolVersion uint16
+	mu              sync.RWMutex
+	closed          bool
+	tip             storage.Tip
+	nodes           map[types.Hash]storage.Tip
+	states          map[types.Hash]*state.Memory
+	blocks          map[types.Hash]block.Block
+	canonical       map[uint64]types.Hash
 }
 
 func New(document genesis.Document) (*Store, error) {
@@ -31,11 +32,12 @@ func New(document genesis.Document) (*Store, error) {
 		return nil, err
 	}
 	return &Store{
-		tip:       tip,
-		nodes:     map[types.Hash]storage.Tip{tip.ID: cloneTip(tip)},
-		states:    map[types.Hash]*state.Memory{tip.ID: initialState},
-		blocks:    make(map[types.Hash]block.Block),
-		canonical: make(map[uint64]types.Hash),
+		protocolVersion: document.Version,
+		tip:             tip,
+		nodes:           map[types.Hash]storage.Tip{tip.ID: cloneTip(tip)},
+		states:          map[types.Hash]*state.Memory{tip.ID: initialState},
+		blocks:          make(map[types.Hash]block.Block),
+		canonical:       make(map[uint64]types.Hash),
 	}, nil
 }
 
@@ -122,6 +124,9 @@ func (store *Store) Commit(parent storage.Tip, candidate block.Block, postState 
 	if !storage.EqualTips(parent, storedParent) {
 		return storage.Tip{}, storage.ErrTipChanged
 	}
+	if err := storage.ValidateProtocol(store.protocolVersion, candidate, postState); err != nil {
+		return storage.Tip{}, err
+	}
 	next, err := storage.ValidateChild(storedParent, candidate, postState)
 	if err != nil {
 		return storage.Tip{}, err
@@ -191,7 +196,7 @@ func cloneState(value *state.Memory) (*state.Memory, error) {
 	if value == nil {
 		return nil, storage.ErrCorrupt
 	}
-	return state.New(value.Resources())
+	return state.NewVersion(value.Resources(), value.CommitmentVersion())
 }
 
 func cloneBlock(value block.Block) (block.Block, error) {

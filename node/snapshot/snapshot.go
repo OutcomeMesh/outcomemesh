@@ -246,13 +246,22 @@ func DecodeChunk(input []byte) (Chunk, error) {
 }
 
 type Collector struct {
-	manifest  Manifest
-	resources []resource.Resource
-	next      uint32
-	finalized bool
+	commitmentVersion uint16
+	manifest          Manifest
+	resources         []resource.Resource
+	next              uint32
+	finalized         bool
 }
 
 func NewCollector(manifest Manifest, anchor Anchor, maxResources uint64) (*Collector, error) {
+	return NewCollectorVersion(manifest, anchor, maxResources, state.CommitmentV0)
+}
+
+// NewCollectorVersion takes the commitment from the trusted local chain, never the peer.
+func NewCollectorVersion(manifest Manifest, anchor Anchor, maxResources uint64, commitment uint16) (*Collector, error) {
+	if !state.ValidCommitment(commitment) {
+		return nil, state.ErrCommitmentVersion
+	}
 	if err := manifest.Validate(); err != nil {
 		return nil, err
 	}
@@ -263,7 +272,7 @@ func NewCollector(manifest Manifest, anchor Anchor, maxResources uint64) (*Colle
 		manifest.Height != anchor.Height || manifest.StateRoot != anchor.StateRoot {
 		return nil, ErrAnchor
 	}
-	return &Collector{manifest: manifest, resources: make([]resource.Resource, 0, int(manifest.ResourceCount))}, nil
+	return &Collector{commitmentVersion: commitment, manifest: manifest, resources: make([]resource.Resource, 0, int(manifest.ResourceCount))}, nil
 }
 
 func (collector *Collector) Add(chunk Chunk) error {
@@ -306,7 +315,7 @@ func (collector *Collector) Finalize() (*state.Memory, error) {
 	if collector.next != collector.manifest.ChunkCount || uint64(len(collector.resources)) != collector.manifest.ResourceCount {
 		return nil, ErrIncomplete
 	}
-	result, err := state.New(collector.resources)
+	result, err := state.NewVersion(collector.resources, collector.commitmentVersion)
 	if err != nil {
 		return nil, err
 	}

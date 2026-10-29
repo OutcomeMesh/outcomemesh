@@ -12,6 +12,7 @@ import (
 
 const (
 	Version0             uint16 = 0
+	Version2             uint16 = 2 // plain ledger with the radix state commitment; v1 belongs to WorkGraph
 	MaxTransactions             = 4_096
 	MaxCanonicalBytes           = 8 << 20
 	HeaderCanonicalBytes        = 222
@@ -57,7 +58,7 @@ type Receipt struct {
 }
 
 func (header Header) ValidateBasic() error {
-	if header.Version != Version0 {
+	if header.Version != Version0 && header.Version != Version2 {
 		return fmt.Errorf("%w: %d", ErrUnsupportedVersion, header.Version)
 	}
 	if header.NetworkID == 0 {
@@ -261,7 +262,7 @@ func TransactionRoot(transactions []outcome.Transaction) (types.Hash, error) {
 }
 
 func (receipt Receipt) Validate() error {
-	if receipt.Version != Version0 {
+	if receipt.Version != Version0 && receipt.Version != Version2 {
 		return fmt.Errorf("%w: %d", ErrReceiptVersion, receipt.Version)
 	}
 	return nil

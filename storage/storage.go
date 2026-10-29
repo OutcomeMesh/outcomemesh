@@ -247,8 +247,23 @@ func ValidateChild(parent Tip, candidate block.Block, postState *state.Memory) (
 	if err := candidate.ValidateBasic(); err != nil {
 		return Tip{}, err
 	}
+	if err := ValidateProtocol(candidate.Header.Version, candidate, postState); err != nil {
+		return Tip{}, err
+	}
 	if candidate.Header.StateRoot != postState.Root() {
 		return Tip{}, fmt.Errorf("%w: header %s state %s", ErrStateRoot, candidate.Header.StateRoot, postState.Root())
 	}
 	return NextTip(parent, candidate)
+}
+
+// ValidateProtocol binds direct store commits to the original genesis version.
+func ValidateProtocol(version uint16, candidate block.Block, postState *state.Memory) error {
+	p := block.Parameters{ProtocolVersion: version}
+	if (version != block.Version0 && version != block.Version2) || candidate.Header.Version != version {
+		return block.ErrUnsupportedVersion
+	}
+	if postState == nil || postState.CommitmentVersion() != p.StateCommitment() {
+		return state.ErrCommitmentVersion
+	}
+	return nil
 }

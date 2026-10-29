@@ -127,7 +127,7 @@ func validConfig(config Config) bool {
 	legacy := config.Legacy
 	work := config.Work
 	_, _, rewardErr := workgraph.RewardRates(work.BlockSubsidy)
-	return config.Now != nil && legacy.Validate() == nil && work.ActivationHeight > 0 &&
+	return legacy.ProtocolVersion == legacyblock.Version0 && config.Now != nil && legacy.Validate() == nil && work.ActivationHeight > 0 &&
 		legacy.NetworkID == work.NetworkID && legacy.BlockSubsidy == work.BlockSubsidy &&
 		legacy.RewardMaturity == work.RewardMaturity &&
 		legacy.AnchorTimestamp == work.DifficultyAnchorTimestamp &&

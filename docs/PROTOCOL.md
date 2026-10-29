@@ -1,10 +1,20 @@
 # Protocol specification
 
-Status: version 0 draft
+Status: version 0 baseline; explicit experimental protocol 2 for new standalone chains
 
 This document describes the current deterministic standalone vertical slice. It
 includes blocks, proof of work, atomic storage, and reward maturity; networking,
 WorkGraph, committees, Wasm, privacy, and zero-knowledge proofs remain excluded.
+
+## Explicit protocol 2 state commitment
+
+Protocol 0 keeps the exact original roots and bytes described below. Protocol 2
+uses genesis/header/receipt version 2 and state commitment version 1, defined in
+[STATE_RADIX_V1.md](STATE_RADIX_V1.md). That definition, including its hash domains,
+branch shape, encoding and activation restrictions, is part of this specification.
+Resources and transactions keep their original formats. Version 1 is reserved
+for the separate WorkGraph block protocol. Existing chains cannot switch merely
+by updating a binary or editing a local setting.
 
 ## Numeric conventions
 

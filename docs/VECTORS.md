@@ -277,3 +277,16 @@ version        = 0
 terminal_bytes = 3809
 terminal_id    = 65bdc27adc12bbb246f043845034d5f43ffdba2a64f31a6325332d00dc580eab
 ```
+
+## Separate protocol 2 / radix commitment 1
+
+The complete canonical resources, membership/absence proofs, genesis and first
+block are in [`radix-v1.json`](../core/state/testdata/radix-v1.json).
+Original protocol 0 vectors above remain unchanged. Expected identifiers:
+
+| Value | Hex |
+| --- | --- |
+| Empty radix root | `eda3c66a2a850ff6a9f70fe1d238e12563b3e6bfde86db03f2dfab1c890802e5` |
+| Three-resource radix root | `ce66a5c56a00da5d070906ba5e3ffa337782c295c72f4f68a43087ec7efadd8b` |
+| Protocol 2 genesis ID | `79f0789eb503f702395b925d51001f5992cb28ba1d740f73c4a99ccfe34b2a19` |
+| Protocol 2 first block ID | `c0e0d2da278978c32c12eecd67fe697db48f9832f9eed6e98db262d87572dae8` |

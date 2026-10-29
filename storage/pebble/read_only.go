@@ -58,7 +58,7 @@ func OpenExistingReadOnly(path string, document genesis.Document, policy Policy)
 			err = errors.Join(err, db.Close())
 		}
 	}()
-	store := &Store{db: db, policy: policy, readOnly: true}
+	store := &Store{db: db, policy: policy, readOnly: true, protocolVersion: document.Version, commitmentVersion: document.StateCommitment()}
 	storedGenesis, err := store.getCopy(keyGenesis)
 	if err != nil {
 		return nil, errors.Join(storage.ErrCorrupt, err)

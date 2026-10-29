@@ -51,13 +51,15 @@ func DefaultPolicy() Policy {
 }
 
 type Store struct {
-	mu           sync.Mutex
-	db           *pebble.DB
-	policy       Policy
-	historyBytes uint64
-	closed       bool
-	readOnly     bool
-	commitHook   func(commitStage) error
+	protocolVersion   uint16
+	commitmentVersion uint16
+	mu                sync.Mutex
+	db                *pebble.DB
+	policy            Policy
+	historyBytes      uint64
+	closed            bool
+	readOnly          bool
+	commitHook        func(commitStage) error
 }
 
 type commitStage uint8
@@ -99,7 +101,7 @@ func openWithPolicyOptions(path string, document genesis.Document, policy Policy
 	if err != nil {
 		return nil, err
 	}
-	store := &Store{db: db, policy: policy}
+	store := &Store{db: db, policy: policy, protocolVersion: document.Version, commitmentVersion: document.StateCommitment()}
 	if err := store.initialize(document); err != nil {
 		_ = db.Close()
 		return nil, err
@@ -292,7 +294,10 @@ func (store *Store) snapshotAtUnlocked(tip storage.Tip) (*state.Memory, error) {
 			return nil, storage.ErrCorrupt
 		}
 	}
-	current := state.Empty()
+	current, err := state.EmptyVersion(store.commitmentVersion)
+	if err != nil {
+		return nil, err
+	}
 	for index := len(path) - 1; index >= 0; index-- {
 		var err error
 		current, err = store.applySnapshotDeltaUnlocked(current, path[index])
@@ -365,7 +370,7 @@ func (store *Store) applySnapshotDeltaUnlocked(current *state.Memory, tip storag
 	for _, value := range resources {
 		values = append(values, value)
 	}
-	result, err := state.New(values)
+	result, err := state.NewVersion(values, store.commitmentVersion)
 	if err != nil {
 		return nil, fmt.Errorf("%w: apply snapshot delta: %v", storage.ErrCorrupt, err)
 	}
@@ -402,7 +407,7 @@ func (store *Store) loadStateUnlocked(
 	if err := iterator.Error(); err != nil {
 		return nil, err
 	}
-	result, err := state.New(resources)
+	result, err := state.NewVersion(resources, store.commitmentVersion)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", storage.ErrCorrupt, err)
 	}
@@ -454,6 +459,9 @@ func (store *Store) blockByIDUnlocked(id types.Hash) (block.Block, error) {
 	if err != nil {
 		return block.Block{}, fmt.Errorf("%w: decode block %s: %v", storage.ErrCorrupt, id, err)
 	}
+	if result.Header.Version != store.protocolVersion {
+		return block.Block{}, fmt.Errorf("%w: stored block protocol", storage.ErrCorrupt)
+	}
 	actualID, err := result.Header.ID()
 	if err != nil || actualID != id {
 		return block.Block{}, fmt.Errorf("%w: block ID key mismatch", storage.ErrCorrupt)
@@ -479,6 +487,9 @@ func (store *Store) Commit(parent storage.Tip, candidate block.Block, postState 
 	}
 	current, err := store.tipUnlocked()
 	if err != nil {
+		return storage.Tip{}, err
+	}
+	if err := storage.ValidateProtocol(store.protocolVersion, candidate, postState); err != nil {
 		return storage.Tip{}, err
 	}
 	next, err := storage.ValidateChild(storedParent, candidate, postState)

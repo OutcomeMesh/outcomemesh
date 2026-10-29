@@ -240,6 +240,7 @@ func run(arguments []string) error {
 
 func runInit(arguments []string) error {
 	flags := flag.NewFlagSet("init", flag.ContinueOnError)
+	protocolVersion := flags.Uint("protocol-version", 0, "new chain protocol: 0 (legacy) or 2 (experimental radix state)")
 	data := flags.String("data", defaultDataDirectory, "node data directory")
 	network := flags.Uint("network", 20260826, "non-zero network identifier")
 	timestamp := flags.Uint64("timestamp", 0, "genesis Unix timestamp (default: now)")
@@ -250,6 +251,18 @@ func runInit(arguments []string) error {
 	ownerText := flags.String("owner", defaultDevelopmentAddress().String(), "genesis allocation address as 64 hex characters")
 	if err := flags.Parse(arguments); err != nil {
 		return err
+	}
+	if *protocolVersion != 0 && *protocolVersion != 2 {
+		return genesis.ErrUnsupportedVersion
+	}
+	networkExplicit := false
+	flags.Visit(func(f *flag.Flag) {
+		if f.Name == "network" {
+			networkExplicit = true
+		}
+	})
+	if *protocolVersion == 2 && !networkExplicit {
+		return errors.New("protocol 2 requires an explicit --network identifier for a separate development chain")
 	}
 	if *network == 0 || *network > uint(^uint32(0)) {
 		return errors.New("network must fit a non-zero uint32")
@@ -274,7 +287,7 @@ func runInit(arguments []string) error {
 		owner[:],
 	))
 	document := genesis.Document{
-		Version:      genesis.Version0,
+		Version:      uint16(*protocolVersion),
 		NetworkID:    uint32(*network),
 		Timestamp:    *timestamp,
 		Target:       target,
@@ -321,7 +334,7 @@ func runInit(arguments []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("initialized network=%d genesis=%s state=%s owner=%s target=%s\n", document.NetworkID, tip.ID, tip.StateRoot, owner, target)
+	fmt.Printf("initialized protocol=%d network=%d genesis=%s state=%s owner=%s target=%s\n", document.Version, document.NetworkID, tip.ID, tip.StateRoot, owner, target)
 	return nil
 }
 
