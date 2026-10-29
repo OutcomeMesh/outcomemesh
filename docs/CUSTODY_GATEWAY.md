@@ -210,3 +210,13 @@ reading an outer historical response alone is never live permission.
 See the [complete contract](CUSTODY_PROFILE5_EXECUTION.md) for explicit setup,
 source continuation, keys, limits and failure behavior. The original base-only
 workflow above remains usable without configuring execution.
+
+
+## Optional profile-5 network relay
+
+[Gateway relay v5](CUSTODY_PROFILE5_WAN.md) is a separate ParticipantUID process
+with an allowlisted, independently peer-pinned QUIC endpoint. It forwards only
+complete signed Runtime envelopes over the original Unix socket. The owner stays
+local and retains all current source/version, key, cursor and recovery checks.
+Raw reads, local inspection and permanent revocation are not exposed by this
+network endpoint. Transport authentication never replaces gateway signatures.

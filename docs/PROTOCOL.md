@@ -704,3 +704,15 @@ Serve receipts close the original admission with no refund. Gateway revocation
 is permanent and local. Bounds, compatibility, clock/UID assumptions, vectors,
 exact recovery and remaining activation gates are specified in the linked rules.
 No consensus, coin issuance, raw legacy ticket or mainnet permission is changed.
+
+
+## Profile-5 gateway transport
+
+The opt-in `/outcomemesh/custody-gateway/5` QUIC protocol carries one length-prefixed
+`OMCGXRQ5` signed Runtime envelope and one length-prefixed `OMCGRSP1` service
+response, with complete EOF in both directions. It changes no artifact domain,
+encoding, admission quorum or source/version rule. An unprivileged relay forwards
+through the existing kernel-UID-checked Unix client; it has no execution owner.
+Legacy custody protocols are not enabled as fallback. Independent peer/descriptor
+pins, allowlist, request/response validation and exact cold recovery are specified
+in [the network contract](CUSTODY_PROFILE5_WAN.md).

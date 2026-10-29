@@ -29,6 +29,12 @@ of completed tasks. See [the baseline and remaining launch gates](docs/PRODUCTIO
 
 ## What runs today
 
+Protected profile-5 archive execution now has an unprivileged QUIC relay and a
+[reproducible two-host fault campaign](docs/CUSTODY_PROFILE5_WAN.md): packet loss,
+service restarts, exact retained-response recovery and original admission/Serve
+closure. This remains an experimental operator subsystem under a trusted host
+boundary; it does not activate mainnet.
+
 Milestones 0–4 are complete under the repository's written exit gates. The
 deterministic kernel, signed ledger, standalone PoW chain, and bounded QUIC
 peer-to-peer devnet all run today. Milestone 5 WorkGraph research and

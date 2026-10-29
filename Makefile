@@ -31,6 +31,7 @@ test-race:
 	$(GO) test -race ./... -run '^TestAdmissionDelivery'
 
 test-fuzz-smoke:
+	$(GO) test ./node/custodygateway/gatewayrelay -run '^$$' -fuzz '^FuzzGatewayRelayAttempt$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodygateway -run '^$$' -fuzz '^FuzzProtected5Commands$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodygateway/gatewaywire -run '^$$' -fuzz '^FuzzProtected5Wire$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyv2 -run '^$$' -fuzz '^FuzzProtected5Artifacts$$' -fuzztime=$(FUZZTIME)
@@ -134,6 +135,7 @@ test-fuzz-smoke:
 	$(GO) test ./sim/workgraphmodel -run '^$$' -fuzz '^FuzzRunSelfishStrategiesNeverBreakAccounting$$' -fuzztime=$(FUZZTIME)
 
 test-process:
+	$(GO) test -tags=integration ./cmd/omd -run '^TestProtected5DistributedSetupCreatesOnlySelectedOriginal$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./cmd/omd -run '^TestProtected5ActualExecutionAcceptanceAndAccounting$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessProfile5UIDExecutionLostReplyAndFullClosure$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessGatewayUIDIsolationRestartAndRevocation$$' -count=1 -timeout=2m

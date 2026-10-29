@@ -10,6 +10,36 @@ Full planned production readiness is approximately **44/100**, using the weighte
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
 
+## 2026-10-29: protected profile-5 joint WAN execution and recovery
+
+The [profile-5 QUIC relay](CUSTODY_PROFILE5_WAN.md) now delivers exact signed
+Runtime envelopes to the isolated local service from a separately authenticated
+network peer. It runs as ParticipantUID and holds no owner/source/archive or
+execution signing keys. A separate protocol, explicit peer allowlist, bounded
+streams/deadlines, complete request/reply EOF and end-to-end gateway signatures
+retain the existing execution/recovery rules. The reviewed relay CLI checks the
+complete address against its independent peer pin before opening a connection.
+
+A joint campaign creates original A/B sources on their respective Linux hosts;
+no live owner is copied. Four original witness histories are split two per host.
+Real execution survives dropped reverse UDP packets, killed B/relay processes,
+exact cold reply recovery, a complete packet partition, A restarts and protected
+Serve closure. All four admission histories close with spent=2, pending=0 and
+source=1. A separate lost-session case cannot execute after B restart: even an
+identical historical Prepare reply cannot recreate its private session. Spent=2,
+pending=2 and source=0 remain; no result is synthesized. Minority quorums,
+unlisted peers and stale requests are refused. Original sealed handoffs remain
+byte-identical in both scenarios.
+
+[Evidence](evidence/custody-profile5-wan-20261029.json) includes final native/source
+hashes, both public artifact archives, packet counters, response byte comparison,
+all original admission snapshots, previous failed attempts and process cleanup.
+Race checks cover the gateway, relay/transport and new CLI/setup; targeted process
+regression, parser fuzz smoke, static checks and acceptance-support tests pass.
+The four witness domains still share two hosts and one operator. Their control
+artifacts use pinned SSH in this campaign; no new witness-QUIC, hardware/root-clone
+or physical-failure acceptance is claimed. Readiness remains **44/100**.
+
 ## 2026-10-29: protected Plan5 actual execution and complete job closure
 
 The [protected profile-5 adapter](CUSTODY_PROFILE5_EXECUTION.md) binds both

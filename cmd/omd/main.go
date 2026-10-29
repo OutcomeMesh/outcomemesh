@@ -134,6 +134,8 @@ func run(arguments []string) error {
 		return runCustodyV2DeliveryCLI(arguments)
 	case custodyProfile5Command:
 		return runCustodyProfile5CLI(arguments)
+	case custodyRelayCommand:
+		return runCustodyRelayCLI(arguments)
 	case custodyGatewayCommand:
 		return runCustodyGatewayCLI(arguments)
 	case custodySourceHandoffCommand:

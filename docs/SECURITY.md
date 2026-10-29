@@ -1449,3 +1449,17 @@ independent witness operators, physical fault tolerance, trusted external time o
 an external audit. Local revocation does not retroactively erase completed effects
 or atomically revoke another machine. Old native formats remain compatible and
 old accounting-only imported scopes remain non-executable through this adapter.
+
+
+## Protected gateway network delivery (2026-10-29)
+
+The [v5 relay](CUSTODY_PROFILE5_WAN.md) has a network key and ParticipantUID access
+to a fixed Unix socket, with no service/source/archive or execution signing key.
+Its authenticated allowlist and bounded complete frames are additional checks;
+the original local owner independently authorizes every signed Runtime envelope.
+Clients pin both the relay peer and the complete gateway descriptor, verify the
+end-to-end service signature and require reply EOF. Missing replies keep the
+exact attempt unresolved. A historical Prepare reply cannot restore a lost
+private session or clear its obligation. The two-host acceptance uses public
+fixture keys and one operator, not independent trust domains or root/VM-clone
+resistance. No network operation grants raw archive access or global revocation.

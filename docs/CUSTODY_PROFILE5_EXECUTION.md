@@ -238,3 +238,12 @@ and runtime commands; smoke coverage is not an audit or long-duration campaign.
 parser fuzzing, original-witness accounting, controlled crash/clock/key/cursor
 checks, and native Linux process campaigns. Production readiness remains
 approximately 44/100 until the weighted launch gates actually close.
+
+
+The subsequent [joint WAN adapter and campaign](CUSTODY_PROFILE5_WAN.md) add an
+explicit authenticated delivery layer without moving execution out of the local
+service. They supersede the earlier lack of a joint profile-5 WAN run, not its
+independent-operator, full-VM clone, physical-failure or audit limitations. A
+retained Prepare response can still be the last committed gateway response after
+a later failed intent; replaying that historical candidate does not recreate the
+volatile session key or grant execution.

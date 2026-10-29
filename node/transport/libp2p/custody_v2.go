@@ -16,6 +16,11 @@ const CustodyV2Protocol protocol.ID = "/outcomemesh/custody/v2"
 // Rejected peers do not consume its bounded concurrency/rate budget. The handler
 // must still check the exact scope and signed request; transport is not a vote.
 func (h *Host) SetCustodyV2Handler(clients []types.Hash, handler Handler) error {
+	return h.setCustodyHandler(CustodyV2Protocol, clients, handler)
+}
+
+// Each explicitly enabled custody protocol has its own bounded admission budget.
+func (h *Host) setCustodyHandler(id protocol.ID, clients []types.Hash, handler Handler) error {
 	if h == nil || h.inner == nil || handler == nil || len(clients) == 0 || len(clients) > 16 {
 		return ErrConfiguration
 	}
@@ -30,7 +35,7 @@ func (h *Host) SetCustodyV2Handler(clients []types.Hash, handler Handler) error 
 	var window time.Time
 	count := 0
 	active := make(chan struct{}, 8)
-	h.inner.SetStreamHandler(CustodyV2Protocol, func(stream network.Stream) {
+	h.inner.SetStreamHandler(id, func(stream network.Stream) {
 		peer, err := outcomeIDFromPublicKey(stream.Conn().RemotePublicKey())
 		if err != nil || !allowed[peer] {
 			_ = stream.Reset()

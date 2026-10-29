@@ -584,3 +584,14 @@ Linux/UID campaigns and fault/race/parser checks accompany the slice; independen
 protected domains, root/whole-service-VM copies, joint WAN/physical acceptance,
 external review and the remaining M5–M10 gates are not closed. No additional
 weighted production point is awarded: approximately **44/100**.
+
+
+2026-10-29 joint profile-5 WAN follow-up: real A/B execution now passes a controlled
+two-host packet-loss/restart campaign through an authenticated unprivileged relay,
+including exact retained-response recovery, original-witness Unknown/Result
+selection, A/B Serve and admission closure. A second campaign keeps a lost session
+held without a fabricated result or refund. Source journals and retention are
+preserved. See [the campaign](CUSTODY_PROFILE5_WAN.md) and its evidence. This
+advances already credited operator/WAN work; it does not close independent copy
+fencing, physical failures, external audit or public-testnet gates. The weighted
+score remains approximately **44/100**.

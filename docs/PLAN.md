@@ -86,8 +86,11 @@ Next required work remains ordered:
    both service identities and original enrollment to each job, retains the
    inherited spending/source/retention and rejects bare old role proofs. Raw
    profile-5 constructors and accounting-only Plan2 execution still refuse.
-   Next deploy independently operated/protected A/B domains and witnesses with
-   external monotone/key storage, extend joint WAN/physical-failure acceptance
+   The [joint profile-5 WAN campaign](CUSTODY_PROFILE5_WAN.md) now covers actual
+   A/B execution, packet partitions, process death, exact recovery and original
+   admission closure across two hosts. Lost sessions remain held. Next deploy
+   independently operated/protected A/B domains and witnesses with external
+   monotone/key storage, extend physical-failure and long-retention acceptance
    and obtain independent review. No consensus/mainnet activation follows.
 4. Specify safe progress for split votes and its quorum/rollback assumptions;
    never reset a retained slot to recover availability.
