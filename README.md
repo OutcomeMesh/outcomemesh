@@ -321,21 +321,23 @@ WorkGraph selfish-mining/private-fee activation corpus. `make economic-review`
 emits all 847 strategy/fee points plus their canonical SHA-256 digest as JSON;
 this is an external-review input, not an audit result.
 
-Create a wallet, initialize a local chain to that wallet, mine, transfer, and
-replay-verify it:
+Create a wallet using a private passphrase file (12–1024 exact bytes, mode 0600),
+then initialize a local chain, mine, transfer, and replay-verify it. See
+[encrypted wallet keys](docs/WALLET_KEYSTORE.md) for backup and migration rules:
 
 ```sh
-./bin/omd keygen --out alice.key
+./bin/omd keygen --out alice.key --passphrase-file /private/location/alice.pass
 ./bin/omd init --data ./data/dev --owner <address-printed-by-keygen> \
   --max-history-bytes 68719476736
 ./bin/omd mine --data ./data/dev --count 3
 ./bin/omd balance --data ./data/dev --address <alice-address>
-./bin/omd transfer --data ./data/dev --key alice.key --to <recipient-address> --amount 100 --fee 1
+./bin/omd transfer --data ./data/dev --key alice.key --passphrase-file /private/location/alice.pass --to <recipient-address> --amount 100 --fee 1
 ./bin/omd verify --data ./data/dev
 ```
 
 Run an authenticated development peer and synchronize another node that has the
-same genesis:
+same genesis. Generate dedicated daemon identities with `keygen --plaintext`;
+keep them separate from wallet keys:
 
 ```sh
 ./bin/omd serve --data ./data/node-a --key node-a.key --listen 127.0.0.1:9844

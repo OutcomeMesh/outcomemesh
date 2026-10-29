@@ -72,6 +72,8 @@ func run(arguments []string) error {
 	switch arguments[0] {
 	case "version", "--version":
 		return runVersion(arguments[1:], os.Stdout)
+	case "key-encrypt":
+		return runKeyEncrypt(arguments[1:])
 	case "keygen":
 		return runKeygen(arguments[1:])
 	case "init":
@@ -234,40 +236,6 @@ func run(arguments []string) error {
 		printUsage()
 		return fmt.Errorf("unknown command %q", arguments[0])
 	}
-}
-
-func runKeygen(arguments []string) error {
-	flags := flag.NewFlagSet("keygen", flag.ContinueOnError)
-	output := flags.String("out", "wallet.key", "new seed file (created with mode 0600)")
-	if err := flags.Parse(arguments); err != nil {
-		return err
-	}
-	seed := make([]byte, ed25519.SeedSize)
-	if _, err := rand.Read(seed); err != nil {
-		return err
-	}
-	file, err := os.OpenFile(*output, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		return fmt.Errorf("create key file: %w", err)
-	}
-	if _, err := file.Write(seed); err != nil {
-		_ = file.Close()
-		return err
-	}
-	if err := file.Sync(); err != nil {
-		_ = file.Close()
-		return err
-	}
-	if err := file.Close(); err != nil {
-		return err
-	}
-	privateKey := ed25519.NewKeyFromSeed(seed)
-	address, err := types.AddressFromPublicKey(privateKey.Public().(ed25519.PublicKey))
-	if err != nil {
-		return err
-	}
-	fmt.Printf("created key=%s address=%s\n", *output, address)
-	return nil
 }
 
 func runInit(arguments []string) error {
@@ -440,7 +408,8 @@ func runBalance(arguments []string) error {
 func runTransfer(arguments []string) error {
 	flags := flag.NewFlagSet("transfer", flag.ContinueOnError)
 	data := flags.String("data", defaultDataDirectory, "node data directory")
-	keyPath := flags.String("key", "", "Ed25519 seed file created by keygen")
+	keyPath := flags.String("key", "", "encrypted wallet key or legacy development seed")
+	passwordPath := flags.String("passphrase-file", "", "private file containing the exact wallet passphrase")
 	recipientText := flags.String("to", "", "recipient address as 64 hex characters")
 	amount := flags.Uint64("amount", 0, "raw native units to transfer")
 	fee := flags.Uint64("fee", 1, "raw native fee units")
@@ -455,10 +424,11 @@ func runTransfer(arguments []string) error {
 	if *keyPath == "" || *recipientText == "" {
 		return errors.New("key and to are required")
 	}
-	privateKey, err := loadPrivateKey(*keyPath)
+	privateKey, err := loadWalletPrivateKey(*keyPath, *passwordPath)
 	if err != nil {
 		return err
 	}
+	defer clear(privateKey)
 	recipient, err := parseAddress(*recipientText)
 	if err != nil {
 		return fmt.Errorf("recipient: %w", err)
@@ -638,7 +608,7 @@ func verifyLegacyLedger(store storage.Ledger, document genesis.Document) (storag
 func runServe(arguments []string) error {
 	flags := flag.NewFlagSet("serve", flag.ContinueOnError)
 	data := flags.String("data", defaultDataDirectory, "node data directory")
-	keyPath := flags.String("key", "", "persistent Ed25519 seed file created by keygen")
+	keyPath := flags.String("key", "", "persistent daemon seed created by keygen --plaintext")
 	listenAddress := flags.String("listen", "127.0.0.1:9844", "TLS/TCP peer listen address")
 	advertiseAddress := flags.String("advertise", "", "IP:port advertised to peers (default: actual listen address)")
 	maxConnections := flags.Int("max-connections", 64, "maximum concurrent peer sessions")
@@ -785,7 +755,7 @@ func runServe(arguments []string) error {
 func runPeerSync(arguments []string) error {
 	flags := flag.NewFlagSet("sync", flag.ContinueOnError)
 	data := flags.String("data", defaultDataDirectory, "node data directory")
-	keyPath := flags.String("key", "", "persistent Ed25519 seed file created by keygen")
+	keyPath := flags.String("key", "", "persistent daemon seed created by keygen --plaintext")
 	peerAddress := flags.String("peer", "", "TLS/TCP peer address")
 	peerIDText := flags.String("peer-id", "", "expected peer ID as 64 hex characters")
 	if err := flags.Parse(arguments); err != nil {
@@ -844,7 +814,7 @@ func runPeerSync(arguments []string) error {
 func runServeQUIC(arguments []string) error {
 	flags := flag.NewFlagSet("serve-quic", flag.ContinueOnError)
 	data := flags.String("data", defaultDataDirectory, "node data directory")
-	keyPath := flags.String("key", "", "persistent Ed25519 seed file created by keygen")
+	keyPath := flags.String("key", "", "persistent daemon seed created by keygen --plaintext")
 	listenAddress := flags.String("listen", "/ip4/127.0.0.1/udp/9844/quic-v1", "QUIC-v1 libp2p listen multiaddress")
 	maxConnections := flags.Int("max-connections", 64, "maximum authenticated QUIC connections")
 	maxStreamsPerPeer := flags.Int("max-streams-per-peer", 4, "maximum concurrent streams per peer")
@@ -967,7 +937,7 @@ func runServeQUIC(arguments []string) error {
 func runSyncQUIC(arguments []string) error {
 	flags := flag.NewFlagSet("sync-quic", flag.ContinueOnError)
 	data := flags.String("data", defaultDataDirectory, "node data directory")
-	keyPath := flags.String("key", "", "persistent Ed25519 seed file created by keygen")
+	keyPath := flags.String("key", "", "persistent daemon seed created by keygen --plaintext")
 	peerAddress := flags.String("peer", "", "QUIC-v1 libp2p multiaddress including /p2p/<id>")
 	peerIDText := flags.String("peer-id", "", "expected OutcomeMesh peer ID as 64 hex characters")
 	if err := flags.Parse(arguments); err != nil {
@@ -1028,7 +998,7 @@ func runSyncQUIC(arguments []string) error {
 func runPeersQUIC(arguments []string) error {
 	flags := flag.NewFlagSet("peers-quic", flag.ContinueOnError)
 	data := flags.String("data", defaultDataDirectory, "node data directory")
-	keyPath := flags.String("key", "", "persistent Ed25519 seed file created by keygen")
+	keyPath := flags.String("key", "", "persistent daemon seed created by keygen --plaintext")
 	peerAddress := flags.String("peer", "", "QUIC-v1 libp2p multiaddress including /p2p/<id>")
 	peerIDText := flags.String("peer-id", "", "expected OutcomeMesh peer ID as 64 hex characters")
 	limit := flags.Uint("limit", 32, "maximum signed peer records to request")
@@ -1108,7 +1078,7 @@ func runPeersQUIC(arguments []string) error {
 func runAutoSyncQUIC(arguments []string) error {
 	flags := flag.NewFlagSet("auto-sync-quic", flag.ContinueOnError)
 	data := flags.String("data", defaultDataDirectory, "node data directory")
-	keyPath := flags.String("key", "", "persistent Ed25519 seed file created by keygen")
+	keyPath := flags.String("key", "", "persistent daemon seed created by keygen --plaintext")
 	limit := flags.Int("limit", 8, "maximum eligible persisted peers to try once")
 	asnMapPath := flags.String("asn-map", "", "optional local CIDR,ASN table for diversity-aware selection")
 	asnMaxAge := flags.Duration("asn-max-age", 24*time.Hour, "maximum accepted age of the local ASN table")
@@ -1275,7 +1245,7 @@ func runAutoSyncQUIC(arguments []string) error {
 func runPeerDiscovery(arguments []string) error {
 	flags := flag.NewFlagSet("peers", flag.ContinueOnError)
 	data := flags.String("data", defaultDataDirectory, "node data directory")
-	keyPath := flags.String("key", "", "persistent Ed25519 seed file created by keygen")
+	keyPath := flags.String("key", "", "persistent daemon seed created by keygen --plaintext")
 	peerAddress := flags.String("peer", "", "TLS/TCP peer address")
 	peerIDText := flags.String("peer-id", "", "expected peer ID as 64 hex characters")
 	limit := flags.Uint("limit", 32, "maximum signed peer records to request")
@@ -1354,7 +1324,7 @@ func runPeerDiscovery(arguments []string) error {
 func runSnapshotCheck(arguments []string) error {
 	flags := flag.NewFlagSet("snapshot-check", flag.ContinueOnError)
 	data := flags.String("data", defaultDataDirectory, "node data directory")
-	keyPath := flags.String("key", "", "persistent Ed25519 seed file created by keygen")
+	keyPath := flags.String("key", "", "persistent daemon seed created by keygen --plaintext")
 	peerAddress := flags.String("peer", "", "TLS/TCP peer address")
 	peerIDText := flags.String("peer-id", "", "expected peer ID as 64 hex characters")
 	if err := flags.Parse(arguments); err != nil {
@@ -1659,5 +1629,5 @@ func printUsage() {
 	fmt.Printf("reviewed custody commands: omd <%s|%s> --mode <review|sign> [flags]\n", custodyCommandSignCommand, custodyCommandCosignCommand)
 	fmt.Printf("reviewed custody terminal/application: omd <%s|%s> --mode <review|control> [flags]\n", custodyTerminalCommand, custodyCommandApplyCommand)
 	fmt.Printf("reviewed local custody maintenance: omd %s [flags]; command server optionally accepts --maintenance-control stdin\n", pruneMaintenanceCommand)
-	fmt.Println("usage: omd <keygen|init|status|balance|transfer|mine|verify|serve|sync|peers|snapshot-check|serve-quic|sync-quic|peers-quic|auto-sync-quic|work-enable|work-status|work-balance|work-verify|work-mine|work-mine-quic|work-serve-quic|work-sync-quic|work-archive-object-serve-quic|work-archive-object-fetch-quic|work-archive-custody-serve-quic|work-archive-custody-challenge-quic|work-archive-custody-checkpoint|work-archive-custody-verify-checkpoint|work-archive-custody-backup|work-archive-custody-verify-backup|work-archive-custody-pin-backup|work-archive-custody-pin-head|work-archive-custody-verify-pinned-backup|work-archive-custody-reconcile|work-archive-custody-transfer|work-archive-custody-apply-history|work-archive-custody-rebaseline|work-telemetry-policy|work-telemetry-tie-plan|work-telemetry-tie-produce|work-telemetry-tie-campaign|work-telemetry-tie-campaign-publish|work-telemetry-tie-campaign-audit|work-telemetry-tie-campaign-recover|work-telemetry-tie-campaign-receive-quic|work-telemetry-tie-pair-create|work-telemetry-tie-pair-checkpoint|work-telemetry-tie-pair-admit|work-telemetry-tie-pair-receive-quic|work-telemetry-tie-pair-send-quic> [flags]")
+	fmt.Println("usage: omd <keygen|key-encrypt|init|status|balance|transfer|mine|verify|serve|sync|peers|snapshot-check|serve-quic|sync-quic|peers-quic|auto-sync-quic|work-enable|work-status|work-balance|work-verify|work-mine|work-mine-quic|work-serve-quic|work-sync-quic|work-archive-object-serve-quic|work-archive-object-fetch-quic|work-archive-custody-serve-quic|work-archive-custody-challenge-quic|work-archive-custody-checkpoint|work-archive-custody-verify-checkpoint|work-archive-custody-backup|work-archive-custody-verify-backup|work-archive-custody-pin-backup|work-archive-custody-pin-head|work-archive-custody-verify-pinned-backup|work-archive-custody-reconcile|work-archive-custody-transfer|work-archive-custody-apply-history|work-archive-custody-rebaseline|work-telemetry-policy|work-telemetry-tie-plan|work-telemetry-tie-produce|work-telemetry-tie-campaign|work-telemetry-tie-campaign-publish|work-telemetry-tie-campaign-audit|work-telemetry-tie-campaign-recover|work-telemetry-tie-campaign-receive-quic|work-telemetry-tie-pair-create|work-telemetry-tie-pair-checkpoint|work-telemetry-tie-pair-admit|work-telemetry-tie-pair-receive-quic|work-telemetry-tie-pair-send-quic> [flags]")
 }

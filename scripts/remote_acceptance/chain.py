@@ -138,8 +138,8 @@ def _base_commands(host):
         "init": argv("init", "--data", data, "--network", str(NETWORK),
                      "--timestamp", str(GENESIS_TIMESTAMP), "--difficulty-bits", "0",
                      "--max-history-bytes", str(HISTORY_BYTES)),
-        "transport-keygen": argv("keygen", "--out", host.root + "/transport.seed"),
-        "miner-keygen": argv("keygen", "--out", host.root + "/miner.seed"),
+        "transport-keygen": argv("keygen", "--plaintext", "--out", host.root + "/transport.seed"),
+        "miner-keygen": argv("keygen", "--plaintext", "--out", host.root + "/miner.seed"),
         "status": argv("status", "--data", data),
         "verify": argv("verify", "--data", data),
     }
