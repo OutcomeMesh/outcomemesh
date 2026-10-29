@@ -57,7 +57,7 @@ func Start(ctx context.Context, w *custodyfence.Witness, s custodyfence.Scope, p
 	}
 	var transportKey [32]byte
 	copy(transportKey[:], key.Public().(ed25519.PublicKey))
-	for _, k := range append(append([][32]byte{s.Owner, s.Controller}, s.Witnesses...), [32]byte{}) {
+	for _, k := range append(append([][32]byte{s.Owner, s.Controller, s.Guard}, s.Witnesses...), [32]byte{}) {
 		if transportKey == k {
 			return nil, witnesswire.ErrProtocol
 		}
@@ -68,7 +68,17 @@ func Start(ctx context.Context, w *custodyfence.Witness, s custodyfence.Scope, p
 	if err != nil {
 		return nil, err
 	}
-	if err := probe.Verify(s, probe.RequestID, probe.Witness); err != nil {
+	principal := probe.Witness
+	if probe.Replacement != nil {
+		principal, err = probe.Replacement.Principal(s.Guard, probe.Witness)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if transportKey == probe.Witness {
+		return nil, witnesswire.ErrProtocol
+	}
+	if err := probe.Verify(s, probe.RequestID, principal); err != nil {
 		return nil, err
 	}
 	run, cancel := context.WithCancel(ctx)
@@ -77,7 +87,7 @@ func Start(ctx context.Context, w *custodyfence.Witness, s custodyfence.Scope, p
 		cancel()
 		return nil, err
 	}
-	service := &Service{witness: w, scope: s, public: probe.Witness, host: host, run: run, cancel: cancel, timeout: timeout, done: make(chan struct{})}
+	service := &Service{witness: w, scope: s, public: principal, host: host, run: run, cancel: cancel, timeout: timeout, done: make(chan struct{})}
 	if err := host.SetCustodyWitnessHandler(clients, service.handle); err != nil {
 		cancel()
 		return nil, errors.Join(err, host.Close())

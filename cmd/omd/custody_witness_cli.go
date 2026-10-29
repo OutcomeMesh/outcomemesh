@@ -192,8 +192,11 @@ func runWitness(ctx context.Context, args []string, input io.ReadCloser, out io.
 		replacement = &r
 		proofs = []guard.ReplacementReceipt{r}
 		signer = r.Request.Successor
-		if *transportText == types.Hash(signer).String() {
-			return custodyfence.ErrWitness
+		if *transportText != "" {
+			transportSigner, err := witnessID("transport-public-key", *transportText)
+			if err != nil || [32]byte(transportSigner) == signer {
+				return custodyfence.ErrWitness
+			}
 		}
 		inputs = append(inputs, file)
 	}
