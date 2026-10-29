@@ -150,17 +150,27 @@ func Serve(ctx context.Context, o *Owner, socket string, ready func(types.Hash) 
 			if e != nil || uid != o.descriptor.ParticipantUID {
 				return
 			}
-			raw, e := client.ReadFrame(c, wire.MaximumRequestBytes)
+			raw, e := client.ReadFrame(c, wire.MaximumServiceRequestBytes)
 			if e != nil {
 				return
 			}
-			q, e := wire.DecodeRequest(raw)
+			var q wire.Request
+			var payload []byte
+			if len(raw) >= 8 && string(raw[:8]) == "OMCGXRQ5" {
+				q, payload, e = wire.DecodeRuntimeRequest(raw)
+			} else {
+				q, e = wire.DecodeRequest(raw)
+			}
 			if e != nil {
 				return
 			}
 			operation, cancel := context.WithTimeout(ctx, client.Deadline)
 			defer cancel()
-			raw, e = o.Execute(operation, q)
+			if payload != nil {
+				raw, e = o.ExecuteRuntime(operation, q, payload)
+			} else {
+				raw, e = o.Execute(operation, q)
+			}
 			if e != nil {
 				return
 			}

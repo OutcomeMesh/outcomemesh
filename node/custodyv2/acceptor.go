@@ -10,6 +10,7 @@ import (
 
 	"github.com/outcomemesh/outcomemesh/core/codec"
 	"github.com/outcomemesh/outcomemesh/core/types"
+	gateway "github.com/outcomemesh/outcomemesh/node/custodygateway/gatewaywire"
 	"github.com/outcomemesh/outcomemesh/node/workarchive"
 )
 
@@ -18,6 +19,7 @@ const ReceiptBytes = 10 + 6*32 + 16 + 32 + 64
 var ErrPending = errors.New("custody V2 acceptance attempt is retained; explicit exact resume required")
 
 type Receipt struct {
+	Protection                                                      *gateway.Effect
 	Version                                                         uint16
 	AssignmentID, PlanID, ScopeID, ResultID, BundleID, SourceHeadID types.Hash
 	SourceSequence, AcceptedAt                                      uint64
@@ -41,6 +43,12 @@ func (r Receipt) unsignedBytes() ([]byte, error) {
 	return e.Bytes(), nil
 }
 func (r Receipt) CanonicalBytes() ([]byte, error) {
+	if r.Version == ProtectedVersion {
+		return r.protectedBytes()
+	}
+	if r.Protection != nil {
+		return nil, ErrProtocol
+	}
 	b, e := r.unsignedBytes()
 	if e != nil {
 		return nil, e
@@ -53,6 +61,9 @@ func (r Receipt) CanonicalBytes() ([]byte, error) {
 }
 func DecodeReceipt(b []byte) (Receipt, error) {
 	var r Receipt
+	if len(b) >= 8 && string(b[:8]) == "OMCVACK5" {
+		return decodeProtectedReceipt(b)
+	}
 	if len(b) != ReceiptBytes {
 		return r, ErrProtocol
 	}
@@ -78,12 +89,28 @@ func (r Receipt) ID() (types.Hash, error) {
 	if e != nil {
 		return types.Hash{}, e
 	}
-	return types.DomainHash("OMESH/custody/v2/accepted-source/id", b), nil
+	domain := "OMESH/custody/v2/accepted-source/id"
+	if r.Version == ProtectedVersion {
+		domain = "OMESH/custody/v5/accepted-source/id"
+	}
+	return types.DomainHash(domain, b), nil
 }
 
 // Verify is historical: its AcceptedAt is the original checked time, never a
 // refreshed proof time or a caller's current live permission.
 func (r Receipt) Verify(c Context, b Bundle) error {
+	if ProtectedContext(c) {
+		if r.Version != ProtectedVersion {
+			return ErrProtocol
+		}
+		id, e := r.CoreID()
+		if e != nil || VerifyProtectedEffect(c, r.Protection, gateway.EffectAccept, id, r.SourceHeadID, r.SourceSequence, r.AcceptedAt) != nil {
+			return ErrProtocol
+		}
+	} else if r.Version != Version2 || r.Protection != nil {
+		return ErrProtocol
+	}
+
 	if _, e := r.CanonicalBytes(); e != nil {
 		return e
 	}

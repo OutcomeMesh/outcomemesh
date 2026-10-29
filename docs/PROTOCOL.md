@@ -678,8 +678,29 @@ participant copies. They do not fence host root or a complete service VM clone.
 
 The wire contract bounds descriptors to 1024 bytes, requests to 241 bytes,
 response data to 64 MiB, events to 256 and the response journal to 256 MiB. The
-canonical vectors and malformed-input fuzz target are in gatewaywire. The service
-performs only source inspection/original chunk reads and revocation. No consensus,
-old proof, old V2 packet, admission or accounting format changes. Profile-5 job
-execution still refuses; actual protected runtime adapters and independent
-monotone/key deployment remain activation requirements.
+canonical vectors and malformed-input fuzz target are in gatewaywire. The base service
+performs source inspection/original chunk reads and revocation. The explicit
+protected runtime extension below adds versioned execution; the base descriptor
+and request bytes remain compatible. Independent monotone/key deployment remains
+an activation requirement.
+
+
+## Protected profile-5 runtime
+
+[Plan5 and protected effects](CUSTODY_PROFILE5_EXECUTION.md) add separate job
+plan/signature domains, five-role deployment endorsement, typed runtime envelopes
+and Result5/Receipt5/ServeReceipt5/AdmissionClosure5 wrappers. They require fresh
+service signatures over exact completed core artifacts, scope, deployment and
+full admission identity. Old Plan2/result/receipt/closure bytes and their domains
+remain unchanged. Imported accounting-only Plan2 does not become executable;
+ordinary profile-5 owner constructors remain closed.
+
+Execution occurs only inside explicitly configured original service owners.
+Durable intent and consumed session precede original object reads; the winning
+volatile session cannot be imported/reconstructed after a crash. The sealed old
+source plus protected continuation preserve sequence/head/current receipt and
+retention. Unknown outcomes retain spending and obligations; full protected A/B
+Serve receipts close the original admission with no refund. Gateway revocation
+is permanent and local. Bounds, compatibility, clock/UID assumptions, vectors,
+exact recovery and remaining activation gates are specified in the linked rules.
+No consensus, coin issuance, raw legacy ticket or mainnet permission is changed.

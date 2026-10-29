@@ -9,7 +9,7 @@ import (
 	"github.com/outcomemesh/outcomemesh/node/custodyfence"
 )
 
-const MaximumServeProposalBytes = MaximumBundleBytes + ReceiptBytes + 256
+const MaximumServeProposalBytes = MaximumBundleBytes + MaximumProtectedReceiptBytes + 256
 const MaximumServeCertificateBytes = MaximumServeProposalBytes + custodyfence.MaximumCertificateBytes + 32
 
 type ServeOutcome uint8
@@ -38,12 +38,18 @@ func NewServeFulfilled(c Context, b Bundle, r Receipt) (ServeProposal, error) {
 	rb, _ := r.CanonicalBytes()
 	e := codec.NewEncoder(len(bb) + len(rb) + 16)
 	e.BytesField(bb)
-	e.Fixed(rb)
+	version := Version2
+	if ProtectedContext(c) {
+		version = ProtectedVersion
+		e.BytesField(rb)
+	} else {
+		e.Fixed(rb)
+	}
 	id, err := c.ID()
 	if err != nil {
 		return ServeProposal{}, err
 	}
-	return ServeProposal{Version: Version2, ContextID: id, Outcome: ServeFulfilled, Evidence: e.Bytes()}, nil
+	return ServeProposal{Version: version, ContextID: id, Outcome: ServeFulfilled, Evidence: e.Bytes()}, nil
 }
 
 func NewServeUnclaimed(c Context, q custodyfence.Certificate) (ServeProposal, error) {
@@ -55,17 +61,25 @@ func NewServeUnclaimed(c Context, q custodyfence.Certificate) (ServeProposal, er
 	if e != nil {
 		return ServeProposal{}, e
 	}
-	p := ServeProposal{Version: Version2, ContextID: id, Outcome: ServeUnclaimed, Evidence: b}
+	version := Version2
+	if ProtectedContext(c) {
+		version = ProtectedVersion
+	}
+	p := ServeProposal{Version: version, ContextID: id, Outcome: ServeUnclaimed, Evidence: b}
 	_, e = p.Retention(c)
 	return p, e
 }
 
 func (p ServeProposal) unsignedBytes() ([]byte, error) {
-	if p.Version != Version2 || p.ContextID.IsZero() || (p.Outcome != ServeFulfilled && p.Outcome != ServeUnclaimed) || len(p.Evidence) == 0 || len(p.Evidence) > MaximumServeProposalBytes-175 {
+	if (p.Version != Version2 && p.Version != ProtectedVersion) || p.ContextID.IsZero() || (p.Outcome != ServeFulfilled && p.Outcome != ServeUnclaimed) || len(p.Evidence) == 0 || len(p.Evidence) > MaximumServeProposalBytes-175 {
 		return nil, ErrProtocol
 	}
 	e := codec.NewEncoder(len(p.Evidence) + 64)
-	e.Fixed([]byte("OMCVSPR2"))
+	if p.Version == ProtectedVersion {
+		e.Fixed([]byte("OMCVSPR5"))
+	} else {
+		e.Fixed([]byte("OMCVSPR2"))
+	}
 	e.U16(p.Version)
 	e.Fixed(p.ContextID[:])
 	e.U8(uint8(p.Outcome))
@@ -89,9 +103,10 @@ func DecodeServeProposal(b []byte) (ServeProposal, error) {
 		return p, ErrProtocol
 	}
 	d := codec.NewDecoder(b)
-	if !magic(d, "OMCVSPR2") {
+	if len(b) < 8 || (string(b[:8]) != "OMCVSPR2" && string(b[:8]) != "OMCVSPR5") {
 		return p, ErrProtocol
 	}
+	d.Fixed(8)
 	p.Version, _ = d.U16()
 	fixed(d, p.ContextID[:])
 	k, _ := d.U8()
@@ -114,7 +129,7 @@ func (p ServeProposal) ID() (types.Hash, error) {
 	if e != nil {
 		return types.Hash{}, e
 	}
-	return types.DomainHash("OMESH/custody/v2/serve/proposal/id", b), nil
+	return types.DomainHash(serveProposalDomain(p.Version)+"/id", b), nil
 }
 func (p ServeProposal) fulfilled() (Bundle, Receipt, error) {
 	if p.Outcome != ServeFulfilled {
@@ -125,7 +140,12 @@ func (p ServeProposal) fulfilled() (Bundle, Receipt, error) {
 	if e != nil {
 		return Bundle{}, Receipt{}, e
 	}
-	r, e := d.Fixed(ReceiptBytes)
+	var r []byte
+	if p.Version == ProtectedVersion {
+		r, e = d.BytesField(MaximumProtectedReceiptBytes)
+	} else {
+		r, e = d.Fixed(ReceiptBytes)
+	}
 	if e != nil || d.Finish() != nil {
 		return Bundle{}, Receipt{}, ErrProtocol
 	}
@@ -140,6 +160,9 @@ func (p ServeProposal) fulfilled() (Bundle, Receipt, error) {
 // Retention verifies the complete typed evidence, including the original
 // execution quorum and historical fresh A acceptance. It grants no deletion.
 func (p ServeProposal) Retention(c Context) (uint64, error) {
+	if ProtectedContext(c) != (p.Version == ProtectedVersion) {
+		return 0, ErrProtocol
+	}
 	if _, e := p.unsignedBytes(); e != nil {
 		return 0, e
 	}
@@ -161,7 +184,7 @@ func (p ServeProposal) Retention(c Context) (uint64, error) {
 		if e := r.Verify(c, b); e != nil {
 			return 0, e
 		}
-		return b.Result.Entry.Record.RenewedReceipt.RetainUntil, nil
+		return protectedRetention(c, b.Result.Entry.Record.RenewedReceipt.RetainUntil), nil
 	case ServeUnclaimed:
 		q, e := custodyfence.DecodeCertificate(p.Evidence)
 		if e != nil {
@@ -177,7 +200,7 @@ func (p ServeProposal) Retention(c Context) (uint64, error) {
 		if state.Snapshot().Phase != custodyfence.UnclaimedClosed {
 			return 0, ErrProtocol
 		}
-		return c.Previous.RetainUntil, nil
+		return protectedRetention(c, c.Previous.RetainUntil), nil
 	}
 	return 0, ErrProtocol
 }
@@ -194,7 +217,7 @@ func (p ServeProposal) ValidateDraft(c Context) error {
 		if r.sig == ([64]byte{}) {
 			continue
 		}
-		h := types.DomainHash("OMESH/custody/v2/serve/proposal/"+r.label+"/signature", b)
+		h := types.DomainHash(serveProposalDomain(p.Version)+"/"+r.label+"/signature", b)
 		if !ed25519.Verify(r.key[:], h[:], r.sig[:]) {
 			return ErrProtocol
 		}
@@ -223,7 +246,7 @@ func (p ServeProposal) Sign(c Context, role string, key ed25519.PrivateKey) (Ser
 		return ServeProposal{}, ErrProtocol
 	}
 	b, _ := p.unsignedBytes()
-	h := types.DomainHash("OMESH/custody/v2/serve/proposal/"+role+"/signature", b)
+	h := types.DomainHash(serveProposalDomain(p.Version)+"/"+role+"/signature", b)
 	copy(sig[:], ed25519.Sign(key, h[:]))
 	return p, nil
 }
@@ -401,3 +424,19 @@ func CommitServe(c Context, s ServeCertificate, w *custodyfence.Witness, before 
 	}
 	return w.CommitAt(before, s.Decision)
 }
+
+func serveProposalDomain(v uint16) string {
+	if v == ProtectedVersion {
+		return "OMESH/custody/v5/serve/proposal"
+	}
+	return "OMESH/custody/v2/serve/proposal"
+}
+
+func protectedRetention(c Context, n uint64) uint64 {
+	if ProtectedContext(c) && c.Plan.Deployment.MinimumRetainUntil > n {
+		return c.Plan.Deployment.MinimumRetainUntil
+	}
+	return n
+}
+
+func ServeFulfilledEvidence(p ServeProposal) (Bundle, Receipt, error) { return p.fulfilled() }

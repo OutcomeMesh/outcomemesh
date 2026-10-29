@@ -12,6 +12,7 @@ import (
 	"github.com/outcomemesh/outcomemesh/core/types"
 	"github.com/outcomemesh/outcomemesh/node/custodyauthority"
 	"github.com/outcomemesh/outcomemesh/node/custodyfence"
+	gateway "github.com/outcomemesh/outcomemesh/node/custodygateway/gatewaywire"
 	"github.com/outcomemesh/outcomemesh/node/transport"
 	"github.com/outcomemesh/outcomemesh/node/workarchive"
 )
@@ -32,7 +33,7 @@ func requiresAdmission(v uint16) bool {
 
 const MaximumPolicyBytes = 1024
 const MaximumAssignmentBytes = 16 * 1024
-const MaximumPlanBytes = 4096
+const MaximumPlanBytes = 8192
 
 var ErrProtocol = errors.New("invalid witness-mandatory custody V2 context, authorization or result")
 var ErrSession = errors.New("custody V2 permission does not belong to this live execution session")
@@ -223,6 +224,7 @@ func DecodeAssignment(b []byte) (Assignment, error) {
 // consumers and the authority authorize the same immutable job, in distinct
 // signature domains. No caller-selected witness scope is accepted by a runtime.
 type Plan struct {
+	Deployment                                         *gateway.Deployment
 	Version                                            uint16
 	AssignmentID                                       types.Hash
 	Intent                                             workarchive.CustodyAuditIntent
@@ -233,7 +235,7 @@ type Plan struct {
 }
 
 func (p Plan) unsignedBytes() ([]byte, error) {
-	if p.Version != Version2 || p.AssignmentID.IsZero() || p.Intent.AssignmentID != p.AssignmentID || types.Hash(p.ServeConsumer).IsZero() || types.Hash(p.ClientTransportPublicKey).IsZero() || p.Intent.Validate() != nil {
+	if (p.Version != Version2 && p.Version != ProtectedVersion) || (p.Version == ProtectedVersion) != (p.Deployment != nil) || p.AssignmentID.IsZero() || p.Intent.AssignmentID != p.AssignmentID || types.Hash(p.ServeConsumer).IsZero() || types.Hash(p.ClientTransportPublicKey).IsZero() || p.Intent.Validate() != nil {
 		return nil, ErrProtocol
 	}
 	i, e := p.Intent.CanonicalBytes()
@@ -248,13 +250,27 @@ func (p Plan) unsignedBytes() ([]byte, error) {
 		return nil, ErrProtocol
 	}
 	out := codec.NewEncoder(MaximumPlanBytes)
-	out.Fixed([]byte("OMCVPLN2"))
+	if p.Version == ProtectedVersion {
+		out.Fixed([]byte("OMCVPLN5"))
+	} else {
+		out.Fixed([]byte("OMCVPLN2"))
+	}
 	out.U16(p.Version)
 	out.Fixed(p.AssignmentID[:])
 	out.Fixed(p.ServeConsumer[:])
 	out.Fixed(p.ClientTransportPublicKey[:])
 	out.BytesField(i)
 	out.BytesField(c)
+	if p.Deployment != nil {
+		if e := p.Deployment.Verify(); e != nil {
+			return nil, e
+		}
+		raw, e := p.Deployment.CanonicalBytes()
+		if e != nil {
+			return nil, e
+		}
+		out.BytesField(raw)
+	}
 	return out.Bytes(), nil
 }
 func (p Plan) CanonicalBytes() ([]byte, error) {
@@ -271,7 +287,7 @@ func (p Plan) ID() (types.Hash, error) {
 	if e != nil {
 		return types.Hash{}, e
 	}
-	return types.DomainHash("OMESH/custody/v2/plan/id", b), nil
+	return types.DomainHash(planDomain(p.Version)+"/id", b), nil
 }
 func (p Plan) Sign(role string, key ed25519.PrivateKey) (Plan, error) {
 	if !validKey(key) {
@@ -298,7 +314,7 @@ func (p Plan) Sign(role string, key ed25519.PrivateKey) (Plan, error) {
 	default:
 		return Plan{}, ErrProtocol
 	}
-	h := types.DomainHash("OMESH/custody/v2/plan/"+role+"/signature", b)
+	h := types.DomainHash(planDomain(p.Version)+"/"+role+"/signature", b)
 	copy(out[:], ed25519.Sign(key, h[:]))
 	return p, nil
 }
@@ -309,6 +325,17 @@ func (p Plan) ValidateDraft(a Assignment) error {
 	}
 	if _, e := p.unsignedBytes(); e != nil {
 		return e
+	}
+	if p.Deployment != nil {
+		d := p.Deployment
+		if a.Policy.Version != PolicyVersionImported || d.ImportID != a.Policy.ImportID || d.Authority != a.Base.AuthorityPublicKey || d.Control != a.Base.RemoteControlPublicKey {
+			return ErrProtocol
+		}
+		for _, k := range append([][32]byte{d.A.Issuer, d.A.Gateway, d.B.Gateway}, a.Policy.Witnesses...) {
+			if p.ClientTransportPublicKey == k {
+				return ErrProtocol
+			}
+		}
 	}
 	audit, serve := false, false
 	for _, c := range a.Base.Consumers {
@@ -344,7 +371,7 @@ func (p Plan) Verify(a Assignment) error {
 		key  [32]byte
 		sig  [64]byte
 	}{{"audit", p.Intent.ConsumerPublicKey, p.AuditSignature}, {"serve", p.ServeConsumer, p.ServeSignature}, {"authority", a.Base.AuthorityPublicKey, p.AuthoritySignature}} {
-		h := types.DomainHash("OMESH/custody/v2/plan/"+x.role+"/signature", b)
+		h := types.DomainHash(planDomain(p.Version)+"/"+x.role+"/signature", b)
 		if !ed25519.Verify(x.key[:], h[:], x.sig[:]) {
 			return ErrProtocol
 		}
@@ -357,9 +384,10 @@ func DecodePlan(b []byte) (Plan, error) {
 		return p, ErrProtocol
 	}
 	d := codec.NewDecoder(b)
-	if !magic(d, "OMCVPLN2") {
+	if len(b) < 8 || (string(b[:8]) != "OMCVPLN2" && string(b[:8]) != "OMCVPLN5") {
 		return p, ErrProtocol
 	}
+	d.Fixed(8)
 	p.Version, _ = d.U16()
 	fixed(d, p.AssignmentID[:])
 	fixed(d, p.ServeConsumer[:])
@@ -379,6 +407,17 @@ func DecodePlan(b []byte) (Plan, error) {
 	p.Challenge, e = workarchive.DecodeCustodyChallenge(raw)
 	if e != nil {
 		return p, e
+	}
+	if p.Version == ProtectedVersion {
+		raw, e = d.BytesField(gateway.MaximumDeploymentBytes)
+		if e != nil {
+			return p, e
+		}
+		dep, e := gateway.DecodeDeployment(raw)
+		if e != nil {
+			return p, e
+		}
+		p.Deployment = &dep
 	}
 	fixed(d, p.AuditSignature[:])
 	fixed(d, p.ServeSignature[:])
@@ -475,3 +514,10 @@ func validKey(k ed25519.PrivateKey) bool {
 }
 func magic(d *codec.Decoder, s string) bool { b, e := d.Fixed(8); return e == nil && string(b) == s }
 func fixed(d *codec.Decoder, b []byte)      { v, _ := d.Fixed(len(b)); copy(b, v) }
+
+func planDomain(v uint16) string {
+	if v == ProtectedVersion {
+		return "OMESH/custody/v5/plan"
+	}
+	return "OMESH/custody/v2/plan"
+}

@@ -14,7 +14,7 @@ import (
 
 const MaximumNativeAdmissionGenesisBytes = MaximumAssignmentBytes + workarchive.MaximumManifestBytes + workarchive.MaximumReplicaReceiptBytes + 4096
 const MaximumAdmissionGenesisBytes = max(MaximumNativeAdmissionGenesisBytes, review.MaximumProposalBytes+20)
-const MaximumAdmissionClosureBytes = MaximumServeCertificateBytes + 2*ServeReceiptBytes + 32
+const MaximumAdmissionClosureBytes = MaximumServeCertificateBytes + 2*MaximumProtectedServeReceiptBytes + 64
 const MaximumAdmissionEntryBytes = MaximumContextBytes + MaximumAdmissionClosureBytes + 256
 const AdmissionVoteBytes = 10 + 2*32 + 64
 const MaximumAdmissionCertificateBytes = MaximumAdmissionEntryBytes + custodyfence.MaximumWitnesses*AdmissionVoteBytes + 32
@@ -237,11 +237,19 @@ func (c AdmissionClosure) CanonicalBytes() ([]byte, error) {
 		return nil, e
 	}
 	out := codec.NewEncoder(len(s) + 2*ServeReceiptBytes + 32)
-	out.Fixed([]byte("OMCVACL2"))
-	out.U16(Version2)
-	out.BytesField(s)
-	out.Fixed(a)
-	out.Fixed(b)
+	if c.Serve.Proposal.Version == ProtectedVersion {
+		out.Fixed([]byte("OMCVACL5"))
+		out.U16(ProtectedVersion)
+		out.BytesField(s)
+		out.BytesField(a)
+		out.BytesField(b)
+	} else {
+		out.Fixed([]byte("OMCVACL2"))
+		out.U16(Version2)
+		out.BytesField(s)
+		out.Fixed(a)
+		out.Fixed(b)
+	}
 	return out.Bytes(), nil
 }
 func DecodeAdmissionClosure(b []byte) (AdmissionClosure, error) {
@@ -250,22 +258,33 @@ func DecodeAdmissionClosure(b []byte) (AdmissionClosure, error) {
 		return c, ErrAdmission
 	}
 	d := codec.NewDecoder(b)
-	if !magic(d, "OMCVACL2") {
+	if len(b) < 8 || (string(b[:8]) != "OMCVACL2" && string(b[:8]) != "OMCVACL5") {
 		return c, ErrAdmission
 	}
+	d.Fixed(8)
 	v, _ := d.U16()
-	if v != Version2 {
+	if v != Version2 && v != ProtectedVersion {
 		return c, ErrAdmission
 	}
 	s, e := d.BytesField(MaximumServeCertificateBytes)
 	if e != nil {
 		return c, e
 	}
-	a, e := d.Fixed(ServeReceiptBytes)
+	var a []byte
+	if v == ProtectedVersion {
+		a, e = d.BytesField(MaximumProtectedServeReceiptBytes)
+	} else {
+		a, e = d.Fixed(ServeReceiptBytes)
+	}
 	if e != nil {
 		return c, e
 	}
-	rb, e := d.Fixed(ServeReceiptBytes)
+	var rb []byte
+	if v == ProtectedVersion {
+		rb, e = d.BytesField(MaximumProtectedServeReceiptBytes)
+	} else {
+		rb, e = d.Fixed(ServeReceiptBytes)
+	}
 	if e != nil || d.Finish() != nil {
 		return c, ErrAdmission
 	}
@@ -385,6 +404,9 @@ func (e AdmissionEntry) ID() (types.Hash, error) {
 	return types.DomainHash("OMESH/custody/v2/admission/entry/id", b), nil
 }
 func (e AdmissionEntry) validateUnsigned(g AdmissionGenesis) error {
+	if err := VerifyDeploymentGenesis(g, e.Context); err != nil {
+		return err
+	}
 	if _, err := e.unsignedBytes(); err != nil {
 		return err
 	}
@@ -434,6 +456,9 @@ func (e AdmissionEntry) Sign(g AdmissionGenesis, key ed25519.PrivateKey) (Admiss
 	return e, nil
 }
 func (e AdmissionEntry) Verify(g AdmissionGenesis) error {
+	if err := VerifyDeploymentGenesis(g, e.Context); err != nil {
+		return err
+	}
 	if err := e.validateUnsigned(g); err != nil {
 		return err
 	}

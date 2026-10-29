@@ -36,6 +36,9 @@ type Config struct {
 	Objects             string
 }
 type Owner struct {
+	execution         *executionRuntime
+	executionHook     func(string) error
+	clock             func() uint64
 	mu                sync.Mutex
 	root              string
 	identity          Identity
@@ -328,6 +331,12 @@ func Open(root string, descriptorID types.Hash, pin wire.Position, recoverReques
 	} else if recoverRequest != nil && recoverRequest.Before != pin {
 		return nil, ErrOwner
 	}
+	if err = o.openExecution(); err != nil {
+		return nil, err
+	}
+	if err = o.checkRuntimeCalls(recoverRequest); err != nil {
+		return nil, err
+	}
 	if err = o.check(); err != nil {
 		return nil, err
 	}
@@ -384,7 +393,7 @@ func (o *Owner) check() error {
 			return ErrOwner
 		}
 	}
-	return nil
+	return o.checkExecution()
 }
 func (o *Owner) Descriptor() wire.Descriptor {
 	o.mu.Lock()
@@ -402,6 +411,16 @@ func (o *Owner) Position() (wire.Position, bool) {
 // Execute completes the effect while holding the same owner lock that excludes
 // revocation. No portable pre-authorization or arbitrary-signing API exists.
 func (o *Owner) Execute(ctx context.Context, q wire.Request) ([]byte, error) {
+	return o.execute(ctx, q, nil)
+}
+func (o *Owner) ExecuteRuntime(ctx context.Context, q wire.Request, payload []byte) ([]byte, error) {
+	frozen := append([]byte(nil), payload...)
+	if q.Kind != wire.Runtime || q.ChunkID != wire.RuntimePayloadID(frozen) {
+		return nil, ErrExecution
+	}
+	return o.execute(ctx, q, frozen)
+}
+func (o *Owner) execute(ctx context.Context, q wire.Request, payload []byte) ([]byte, error) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	if ctx == nil {
@@ -425,6 +444,9 @@ func (o *Owner) Execute(ctx context.Context, q wire.Request) ([]byte, error) {
 			return append([]byte(nil), o.tip...), nil
 		}
 	}
+	if e := o.pendingRequest(q); e != nil {
+		return nil, e
+	}
 	if o.revoked || q.Before != o.position {
 		return nil, wire.ErrAccess
 	}
@@ -435,6 +457,8 @@ func (o *Owner) Execute(ctx context.Context, q wire.Request) ([]byte, error) {
 	var data []byte
 	var e error
 	switch q.Kind {
+	case wire.Runtime:
+		data, e = o.runProtected(ctx, q, payload)
 	case wire.Inspect:
 		var h workarchive.CustodySourceHandoff
 		h, e = cut.InspectSourceHandoff(ctx, o.g, o.b, o.config.Pins, o.config.Source)
@@ -497,6 +521,14 @@ func (o *Owner) Close() error {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	clear(o.key)
+	if o.execution != nil {
+		clear(o.execution.keys.Replica)
+		clear(o.execution.keys.Control)
+		clear(o.execution.keys.Authority)
+		for _, s := range o.execution.sessions {
+			clear(s.key)
+		}
+	}
 	o.poisoned = true
 	if o.lock == nil {
 		return nil

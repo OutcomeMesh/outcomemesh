@@ -3,6 +3,7 @@ package custodycutover
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"errors"
 
 	"github.com/outcomemesh/outcomemesh/core/types"
@@ -88,7 +89,33 @@ func InspectSourceHandoffChunk(ctx context.Context, g v2.AdmissionGenesis, b v2.
 	return h, read.data, nil
 }
 
+// AnswerSourceHandoffChallenge performs an actual selected-source challenge
+// under the original retirement/worker and journal guards, never an arbitrary
+// caller callback. The protected runtime must consume its admitted live session
+// before calling; this raw filesystem API requires the isolated service UID.
+func AnswerSourceHandoffChallenge(ctx context.Context, g v2.AdmissionGenesis, b v2.EnrollmentBinding, pins SourceHandoffPins, l SourceLocation, objects string, previous workarchive.ReplicaReceipt, challenge workarchive.CustodyChallenge, replica ed25519.PrivateKey, now uint64) (workarchive.CustodyRecord, error) {
+	if l.Role != Target || objects == "" || len(replica) != ed25519.PrivateKeySize {
+		return workarchive.CustodyRecord{}, ErrPreparation
+	}
+	r := &sourceAnswer{previous: previous, challenge: challenge, key: append(ed25519.PrivateKey(nil), replica...), now: now}
+	defer clear(r.key)
+	read := &sourceChunkRead{objects: objects, answer: r}
+	_, _, err := sourceHandoff(ctx, g, b, pins, l, false, read)
+	if err != nil {
+		return workarchive.CustodyRecord{}, err
+	}
+	return r.record, nil
+}
+
+type sourceAnswer struct {
+	previous  workarchive.ReplicaReceipt
+	challenge workarchive.CustodyChallenge
+	key       ed25519.PrivateKey
+	now       uint64
+	record    workarchive.CustodyRecord
+}
 type sourceChunkRead struct {
+	answer  *sourceAnswer
 	objects string
 	id      types.Hash
 	data    []byte
@@ -187,6 +214,18 @@ func sourceHandoff(ctx context.Context, g v2.AdmissionGenesis, b v2.EnrollmentBi
 			store, e := workarchive.OpenExistingObjectStoreContext(ctx, read.objects, workarchive.DefaultObjectStorePolicy())
 			if e != nil {
 				return e
+			}
+			if a := read.answer; a != nil {
+				batch, proof, e := workarchive.AnswerCustodyChallenge(store, g.Manifest, a.previous, a.challenge, g.CustodyPolicy, a.key, a.now)
+				if e != nil {
+					return e
+				}
+				renewed, e := workarchive.RenewReplicaReceipt(g.Manifest, a.previous, a.challenge, batch, proof, g.CustodyPolicy, a.key, a.now)
+				if e != nil {
+					return e
+				}
+				a.record = workarchive.CustodyRecord{Challenge: a.challenge, Batch: batch, Proof: proof, RenewedReceipt: renewed}
+				return check()
 			}
 			mid, e := g.Manifest.ID()
 			if e != nil {

@@ -54,6 +54,17 @@ func Call(ctx context.Context, socket string, d wire.Descriptor, q wire.Request)
 		return zero, wire.ErrAccess
 	}
 	raw, e := q.CanonicalBytes()
+	return exchange(ctx, socket, d, q, raw, e)
+}
+func CallRuntime(ctx context.Context, socket string, d wire.Descriptor, q wire.Request, payload []byte) (wire.Response, error) {
+	raw, e := wire.EncodeRuntimeRequest(q, payload)
+	return exchange(ctx, socket, d, q, raw, e)
+}
+func exchange(ctx context.Context, socket string, d wire.Descriptor, q wire.Request, raw []byte, e error) (wire.Response, error) {
+	var zero wire.Response
+	if ctx == nil || !Supported() || q.Authorize(d) != nil {
+		return zero, wire.ErrAccess
+	}
 	if e != nil {
 		return zero, e
 	}

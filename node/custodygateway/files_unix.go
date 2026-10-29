@@ -62,6 +62,9 @@ func PlacementID(path string, directory bool) (types.Hash, error) {
 	return types.DomainHash("OMESH/custody-gateway/v1/placement", []byte(raw)), nil
 }
 func privateRead(path string, limit int) ([]byte, error) {
+	if _, e := os.Lstat(path); e != nil {
+		return nil, e
+	}
 	if _, e := PlacementID(path, false); e != nil {
 		return nil, e
 	}

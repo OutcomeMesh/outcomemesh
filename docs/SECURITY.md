@@ -1424,3 +1424,28 @@ already copied bytes are outside this OS boundary. Independently protected keys,
 external monotone pins, trusted backup/deployment and external review remain open.
 No profile-5 job execution, old-key cryptographic erasure, old-verifier upgrade or
 all-assignment activation follows from a gateway descriptor or response.
+
+
+## Protected Plan5 effects (2026-10-29)
+
+The [explicit protected adapter](CUSTODY_PROFILE5_EXECUTION.md) requires a complete
+five-endorsement deployment inside Plan5, original selected admission and current
+local gateway checks. Fresh service effects are mandatory for execution results,
+A acceptance and both Serve applications; copied old role keys alone cannot
+substitute those service signatures. The original sources remain sealed and the
+protected continuation never resets the imported predecessor or spent budget.
+
+A gateway-owned volatile session is consumed before object access and is not
+restored after loss. Partial source advancement without a completed result is
+unknown, not proof of absence or permission to repeat. Exact A recovery preserves
+its first checked time; the server's own clock governs current freshness. Runtime
+payloads have bounded parsing; protected result wrappers reject nested wrappers
+before descending into core decoding. Review/call/extraction pin complete gateway
+identities; no caller-supplied path/session key or generic signing RPC is exposed.
+
+These checks assume the stated Linux service/participant UID boundary and trusted
+service host/root. They do not revoke a complete service-VM/key clone or establish
+independent witness operators, physical fault tolerance, trusted external time or
+an external audit. Local revocation does not retroactively erase completed effects
+or atomically revoke another machine. Old native formats remain compatible and
+old accounting-only imported scopes remain non-executable through this adapter.

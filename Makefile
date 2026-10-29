@@ -17,16 +17,23 @@ test:
 	$(GO) test ./...
 
 test-race:
-	# Seven disjoint groups keep the growing custody suite within normal timeouts.
+	# Eleven disjoint groups keep the growing custody suite within normal timeouts.
 	$(GO) test -race ./... -run '^TestArchive'
 	$(GO) test -race ./... -run '^TestPrune'
-	$(GO) test -race ./... -skip '^(TestArchive|TestPrune|TestRemote|TestManagedCustody|TestAdmission|TestRequired)'
+	$(GO) test -race ./... -skip '^(TestArchive|TestPrune|TestRemote|TestManagedCustody|TestAdmission|TestRequired|TestCustody)'
+	$(GO) test -race ./... -run '^TestCustody' -skip '^TestCustodyV2'
+	$(GO) test -race ./... -run '^TestCustodyV2' -skip '^TestCustodyV2(Enrolled|Required)'
+	$(GO) test -race ./... -run '^TestCustodyV2Enrolled'
+	$(GO) test -race ./... -run '^TestCustodyV2Required'
 	$(GO) test -race ./... -run '^TestManagedCustody'
 	$(GO) test -race ./... -run '^TestRemote'
 	$(GO) test -race ./... -run '^Test(Admission|Required)' -skip '^TestAdmissionDelivery'
 	$(GO) test -race ./... -run '^TestAdmissionDelivery'
 
 test-fuzz-smoke:
+	$(GO) test ./node/custodygateway -run '^$$' -fuzz '^FuzzProtected5Commands$$' -fuzztime=$(FUZZTIME)
+	$(GO) test ./node/custodygateway/gatewaywire -run '^$$' -fuzz '^FuzzProtected5Wire$$' -fuzztime=$(FUZZTIME)
+	$(GO) test ./node/custodyv2 -run '^$$' -fuzz '^FuzzProtected5Artifacts$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodygateway/gatewaywire -run '^$$' -fuzz '^FuzzGatewayArtifacts$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/workarchive -run '^$$' -fuzz '^FuzzDecodeCustodySourceHandoff$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodycutover -run '^$$' -fuzz '^FuzzSourceHandoffPair$$' -fuzztime=$(FUZZTIME)
@@ -127,6 +134,8 @@ test-fuzz-smoke:
 	$(GO) test ./sim/workgraphmodel -run '^$$' -fuzz '^FuzzRunSelfishStrategiesNeverBreakAccounting$$' -fuzztime=$(FUZZTIME)
 
 test-process:
+	$(GO) test -tags=integration ./cmd/omd -run '^TestProtected5ActualExecutionAcceptanceAndAccounting$$' -count=1 -timeout=2m
+	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessProfile5UIDExecutionLostReplyAndFullClosure$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessGatewayUIDIsolationRestartAndRevocation$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessSourceHandoffLostOutputAndColdRetry$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessRemoteImportedAccountingColdRecovery$$' -count=1 -timeout=2m
@@ -155,7 +164,9 @@ test-process:
 	$(GO) test -tags=integration ./cmd/omd -run '^TestProcess(QUICRestartSoak|WorkGraphActivationQUICRestart|Archive(ObjectQUICMaterializesAndRecoversAcrossRestart|Custody(QUICSurvivesReplicaRestart|JournalRunsTwoRestartedCycles|(Checkpoint|Backup)RestoresPendingCycle|PinsTrackLatestBackup|ReconciliationKeepsStaleEvidenceReadOnly|RebaselineProposesWithoutCutover))|ControlledTieProducerRecoversWaitingState|TiePair(QUICReachesIndependentV2ObserversAndRecoversAck|CompletionWaitsForCoordinatorEOF)|TieCampaign.*)$$' -count=1 -timeout=10m
 	$(GO) test -tags=integration ./node/workchain -run '^Test(Pebble|BoundStorage|PositionStorage)ProcessCrashAtomicity$$' -count=1 -timeout=3m
 	$(GO) test -tags=integration ./node/workarchive -run '^Test(ArchiveRestoreProcessCrashAtomicity|AvailabilityPruneProcessCrashAtomicity|Custody(Record|Journal|Backup|Pin|Transfer|Application|Retirement)ProcessCrashAtomicity)$$' -count=1 -timeout=2m
-	$(GO) test -tags=integration ./node/custodyauthority/store -run '^Test(Authority(Store|Coordinator)|PruneExecutor|PinnedPrune|StorageBoundPrune|PruneCancellation|PruneCompletion(QUIC)?)ProcessCrashAtomicity$$' -count=1 -timeout=5m
+	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestAuthority(Store|Coordinator)ProcessCrashAtomicity$$' -count=1 -timeout=5m
+	$(GO) test -tags=integration ./node/custodyauthority/store -run '^Test(PruneExecutor|PinnedPrune|StorageBoundPrune)ProcessCrashAtomicity$$' -count=1 -timeout=5m
+	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestPrune(Cancellation|Completion(QUIC)?)ProcessCrashAtomicity$$' -count=1 -timeout=5m
 	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestCompletionOutboxProcessCrashAtomicity$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestPruneAdmissionQUICProcessCrashAtomicity$$' -count=1 -timeout=2m
 	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestAdmissionOutboxProcessCrashAtomicity$$' -count=1 -timeout=2m

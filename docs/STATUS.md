@@ -10,6 +10,44 @@ Full planned production readiness is approximately **44/100**, using the weighte
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
 
+## 2026-10-29: protected Plan5 actual execution and complete job closure
+
+The [protected profile-5 adapter](CUSTODY_PROFILE5_EXECUTION.md) binds both
+original gateway identities and the exact selected import to a separately signed
+Plan5. Issuer/authority/control and both service endorsements are mandatory;
+original imported admission witnesses additionally check their retained enrollment.
+Ordinary raw constructors and old accounting-only Plan2 cannot activate this path.
+
+A real archive challenge now executes inside B after its full admission, original
+Claim quorum and durable session consumption. Original source guards span actual
+object reads. The old journals stay sealed; an append-only protected continuation
+starts at their verified imported position. Result5 and Receipt5 require fresh
+service attestations in addition to original session/role signatures. Protected
+Serve applications at A/B close the original admission without refunding spent
+allowance or shortening inherited retention. The managed-V1 integration carries
+source 1→2 and spent 2→4→4, pending 0→2→0.
+
+Typed runtime requests retain their exact intent before effects and replies before
+output. Tests cover consumption/session loss, B source advancement without a
+completed result, A source acceptance before receipt, exact cold recovery, stale
+requests, forged old role proofs, revocation, authoritative server time and
+original-quorum Unclaimed closure. CLI covers deployment review/signing, private
+role-key installation, command/envelope creation, verified extraction and the
+existing strict daemon/call/recovery workflow.
+
+[Evidence](evidence/custody-profile5-20261029.json) records the final source
+inventory, fixed vectors, decoder fuzzing, eleven race groups, process checks and
+the same native binaries on two Linux kernels. The Linux process campaign uses
+UID 0 service / UID 65534 participant, real execution, lost output, killed B,
+byte-identical cold reply, A acceptance and protected Serve/accounting closure.
+Each host runs a controlled local campaign; no new joint WAN cutover or
+independent operator deployment is claimed.
+
+Independent protected witness/key domains, service-root/full-VM clone resistance,
+physical failures, external audits and the sustained testnet gates remain open.
+The prototype's explicit activation is not mainnet activation. Full readiness
+remains approximately **44/100**.
+
 ## 2026-10-29: isolated source/version service and Linux participant boundary
 
 The [custody gateway](CUSTODY_GATEWAY.md) now keeps a newly generated service key
@@ -36,9 +74,9 @@ retry and retained revocation are exercised.
 
 This protects the live service from old **participant** copies under the stated
 OS boundary. Root/service-host compromise or a complete service VM/key clone is
-outside that boundary. Original profile-5 job execution, protected A/B deployment,
-independent hardware/external-state defenses, external audit and sustained testnet
-remain open. No weighted launch gate closes: readiness remains **44/100**.
+outside that boundary. The later protected Plan5 section above supersedes the
+original job-execution gap. Independent A/B deployment, hardware/external-state
+defenses, external audit and sustained testnet remain open. No weighted launch gate closes: readiness remains **44/100**.
 
 ## 2026-10-29: sealed original sources and checks on held actions
 

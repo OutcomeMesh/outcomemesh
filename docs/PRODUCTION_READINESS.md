@@ -572,3 +572,15 @@ to key/source/object files. This is an OS isolation component, not completed
 all-assignment activation or protection against root/full-service-VM copies.
 Imported execution and independently protected deployment remain disabled/open;
 the copy-fencing point and total remain unchanged at approximately **44/100**.
+
+
+2026-10-29 protected execution follow-up: explicit Plan5 jobs now bind a complete
+five-role deployment, consume their admitted live session before actual archive
+reads, retain a source continuation over the sealed original prefix, and require
+fresh service attestations for result/A acceptance/Serve applications. Original
+admission closure preserves spent/source/retention and supports safe unknown
+holds and Unclaimed exclusion. Raw constructors stay blocked. Controlled native
+Linux/UID campaigns and fault/race/parser checks accompany the slice; independent
+protected domains, root/whole-service-VM copies, joint WAN/physical acceptance,
+external review and the remaining M5–M10 gates are not closed. No additional
+weighted production point is awarded: approximately **44/100**.

@@ -287,6 +287,9 @@ func openAdmissionWitness(path string, g AdmissionGenesis, pin types.Hash, key e
 			if e != nil {
 				return nil, e
 			}
+			if e := w.checkProtectedEnrollment(entry); e != nil {
+				return nil, e
+			}
 			if e := state.ValidateNext(entry); e != nil {
 				return nil, e
 			}
@@ -308,6 +311,9 @@ func openAdmissionWitness(path string, g AdmissionGenesis, pin types.Hash, key e
 		}
 		cert, e := DecodeAdmissionCertificate(b)
 		if e != nil {
+			return nil, e
+		}
+		if e := w.checkProtectedEnrollment(cert.Entry); e != nil {
 			return nil, e
 		}
 		if e := state.Apply(cert); e != nil {
@@ -371,6 +377,9 @@ func (w *AdmissionWitness) VoteAt(before custodyfence.WitnessPin, entry Admissio
 	if actual.Position != before.Position || (!before.PendingID.IsZero() && actual.PendingID != before.PendingID) || (!actual.PendingID.IsZero() && actual.PendingID != id) {
 		return AdmissionVote{}, ErrAdmissionHead
 	}
+	if e := w.checkProtectedEnrollment(entry); e != nil {
+		return AdmissionVote{}, e
+	}
 	if e := w.state.ValidateNext(entry); e != nil {
 		return AdmissionVote{}, e
 	}
@@ -390,6 +399,9 @@ func (w *AdmissionWitness) VoteAt(before custodyfence.WitnessPin, entry Admissio
 	return signAdmissionVote(entry, w.key)
 }
 func (w *AdmissionWitness) canCommitAt(before custodyfence.WitnessPin, cert AdmissionCertificate, raw []byte) error {
+	if e := w.checkProtectedEnrollment(cert.Entry); e != nil {
+		return e
+	}
 	actual := w.pin()
 	id, _ := cert.Entry.ID()
 	if cert.Entry.ExpectedSequence != before.Position.Sequence || cert.Entry.ExpectedHead != before.Position.HeadID {
@@ -563,4 +575,23 @@ func (w *AdmissionWitness) Close() error {
 	w.lock = nil
 	clear(w.key)
 	return e
+}
+
+func (w *AdmissionWitness) checkProtectedEnrollment(entry AdmissionEntry) error {
+	if !ProtectedContext(entry.Context) {
+		return nil
+	}
+	raw, exists := w.files["enrollment"]
+	if !exists {
+		return ErrEnrollmentRequired
+	}
+	b, e := DecodeEnrollmentBinding(raw)
+	if e != nil {
+		return e
+	}
+	id, e := b.ID()
+	if e != nil || entry.Context.Plan.Deployment.EnrollmentID != id {
+		return ErrEnrollmentRequired
+	}
+	return nil
 }

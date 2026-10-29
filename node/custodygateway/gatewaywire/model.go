@@ -109,7 +109,7 @@ type Request struct {
 }
 
 func (q Request) body() ([]byte, error) {
-	if q.DescriptorID.IsZero() || !q.Before.Valid() || q.Before.Sequence >= MaximumEvents || q.Nonce.IsZero() || types.Hash(q.Actor).IsZero() || q.Kind < Inspect || q.Kind > Revoke || (q.Kind == ReadChunk) == q.ChunkID.IsZero() {
+	if q.DescriptorID.IsZero() || !q.Before.Valid() || q.Before.Sequence >= MaximumEvents || q.Nonce.IsZero() || types.Hash(q.Actor).IsZero() || q.Kind < Inspect || q.Kind > Runtime || (q.Kind == ReadChunk || q.Kind == Runtime) == q.ChunkID.IsZero() {
 		return nil, ErrArtifact
 	}
 	e := codec.NewEncoder(MaximumRequestBytes)

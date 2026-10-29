@@ -5,10 +5,15 @@ Status: activation requirements plus an implemented
 [review preparation](CUSTODY_CUTOVER_REVIEW.md) supplies bounded legacy replay,
 original-source observations, no-refund arithmetic and the signed proposal.
 Profile5 now enforces historical spending/source carry-over in the existing
-admission ledger, with one shared registry selection slot. Active source handoff,
-protected old-grant exclusion and execution activation remain unimplemented. The
+admission ledger, with one shared registry selection slot. An [explicit protected
+Plan5 adapter](CUSTODY_PROFILE5_EXECUTION.md) now connects
+selected original sources to gateway-owned execution and protected closure.
+Independent deployment and global old-grant/whole-service-clone exclusion remain
+activation requirements. The
 [sealed source handoff](CUSTODY_SOURCE_HANDOFF.md) now implements the original
-local journal transfer and version checks; it grants no active successor access.
+local journal transfer and version checks; source records alone grant no active
+successor access. The protected adapter requires its own complete deployment and
+current service gates, and does not activate consensus or mainnet.
 The [V2 job](CUSTODY_V2.md) and [Serve disposition](CUSTODY_V2_SERVE.md) continue to
 operate in their supported native scopes; they cannot settle unresolved old tickets.
 

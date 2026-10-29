@@ -10,6 +10,7 @@ import (
 
 	"github.com/outcomemesh/outcomemesh/core/codec"
 	"github.com/outcomemesh/outcomemesh/core/types"
+	gateway "github.com/outcomemesh/outcomemesh/node/custodygateway/gatewaywire"
 )
 
 const ServeReceiptBytes = 10 + 1 + 4*32 + 3*8 + 32 + 64
@@ -23,6 +24,7 @@ var ErrServeClosed = errors.New("Serve decision already applied or pending; exec
 // ServeReceipt records one original local owner's settlement, never an archive
 // deletion permission. B must retain A's applied receipt as well as its own.
 type ServeReceipt struct {
+	Protection                                     *gateway.Effect
 	Version                                        uint16
 	Role                                           uint8
 	ScopeID, CertificateID, SourceHeadID, ParentID types.Hash
@@ -49,6 +51,12 @@ func (r ServeReceipt) unsignedBytes() ([]byte, error) {
 	return e.Bytes(), nil
 }
 func (r ServeReceipt) CanonicalBytes() ([]byte, error) {
+	if r.Version == ProtectedVersion {
+		return r.protectedBytes()
+	}
+	if r.Protection != nil {
+		return nil, ErrProtocol
+	}
 	b, e := r.unsignedBytes()
 	if e != nil {
 		return nil, e
@@ -61,6 +69,9 @@ func (r ServeReceipt) CanonicalBytes() ([]byte, error) {
 }
 func DecodeServeReceipt(b []byte) (ServeReceipt, error) {
 	var r ServeReceipt
+	if len(b) >= 8 && string(b[:8]) == "OMCVSAC5" {
+		return decodeProtectedServeReceipt(b)
+	}
 	if len(b) != ServeReceiptBytes {
 		return r, ErrProtocol
 	}
@@ -86,9 +97,29 @@ func (r ServeReceipt) ID() (types.Hash, error) {
 	if e != nil {
 		return types.Hash{}, e
 	}
-	return types.DomainHash("OMESH/custody/v2/serve/applied/id", b), nil
+	domain := "OMESH/custody/v2/serve/applied/id"
+	if r.Version == ProtectedVersion {
+		domain = "OMESH/custody/v5/serve/applied/id"
+	}
+	return types.DomainHash(domain, b), nil
 }
 func (r ServeReceipt) Verify(c Context, cert ServeCertificate, role uint8, parent *ServeReceipt) error {
+	if ProtectedContext(c) {
+		if r.Version != ProtectedVersion {
+			return ErrProtocol
+		}
+		kind := gateway.EffectServeA
+		if role == ServeTarget {
+			kind = gateway.EffectServeB
+		}
+		id, e := r.CoreID()
+		if e != nil || VerifyProtectedEffect(c, r.Protection, kind, id, r.SourceHeadID, r.SourceSequence, r.AppliedAt) != nil {
+			return ErrProtocol
+		}
+	} else if r.Version != Version2 || r.Protection != nil {
+		return ErrProtocol
+	}
+
 	if _, e := r.CanonicalBytes(); e != nil {
 		return e
 	}

@@ -21,6 +21,7 @@ import (
 	gateway "github.com/outcomemesh/outcomemesh/node/custodygateway"
 	client "github.com/outcomemesh/outcomemesh/node/custodygateway/gatewayclient"
 	wire "github.com/outcomemesh/outcomemesh/node/custodygateway/gatewaywire"
+	v2 "github.com/outcomemesh/outcomemesh/node/custodyv2"
 )
 
 const custodyGatewayCommand = "work-archive-custody-gateway"
@@ -130,6 +131,8 @@ func runCustodyGateway(ctx context.Context, args []string, out io.Writer) error 
 		*root = filepath.Clean(abs)
 	}
 	var in, descRaw, reqRaw []byte
+	var runtimePayload []byte
+	var runtimeSummary any
 	var inspected wire.Response
 	var pin wire.Position
 	var desc wire.Descriptor
@@ -195,17 +198,28 @@ func runCustodyGateway(ctx context.Context, args []string, out io.Writer) error 
 		}
 	}
 	if *request != "" {
-		reqRaw, e = load(request, wire.MaximumRequestBytes)
+		reqRaw, e = load(request, wire.MaximumServiceRequestBytes)
 		if e != nil {
 			return e
 		}
-		req, e = wire.DecodeRequest(reqRaw)
+		if len(reqRaw) >= 8 && string(reqRaw[:8]) == "OMCGXRQ5" {
+			req, runtimePayload, e = wire.DecodeRuntimeRequest(reqRaw)
+		} else {
+			req, e = wire.DecodeRequest(reqRaw)
+		}
 		if e != nil {
 			return e
 		}
 		if e = req.Authorize(desc); e != nil {
 			return e
 		}
+	}
+	if runtimePayload != nil {
+		cmd, e := v2.DecodeProtectedCommand(runtimePayload)
+		if e != nil {
+			return e
+		}
+		runtimeSummary = profile5PublicCommand(cmd)
 	}
 	if *pinPath != "" {
 		raw, e := load(pinPath, 4096)
@@ -274,7 +288,9 @@ func runCustodyGateway(ctx context.Context, args []string, out io.Writer) error 
 		ParticipantUID                    uint
 		EventLimit                        uint
 		Clients                           [][32]byte
-	}{*action, *root, *socket, *keyPath, *output, paths, did, socketID, pin, *participantUID, *eventLimit, actorKeys})
+		Runtime                           any
+		Request                           wire.Request
+	}{*action, *root, *socket, *keyPath, *output, paths, did, socketID, pin, *participantUID, *eventLimit, actorKeys, runtimeSummary, req})
 	if e != nil {
 		return e
 	}
@@ -344,7 +360,11 @@ func runCustodyGateway(ctx context.Context, args []string, out io.Writer) error 
 		}
 	case "call":
 		var r wire.Response
-		r, e = client.Call(ctx, *socket, desc, req)
+		if runtimePayload != nil {
+			r, e = client.CallRuntime(ctx, *socket, desc, req, runtimePayload)
+		} else {
+			r, e = client.Call(ctx, *socket, desc, req)
+		}
 		if e == nil {
 			result, e = r.CanonicalBytes()
 		}

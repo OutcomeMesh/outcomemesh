@@ -7,11 +7,12 @@ import (
 	"github.com/outcomemesh/outcomemesh/core/codec"
 	"github.com/outcomemesh/outcomemesh/core/types"
 	"github.com/outcomemesh/outcomemesh/node/custodyfence"
+	gateway "github.com/outcomemesh/outcomemesh/node/custodygateway/gatewaywire"
 	"github.com/outcomemesh/outcomemesh/node/workarchive"
 )
 
 const MaximumContextBytes = workarchive.MaximumManifestBytes + MaximumAssignmentBytes + MaximumPlanBytes + 2*workarchive.MaximumReplicaReceiptBytes + 4096
-const MaximumResultBytes = workarchive.MaximumCustodyJournalEntryBytes + 1024
+const MaximumResultBytes = workarchive.MaximumCustodyJournalEntryBytes + 1024 + gateway.EffectBytes + 32
 const MaximumBundleBytes = MaximumResultBytes + 3*(custodyfence.MaximumCertificateBytes+10) + 64
 
 func (c Context) CanonicalBytes() ([]byte, error) {
@@ -182,6 +183,7 @@ func (c Candidate) Verify(ctx Context) error {
 // Result requires possession of the winning volatile session key in addition
 // to the long-term replica signature inside Entry. That key is never persisted.
 type Result struct {
+	Protection       *gateway.Effect
 	Version          uint16
 	ScopeID, ClaimID types.Hash
 	SessionPublicKey [32]byte
@@ -207,6 +209,12 @@ func (r Result) unsignedBytes() ([]byte, error) {
 	return out.Bytes(), nil
 }
 func (r Result) CanonicalBytes() ([]byte, error) {
+	if r.Version == ProtectedVersion {
+		return r.protectedBytes()
+	}
+	if r.Protection != nil {
+		return nil, ErrProtocol
+	}
 	b, e := r.unsignedBytes()
 	if e != nil {
 		return nil, e
@@ -222,10 +230,17 @@ func (r Result) ID() (types.Hash, error) {
 	if e != nil {
 		return types.Hash{}, e
 	}
-	return types.DomainHash("OMESH/custody/v2/result/id", b), nil
+	domain := "OMESH/custody/v2/result/id"
+	if r.Version == ProtectedVersion {
+		domain = "OMESH/custody/v5/result/id"
+	}
+	return types.DomainHash(domain, b), nil
 }
 func DecodeResult(b []byte) (Result, error) {
 	var r Result
+	if len(b) >= 8 && string(b[:8]) == "OMCVRES5" {
+		return decodeProtectedResult(b)
+	}
 	if len(b) > MaximumResultBytes {
 		return r, ErrProtocol
 	}
@@ -256,6 +271,19 @@ func DecodeResult(b []byte) (Result, error) {
 	return r, nil
 }
 func (r Result) Verify(c Context, claim custodyfence.Certificate) error {
+	if ProtectedContext(c) {
+		if r.Version != ProtectedVersion {
+			return ErrProtocol
+		}
+		id, e := r.CoreID()
+		head, _ := r.Entry.ID()
+		if e != nil || VerifyProtectedEffect(c, r.Protection, gateway.EffectExecute, id, head, r.Entry.Sequence, r.Entry.Record.Proof.RespondedAt) != nil {
+			return ErrProtocol
+		}
+	} else if r.Version != Version2 || r.Protection != nil {
+		return ErrProtocol
+	}
+
 	if e := (Candidate{Version: Version2, SessionPublicKey: r.SessionPublicKey, Claim: claim.Command}).Verify(c); e != nil {
 		return e
 	}

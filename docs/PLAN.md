@@ -69,7 +69,7 @@ Next required work remains ordered:
    [profile-4 proof delivery](CUSTODY_V2_ENROLLED_DELIVERY.md) now retains both
    complete proofs with exact retry and explicit owner handoff. Joint WAN
    fault acceptance accompanies that path; protected independent deployment
-   and active imported execution remain next. [Legacy cutover
+   remains required. The explicit imported adapter is described below. [Legacy cutover
    rules](CUSTODY_V2_MIGRATION.md) now have a separate
    [disabled review CLI](CUSTODY_CUTOVER_REVIEW.md): complete retired histories,
    original-source observations, no-refund arithmetic and signed durable
@@ -80,10 +80,15 @@ Next required work remains ordered:
    A/B guards. The [isolated source gateway](CUSTODY_GATEWAY.md) now owns a
    fresh key and original storage under a separate Linux UID, with exact signed
    per-action positions, durable replies and irreversible issuer revocation.
-   It performs original-source inspection and object reads, not imported jobs.
-   Next bind actual Target/Acceptor/admission/closure effects to the protected
-   service and deploy independently operated/protected domains with external
-   monotone state. Imported execution remains disabled.
+   The [protected Plan5 adapter](CUSTODY_PROFILE5_EXECUTION.md) now performs real
+   archive execution, retained source continuation, protected A acceptance and
+   Serve/admission closure inside explicitly configured service owners. It binds
+   both service identities and original enrollment to each job, retains the
+   inherited spending/source/retention and rejects bare old role proofs. Raw
+   profile-5 constructors and accounting-only Plan2 execution still refuse.
+   Next deploy independently operated/protected A/B domains and witnesses with
+   external monotone/key storage, extend joint WAN/physical-failure acceptance
+   and obtain independent review. No consensus/mainnet activation follows.
 4. Specify safe progress for split votes and its quorum/rollback assumptions;
    never reset a retained slot to recover availability.
 5. Establish protected execution/key deployment, activation/migration rules and

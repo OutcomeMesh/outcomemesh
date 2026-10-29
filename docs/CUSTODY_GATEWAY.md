@@ -2,9 +2,11 @@
 
 Status: experimental source/version service with a Linux user boundary. The
 service owns a newly generated key and performs original sealed-source inspection
-and manifest-bound archive reads. Imported profile-5 job execution remains
-**disabled**. Gateway responses are historical operation reports; no response is
-an admission, custody receipt, Serve disposition or transferable execution grant.
+and manifest-bound archive reads. The separate [explicit Plan5
+adapter](CUSTODY_PROFILE5_EXECUTION.md) now adds real protected execution and
+closure after complete deployment endorsement and private role-key installation.
+Base-only gateways and raw profile-5 constructors remain non-executing. A generic
+gateway response is historical operation evidence, never a future execution grant.
 
 ## Boundary and deployment
 
@@ -193,3 +195,18 @@ alone does not close the production copy-fencing criterion.
 inventory, local/race/process/fuzz checks and the same native binaries tested on
 two Linux kernels. Test helpers' faults and UID-dropping probes are not exposed
 through the production CLI or RPC.
+
+
+## Runtime extension
+
+The original descriptor and 241-byte signed request body remain compatible.
+Runtime kind 4 commits a complete typed payload; `OMCGXRQ5` frames it with that
+request. A runtime payload is at most 16 MiB. The same UID, local revocation,
+exact cursor, bounded connection and durable response checks apply. An immutable
+runtime intent additionally blocks replacement of an unknown operation. Public
+call review reports the typed operation and scope/binding/deployment IDs.
+Protected result/acceptance/Serve artifacts have their own verification rules;
+reading an outer historical response alone is never live permission.
+See the [complete contract](CUSTODY_PROFILE5_EXECUTION.md) for explicit setup,
+source continuation, keys, limits and failure behavior. The original base-only
+workflow above remains usable without configuring execution.
