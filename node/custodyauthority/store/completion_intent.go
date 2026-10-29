@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	CompletionIntentBytes  = 10 + 2*types.HashSize + custodyauthority.MaximumEntryBytes
+	CompletionIntentBytes  = 10 + 2*types.HashSize + custodyauthority.LegacyEntryBytes
 	completionReceiptBytes = 10 + types.HashSize + completionwire.AcknowledgementBytes + types.HashSize
 )
 

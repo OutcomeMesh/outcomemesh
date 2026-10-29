@@ -855,3 +855,14 @@ intent without that database record remains held. New canonical pruning and
 custody issuance under the new schedule remain gated. Encoding, continuity and
 operational limits are specified in
 [archive and protected-storage migration](RADIX_ARCHIVE_STORAGE_MIGRATION.md).
+
+## Local custody schedule migration
+
+[Custody radix schedule migration](CUSTODY_RADIX_SCHEDULE.md) specifies the
+version 2 authority command/entry, kind 7 one-time transition, schedule proof and
+signed receipt wrapper. Assignment v0 identity and original journal entries do
+not change. All subsequent live actions bind the exact schedule ID; migration
+preserves pending operations, spent capacity and receipt deadlines. Legacy
+command/entry encodings and fixed-width wire formats remain unchanged. Remote
+assignment v1 and new canonical pruning remain gated pending their explicit
+schedule-bound evidence and execution formats.

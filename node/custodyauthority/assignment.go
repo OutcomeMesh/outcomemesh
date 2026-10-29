@@ -251,13 +251,14 @@ func WithRemoteParticipant(assignmentV0 Assignment, control, transport [32]byte)
 	return a, nil
 }
 
-// MaximumEntries preserves drain capacity for every admitted operation. A V1
+// MaximumEntries reserves one V0 schedule transition without consuming the
+// capacity to complete every admission, stop and retire. A V1
 // Serve ticket may additionally have one Begin and one Drained record. Unknown
 // versions return zero; callers validate the assignment before using this bound.
 func MaximumEntries(assignment Assignment) uint64 {
 	switch assignment.Version {
 	case Version0:
-		return 2*uint64(assignment.MaximumOperations) + 2
+		return 2*uint64(assignment.MaximumOperations) + 3
 	case Version1:
 		return 4*uint64(assignment.MaximumOperations) + 2
 	default:
@@ -266,6 +267,9 @@ func MaximumEntries(assignment Assignment) uint64 {
 }
 
 func authorityDomain(version uint16, suffix string) string {
+	if version == ScheduleVersion2 {
+		return "OMESH/custody-authority/" + suffix + "/v2"
+	}
 	if version == Version1 {
 		return "OMESH/custody-authority/" + suffix + "/v1"
 	}

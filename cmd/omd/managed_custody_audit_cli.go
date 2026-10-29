@@ -123,6 +123,7 @@ func loadManagedCustodyAuditOptions(ctx context.Context, arguments []string) (ma
 	}
 	flags := flag.NewFlagSet(managedCustodyAuditCommand, flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
+	scheduleFlags := addCustodyScheduleFlags(flags)
 	mode := flags.String("mode", "review", "review (default), or supervised control")
 	assignmentPath := flags.String("assignment", "", "existing canonical assignment file (required)")
 	assignmentText := flags.String("assignment-id", "", "independently pinned assignment ID (required)")
@@ -189,6 +190,10 @@ func loadManagedCustodyAuditOptions(ctx context.Context, arguments []string) (ma
 		*f.out = id
 	}
 	a, err := loadPruneOfflineAssignment(*assignmentPath, assignmentID)
+	if err != nil {
+		return managedCustodyAuditOptions{}, err
+	}
+	schedule, err := scheduleFlags.load(a)
 	if err != nil {
 		return managedCustodyAuditOptions{}, err
 	}
@@ -282,7 +287,7 @@ func loadManagedCustodyAuditOptions(ctx context.Context, arguments []string) (ma
 	}
 	return managedCustodyAuditOptions{mode: *mode, address: *address, listen: *listen, ticketID: ticketID, transportKey: transportPrivate,
 		config: authoritystore.ManagedCustodyAuditRuntimeConfig{AuthorityPath: *authority, AuthorityPinsPath: *pins, Assignment: a, AuditorPeerID: auditorPeer,
-			Audit: authoritystore.ManagedCustodyAuditConfig{AssignmentID: assignmentID, IntentID: intentID, Admission: admission, IntentPath: canonicalIntent, JournalPath: *journal, ArtifactsPath: *artifacts, Manifest: manifest, InitialReceipt: receipt, CustodyPolicy: policy, JournalLimits: journalFlags.limits(), AuditorPrivateKey: evidence, SessionConfig: config}}}, nil
+			Audit: authoritystore.ManagedCustodyAuditConfig{Schedule: schedule, AssignmentID: assignmentID, IntentID: intentID, Admission: admission, IntentPath: canonicalIntent, JournalPath: *journal, ArtifactsPath: *artifacts, Manifest: manifest, InitialReceipt: receipt, CustodyPolicy: policy, JournalLimits: journalFlags.limits(), AuditorPrivateKey: evidence, SessionConfig: config}}}, nil
 }
 
 func validateManagedCustodyIntentAssignment(a custodyauthority.Assignment, id types.Hash, intent workarchive.CustodyAuditIntent) error {

@@ -22,6 +22,7 @@ var ErrManagedCustodyServe = errors.New("invalid managed archive custody serve c
 // construction never initializes, repairs, signs, admits or completes anything.
 // AuditorPeerID is a transport identity, separate from every control/evidence key.
 type ManagedCustodyServeConfig struct {
+	Schedule          *CustodyScheduleContext
 	AssignmentID      types.Hash
 	Admission         custodyauthority.Entry
 	ChallengeID       types.Hash
@@ -94,7 +95,11 @@ func NewManagedCustodyServeSession(ctx context.Context, coordinator *Coordinator
 		c.AssignmentID != config.AssignmentID || c.OperationID != config.ChallengeID {
 		return nil, errors.Join(ErrManagedCustodyServe, err)
 	}
-	binding := OperationBinding{AssignmentID: config.AssignmentID, TicketID: ticket, ConsumerPublicKey: c.ActorPublicKey,
+	schedule, scheduleID, err := config.Schedule.detached()
+	if err != nil {
+		return nil, err
+	}
+	binding := OperationBinding{ScheduleID: scheduleID, AssignmentID: config.AssignmentID, TicketID: ticket, ConsumerPublicKey: c.ActorPublicKey,
 		OperationID: config.ChallengeID, Purpose: custodyauthority.Serve}
 	var result *ManagedCustodyServeSession
 	err = coordinator.WithOperation(ctx, binding, func() error {
@@ -127,8 +132,8 @@ func NewManagedCustodyServeSession(ctx context.Context, coordinator *Coordinator
 		if err := managedCustodyServeRoots(coordinator, config.JournalPath, config.Objects); err != nil {
 			return err
 		}
-		journal, _, err := workarchive.OpenExistingCustodyJournalWithLimits(ctx, config.JournalPath,
-			config.Manifest, config.InitialReceipt, config.CustodyPolicy, config.JournalLimits)
+		journal, _, err := openManagedCustodyJournal(ctx, config.JournalPath,
+			config.Manifest, config.InitialReceipt, config.CustodyPolicy, config.JournalLimits, schedule, retained)
 		if err != nil {
 			return err
 		}

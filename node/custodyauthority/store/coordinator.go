@@ -178,6 +178,9 @@ func (coordinator *Coordinator) Append(ctx context.Context, entry custodyauthori
 	if coordinator == nil {
 		return Commit{}, ErrClosed
 	}
+	if entry.Command.Kind == custodyauthority.MigrateSchedule {
+		return Commit{}, custodyauthority.ErrCommand
+	}
 	coordinator.mu.Lock()
 	defer coordinator.mu.Unlock()
 	return coordinator.append(ctx, entry)

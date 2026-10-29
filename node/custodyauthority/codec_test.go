@@ -37,7 +37,7 @@ func TestAuthorityCanonicalGoldenHistory(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(encoded) != MaximumEntryBytes {
+		if len(encoded) != LegacyEntryBytes {
 			t.Fatalf("entry bytes=%d", len(encoded))
 		}
 		decoded, err := DecodeEntry(encoded)
@@ -45,7 +45,7 @@ func TestAuthorityCanonicalGoldenHistory(t *testing.T) {
 			t.Fatal("entry round trip", err)
 		}
 		command, _ := entry.Command.CanonicalBytes()
-		if len(command) != MaximumCommandBytes {
+		if len(command) != LegacyCommandBytes {
 			t.Fatalf("command bytes=%d", len(command))
 		}
 		decodedCommand, err := DecodeCommand(command)

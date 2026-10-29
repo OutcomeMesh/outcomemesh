@@ -112,6 +112,7 @@ func loadManagedCustodyServeOptions(ctx context.Context, arguments []string) (ma
 	}
 	flags := flag.NewFlagSet(managedCustodyServeCommand, flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
+	scheduleFlags := addCustodyScheduleFlags(flags)
 	mode := flags.String("mode", "review", "review (default) or explicitly supervised serve")
 	assignmentPath := flags.String("assignment", "", "existing canonical assignment file (required)")
 	assignmentText := flags.String("assignment-id", "", "independently pinned assignment ID (required)")
@@ -177,6 +178,10 @@ func loadManagedCustodyServeOptions(ctx context.Context, arguments []string) (ma
 		*field.value = id
 	}
 	assignment, err := loadPruneOfflineAssignment(*assignmentPath, assignmentID)
+	if err != nil {
+		return managedCustodyServeOptions{}, err
+	}
+	schedule, err := scheduleFlags.load(assignment)
 	if err != nil {
 		return managedCustodyServeOptions{}, err
 	}
@@ -260,7 +265,7 @@ func loadManagedCustodyServeOptions(ctx context.Context, arguments []string) (ma
 	return managedCustodyServeOptions{mode: *mode, listen: *listen, ticketID: ticketID, transportKey: transportKey,
 		config: authoritystore.ManagedCustodyServeServiceConfig{AuthorityPath: *authority, AuthorityPinsPath: *pins,
 			Assignment: assignment, ObjectPath: *objects, ObjectPolicy: objectPolicy, ServerPeerID: serverID,
-			Session: authoritystore.ManagedCustodyServeConfig{AssignmentID: assignmentID, Admission: admission, ChallengeID: challengeID,
+			Session: authoritystore.ManagedCustodyServeConfig{Schedule: schedule, AssignmentID: assignmentID, Admission: admission, ChallengeID: challengeID,
 				AuditorPeerID: auditorID, JournalPath: *journal, Manifest: manifest, InitialReceipt: receipt, CustodyPolicy: policy,
 				JournalLimits: journalFlags.limits(), ReplicaPrivateKey: replicaKey, SessionConfig: configuration}}}, nil
 }
@@ -268,6 +273,7 @@ func loadManagedCustodyServeOptions(ctx context.Context, arguments []string) (ma
 func writeManagedCustodyServeReview(output io.Writer, options managedCustodyServeOptions) error {
 	c, s := options.config, options.config.Session
 	scope := struct {
+		ScheduleID     string                           `json:"schedule_id,omitempty"`
 		Authority      string                           `json:"authority"`
 		AuthorityPins  string                           `json:"authority_pins"`
 		Journal        string                           `json:"journal"`
@@ -288,6 +294,9 @@ func writeManagedCustodyServeReview(output io.Writer, options managedCustodyServ
 		InitialReceipt: c.Assignment.InitialReceiptID.String(), CustodyPolicy: c.Assignment.CustodyPolicyID.String(),
 		ChallengeLimit: s.CustodyPolicy.MaximumChallengeLifetime, ProofAge: s.CustodyPolicy.MaximumProofAge,
 		RenewalTerm: s.CustodyPolicy.MaximumRenewalTerm, JournalLimits: s.JournalLimits, ObjectPolicy: c.ObjectPolicy}
+	if s.Schedule != nil {
+		scope.ScheduleID = s.Schedule.ExpectedID.String()
+	}
 	for _, key := range s.CustodyPolicy.TrustedAuditors {
 		scope.Auditors = append(scope.Auditors, types.Hash(key).String())
 	}

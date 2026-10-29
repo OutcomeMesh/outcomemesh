@@ -276,7 +276,7 @@ func TestRemoteAuthorityReplayEveryPrefixAndDrainCapacity(t *testing.T) {
 	if _, err := Replay(a, s.AssignmentID, history, Position{s.Sequence, s.HeadID}); err != nil {
 		t.Fatal("V1 history was bounded like V0", err)
 	}
-	if MaximumEntries(testAssignment()) != 10 || MaximumEntries(Assignment{Version: 99}) != 0 {
+	if MaximumEntries(testAssignment()) != 11 || MaximumEntries(Assignment{Version: 99}) != 0 {
 		t.Fatal("legacy/unknown entry budget changed")
 	}
 }
@@ -369,12 +369,12 @@ func TestRemoteAuthorityV1DomainsAndCanonicalBytes(t *testing.T) {
 			t.Fatal(err)
 		}
 		decoded, err := DecodeEntry(eb)
-		if err != nil || decoded != entry || len(eb) != MaximumEntryBytes {
+		if err != nil || decoded != entry || len(eb) != LegacyEntryBytes {
 			t.Fatal("V1 fixed entry roundtrip", err)
 		}
 		cb, _ := entry.Command.CanonicalBytes()
 		c, err := DecodeCommand(cb)
-		if err != nil || c != entry.Command || len(cb) != MaximumCommandBytes {
+		if err != nil || c != entry.Command || len(cb) != LegacyCommandBytes {
 			t.Fatal("V1 fixed command roundtrip", err)
 		}
 		entryID, _ := entry.ID()

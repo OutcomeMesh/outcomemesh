@@ -60,6 +60,7 @@ type RemoteExecution struct {
 // treating a caller-supplied snapshot as authoritative.
 type Snapshot struct {
 	AssignmentID types.Hash
+	ScheduleID   types.Hash
 	Sequence     uint64
 	HeadID       types.Hash
 	Phase        Phase
@@ -95,6 +96,7 @@ type State struct {
 	mu           sync.Mutex
 	assignment   Assignment
 	id           types.Hash
+	scheduleID   types.Hash
 	sequence     uint64
 	head         types.Hash
 	phase        Phase
@@ -174,7 +176,18 @@ func (state *State) validateNext(entry Entry) (types.Hash, error) {
 		return types.Hash{}, err
 	}
 	command := entry.Command
-	if entry.Version != state.assignment.Version || command.Version != state.assignment.Version || entry.AuthorityPublicKey != state.assignment.AuthorityPublicKey || command.AssignmentID != state.id {
+	if entry.AuthorityPublicKey != state.assignment.AuthorityPublicKey || command.AssignmentID != state.id {
+		return types.Hash{}, ErrAssignment
+	}
+	if command.Kind == MigrateSchedule {
+		if state.assignment.Version != Version0 || !state.scheduleID.IsZero() || command.Version != ScheduleVersion2 || command.ActorPublicKey != state.assignment.ReplicaPublicKey {
+			return types.Hash{}, ErrAssignment
+		}
+	} else if state.scheduleID.IsZero() {
+		if command.Version != state.assignment.Version || !command.ScheduleID.IsZero() {
+			return types.Hash{}, ErrAssignment
+		}
+	} else if command.Version != ScheduleVersion2 || command.ScheduleID != state.scheduleID {
 		return types.Hash{}, ErrAssignment
 	}
 	if command.ExpectedSequence != state.sequence || command.ExpectedHead != state.head {
@@ -190,6 +203,10 @@ func (state *State) validateNext(entry Entry) (types.Hash, error) {
 		return types.Hash{}, ErrRemoteActive
 	}
 	switch command.Kind {
+	case MigrateSchedule:
+		if state.phase != Accepting && state.phase != Stopping {
+			return types.Hash{}, ErrPhase
+		}
 	case Admit:
 		if state.phase != Accepting {
 			return types.Hash{}, ErrPhase
@@ -273,6 +290,8 @@ func (state *State) Apply(entry Entry) error {
 	}
 	c := entry.Command
 	switch c.Kind {
+	case MigrateSchedule:
+		state.scheduleID = c.ScheduleID
 	case Admit:
 		state.operations[id] = Operation{TicketID: id, ConsumerPublicKey: c.ActorPublicKey, OperationID: c.OperationID, Purpose: c.Purpose}
 		state.requests[operationKey{c.ActorPublicKey, c.OperationID}] = id
@@ -312,7 +331,7 @@ func (state *State) Snapshot() (Snapshot, error) {
 	if state.id.IsZero() {
 		return Snapshot{}, ErrAssignment
 	}
-	snapshot := Snapshot{AssignmentID: state.id, Sequence: state.sequence, HeadID: state.head,
+	snapshot := Snapshot{AssignmentID: state.id, ScheduleID: state.scheduleID, Sequence: state.sequence, HeadID: state.head,
 		Phase: state.phase, Pending: state.pending, StopID: state.stopID, StopIntentID: state.stopIntentID, RetirementID: state.retirementID,
 		Operations: make([]Operation, 0, len(state.operations))}
 	for _, operation := range state.operations {

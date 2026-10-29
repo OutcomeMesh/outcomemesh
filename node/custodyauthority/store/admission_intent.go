@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	AdmissionIntentBytes  = 10 + 2*types.HashSize + custodyauthority.MaximumEntryBytes
+	AdmissionIntentBytes  = 10 + 2*types.HashSize + custodyauthority.LegacyEntryBytes
 	admissionReceiptBytes = 10 + types.HashSize + admissionwire.AcknowledgementBytes + types.HashSize
 )
 

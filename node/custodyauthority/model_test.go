@@ -12,6 +12,7 @@ import (
 // for the current phase, role, ticket or capacity.
 func FuzzAuthorityDrainStateMachine(f *testing.F) {
 	f.Add([]byte{0, 1, 2, 3, 4, 5, 6, 7, 8})
+	f.Add([]byte{0, 128, 1, 2, 129, 3})
 	f.Add([]byte{0, 0, 0, 0, 0, 0})
 	f.Add([]byte{2, 3, 0, 4, 1, 3})
 	f.Fuzz(func(t *testing.T, choices []byte) {
@@ -25,7 +26,27 @@ func FuzzAuthorityDrainStateMachine(f *testing.F) {
 		var tickets []types.Hash
 		var history []Entry
 		phase := Accepting
+		var schedule types.Hash
 		for index, choice := range choices {
+			if choice&128 != 0 {
+				before := testSnapshot(t, state)
+				migration := scheduleEntry(t, state, MigrateSchedule, 0, 2, testHash(77), types.Hash{}, types.Hash{}, types.Hash{})
+				err := state.Apply(migration)
+				allowed := schedule.IsZero() && phase != Retired
+				if (err == nil) != allowed {
+					t.Fatal("model migration acceptance differs", err)
+				}
+				after := testSnapshot(t, state)
+				if after.Pending != before.Pending || after.Phase != before.Phase || !reflect.DeepEqual(after.Operations, before.Operations) || after.StopID != before.StopID {
+					t.Fatal("migration changed model obligations")
+				}
+				if allowed {
+					schedule = testHash(77)
+					history = append(history, migration)
+				} else if !reflect.DeepEqual(before, after) {
+					t.Fatal("rejected migration changed state")
+				}
+			}
 			before := testSnapshot(t, state)
 			kind := Kind(choice%4 + 1)
 			actor := byte(4 + (choice/4)%3)
@@ -58,6 +79,9 @@ func FuzzAuthorityDrainStateMachine(f *testing.F) {
 				}
 			}
 			entry := testEntry(t, state, kind, purpose, actor, operation, ticket, evidence)
+			if !schedule.IsZero() {
+				entry = scheduleEntry(t, state, kind, purpose, actor, schedule, operation, ticket, evidence)
+			}
 			key := operationKey{testPublic(actor), operation}
 			valid := false
 			switch kind {

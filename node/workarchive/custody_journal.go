@@ -316,6 +316,7 @@ type CustodyJournalState struct {
 // CustodyJournal owns an append-only decision spine. Large entry bodies may be
 // moved into immutable segments, but the sharded sequence slots never move.
 type CustodyJournal struct {
+	schedule *custodyScheduleCursor
 	path     string
 	header   CustodyJournalHeader
 	manifest Manifest
@@ -847,7 +848,13 @@ func (journal *CustodyJournal) scanContext(ctx context.Context) (CustodyJournalS
 		state.Sequence = expectedSequence
 		state.HeadEntryID = entryID
 		state.CurrentReceipt = entry.Record.RenewedReceipt
+		if pin := journal.schedule; pin != nil && pin.sequence == state.Sequence && (pin.head != state.HeadEntryID || pin.receipt != state.CurrentReceipt) {
+			return CustodyJournalState{}, ErrCustodySchedule
+		}
 		referenced[entryID] = struct{}{}
+	}
+	if pin := journal.schedule; pin != nil && (state.Sequence < pin.sequence || (pin.sequence == 0 && (pin.receipt != state.InitialReceipt || !pin.head.IsZero()))) {
+		return CustodyJournalState{}, ErrCustodySchedule
 	}
 	// Losing bodies from a same-slot race are allowed, but they still have to
 	// be canonical and content-addressed. Validate them one at a time so replay

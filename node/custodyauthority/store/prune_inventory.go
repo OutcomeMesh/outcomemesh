@@ -237,7 +237,7 @@ func DecodeArchivePruneInventory(input []byte) (ArchivePruneInventory, error) {
 		return ArchivePruneInventory{}, err
 	}
 	n, err := d.ListLength(workarchive.MaximumReplicas)
-	if err != nil || n == 0 || n > d.Remaining()/custodyauthority.MaximumEntryBytes {
+	if err != nil || n == 0 || n > d.Remaining()/custodyauthority.LegacyEntryBytes {
 		return ArchivePruneInventory{}, ErrPruneInventory
 	}
 	p.Assignments = make([]custodyauthority.Assignment, n)

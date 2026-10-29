@@ -44,7 +44,10 @@ Remaining work, in order:
    original-position-journal transition are implemented; see
    [archive and protected-storage migration](RADIX_ARCHIVE_STORAGE_MIGRATION.md).
    Existing effects, floors and custody evidence are retained. Managed custody
-   owners do not yet switch their active binding to the new schedule.
+   v0 owners now migrate active Audit/Serve tickets through an original-history
+   version 2 entry and preserve receipt lineage; see [custody schedule migration](CUSTODY_RADIX_SCHEDULE.md).
+   Next: schedule-bound terminal completion/admission, availability quorum and
+   pruning, then remote v1/profile-5 witness and execution scope transitions.
 2. Define the independently approved network activation policy and transition
    checkpoint; local operator profiles alone do not authorize public activation.
 3. Extend migration beyond the initial bounded history, with resumable streaming

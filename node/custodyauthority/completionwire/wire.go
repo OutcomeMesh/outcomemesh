@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	RequestBytes         = 10 + types.HashSize + custodyauthority.MaximumEntryBytes
+	RequestBytes         = 10 + types.HashSize + custodyauthority.LegacyEntryBytes
 	AcknowledgementBytes = 10 + 2*types.HashSize
 )
 

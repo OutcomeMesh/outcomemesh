@@ -58,9 +58,11 @@ The [WorkGraph specification](docs/WORKGRAPH.md) covers mining and accounting.
 
 Archive custody remains a separate operational subsystem. Its protections depend
 on the configured owners, witnesses, services and deployment boundaries. The
-current archive and custody bindings do not support a scheduled WorkGraph v3
-chain. [Migration restrictions](docs/WORKGRAPH_RADIX_MIGRATION.md) describe this
-boundary.
+archive formats support a scheduled WorkGraph v3 chain. Local custody owners
+can migrate active Audit/Serve tickets while preserving original receipt history.
+Remote execution, reviewed completion and pruning still require their own
+schedule integration. The [custody migration guide](docs/CUSTODY_RADIX_SCHEDULE.md)
+describes the supported path and its limits.
 
 ## Build
 

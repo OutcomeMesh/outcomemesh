@@ -159,10 +159,11 @@ control and do not provide an independent operator domain.
 
 Migrated chains can execute through the scheduled height and reopen with the
 original pruned floor and effects. New archive export, exact-schedule replay,
-restoration and object transfer support v2 envelopes. Existing custody owners
-continue to use their original signed bindings. Live managed cutover, versioned
-custody receipt renewal/admission and new canonical-prefix pruning on scheduled
-stores remain disabled. A local migration is not authorization to substitute
+restoration and object transfer support v2 envelopes. Local custody owners can
+append a [schedule transition](CUSTODY_RADIX_SCHEDULE.md) while retaining their
+original assignment, active Audit/Serve tickets and receipt lineage. Reviewed
+terminal completion/admission, remote/profile-5 cutover and new canonical-prefix
+pruning on scheduled stores remain gated. A local migration is not authorization to substitute
 new archive IDs in an old inventory or erase an unresolved outcome.
 
 ## Canonical reference values
@@ -187,3 +188,11 @@ The review ID hashes the first 282 bytes under
 first bytes 1 through 7, before `(2, hash-8)`, heights `(10,4)` and after
 `(3, hash-9)` has review ID
 `5ca7ffe2edaf7a437cebecb6f3ecaecf17900f8c23db0ae75fc7cde51822ef79`.
+
+## Active local custody continuation
+
+[Custody schedule migration](CUSTODY_RADIX_SCHEDULE.md) now provides a separate
+original-history transition for local assignment v0. It keeps original tickets,
+journals and retention terms while requiring explicit schedule consent on live
+Audit/Serve actions. It does not yet enable the reviewed completion pipeline,
+remote/profile-5 scope cutover or new canonical pruning.

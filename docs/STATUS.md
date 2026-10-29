@@ -1,6 +1,6 @@
 # Implementation status
 
-Updated: 2026-10-29
+Updated: 2026-10-30
 
 This file records evidence against `PLAN.md`. A milestone remains open until all
 of its exit gates pass; implementing most deliverables does not close it.
@@ -9,6 +9,26 @@ Full planned production readiness is approximately **44/100**, using the weighte
 [readiness baseline](PRODUCTION_READINESS.md). This is an engineering estimate,
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
+
+## 2026-10-30: active local custody schedule migration
+
+[Local custody assignments](CUSTODY_RADIX_SCHEDULE.md) can append one
+replica-signed, authority-cosigned schedule transition through their original
+coordinator. Admission IDs, spent budget, pending work and stopping state remain
+intact. The exact source journal is locked through durable acceptance. Old live
+adapters stop at the operation guard; explicitly scheduled Audit/Serve owners
+reuse the same tickets and journal, including after restart and cached delivery.
+
+The CLI prepares immutable proofs, signs and co-signs fixed-position commands,
+applies or recovers the retained transition and wraps original storage receipts.
+The wrapper commits the new schedule without changing timestamps or retention.
+Portable verification requires the complete original receipt lineage. Scheduled
+journal replay rejects a prefix older than the migration cursor.
+
+Reviewed terminal completion/admission, availability/pruning and remote
+v1/profile-5 schedule transitions remain open. Original pending tickets stay
+pending until their verified completion path is extended. This local slice does
+not close a mainnet gate; readiness remains **44/100**.
 
 ## 2026-10-29: archive and protected-storage radix migration
 

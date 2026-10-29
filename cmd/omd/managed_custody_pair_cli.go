@@ -112,6 +112,7 @@ func loadManagedCustodyPairOptions(ctx context.Context, arguments []string) (man
 	}
 	f := flag.NewFlagSet(managedCustodyPairCommand, flag.ContinueOnError)
 	f.SetOutput(io.Discard)
+	scheduleFlags := addCustodyScheduleFlags(f)
 	mode := f.String("mode", "review", "review (default), or supervised control")
 	assignmentPath := f.String("assignment", "", "existing canonical assignment file (required)")
 	assignmentText := f.String("assignment-id", "", "independently pinned assignment ID (required)")
@@ -184,6 +185,10 @@ func loadManagedCustodyPairOptions(ctx context.Context, arguments []string) (man
 		}
 	}
 	assignment, err := loadPruneOfflineAssignment(*assignmentPath, assignmentID)
+	if err != nil {
+		return managedCustodyPairOptions{}, err
+	}
+	schedule, err := scheduleFlags.load(assignment)
 	if err != nil {
 		return managedCustodyPairOptions{}, err
 	}
@@ -283,9 +288,9 @@ func loadManagedCustodyPairOptions(ctx context.Context, arguments []string) (man
 			return managedCustodyPairOptions{}, errors.Join(errors.New("transport seed file differs from its independently pinned peer ID"), err)
 		}
 	}
-	auditConfig := authoritystore.ManagedCustodyAuditConfig{AssignmentID: assignmentID, IntentID: intentID, Admission: auditEntry, IntentPath: canonicalIntent,
+	auditConfig := authoritystore.ManagedCustodyAuditConfig{Schedule: schedule, AssignmentID: assignmentID, IntentID: intentID, Admission: auditEntry, IntentPath: canonicalIntent,
 		JournalPath: *auditJournal, ArtifactsPath: *artifacts, Manifest: manifest, InitialReceipt: receipt, CustodyPolicy: policy, JournalLimits: journalFlags.limits(), AuditorPrivateKey: auditorKey, SessionConfig: configuration}
-	serveConfig := authoritystore.ManagedCustodyServeConfig{AssignmentID: assignmentID, Admission: serveEntry, ChallengeID: challengeID, AuditorPeerID: auditorID,
+	serveConfig := authoritystore.ManagedCustodyServeConfig{Schedule: schedule, AssignmentID: assignmentID, Admission: serveEntry, ChallengeID: challengeID, AuditorPeerID: auditorID,
 		JournalPath: *replicaJournal, Manifest: manifest, InitialReceipt: receipt, CustodyPolicy: policy, JournalLimits: journalFlags.limits(), ReplicaPrivateKey: replicaKey, SessionConfig: configuration}
 	return managedCustodyPairOptions{mode: *mode, listen: *listen, intent: intent, auditTicket: auditTicket, serveTicket: serveTicket, auditorTransport: auditorTransport, replicaTransport: replicaTransport,
 		config: authoritystore.ManagedCustodyPairRuntimeConfig{AuthorityPath: *authority, AuthorityPinsPath: *pins, Assignment: assignment, Audit: auditConfig, Serve: serveConfig,

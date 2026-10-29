@@ -12,6 +12,7 @@ import (
 // OperationBinding identifies one already admitted operation, not a grant.
 type OperationBinding struct {
 	AssignmentID      types.Hash
+	ScheduleID        types.Hash
 	TicketID          types.Hash
 	ConsumerPublicKey [32]byte
 	OperationID       types.Hash
@@ -67,7 +68,7 @@ func (coordinator *Coordinator) checkOperation(binding OperationBinding) error {
 	if current.Authority.Remote != nil {
 		return custodyauthority.ErrRemoteActive
 	}
-	if current.Authority.AssignmentID != binding.AssignmentID {
+	if current.Authority.AssignmentID != binding.AssignmentID || current.Authority.ScheduleID != binding.ScheduleID {
 		return custodyauthority.ErrAssignment
 	}
 	if current.Authority.Phase != custodyauthority.Accepting && current.Authority.Phase != custodyauthority.Stopping {

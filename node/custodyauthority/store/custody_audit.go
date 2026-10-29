@@ -17,6 +17,7 @@ var ErrManagedCustodyAudit = errors.New("invalid managed custody audit configura
 // signed Audit admission. The admission OperationID is IntentID, available before
 // challenge signing. A later independent Serve admission binds ChallengeID.
 type ManagedCustodyAuditConfig struct {
+	Schedule          *CustodyScheduleContext
 	AssignmentID      types.Hash
 	IntentID          types.Hash
 	Admission         custodyauthority.Entry
@@ -79,7 +80,11 @@ func NewManagedCustodyAuditSession(ctx context.Context, coordinator *Coordinator
 		c.OperationID != config.IntentID || intent.AssignmentID != config.AssignmentID || intent.ConsumerPublicKey != c.ActorPublicKey {
 		return nil, errors.Join(ErrManagedCustodyAudit, err)
 	}
-	binding := OperationBinding{AssignmentID: config.AssignmentID, TicketID: ticket, ConsumerPublicKey: c.ActorPublicKey, OperationID: config.IntentID, Purpose: custodyauthority.Audit}
+	schedule, scheduleID, err := config.Schedule.detached()
+	if err != nil {
+		return nil, err
+	}
+	binding := OperationBinding{ScheduleID: scheduleID, AssignmentID: config.AssignmentID, TicketID: ticket, ConsumerPublicKey: c.ActorPublicKey, OperationID: config.IntentID, Purpose: custodyauthority.Audit}
 	var session *ManagedCustodyAuditSession
 	err = coordinator.WithOperation(ctx, binding, func() error {
 		encoded, err := readRegular(filepath.Join(coordinator.authority.path, assignmentName), custodyauthority.MaximumAssignmentBytes)
@@ -110,7 +115,7 @@ func NewManagedCustodyAuditSession(ctx context.Context, coordinator *Coordinator
 		if err != nil || current != intent {
 			return errors.Join(ErrManagedCustodyAudit, err)
 		}
-		journal, _, err := workarchive.OpenExistingCustodyJournalWithLimits(ctx, config.JournalPath, config.Manifest, config.InitialReceipt, config.CustodyPolicy, config.JournalLimits)
+		journal, _, err := openManagedCustodyJournal(ctx, config.JournalPath, config.Manifest, config.InitialReceipt, config.CustodyPolicy, config.JournalLimits, schedule, retained)
 		if err != nil {
 			return err
 		}

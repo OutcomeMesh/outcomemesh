@@ -18,8 +18,12 @@ const (
 	Retire
 	RemoteBegin
 	RemoteDrained
-	MaximumCommandBytes = 8 + 2 + 5*types.HashSize + 8 + 2 + ed25519.PublicKeySize + ed25519.SignatureSize
-	MaximumEntryBytes   = 8 + 2 + MaximumCommandBytes + ed25519.PublicKeySize + ed25519.SignatureSize
+	MigrateSchedule
+	ScheduleVersion2    uint16 = 2
+	LegacyCommandBytes         = 8 + 2 + 5*types.HashSize + 8 + 2 + ed25519.PublicKeySize + ed25519.SignatureSize
+	LegacyEntryBytes           = 8 + 2 + LegacyCommandBytes + ed25519.PublicKeySize + ed25519.SignatureSize
+	MaximumCommandBytes        = LegacyCommandBytes + types.HashSize
+	MaximumEntryBytes          = LegacyEntryBytes + types.HashSize
 )
 
 var (
@@ -30,13 +34,15 @@ var (
 )
 
 // Command is signed by a consumer (Admit/Complete), the assignment authority
-// (Stop/Retire), or the remote control key (V1 RemoteBegin/RemoteDrained).
+// (Stop/Retire), the original replica (V2 MigrateSchedule), or the remote
+// control key (V1 RemoteBegin/RemoteDrained).
 // ExpectedSequence/Head are compare-and-append inputs, not proof
 // of current remote state. Unused fields must be zero. EvidenceID is a terminal
 // effect/disposition commitment for Complete, a reviewed stop-intent reference
 // for Stop, and the exact committed stop entry ID for Retire.
 type Command struct {
 	Version          uint16
+	ScheduleID       types.Hash // nonzero only in schedule-bound v2 commands
 	AssignmentID     types.Hash
 	ExpectedSequence uint64
 	ExpectedHead     types.Hash
@@ -61,11 +67,15 @@ type Entry struct {
 }
 
 func (command Command) validateShape() error {
-	if (command.Version != Version0 && command.Version != Version1) || command.AssignmentID.IsZero() || command.ExpectedHead.IsZero() ||
-		command.ExpectedSequence == ^uint64(0) || types.Hash(command.ActorPublicKey).IsZero() {
+	if (command.Version != Version0 && command.Version != Version1 && command.Version != ScheduleVersion2) || command.AssignmentID.IsZero() || command.ExpectedHead.IsZero() ||
+		(command.Version == ScheduleVersion2) != !command.ScheduleID.IsZero() || command.ExpectedSequence == ^uint64(0) || types.Hash(command.ActorPublicKey).IsZero() {
 		return ErrCommand
 	}
 	switch command.Kind {
+	case MigrateSchedule:
+		if command.Version != ScheduleVersion2 || command.Purpose != 0 || !command.OperationID.IsZero() || !command.TicketID.IsZero() || !command.EvidenceID.IsZero() {
+			return ErrCommand
+		}
 	case Admit:
 		if (command.Purpose != Audit && command.Purpose != Serve && command.Purpose != Prune) ||
 			command.OperationID.IsZero() || !command.TicketID.IsZero() || !command.EvidenceID.IsZero() {
@@ -108,6 +118,9 @@ func (command Command) unsignedBytes() ([]byte, error) {
 	for _, id := range []types.Hash{command.OperationID, command.TicketID, command.EvidenceID} {
 		e.Fixed(id[:])
 	}
+	if command.Version == ScheduleVersion2 {
+		e.Fixed(command.ScheduleID[:])
+	}
 	e.Fixed(command.ActorPublicKey[:])
 	return e.Bytes(), nil
 }
@@ -144,7 +157,7 @@ func (command Command) Sign(key ed25519.PrivateKey) (Command, error) {
 }
 
 func DecodeCommand(input []byte) (Command, error) {
-	if len(input) != MaximumCommandBytes {
+	if len(input) != LegacyCommandBytes && len(input) != MaximumCommandBytes {
 		return Command{}, ErrCommand
 	}
 	d := codec.NewDecoder(input)
@@ -161,6 +174,9 @@ func DecodeCommand(input []byte) (Command, error) {
 	for _, id := range []*types.Hash{&c.OperationID, &c.TicketID, &c.EvidenceID} {
 		decodeFixed(d, id[:])
 	}
+	if c.Version == ScheduleVersion2 {
+		decodeFixed(d, c.ScheduleID[:])
+	}
 	decodeFixed(d, c.ActorPublicKey[:])
 	decodeFixed(d, c.Signature[:])
 	if !bytes.Equal(magic, commandMagic[:]) || d.Finish() != nil {
@@ -173,7 +189,7 @@ func DecodeCommand(input []byte) (Command, error) {
 }
 
 func (entry Entry) unsignedBytes() ([]byte, error) {
-	if (entry.Version != Version0 && entry.Version != Version1) || entry.Version != entry.Command.Version || types.Hash(entry.AuthorityPublicKey).IsZero() {
+	if (entry.Version != Version0 && entry.Version != Version1 && entry.Version != ScheduleVersion2) || entry.Version != entry.Command.Version || types.Hash(entry.AuthorityPublicKey).IsZero() {
 		return nil, ErrEntry
 	}
 	command, err := entry.Command.CanonicalBytes()
@@ -218,14 +234,18 @@ func SignEntry(command Command, key ed25519.PrivateKey) (Entry, error) {
 }
 
 func DecodeEntry(input []byte) (Entry, error) {
-	if len(input) != MaximumEntryBytes {
+	if len(input) != LegacyEntryBytes && len(input) != MaximumEntryBytes {
 		return Entry{}, ErrEntry
 	}
 	d := codec.NewDecoder(input)
 	magic, _ := d.Fixed(len(entryMagic))
 	var e Entry
 	e.Version, _ = d.U16()
-	command, _ := d.Fixed(MaximumCommandBytes)
+	commandSize := LegacyCommandBytes
+	if e.Version == ScheduleVersion2 {
+		commandSize = MaximumCommandBytes
+	}
+	command, _ := d.Fixed(commandSize)
 	var err error
 	if e.Command, err = DecodeCommand(command); err != nil {
 		return Entry{}, err

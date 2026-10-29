@@ -76,8 +76,10 @@ Manifest v2 and statement/checkpoint v1 bind the new schedule. A separate
 [archive and protected-storage procedure](RADIX_ARCHIVE_STORAGE_MIGRATION.md)
 preserves old archive objects, retained effects and the original position journal.
 The complete-history command above still refuses protected or pruned sources.
-Custody receipts and new canonical-prefix pruning on scheduled stores remain
-disabled until their admission and retention transition is versioned.
+A separate [local custody transition](CUSTODY_RADIX_SCHEDULE.md) preserves
+active Audit/Serve tickets and wraps original receipts with explicit schedule
+consent. Reviewed completion, remote execution and canonical-prefix pruning
+remain gated until their full admission and retention paths carry that scope.
 
 ## Operator procedure
 

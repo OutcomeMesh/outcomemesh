@@ -31,6 +31,7 @@ type ManagedCustodyAuditRuntimeConfig struct {
 // grant. Its comparison ID includes original placement, immutable scope, local
 // limits and observed positions. It contains no nonce or private signing key.
 type ManagedCustodyAuditReview struct {
+	ScheduleID                                                               types.Hash
 	AssignmentID, AuditTicketID, IntentID                                    types.Hash
 	AuditorPeerID, ReplicaPeerID                                             types.Hash
 	AuthorityPosition                                                        custodyauthority.Position
@@ -64,6 +65,10 @@ func (review ManagedCustodyAuditReview) ID() (types.Hash, error) {
 		// Raw bytes preserve even non-UTF8 filesystem placement. This local
 		// comparison is not a network or retained journal encoding.
 		e.BytesField([]byte(path))
+	}
+	if !review.ScheduleID.IsZero() {
+		e.Fixed(review.ScheduleID[:])
+		return types.DomainHash("OMESH/local/custody-audit-runtime-review/v1", e.Bytes()), nil
 	}
 	return types.DomainHash("OMESH/local/custody-audit-runtime-review/v0", e.Bytes()), nil
 }
@@ -171,7 +176,7 @@ func (runtime *ManagedCustodyAuditRuntime) reviewLocked(ctx context.Context) (Ma
 	if err := ctx.Err(); err != nil {
 		return ManagedCustodyAuditReview{}, err
 	}
-	return ManagedCustodyAuditReview{AssignmentID: runtime.session.binding.AssignmentID, AuditTicketID: runtime.session.binding.TicketID,
+	return ManagedCustodyAuditReview{ScheduleID: runtime.session.binding.ScheduleID, AssignmentID: runtime.session.binding.AssignmentID, AuditTicketID: runtime.session.binding.TicketID,
 		IntentID: runtime.session.intentID, AuditorPeerID: runtime.auditorPeer, ReplicaPeerID: runtime.session.cycle.Intent().ReplicaPeerID,
 		AuthorityPosition: current.Confirmed, JournalSequence: state.Sequence, JournalHeadID: state.HeadEntryID, CurrentReceiptID: receipt,
 		AuthorityPath: runtime.life.owner.authority.path, AuthorityPinsPath: runtime.life.owner.journal.path, IntentPath: runtime.session.intentPath,
