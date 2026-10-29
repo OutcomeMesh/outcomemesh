@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	f "github.com/outcomemesh/outcomemesh/internal/fencetest"
 	v2 "github.com/outcomemesh/outcomemesh/node/custodyv2"
 	"os"
@@ -83,5 +84,59 @@ func TestRetainedAcceptanceCLIReviewSigningAndExtraction(t *testing.T) {
 	got, _ := actual.CanonicalBytes()
 	if !bytes.Equal(got, bb) || consent.Verify(x.c, b, consent.NotBefore) != nil {
 		t.Fatal("CLI changed evidence or roles")
+	}
+}
+
+func TestRecoveryCommandCLIRequiresExactReview(t *testing.T) {
+	x := newProtectedFixture(t, true, true, true)
+	dir := t.TempDir()
+	binary := filepath.Join(dir, "omd")
+	if out, e := exec.Command("go", "build", "-o", binary, "../../cmd/omd").CombinedOutput(); e != nil {
+		t.Fatal(e, string(out))
+	}
+	admission, _ := x.binding.CanonicalBytes()
+	for _, kind := range []uint8{v2.ProtectedReadResult, v2.ProtectedReadAcceptance, v2.ProtectedReadServe} {
+		p := struct {
+			Kind                                                   uint8
+			Admission, Data, Deployment, Pair, Certificate, Parent []byte
+			Now                                                    uint64
+		}{Kind: kind, Admission: admission, Now: 1}
+		raw, _ := json.Marshal(p)
+		input := filepath.Join(dir, fmt.Sprintf("%d.json", kind))
+		out := input + ".command"
+		if e := os.WriteFile(input, raw, 0600); e != nil {
+			t.Fatal(e)
+		}
+		args := []string{"work-archive-custody-profile5", "--action", "command", "--input", input, "--out", out}
+		review, e := exec.Command(binary, args...).CombinedOutput()
+		if e != nil {
+			t.Fatal(e, string(review))
+		}
+		if !regexp.MustCompile(`"EvidenceReadOnly"\s*:\s*true`).Match(review) {
+			t.Fatal("review omitted historical-only semantics", string(review))
+		}
+		if _, e = os.Stat(out); !os.IsNotExist(e) {
+			t.Fatal("review wrote")
+		}
+		pin := regexp.MustCompile(`review_id=([0-9a-f]{64})`).FindSubmatch(review)
+		if len(pin) != 2 {
+			t.Fatal("review ID")
+		}
+		run := append(append([]string{}, args...), "--mode", "run", "--expected-review-id", string(pin[1]))
+		if log, e := exec.Command(binary, run...).CombinedOutput(); e != nil {
+			t.Fatal(e, string(log))
+		}
+		raw, e = os.ReadFile(out)
+		if e != nil {
+			t.Fatal(e)
+		}
+		cmd, e := v2.DecodeProtectedCommand(raw)
+		if e != nil || cmd.Kind != kind || len(cmd.Data) != 0 {
+			t.Fatal("recovery command", e)
+		}
+		cmd.Data = []byte{1}
+		if _, e := cmd.CanonicalBytes(); e == nil {
+			t.Fatal("evidence query accepted mutation data")
+		}
 	}
 }

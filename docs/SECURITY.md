@@ -1512,3 +1512,19 @@ or installs a new authority in an old config. Revoker rotation, safe subject key
 replacement, protected guard monotone storage and independent operator incident
 acceptance remain open. Full privileged cloning of the guard itself still defeats
 this software trust boundary.
+
+## Explicit radix commitment and historical custody reads
+
+[Protocol 2](STATE_RADIX_V1.md) pins its commitment in a new genesis. Old roots
+are not reinterpreted. Version checks also apply to empty blocks, direct storage
+commits, execution contexts, historical snapshots and cold opens. WorkGraph rejects
+this state until a separate activation rule exists. Resource paths are bounded
+by 256 key bits; proofs require an authenticated root and cannot confer finality.
+Initial state loading and persistent state scans remain resource-size costs.
+
+[Custody evidence reads](CUSTODY_EVIDENCE_RECOVERY.md) use the original admission,
+protected service and current response cursor. They verify existing receipts at
+their original times and return their exact bytes after closure. They deliberately
+do not require today's source to equal a historical head and therefore must not
+be interpreted as current authority or current custody status. Reads cannot sign
+missing receipts, finalize pending Serve, release unknown work or reset spending.

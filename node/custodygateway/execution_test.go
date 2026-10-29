@@ -380,6 +380,11 @@ func TestProtected5ConsumptionFaultCannotReexecuteAfterColdOpen(t *testing.T) {
 	if _, e = x.b.ExecuteRuntime(t.Context(), q, payload); e == nil {
 		t.Fatal("lost session reexecuted")
 	}
+	for _, kind := range []uint8{v2.ProtectedReadResult, v2.ProtectedReadAcceptance, v2.ProtectedReadServe} {
+		if _, err := x.b.readProtectedEvidence(v2.ProtectedCommand{Kind: kind, Admission: x.binding}, x.c, sid); err == nil {
+			t.Fatal("unknown result fabricated a receipt", kind)
+		}
+	}
 	for _, w := range x.admission {
 		s, _, e := w.Snapshot()
 		fixture.Require(t, e)

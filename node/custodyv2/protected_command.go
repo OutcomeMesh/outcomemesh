@@ -19,6 +19,8 @@ const (
 	ProtectedReadResult
 	ProtectedAcceptRetained
 	ProtectedResumeRetained
+	ProtectedReadAcceptance
+	ProtectedReadServe
 )
 
 type ProtectedCommand struct {
@@ -29,7 +31,10 @@ type ProtectedCommand struct {
 }
 
 func (p ProtectedCommand) CanonicalBytes() ([]byte, error) {
-	if p.Kind < ProtectedEndorse || p.Kind > ProtectedResumeRetained || p.Now == 0 {
+	if p.Kind < ProtectedEndorse || p.Kind > ProtectedReadServe || p.Now == 0 {
+		return nil, ErrProtocol
+	}
+	if ProtectedEvidenceRead(p.Kind) && len(p.Data) != 0 {
 		return nil, ErrProtocol
 	}
 	var raw []byte
@@ -148,4 +153,10 @@ func VerifyDeploymentGenesis(g AdmissionGenesis, c Context) error {
 		}
 	}
 	return nil
+}
+
+// ProtectedEvidenceRead returns only previously durable signed artifacts. These
+// commands cannot execute, accept, close Serve, or release admission obligations.
+func ProtectedEvidenceRead(kind uint8) bool {
+	return kind == ProtectedReadResult || kind == ProtectedReadAcceptance || kind == ProtectedReadServe
 }

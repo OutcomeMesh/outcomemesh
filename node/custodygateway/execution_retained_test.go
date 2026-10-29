@@ -38,6 +38,7 @@ func retainedFixture(t testing.TB) (*protectedFixture, v2.Bundle, v2.RetainedAcc
 }
 func TestProtectedRetainedAcceptanceConsentAndClosure(t *testing.T) {
 	x, b, a, at := retainedFixture(t)
+	assertUnavailableEvidence(t, x)
 	raw, _ := b.CanonicalBytes()
 	before, _ := x.a.Position()
 	if _, _, _, e := protectedCall(t, x.a, x.ad, v2.ProtectedCommand{Kind: v2.ProtectedAccept, Admission: x.binding, Data: raw, Now: 1}, "ordinary-expired"); e == nil {
@@ -121,6 +122,7 @@ func TestProtectedRetainedAcceptanceConsentAndClosure(t *testing.T) {
 	if s.PendingOperations != 0 || s.SpentOperations != 2 || s.SourceSequence != 1 || s.RetainUntil < x.dep.MinimumRetainUntil {
 		t.Fatal("accounting reset", s)
 	}
+	assertRecoveredEvidence(t, x, b, raw, araw, braw)
 }
 func TestProtectedRetainedAcceptanceCrashKeepsOriginalTime(t *testing.T) {
 	x, b, a, at := retainedFixture(t)
@@ -135,6 +137,11 @@ func TestProtectedRetainedAcceptanceCrashKeepsOriginalTime(t *testing.T) {
 	_, q, payload, e := protectedCall(t, x.a, x.ad, v2.ProtectedCommand{Kind: v2.ProtectedAcceptRetained, Admission: x.binding, Data: data, Now: 1}, "cut")
 	if e == nil {
 		t.Fatal("fault ignored")
+	}
+	scope, _ := x.c.Scope()
+	sid, _ := scope.ID()
+	if _, err := x.a.readProtectedEvidence(v2.ProtectedCommand{Kind: v2.ProtectedReadAcceptance, Admission: x.binding}, x.c, sid); err == nil {
+		t.Fatal("pending became acceptance")
 	}
 	before, _ := x.a.Position()
 	x.a.Close()

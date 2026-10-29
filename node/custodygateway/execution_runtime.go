@@ -64,12 +64,8 @@ func (o *Owner) runProtected(ctx context.Context, q wire.Request, payload []byte
 		return o.acceptJob(ctx, cmd, c, sid)
 	case v2.ProtectedServe:
 		return o.applyExecutionServe(ctx, cmd, c, sid)
-	case v2.ProtectedReadResult:
-		r, e := o.readExecutionResult(c, sid)
-		if e != nil {
-			return nil, e
-		}
-		return r.CanonicalBytes()
+	case v2.ProtectedReadResult, v2.ProtectedReadAcceptance, v2.ProtectedReadServe:
+		return o.readProtectedEvidence(cmd, c, sid)
 	}
 	return nil, ErrExecution
 }
@@ -116,7 +112,7 @@ func (o *Owner) preflightProtected(ctx context.Context, p v2.ProtectedCommand) e
 			return ErrExecution
 		}
 	}
-	if p.Kind != v2.ProtectedServe {
+	if p.Kind != v2.ProtectedServe && !v2.ProtectedEvidenceRead(p.Kind) {
 		if _, e = o.jobRead(sid, "serve.pending", wire.MaximumRuntimePayloadBytes); e == nil {
 			return v2.ErrServeClosed
 		} else if !errors.Is(e, os.ErrNotExist) {
@@ -129,8 +125,14 @@ func (o *Owner) preflightProtected(ctx context.Context, p v2.ProtectedCommand) e
 		}
 	}
 	target := p.Kind == v2.ProtectedPrepare || p.Kind == v2.ProtectedExecute || p.Kind == v2.ProtectedResultCommand || p.Kind == v2.ProtectedReadResult
-	if p.Kind != v2.ProtectedServe && (target != (o.config.Source.Role == cut.Target)) {
+	if p.Kind != v2.ProtectedServe && p.Kind != v2.ProtectedReadServe && (target != (o.config.Source.Role == cut.Target)) {
 		return ErrExecution
+	}
+	// Historical evidence is bound to its retained admission and signed effects.
+	// It remains readable after the current source advances to another job.
+	if v2.ProtectedEvidenceRead(p.Kind) {
+		_, e = o.readProtectedEvidence(p, c, sid)
+		return e
 	}
 	if e = o.requireExecutionSource(c, p.Kind != v2.ProtectedPrepare); e != nil {
 		return e
@@ -182,12 +184,6 @@ func (o *Owner) preflightProtected(ctx context.Context, p v2.ProtectedCommand) e
 			return e
 		}
 		_, e = o.makeResultCommand(c, r, prefix)
-		return e
-	case v2.ProtectedReadResult:
-		if len(p.Data) != 0 {
-			return ErrExecution
-		}
-		_, e = o.readExecutionResult(c, sid)
 		return e
 	case v2.ProtectedAccept, v2.ProtectedResumeAccept, v2.ProtectedAcceptRetained, v2.ProtectedResumeRetained:
 		return o.preflightAcceptance(p, c, sid)
@@ -258,13 +254,17 @@ func (o *Owner) executionEffect(ctx context.Context, c v2.Context, b v2.Admissio
 	return ef, nil
 }
 func (o *Owner) checkResultAdmission(b v2.AdmissionBinding, r v2.Result) error {
-	bid, _ := b.ID()
-	aid, _ := v2.AdmissionEntryID(b)
-	if r.Protection == nil || r.Protection.BindingID != bid || r.Protection.AdmissionID != aid {
+	return o.checkEffectAdmission(b, r.Protection)
+}
+func (o *Owner) checkEffectAdmission(b v2.AdmissionBinding, effect *wire.Effect) error {
+	bid, err := b.ID()
+	aid, err2 := v2.AdmissionEntryID(b)
+	if err != nil || err2 != nil || effect == nil || effect.BindingID != bid || effect.AdmissionID != aid {
 		return ErrExecution
 	}
 	return nil
 }
+
 func (o *Owner) executeJob(ctx context.Context, p v2.ProtectedCommand, c v2.Context, sid types.Hash) ([]byte, error) {
 	if raw, e := o.jobRead(sid, "result", v2.MaximumResultBytes); e == nil {
 		return raw, nil

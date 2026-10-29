@@ -66,3 +66,7 @@ those Data bytes, then `sign-request` and the original service delivery path.
 The normal Serve and admission tools consume the resulting retained receipt.
 Kind 10 is explicit pending recovery; the service also supports its existing
 exact signed request recovery. None of these commands create an execution owner.
+
+[Historical evidence recovery](CUSTODY_EVIDENCE_RECOVERY.md) returns existing
+result, acceptance and applied Serve receipts through the original service even
+after closure. It does not complete an unfinished intent or release unknown work.

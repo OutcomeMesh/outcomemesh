@@ -449,7 +449,8 @@ func profile5PublicCommand(p v2.ProtectedCommand) any {
 		ScopeID, BindingID, DeploymentID types.Hash
 		RequestTime                      uint64
 		ServerClockAuthoritative         bool
-	}{p.Kind, sid, bid, did, p.Now, true}
+		EvidenceReadOnly                 bool
+	}{p.Kind, sid, bid, did, p.Now, true, v2.ProtectedEvidenceRead(p.Kind)}
 }
 
 // Signing retains the complete public input so the other role can verify the

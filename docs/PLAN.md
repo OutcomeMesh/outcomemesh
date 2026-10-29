@@ -102,7 +102,10 @@ Next required work remains ordered:
    authenticated tunnels, but shares administrative control. [Retained-result
    consent](CUSTODY_RETAINED_ACCEPTANCE.md) now closes delayed verifiable results
    through original Serve/admission accounting. Outcomes without a complete
-   result remain held. Next deploy outside all participant backup/control domains
+   result remain held. [Evidence recovery](CUSTODY_EVIDENCE_RECOVERY.md) now returns
+   original completed result, acceptance and Serve receipts through the protected
+   service, including after closure, without changing execution obligations.
+   Next deploy outside all participant backup/control domains
    with independent operators and protected monotone/key storage, finish unknown-outcome settlement and
    further key generations without resetting prior obligations,
    extend physical-failure and long-retention acceptance
@@ -116,8 +119,9 @@ Next required work remains ordered:
 
 The [state/index work](STATE_SCALING.md) preserves v0 commitments while reducing
 diff, balance and canonical-height costs. [Encrypted wallet keys](WALLET_KEYSTORE.md)
-provide explicit seed migration. A versioned scalable commitment, physical storage
-operations and a reviewed user wallet remain launch work.
+provide explicit seed migration. [Protocol 2](STATE_RADIX_V1.md) now selects an incremental commitment for explicit
+new standalone chains. Existing-chain migration, WorkGraph integration, physical
+storage operations and a reviewed user wallet remain launch work.
 
 ## Product thesis
 

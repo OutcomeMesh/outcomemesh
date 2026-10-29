@@ -10,6 +10,22 @@ Full planned production readiness is approximately **44/100**, using the weighte
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
 
+## 2026-10-29: incremental roots and recovery of completed custody evidence
+
+[Protocol 2](STATE_RADIX_V1.md) introduces a compressed immutable radix commitment
+for an explicitly created standalone chain. Each changed key updates at most 256
+branches; per-transaction roots no longer scan all resources. Genesis selection
+survives persistence, forks, peer sync and snapshot reconstruction. Protocol 0 and
+WorkGraph roots remain unchanged; live-chain migration and WorkGraph integration
+are still separate work. Persistent snapshot/diff scans remain.
+
+[Evidence recovery](CUSTODY_EVIDENCE_RECOVERY.md) returns original protected result,
+acceptance and Serve receipts after lost replies, cold restart and Serve closure.
+The existing review/sign/deliver/extract CLI handles the new read commands. Reads
+preserve source position, original approval times, spent/pending accounting and
+retention. Unknown outcomes without complete evidence remain held. Readiness
+remains **44/100**; no weighted launch gate closes from these changes alone.
+
 ## 2026-10-29: retained-result consent, isolated guard deployment and state costs
 
 [Retained-result consent](CUSTODY_RETAINED_ACCEPTANCE.md) adds explicit authority
