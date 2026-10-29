@@ -1477,7 +1477,38 @@ hardware monotone counter. A copy of its own key and state defeats the boundary.
 The single guard key is a shared dependency. Retain exact startup cursors outside
 its backups; never reset, re-enroll, adopt a suspect tip or downgrade a signed
 policy after a lost reply. Existing imported registry/issuance assumptions remain.
-Local gateway revocation and status messages are not mirrored by the external
-guard yet; a leaked subject key requires freezing that external boundary too.
+Local gateway revocation and status messages are not automatically mirrored by
+the external guard. Revocation-enabled roots now accept a separate offline-authority
+command bound to the original guard identity; revoke the leaked subject there
+first and retain its receipt. Legacy roots require freezing the entire guard.
 External operator separation, hardware/storage fault acceptance and review remain
 open; this slice earns no production-readiness point by itself.
+
+
+### Permanent external revocation boundary (2026-10-29)
+
+The optional revoker seed must be separate from guard/subject seeds and remain
+offline outside their backup/control domains. Possession authorizes permanent
+availability loss for any listed subject, never key replacement or a new choice.
+A compromised ordinary subject cannot forge revocation or consume its reserved
+journal slots. It can still exhaust network, storage or CPU resources; reserved
+logical slots are not a physical disk or availability guarantee.
+
+One mutex serializes guard signing with durable revocation. Once revoked, no new
+seal is returned for that subject, including exact retries; preceding signatures
+remain valid and their network delivery may be delayed. Revocation cannot erase
+already copied proofs, undo real work or identify which copy acted first. The
+profile-5 effect guard can refuse a result after source work has happened; the
+original consumed marker and evidence must remain held with spending unchanged.
+Do not turn a refusal into a refund, fresh session or unguarded execution.
+
+Both the signed command and its receipt bind the exact immutable guard identity.
+The public CLI pins config and identity independently, verifies authority before
+network I/O, verifies the returned receipt, and never opens private roots during
+review. A receipt's before/after cursor is historical; do not substitute it for a
+later independently observed tip. Ambiguous publication retains the exact signed
+attempt. No recovery skips a choice, deletes a revocation, repairs a partial file,
+or installs a new authority in an old config. Revoker rotation, safe subject key
+replacement, protected guard monotone storage and independent operator incident
+acceptance remain open. Full privileged cloning of the guard itself still defeats
+this software trust boundary.

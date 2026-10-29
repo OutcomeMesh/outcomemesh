@@ -745,3 +745,48 @@ counter-signature supplied by an artifact can select the verifier's guard key.
 Every certificate in a guarded admission binding must use that exact deployment
 from its original genesis sequence zero; unguarded history cannot be grafted onto
 it. Legacy bytes retain legacy meaning and no clone-protection claim.
+
+
+### Permanent guard subject revocation (experimental, 2026-10-29)
+
+An optional immutable `Config.Revoker` pins a separate Ed25519 administrative key,
+unequal to every subject and the guard. Zero/omitted preserves old config JSON and
+ConfigID bytes. ConfigID hashes canonical config JSON under
+`OMESH/custody-guard/v1/config`. GuardID hashes `public-key:32 || RootID:32 ||
+ConfigID:32` under `OMESH/custody-guard/v1/identity`; none may be zero.
+
+`OMCGRVK1 || GuardID:32 || subject:32 || authority:32 || ReasonID:32 ||
+authority-signature:64` is exactly 200 bytes. The authority signs DomainHash of
+its unsigned body under `OMESH/custody-guard/v1/revocation`. All fields are nonzero;
+subject differs from authority. The receiver requires the exact pinned authority,
+listed subject and original GuardID. No time, expected-head or caller nonce is
+accepted. The command permanently revokes that subject across all slot families.
+
+`OMCGRCP1 || signed-command:200 || before-sequence:u32 || before-head:32 ||
+guard-key:32 || guard-signature:64` is exactly 340 bytes. The guard signs the
+unsigned receipt under `OMESH/custody-guard/v1/revocation-receipt`. Sequence is
+big-endian, less than 4,128; zero sequence iff zero head. The guard key differs
+from subject and authority. Verification requires the independently pinned guard
+key, GuardID and exact signed command; a receipt never selects its own trust root.
+After is `(before.sequence+1, DomainHash("OMESH/custody-guard/v1/event",
+before.head, signed-command))`. It is the historical position of revocation,
+not an assertion about the latest service tip.
+
+Choices and revocations share one serialized fsynced event stream and hash chain.
+The original `.choice` file names are retained; exact length and magic distinguish
+records. At most Config.Limit normal choices (maximum 4,096) and one revocation
+per listed subject (maximum 32) may appear. Revocation slots exist only when a
+revoker was configured, and ordinary choices cannot use them. Duplicate records,
+choice after subject revocation, invalid signature/authorization, partial records,
+gaps or unknown trailing events refuse replay. Exact revocation retries add no
+record and reproduce the original signed receipt. Different commands for an
+already revoked subject refuse. All later Choose calls for that subject refuse,
+including historical exact retries. Previously issued seals remain valid.
+
+`POST /outcomemesh/custody-guard/revoke/1` requires request EOF before mutation and
+returns the fixed receipt. Recovery admits only a retained cursor itself or one
+exact matching signed command after it. It cannot skip an intervening choice,
+adopt the current tip, replace a root/key, clear spending or refund unknown work.
+The guard serializes signing and revocation, not packet arrival: a previously
+signed seal may arrive after a revocation receipt. This extension changes no
+consensus rule. Legacy roots cannot be upgraded by editing their config.

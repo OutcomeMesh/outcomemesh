@@ -35,6 +35,7 @@ test-fuzz-smoke:
 	$(GO) test ./node/custodyv2 -run '^$$' -fuzz '^FuzzGuardedProofCodecs$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyv2 -run '^$$' -fuzz '^FuzzAdmissionDecoders$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyguard -run '^$$' -fuzz '^FuzzGuardRequest$$' -fuzztime=$(FUZZTIME)
+	$(GO) test ./node/custodyguard/guardwire -run '^$$' -fuzz '^FuzzGuardRevocationCodecs$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyv2 -run '^$$' -fuzz '^FuzzGuardedProfile5Artifacts$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodygateway/gatewayrelay -run '^$$' -fuzz '^FuzzGatewayRelayAttempt$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodygateway -run '^$$' -fuzz '^FuzzProtected5Commands$$' -fuzztime=$(FUZZTIME)

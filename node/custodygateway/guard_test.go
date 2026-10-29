@@ -3,6 +3,8 @@
 package custodygateway
 
 import (
+	"bytes"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -11,6 +13,7 @@ import (
 	wire "github.com/outcomemesh/outcomemesh/node/custodygateway/gatewaywire"
 	guardwire "github.com/outcomemesh/outcomemesh/node/custodyguard/guardwire"
 	v2 "github.com/outcomemesh/outcomemesh/node/custodyv2"
+	"github.com/outcomemesh/outcomemesh/node/workarchive"
 )
 
 func TestGuardedProfile5FullLifecycleAndCopiedAdmissionAndServiceKeys(t *testing.T) {
@@ -156,5 +159,64 @@ func TestGuardedProfile5FullLifecycleAndCopiedAdmissionAndServiceKeys(t *testing
 	fixture.Require(t, e)
 	if p.Sequence != 19 {
 		t.Fatal("expected 6 admission + 9 job/Serve votes + 4 effects", p)
+	}
+}
+
+func TestGuardedProfile5RevocationHoldsUnsealedEffectAndCopiedAdmission(t *testing.T) {
+	x := newProtectedFixture(t, true, true)
+	claim := x.claim(t)
+	id := x.guardStore.Identity()
+	for _, subject := range [][32]byte{x.bd.Gateway, f.Public(70)} {
+		q, e := (guardwire.Revocation{GuardID: id.ID(), Subject: subject, Authority: f.Public(250), ReasonID: f.Hash("key incident")}).Sign(f.Key(250))
+		fixture.Require(t, e)
+		_, e = x.guardStore.Revoke(t.Context(), q)
+		fixture.Require(t, e)
+	}
+	// A fresh local admission root cannot even repeat the original choice after revocation.
+	gid, _ := x.source.Genesis.ID()
+	clone, e := v2.CreateAdmissionWitness(filepath.Join(x.source.Root, "revoked-admission-copy"), x.source.Genesis, gid, f.Key(70), x.source.Enrollment)
+	fixture.Require(t, e)
+	defer clone.Close()
+	clone.SetGuard(x.guard)
+	_, pin, e := clone.Snapshot()
+	fixture.Require(t, e)
+	if _, e = clone.VoteAt(pin, x.binding.Chain[0].Entry); e == nil {
+		t.Fatal("revoked copied admission signer")
+	}
+	fixture.Require(t, x.binding.Verify(x.c)) // Existing proofs remain historical.
+	raw, _ := claim.CanonicalBytes()
+	_, q, payload, e := protectedCall(t, x.b, x.bd, v2.ProtectedCommand{Kind: v2.ProtectedExecute, Admission: x.binding, Data: raw, Now: 1}, "revoked-execute")
+	if e == nil {
+		t.Fatal("revoked gateway published a protected result")
+	}
+	scope, _ := x.c.Scope()
+	sid, _ := scope.ID()
+	entry, e := x.b.jobRead(sid, "entry", workarchive.MaximumCustodyJournalEntryBytes)
+	fixture.Require(t, e)
+	if _, e = x.b.jobRead(sid, "result", v2.MaximumResultBytes); !os.IsNotExist(e) {
+		t.Fatal("unsealed result exposed", e)
+	}
+	// The underlying source may have run before the seal was refused. It stays
+	// consumed and pending; revocation is never a refund or permission to retry it.
+	before, _ := x.b.Position()
+	x.b.Close()
+	did, _ := x.bd.ID()
+	x.b, e = Open(x.broot, did, before, &q)
+	fixture.Require(t, e)
+	x.b.SetGuard(x.guard)
+	if _, e = x.b.ExecuteRuntime(t.Context(), q, payload); e == nil {
+		t.Fatal("revoked/consumed effect repeated after restart")
+	}
+	again, e := x.b.jobRead(sid, "entry", workarchive.MaximumCustodyJournalEntryBytes)
+	fixture.Require(t, e)
+	if !bytes.Equal(entry, again) {
+		t.Fatal("source evidence changed")
+	}
+	for _, w := range x.admission {
+		state, _, e := w.Snapshot()
+		fixture.Require(t, e)
+		if state.SpentOperations != 2 || state.PendingOperations != 2 {
+			t.Fatal("revocation reset accounting", state)
+		}
 	}
 }

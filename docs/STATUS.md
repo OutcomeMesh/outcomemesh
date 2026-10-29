@@ -10,6 +10,49 @@ Full planned production readiness is approximately **44/100**, using the weighte
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
 
+## 2026-10-29: permanent external revocation for copied custody keys
+
+The [guard service](CUSTODY_INDEPENDENT_GUARD.md) now optionally pins a separate
+offline revocation authority at creation. Its signed command binds one subject,
+the original guard identity and incident evidence. After durable application,
+all new guard seals for that key are refused across admission, execution, Serve
+and service effects, including exact retries and fresh local roots. Other keys
+continue. Previously issued proofs remain valid historical evidence.
+
+Normal choices cannot consume the one reserved revocation slot per subject.
+Revocation and choice signing share the original serialized journal; there is no
+un-revoke, reset, replacement authority or refund. The signed receipt retains its
+original before/after cursor and is byte-identical on exact retries and cold
+recovery. Lost replies, observer failure and process death after fsync retain the
+command. A stale cursor cannot skip another event or adopt the current tip.
+
+The reviewed `work-archive-custody-guard-revoke` CLI signs offline, sends an exact
+retained command and inspects its receipt. It pins public config/identity, request,
+endpoint and output; review loads no seed, opens no private root and contacts no
+service. Guard startup accepts one explicit `--revoke-attempt`, mutually exclusive
+with choice recovery. Legacy config bytes remain unchanged and do not silently
+gain a revoker; old binaries reject new config/records.
+
+Controlled checks cover all 32 reserved slots, concurrent choice/revoke races,
+wrong authority/identity/signatures, partial or tampered histories, request EOF,
+lost responses, killed/restarted processes and copied witness/admission keys.
+The real profile-5 revocation test records an underlying source action but refuses
+its protected result seal: restart retains the exact source evidence and
+spent=2, pending=2; execution cannot repeat and allowance is not refunded.
+The two new signed wire formats have fixed vectors, 4,320 single-bit mutations,
+540 truncated prefixes, two trailing-byte cases and 1,017,108 fuzz executions.
+The full previous guarded lifecycle also passes with the race detector (250.258s),
+as do the new profile-5 revocation case (83.287s), guard/witness/wire suites and
+reviewed CLI. Static checks and CGO-free macOS/Linux builds pass.
+[Validation record](evidence/custody-guard-revocation-20261029.json) lists the
+commands, outputs, source/build digests and corrected test-fixture failure.
+
+Next: safe replacement of revoked keys and incident settlement without resetting
+obligations, then a separately deployed guard fault campaign. The guard itself
+still needs independent operation and protected key/monotone storage. No WAN,
+physical-failure, independent audit or mainnet acceptance is claimed here;
+readiness remains **44/100**.
+
 ## 2026-10-29: independent choice seals for guarded services and witnesses
 
 The [external guard adapter](CUSTODY_INDEPENDENT_GUARD.md) fixes one choice per

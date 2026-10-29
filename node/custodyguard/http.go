@@ -17,6 +17,7 @@ import (
 )
 
 const Route = "/outcomemesh/custody-guard/1"
+const RevocationRoute = "/outcomemesh/custody-guard/revoke/1"
 
 // Client transports public signed choices. It never follows redirects or uses
 // proxy environment variables. Authenticity comes from the pinned seal key;
@@ -31,20 +32,39 @@ func ValidateURL(raw string) error {
 	return nil
 }
 func (c Client) Choose(ctx context.Context, q wire.Request) (seal [64]byte, err error) {
-	if ValidateURL(c.URL) != nil || ctx == nil {
-		return seal, wire.ErrGuard
-	}
 	b, e := q.CanonicalBytes()
 	if e != nil {
 		return seal, e
 	}
+	b, e = c.exchange(ctx, Route, b, wire.SealBytes)
+	if e != nil {
+		return seal, e
+	}
+	copy(seal[:], b)
+	return seal, nil
+}
+func (c Client) Revoke(ctx context.Context, q wire.Revocation) (wire.RevocationReceipt, error) {
+	b, e := q.CanonicalBytes()
+	if e != nil {
+		return wire.RevocationReceipt{}, e
+	}
+	b, e = c.exchange(ctx, RevocationRoute, b, wire.RevocationReceiptBytes)
+	if e != nil {
+		return wire.RevocationReceipt{}, e
+	}
+	return wire.DecodeRevocationReceipt(b)
+}
+func (c Client) exchange(ctx context.Context, route string, b []byte, size int) ([]byte, error) {
+	if ValidateURL(c.URL) != nil || ctx == nil {
+		return nil, wire.ErrGuard
+	}
 	u, _ := url.Parse(c.URL)
-	u.Path = Route
+	u.Path = route
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	req, e := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), bytes.NewReader(b))
 	if e != nil {
-		return seal, e
+		return nil, e
 	}
 	req.Header.Set("Content-Type", "application/octet-stream")
 	tr := &http.Transport{Proxy: nil, DialContext: (&net.Dialer{Timeout: 3 * time.Second}).DialContext, DisableKeepAlives: true, ResponseHeaderTimeout: 3 * time.Second, MaxResponseHeaderBytes: 4096, TLSHandshakeTimeout: 3 * time.Second}
@@ -52,23 +72,22 @@ func (c Client) Choose(ctx context.Context, q wire.Request) (seal [64]byte, err 
 	client := http.Client{Transport: tr, Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	r, e := client.Do(req)
 	if e != nil {
-		return seal, e
+		return nil, e
 	}
 	defer r.Body.Close()
 	if r.StatusCode != http.StatusOK {
-		return seal, wire.ErrGuard
+		return nil, wire.ErrGuard
 	}
-	b, e = io.ReadAll(io.LimitReader(r.Body, wire.SealBytes+1))
-	if e != nil || len(b) != wire.SealBytes {
-		return seal, wire.ErrGuard
+	b, e = io.ReadAll(io.LimitReader(r.Body, int64(size+1)))
+	if e != nil || len(b) != size {
+		return nil, wire.ErrGuard
 	}
-	copy(seal[:], b)
-	return seal, nil
+	return b, nil
 }
 func Handler(s *Store) http.Handler {
 	active := make(chan struct{}, 8)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != Route || r.URL.RawQuery != "" {
+		if r.Method != http.MethodPost || (r.URL.Path != Route && r.URL.Path != RevocationRoute) || r.URL.RawQuery != "" {
 			http.Error(w, "refused", http.StatusBadRequest)
 			return
 		}
@@ -79,24 +98,44 @@ func Handler(s *Store) http.Handler {
 			http.Error(w, "busy", http.StatusServiceUnavailable)
 			return
 		}
-		b, e := io.ReadAll(io.LimitReader(r.Body, wire.RequestBytes+1))
-		if e != nil || len(b) != wire.RequestBytes {
+		size := wire.RequestBytes
+		if r.URL.Path == RevocationRoute {
+			size = wire.RevocationBytes
+		}
+		b, e := io.ReadAll(io.LimitReader(r.Body, int64(size+1)))
+		if e != nil || len(b) != size {
 			http.Error(w, "refused", http.StatusBadRequest)
 			return
 		}
-		q, e := wire.DecodeRequest(b)
-		if e != nil {
-			http.Error(w, "refused", http.StatusBadRequest)
-			return
+		var reply []byte
+		if r.URL.Path == RevocationRoute {
+			q, err := wire.DecodeRevocation(b)
+			if err != nil {
+				http.Error(w, "refused", http.StatusBadRequest)
+				return
+			}
+			var receipt wire.RevocationReceipt
+			receipt, e = s.Revoke(r.Context(), q)
+			if e == nil {
+				reply, e = receipt.CanonicalBytes()
+			}
+		} else {
+			q, err := wire.DecodeRequest(b)
+			if err != nil {
+				http.Error(w, "refused", http.StatusBadRequest)
+				return
+			}
+			var seal [64]byte
+			seal, e = s.Choose(r.Context(), q)
+			reply = seal[:]
 		}
-		seal, e := s.Choose(r.Context(), q)
 		if e != nil {
 			http.Error(w, "refused", http.StatusConflict)
 			return
 		}
 		w.Header().Set("Content-Type", "application/octet-stream")
 		w.Header().Set("Cache-Control", "no-store")
-		_, _ = w.Write(seal[:])
+		_, _ = w.Write(reply)
 	})
 }
 

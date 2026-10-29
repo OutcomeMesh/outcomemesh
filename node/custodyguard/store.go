@@ -26,29 +26,34 @@ const MaximumSubjects = 32
 type Config struct {
 	Subjects [][32]byte
 	Limit    uint32
+	Revoker  [32]byte `json:",omitzero"`
 }
 type Identity struct {
 	PublicKey        [32]byte
 	RootID, ConfigID types.Hash
 }
-type Position struct {
-	Sequence uint32
-	Head     types.Hash
+type Position = wire.Position
+
+type revokedSubject struct {
+	Request wire.Revocation
+	Before  Position
 }
 type Store struct {
-	observer    func(Position, wire.Request) error
-	mu          sync.Mutex
-	root        string
-	identity    Identity
-	config      Config
-	configBytes []byte
-	key         ed25519.PrivateKey
-	lock        *os.File
-	position    Position
-	records     [][]byte
-	choices     map[types.Hash]wire.Request
-	poisoned    bool
-	hook        func(string) error
+	observer           func(Position, wire.Request) error
+	revocationObserver func(Position, wire.Revocation) error
+	mu                 sync.Mutex
+	root               string
+	identity           Identity
+	config             Config
+	configBytes        []byte
+	key                ed25519.PrivateKey
+	lock               *os.File
+	position           Position
+	records            [][]byte
+	choices            map[types.Hash]wire.Request
+	revoked            map[[32]byte]revokedSubject
+	poisoned           bool
+	hook               func(string) error
 }
 
 func (c Config) validate() error {
@@ -56,7 +61,7 @@ func (c Config) validate() error {
 		return ErrStore
 	}
 	for i, k := range c.Subjects {
-		if types.Hash(k).IsZero() || i > 0 && bytes.Compare(c.Subjects[i-1][:], k[:]) >= 0 {
+		if types.Hash(k).IsZero() || k == c.Revoker || i > 0 && bytes.Compare(c.Subjects[i-1][:], k[:]) >= 0 {
 			return ErrStore
 		}
 	}
@@ -103,6 +108,9 @@ func Create(root string, c Config) (s *Store, err error) {
 	if err = publish(filepath.Join(root, "key"), key); err != nil {
 		return nil, err
 	}
+	if bytes.Equal(c.Revoker[:], pub) {
+		return nil, ErrStore
+	}
 	for _, k := range c.Subjects {
 		if bytes.Equal(k[:], pub) {
 			return nil, ErrStore
@@ -132,7 +140,7 @@ func Create(root string, c Config) (s *Store, err error) {
 	if err = syncDir(filepath.Dir(root)); err != nil {
 		return nil, err
 	}
-	s = &Store{root: root, identity: id, config: c, configBytes: cb, key: append(ed25519.PrivateKey(nil), key...), lock: lock, choices: make(map[types.Hash]wire.Request)}
+	s = &Store{root: root, identity: id, config: c, configBytes: cb, key: append(ed25519.PrivateKey(nil), key...), lock: lock, choices: make(map[types.Hash]wire.Request), revoked: make(map[[32]byte]revokedSubject)}
 	return s, nil
 }
 func (s *Store) Identity() Identity { return s.identity }
@@ -151,7 +159,30 @@ func next(p Position, b []byte) Position {
 
 // Open accepts the externally retained exact cursor, or precisely one matching
 // attempted request after it. It never adopts a tip or repairs partial evidence.
-func Open(root string, id Identity, p Position, attempt *wire.Request) (s *Store, err error) {
+func Open(root string, id Identity, p Position, attempt *wire.Request) (*Store, error) {
+	var raw []byte
+	if attempt != nil {
+		var err error
+		raw, err = attempt.CanonicalBytes()
+		if err != nil {
+			return nil, err
+		}
+	}
+	return open(root, id, p, raw)
+}
+
+func RecoverRevocation(root string, id Identity, p Position, attempt wire.Revocation) (*Store, error) {
+	raw, err := attempt.CanonicalBytes()
+	if err != nil || attempt.GuardID != id.ID() {
+		return nil, ErrStore
+	}
+	return open(root, id, p, raw)
+}
+
+func open(root string, id Identity, p Position, attempt []byte) (s *Store, err error) {
+	if !p.Valid() || id.ID().IsZero() {
+		return nil, ErrStore
+	}
 	lock, err := lockExisting(filepath.Join(root, "lock"))
 	if err != nil {
 		return nil, err
@@ -189,40 +220,52 @@ func Open(root string, id Identity, p Position, attempt *wire.Request) (s *Store
 		return nil, err
 	}
 	var c Config
-	if strictJSON(cb, &c) != nil || c.validate() != nil || types.DomainHash(wire.Domain+"config", cb) != id.ConfigID {
+	if strictJSON(cb, &c) != nil || c.validate() != nil || c.Revoker == id.PublicKey || types.DomainHash(wire.Domain+"config", cb) != id.ConfigID {
 		return nil, ErrStore
 	}
-	s = &Store{root: root, identity: id, config: c, configBytes: cb, key: append(ed25519.PrivateKey(nil), key...), lock: lock, choices: make(map[types.Hash]wire.Request)}
+	s = &Store{root: root, identity: id, config: c, configBytes: cb, key: append(ed25519.PrivateKey(nil), key...), lock: lock, choices: make(map[types.Hash]wire.Request), revoked: make(map[[32]byte]revokedSubject)}
+	// Recovery attempts are authenticated even when no extra event was written.
+	if len(attempt) != 0 {
+		if len(attempt) == wire.RevocationBytes {
+			q, e := wire.DecodeRevocation(attempt)
+			if e != nil || !s.revocationAllowed(q) {
+				return s, ErrStore
+			}
+		} else {
+			q, e := wire.DecodeRequest(attempt)
+			if e != nil || !s.allowed(q) {
+				return s, ErrStore
+			}
+		}
+	}
 	entries, err := os.ReadDir(filepath.Join(root, "events"))
-	if err != nil || len(entries) > int(c.Limit) {
+	limit := int(c.Limit)
+	if !types.Hash(c.Revoker).IsZero() {
+		limit += len(c.Subjects)
+	}
+	if err != nil || len(entries) > limit {
 		return s, ErrStore
 	}
 	var beforeLast Position
-	var last wire.Request
+	var last []byte
 	for i, ent := range entries {
 		if ent.Name() != eventName(i+1) {
 			return s, ErrStore
 		}
-		b, e := privateRead(filepath.Join(root, "events", ent.Name()), wire.RequestBytes)
+		b, e := privateRead(filepath.Join(root, "events", ent.Name()), wire.RevocationBytes)
 		if e != nil {
 			return s, e
 		}
-		q, e := wire.DecodeRequest(b)
-		if e != nil || !s.allowed(q) {
-			return s, ErrStore
-		}
-		slot, _ := q.SlotID()
-		if _, ok := s.choices[slot]; ok {
-			return s, ErrStore
-		}
 		beforeLast = s.position
-		last = q
+		last = b
+		if e = s.replay(b); e != nil {
+			return s, e
+		}
 		s.position = next(s.position, b)
 		s.records = append(s.records, b)
-		s.choices[slot] = q
 	}
 	if s.position != p {
-		if attempt == nil || beforeLast != p || s.position.Sequence != p.Sequence+1 || last != *attempt {
+		if len(attempt) == 0 || beforeLast != p || s.position.Sequence != p.Sequence+1 || !bytes.Equal(last, attempt) {
 			return s, ErrStore
 		}
 	}
@@ -272,7 +315,7 @@ func (s *Store) check() error {
 		if ent.Name() != eventName(i+1) {
 			return ErrStore
 		}
-		b, e := privateRead(filepath.Join(s.root, "events", ent.Name()), wire.RequestBytes)
+		b, e := privateRead(filepath.Join(s.root, "events", ent.Name()), wire.RevocationBytes)
 		if e != nil || !bytes.Equal(b, s.records[i]) {
 			return ErrStore
 		}
@@ -295,7 +338,7 @@ func (s *Store) Choose(ctx context.Context, q wire.Request) (seal [64]byte, err 
 	if err = s.check(); err != nil {
 		return
 	}
-	if !s.allowed(q) {
+	if _, revoked := s.revoked[q.Subject]; !s.allowed(q) || revoked {
 		return seal, wire.ErrGuard
 	}
 	slot, _ := q.SlotID()
@@ -304,27 +347,12 @@ func (s *Store) Choose(ctx context.Context, q wire.Request) (seal [64]byte, err 
 		return seal, wire.ErrGuard
 	}
 	if !ok {
-		if len(s.records) >= int(s.config.Limit) {
+		if len(s.choices) >= int(s.config.Limit) {
 			return seal, ErrStore
 		}
-		s.poisoned = true
-		if s.hook != nil {
-			if err = s.hook("before-persist"); err != nil {
-				return
-			}
-		}
-		if err = publish(filepath.Join(s.root, "events", eventName(len(s.records)+1)), b); err != nil {
+		if err = s.appendEvent(b); err != nil {
 			return
 		}
-		if s.hook != nil {
-			if err = s.hook("after-persist"); err != nil {
-				return
-			}
-		}
-		s.records = append(s.records, b)
-		s.choices[slot] = q
-		s.position = next(s.position, b)
-		s.poisoned = false
 	}
 	if err = ctx.Err(); err != nil {
 		return

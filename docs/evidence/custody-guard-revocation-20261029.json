@@ -1,0 +1,129 @@
+{
+  "date": "2026-10-29",
+  "base_commit": "3d95ce0223e32b0cac0f774dcdf4bb3431d990dc",
+  "scope": "Permanent per-subject external guard revocation; controlled local API, HTTP, CLI, subprocess and real profile-5 acceptance. No new WAN or independent-operator deployment.",
+  "environment": {
+    "toolchain": "go version go1.26.7 darwin/arm64",
+    "GOMAXPROCS": 2,
+    "GOFLAGS": "-p=1"
+  },
+  "final_source": {
+    "files": 822,
+    "manifest_format": "sha256 + two spaces + repository-relative path + newline, sorted by path; .go, go.mod, go.sum and Makefile only",
+    "manifest_sha256": "1dfa21747b4b2a6334ba497eea16940cb8d4f5c5c25693ab3fb9add8a2cb6d2e"
+  },
+  "builds": [
+    {
+      "platform": "darwin-arm64",
+      "CGO_ENABLED": 0,
+      "command": "go build -trimpath -o <private-output>/omd-darwin-arm64 ./cmd/omd",
+      "exit_code": 0,
+      "sha256": "a3a0fdd77bc66c78a486b4475a52b67734e7b3e0840878dc8ab3152ebdb0f2fb"
+    },
+    {
+      "platform": "linux-amd64",
+      "CGO_ENABLED": 0,
+      "command": "go build -trimpath -o <private-output>/omd-linux-amd64 ./cmd/omd",
+      "exit_code": 0,
+      "sha256": "3d3814ece979148d5a73200f5ffa93e9c6a443f798b7589c26d3e4e22a192027"
+    }
+  ],
+  "acceptance": {
+    "reserved_revocations_tested": 32,
+    "normal_choices_before_maximum_roster_revocation": 1,
+    "revocation_choose_races": 12,
+    "process_fault": "SIGKILL after durable revocation publication and before reply; exact cold recovery and second restart retain byte-identical receipt; copied subject keys refused",
+    "profile5_revocation": {
+      "source_evidence_retained": true,
+      "protected_result_published": false,
+      "execution_repeated": false,
+      "spent": 2,
+      "pending": 2
+    },
+    "legacy_guarded_lifecycle": "Complete Execute/Accept/Serve/admission closure still passes; 19 external choices, spent=2, pending=0, source=1",
+    "new_codecs": {
+      "request_bytes": 200,
+      "receipt_bytes": 340,
+      "single_bit_mutations": 4320,
+      "truncated_prefixes": 540,
+      "trailing_byte_cases": 2,
+      "fuzz_executions": 1017108,
+      "request_vector": "3d4659d69c764b9418bc75e043e57325c6e95b9e117c916fad7e74c5d78d3b75",
+      "receipt_vector": "d348cbfe979189c636060cf830b0d743b34af040b4d3501faef9b8093a46a89f"
+    },
+    "legacy_config": "Omitted/zero Revoker serializes to the original bytes and keeps ConfigID; legacy roots cannot enable revocation in place"
+  },
+  "checks": [
+    {
+      "name": "units",
+      "command": "go test -race ./node/custodyguard/... ./node/custodyfence/... ./node/custodygateway/gatewaywire -count=1 -timeout=5m",
+      "exit_code": 0,
+      "log_sha256": "40c51e11f82defe5a15212a6cbd41b8df58dffbd237ca6db1c54f2e3d68ea5dd",
+      "output": "ok  \tgithub.com/outcomemesh/outcomemesh/node/custodyguard\t3.210s\nok  \tgithub.com/outcomemesh/outcomemesh/node/custodyguard/guardwire\t6.864s\nok  \tgithub.com/outcomemesh/outcomemesh/node/custodyfence\t3.239s\n?   \tgithub.com/outcomemesh/outcomemesh/node/custodyfence/custodyproof\t[no test files]\nok  \tgithub.com/outcomemesh/outcomemesh/node/custodyfence/witnessnet\t4.654s\nok  \tgithub.com/outcomemesh/outcomemesh/node/custodyfence/witnesswire\t1.649s\nok  \tgithub.com/outcomemesh/outcomemesh/node/custodygateway/gatewaywire\t5.777s\n"
+    },
+    {
+      "name": "reserve-recovery",
+      "command": "go test -race ./node/custodyguard/... -run 'Revocation' -count=1 -timeout=5m",
+      "exit_code": 0,
+      "log_sha256": "96b2075902d39808cf368d99d91d71a71002a799ea51b06c1382db81733779ba",
+      "output": "ok  \tgithub.com/outcomemesh/outcomemesh/node/custodyguard\t3.855s\nok  \tgithub.com/outcomemesh/outcomemesh/node/custodyguard/guardwire\t6.715s\n"
+    },
+    {
+      "name": "profile5",
+      "command": "go test -race ./node/custodygateway -run '^TestGuardedProfile5Revocation' -count=1 -timeout=10m",
+      "exit_code": 0,
+      "log_sha256": "8804be89390b442c3dfa104e6d77f176b2217be3260367f10c164bda9b6d106c",
+      "output": "ok  \tgithub.com/outcomemesh/outcomemesh/node/custodygateway\t83.287s\n"
+    },
+    {
+      "name": "legacy-lifecycle",
+      "command": "go test -race ./node/custodygateway -run '^TestGuardedProfile5FullLifecycleAndCopiedAdmissionAndServiceKeys$' -count=1 -timeout=10m",
+      "exit_code": 0,
+      "log_sha256": "7bcef8c01b43aa3ef2ba41d7302f1ec722ace7376a5842275aaab2eaedfe7c42",
+      "output": "ok  \tgithub.com/outcomemesh/outcomemesh/node/custodygateway\t250.258s\n"
+    },
+    {
+      "name": "cli",
+      "command": "go test -race ./cmd/omd -run '^TestCustodyGuard' -count=1 -timeout=5m",
+      "exit_code": 0,
+      "log_sha256": "e568fef990c347ee22ec9cd4665d14878712ecff5a9e95c2bc53d2f51852a66d",
+      "output": "ok  \tgithub.com/outcomemesh/outcomemesh/cmd/omd\t2.486s\n"
+    },
+    {
+      "name": "fuzz",
+      "command": "go test ./node/custodyguard/guardwire -run '^$' -fuzz '^FuzzGuardRevocationCodecs$' -fuzztime=15s",
+      "exit_code": 0,
+      "log_sha256": "da22e31a8479ab062d659ed76d4492f4f536bdd59b05637624554f01a7814de2",
+      "output": "fuzz: elapsed: 0s, gathering baseline coverage: 0/2 completed\nfuzz: elapsed: 0s, gathering baseline coverage: 2/2 completed, now fuzzing with 2 workers\nfuzz: elapsed: 3s, execs: 117833 (39264/sec), new interesting: 3 (total: 5)\nfuzz: elapsed: 6s, execs: 329996 (70735/sec), new interesting: 6 (total: 8)\nfuzz: elapsed: 9s, execs: 573609 (81188/sec), new interesting: 10 (total: 12)\nfuzz: elapsed: 12s, execs: 754504 (60298/sec), new interesting: 12 (total: 14)\nfuzz: elapsed: 15s, execs: 1017108 (87545/sec), new interesting: 15 (total: 17)\nfuzz: elapsed: 16s, execs: 1017108 (0/sec), new interesting: 15 (total: 17)\nPASS\nok  \tgithub.com/outcomemesh/outcomemesh/node/custodyguard/guardwire\t16.846s\n"
+    },
+    {
+      "name": "vet",
+      "command": "go vet ./...",
+      "exit_code": 0,
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "output": ""
+    },
+    {
+      "name": "cli-initial-fixture-error",
+      "command": "go test -race ./cmd/omd -run '^TestCustodyGuard' -count=1 -timeout=5m",
+      "exit_code": 1,
+      "log_sha256": "c211f5fcf4df1398b41a0ab551231130cd24e4f8d02f4696366618ae733bd16f",
+      "output": "--- FAIL: TestCustodyGuardRevokeCLIReviewSignSendInspectAndStaleInputs (0.05s)\n    custody_guard_revoke_cli_test.go:92: read explicit seed file: artifact is not a bounded regular file\nFAIL\nFAIL\tgithub.com/outcomemesh/outcomemesh/cmd/omd\t1.599s\nFAIL\n",
+      "status": "corrected_test_fixture",
+      "reason": "The new CLI test initially wrote a hex-encoded seed. The existing offline witness key loader requires exactly 32 raw seed bytes. Corrected the fixture and reran the complete guard CLI group successfully."
+    }
+  ],
+  "exclusions": [
+    "No full make test-all or full-repository race suite rerun; focused affected suites are listed above.",
+    "No new remote/WAN, independent-operator or physical power-loss campaign.",
+    "Guard key/state cloning by a privileged operator is still outside this software boundary.",
+    "Previously issued seals remain historical; revocation does not recall signatures or undo actual work.",
+    "No automatic local-gateway revocation propagation, safe key replacement, refund, migration, consensus change or mainnet activation."
+  ],
+  "readiness": {
+    "score": 44,
+    "maximum": 100,
+    "changed": false,
+    "reason": "No weighted production exit gate was accepted by this local implementation slice."
+  }
+}

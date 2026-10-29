@@ -114,7 +114,11 @@ func newProtectedFixture(t testing.TB, guarded ...bool) *protectedFixture {
 		sort.Slice(subjects, func(i, j int) bool { return bytes.Compare(subjects[i][:], subjects[j][:]) < 0 })
 		parent, e := filepath.EvalSymlinks(t.TempDir())
 		fixture.Require(t, e)
-		x.guardStore, e = guard.Create(filepath.Join(parent, "independent-guard"), guard.Config{Subjects: subjects, Limit: 128})
+		config := guard.Config{Subjects: subjects, Limit: 128}
+		if len(guarded) > 1 && guarded[1] {
+			config.Revoker = f.Public(250)
+		}
+		x.guardStore, e = guard.Create(filepath.Join(parent, "independent-guard"), config)
 		fixture.Require(t, e)
 		t.Cleanup(func() { x.guardStore.Close() })
 		server := httptest.NewServer(guard.Handler(x.guardStore))

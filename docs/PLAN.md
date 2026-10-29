@@ -90,9 +90,13 @@ Next required work remains ordered:
    A/B execution, packet partitions, process death, exact recovery and original
    admission closure across two hosts. Lost sessions remain held. The [independent guard adapter](CUSTODY_INDEPENDENT_GUARD.md)
    now makes external one-choice seals mandatory in explicitly guarded deployments,
-   including full original admission prefixes and service/Serve results. Next deploy
-   it outside all participant backup/control domains with independent operators and
-   protected monotone/key storage, bind external per-subject revocation/key recovery,
+   including full original admission prefixes and service/Serve results. Separately
+   authorized permanent per-subject revocation now reserves durable journal space,
+   returns exact signed receipts and survives lost replies/process death through
+   reviewed CLI recovery. Previously signed proofs remain historical; unknown work
+   stays held. Next deploy it outside all participant backup/control domains with
+   independent operators and protected monotone/key storage, specify safe key
+   replacement and incident settlement without resetting prior obligations,
    extend physical-failure and long-retention acceptance
    and obtain independent review. No consensus/mainnet activation follows.
 4. Specify safe progress for split votes and its quorum/rollback assumptions;
