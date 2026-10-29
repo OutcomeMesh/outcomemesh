@@ -93,6 +93,7 @@ type Policy struct {
 // statement names the current selected ancestry. Implementations must not
 // mutate selection while answering these calls.
 type Chain interface {
+	LegacyArchiveCompatible() bool
 	BaseID() (types.Hash, error)
 	TipByID(types.Hash) (storage.Tip, error)
 	SelectedAncestryCommitment(types.Hash) (types.Hash, uint64, error)
@@ -343,7 +344,7 @@ func DecodeCheckpoint(input []byte) (Checkpoint, error) {
 // selected ancestry and commits every parent back to the immutable activation
 // base. It remains read-only and does not authorize pruning by itself.
 func VerifyChain(checkpoint Checkpoint, policy Policy, chain Chain) error {
-	if chain == nil || checkpoint.Verify(policy) != nil {
+	if chain == nil || !chain.LegacyArchiveCompatible() || checkpoint.Verify(policy) != nil {
 		return ErrCheckpoint
 	}
 	baseID, err := chain.BaseID()

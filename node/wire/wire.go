@@ -37,6 +37,8 @@ const (
 	MaxVersionedFrameBodyBytes             = MaxVersionedBlockPayloadBytes + 1
 )
 
+const ChainHelloRadix uint16 = 3
+
 const WorkFeatureShareRelayV1 uint64 = 1 << 0
 const (
 	ChainFeatureVersionedSyncV1 uint64 = 1 << iota
@@ -159,16 +161,17 @@ func (VersionedHeaders) messageType() Type { return TypeVersionedHeaders }
 // ChainHello negotiates the isolated cross-version chain protocol. An exact
 // activation height match is required before either side exchanges locators.
 type ChainHello struct {
-	Version          uint16
-	NetworkID        uint32
-	GenesisID        types.Hash
-	ActivationHeight uint64
-	Features         uint64
-	TipID            types.Hash
-	StateRoot        types.Hash
-	TipHeight        uint64
-	CumulativeWork   []byte
-	MaxFrameBytes    uint32
+	RadixActivationHeight uint64
+	Version               uint16
+	NetworkID             uint32
+	GenesisID             types.Hash
+	ActivationHeight      uint64
+	Features              uint64
+	TipID                 types.Hash
+	StateRoot             types.Hash
+	TipHeight             uint64
+	CumulativeWork        []byte
+	MaxFrameBytes         uint32
 }
 
 func (ChainHello) messageType() Type { return TypeChainHello }
@@ -545,6 +548,9 @@ func encodePayload(message Message) ([]byte, error) {
 		encoder.U64(value.TipHeight)
 		encoder.BytesField(value.CumulativeWork)
 		encoder.U32(value.MaxFrameBytes)
+		if value.Version == ChainHelloRadix {
+			encoder.U64(value.RadixActivationHeight)
+		}
 		return encoder.Bytes(), nil
 	case GetVersionedBlocks:
 		if err := value.Validate(); err != nil {
@@ -817,8 +823,11 @@ func (headers VersionedHeaders) Validate() error {
 }
 
 func (hello ChainHello) Validate() error {
-	if hello.Version != Version1 {
+	if hello.Version != Version1 && hello.Version != ChainHelloRadix {
 		return ErrUnsupported
+	}
+	if (hello.Version == Version1 && hello.RadixActivationHeight != 0) || (hello.Version == ChainHelloRadix && (hello.RadixActivationHeight == 0 || hello.RadixActivationHeight < hello.ActivationHeight)) {
+		return ErrMessage
 	}
 	if hello.NetworkID == 0 || hello.GenesisID.IsZero() || hello.ActivationHeight == 0 ||
 		hello.Features == 0 || hello.TipID.IsZero() || hello.StateRoot.IsZero() ||
@@ -1227,7 +1236,7 @@ func decodeChainHello(payload []byte) (ChainHello, error) {
 	if err != nil {
 		return ChainHello{}, err
 	}
-	if result.Version != Version1 {
+	if result.Version != Version1 && result.Version != ChainHelloRadix {
 		return ChainHello{}, ErrUnsupported
 	}
 	result.NetworkID, err = decoder.U32()
@@ -1268,6 +1277,12 @@ func decodeChainHello(payload []byte) (ChainHello, error) {
 	result.MaxFrameBytes, err = decoder.U32()
 	if err != nil {
 		return ChainHello{}, err
+	}
+	if result.Version == ChainHelloRadix {
+		result.RadixActivationHeight, err = decoder.U64()
+		if err != nil {
+			return ChainHello{}, err
+		}
 	}
 	if err := decoder.Finish(); err != nil {
 		return ChainHello{}, err

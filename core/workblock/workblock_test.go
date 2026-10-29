@@ -6,6 +6,7 @@ import (
 	"crypto/ed25519"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -223,8 +224,13 @@ func TestActivationBoundaryCannotSkipPreviousPayout(t *testing.T) {
 
 func TestCollectedFeeIsPaidToFutureAnchorAfterExactDelay(t *testing.T) {
 	t.Parallel()
-
+	for _, h := range []uint64{0, 1, 2, 3, 4} {
+		t.Run(fmt.Sprint(h), func(t *testing.T) { checkDelayedFeeAcrossRadix(t, h) })
+	}
+}
+func checkDelayedFeeAcrossRadix(t *testing.T, radixHeight uint64) {
 	parameters := testParameters()
+	parameters.RadixActivationHeight = radixHeight
 	parameters.FeeDelay = 2
 	seed := types.DomainHash("test/workblock/fee-owner")
 	privateKey := ed25519.NewKeyFromSeed(seed[:])
@@ -282,6 +288,18 @@ func TestCollectedFeeIsPaidToFutureAnchorAfterExactDelay(t *testing.T) {
 		block, result, err := payload.Finalize(anchor, nil)
 		if err != nil {
 			t.Fatal(err)
+		}
+		if block.Header.Version != parameters.VersionAt(position.Height) || result.State.CommitmentVersion() != parameters.CommitmentAt(position.Height) {
+			t.Fatal("wrong scheduled commitment")
+		}
+		replay, err := ValidateAndExecute(current, position, previous, block, parameters)
+		if err != nil || replay.State.Root() != result.State.Root() {
+			t.Fatal("transition replay", err)
+		}
+		for _, receipt := range result.Receipts {
+			if receipt.Version != receiptVersion(parameters.CommitmentAt(position.Height)) {
+				t.Fatal("wrong receipt version")
+			}
 		}
 		if block.Header.FeeAward != result.FeeAward {
 			t.Fatal("header does not commit derived fee award")

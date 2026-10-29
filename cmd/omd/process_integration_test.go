@@ -78,6 +78,14 @@ func TestProcessQUICRestartSoak(t *testing.T) {
 }
 
 func TestProcessWorkGraphActivationQUICRestart(t *testing.T) {
+	checkProcessWorkGraphActivationQUICRestart(t, 0)
+}
+
+func TestProcessWorkGraphRadixQUICRestart(t *testing.T) {
+	checkProcessWorkGraphActivationQUICRestart(t, 3)
+}
+
+func checkProcessWorkGraphActivationQUICRestart(t *testing.T, radixHeight uint64) {
 	root := t.TempDir()
 	dataA := root + "/work-node-a"
 	dataB := root + "/work-node-b"
@@ -108,7 +116,7 @@ func TestProcessWorkGraphActivationQUICRestart(t *testing.T) {
 	for _, data := range []string{dataA, dataB, dataC} {
 		runProcessCommand(t, 20*time.Second,
 			"work-enable", "--data", data, "--activation-height", "2",
-			"--confirm-genesis", genesisID.String(), "--max-trees", "4",
+			"--confirm-genesis", genesisID.String(), "--max-trees", "4", "--radix-height", strconv.FormatUint(radixHeight, 10),
 			"--max-history-bytes", strconv.FormatUint(minimumHistoryBytes, 10),
 		)
 	}
@@ -166,6 +174,9 @@ func TestProcessWorkGraphActivationQUICRestart(t *testing.T) {
 	fieldsA := outputFields(statusA, "work_status")
 	fieldsB := outputFields(statusB, "work_status")
 	fieldsC := outputFields(statusC, "work_status")
+	if radixHeight != 0 && fieldsA["commitment"] != "1" {
+		t.Fatal("radix state not active", fieldsA)
+	}
 	if fieldsA["height"] != "6" || fieldsB["height"] != "6" || fieldsA["tip"] == "" ||
 		fieldsA["tip"] != fieldsB["tip"] || fieldsA["state"] != fieldsB["state"] ||
 		fieldsA["cumulative_work"] != fieldsB["cumulative_work"] || fieldsC["height"] != "6" ||

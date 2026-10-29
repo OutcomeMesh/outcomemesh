@@ -10,14 +10,32 @@ Full planned production readiness is approximately **44/100**, using the weighte
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
 
+## 2026-10-29: WorkGraph radix integration and bounded migration
+
+WorkGraph v3 now uses incremental radix state with an explicit activation height.
+The transition preserves resources, delayed rewards, fees and per-branch
+accounting. Persistence, replay checkpoints, fork reorganization, chain headers
+and peer negotiation carry the versioned rule.
+
+The [offline migration CLI](WORKGRAPH_RADIX_MIGRATION.md) reviews and replays all
+retained forks into a new directory while preserving the stopped original. It
+requires an exact current review ID and publishes the profile only after cold
+reconstruction. Interrupted destinations remain blocked from startup. Archive,
+pruned and operationally bound stores are excluded until their own formats bind
+the schedule. Live public activation and independent approval remain open.
+
+The README now describes the project, supported modes, commands and documentation
+without the accumulated implementation log. Readiness remains **44/100**.
+
 ## 2026-10-29: incremental roots and recovery of completed custody evidence
 
 [Protocol 2](STATE_RADIX_V1.md) introduces a compressed immutable radix commitment
 for an explicitly created standalone chain. Each changed key updates at most 256
 branches; per-transaction roots no longer scan all resources. Genesis selection
 survives persistence, forks, peer sync and snapshot reconstruction. Protocol 0 and
-WorkGraph roots remain unchanged; live-chain migration and WorkGraph integration
-are still separate work. Persistent snapshot/diff scans remain.
+WorkGraph v1 roots remain unchanged. The subsequent WorkGraph v3 slice above
+adds explicit integration and bounded migration. Persistent snapshot/diff scans
+remain.
 
 [Evidence recovery](CUSTODY_EVIDENCE_RECOVERY.md) returns original protected result,
 acceptance and Serve receipts after lost replies, cold restart and Serve closure.

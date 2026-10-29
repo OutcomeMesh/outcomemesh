@@ -128,7 +128,7 @@ type Store struct {
 
 func New(base Base, parameters workblock.Parameters) (*Store, error) {
 	_, _, rewardErr := workgraph.RewardRates(parameters.BlockSubsidy)
-	if base.State == nil || base.State.CommitmentVersion() != state.CommitmentV0 || base.Tip.Validate() != nil || base.Tip.StateRoot != base.State.Root() ||
+	if base.State == nil || (base.State.CommitmentVersion() != state.CommitmentV0 && (base.State.CommitmentVersion() != state.CommitmentRadixV1 || parameters.RadixActivationHeight != parameters.ActivationHeight)) || parameters.Validate() != nil || base.Tip.Validate() != nil || base.Tip.StateRoot != base.State.Root() ||
 		base.Tip.Height == ^uint64(0) || base.Tip.Height+1 != parameters.ActivationHeight ||
 		parameters.NetworkID == 0 || rewardErr != nil || parameters.RewardMaturity == 0 ||
 		parameters.DifficultyAnchorTimestamp == 0 ||
@@ -663,6 +663,9 @@ func (store *Store) pruneCanonicalPrefix(
 func (store *Store) pruneCanonicalPrefixLocked(
 	boundary CanonicalFloor, authorize func() (uint64, error), effect *CanonicalPruneEffect,
 ) (CanonicalPruneReport, error) {
+	if store.parameters.RadixActivationHeight != 0 {
+		return CanonicalPruneReport{}, ErrCanonicalPrune
+	}
 	if store.persistence != nil && !store.persistence.storageID.IsZero() && effect == nil {
 		return CanonicalPruneReport{}, ErrStorageBinding
 	}
@@ -1110,7 +1113,8 @@ func cloneState(value *state.Memory) (*state.Memory, error) {
 	if value == nil {
 		return nil, ErrConfiguration
 	}
-	return state.New(value.Resources())
+	// Memory and its indexes are immutable; sharing preserves incremental roots.
+	return value, nil
 }
 
 func cloneBlock(value workblock.Block) (workblock.Block, error) {

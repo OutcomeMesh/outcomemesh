@@ -794,7 +794,7 @@ func (persistence *workPersistence) load(store *Store, base Base) error {
 				return storage.ErrCorrupt
 			}
 			blockID, _ := candidate.Header.ID()
-			if blockID != id || candidate.Header.StateRoot != node.tip.StateRoot ||
+			if candidate.Header.Version != store.parameters.VersionAt(node.tip.Height) || blockID != id || candidate.Header.StateRoot != node.tip.StateRoot ||
 				node.result.FeeQueue == nil {
 				return storage.ErrCorrupt
 			}
@@ -871,7 +871,7 @@ func (persistence *workPersistence) load(store *Store, base Base) error {
 	if err != nil {
 		return storage.ErrCorrupt
 	}
-	floorNode.state, err = decodePersistedState(floorStateBytes)
+	floorNode.state, err = decodePersistedStateVersion(floorStateBytes, commitmentForNode(base, store.parameters, floorNode.tip.Height))
 	if err != nil || floorNode.state.Root() != floorNode.tip.StateRoot {
 		return storage.ErrCorrupt
 	}
@@ -911,7 +911,7 @@ func (persistence *workPersistence) load(store *Store, base Base) error {
 			if err != nil {
 				return storage.ErrCorrupt
 			}
-			node.state, err = decodePersistedState(stateBytes)
+			node.state, err = decodePersistedStateVersion(stateBytes, store.parameters.CommitmentAt(node.tip.Height))
 			if err != nil || node.state.Root() != node.tip.StateRoot {
 				return storage.ErrCorrupt
 			}
@@ -924,7 +924,7 @@ func (persistence *workPersistence) load(store *Store, base Base) error {
 			if err != nil {
 				return storage.ErrCorrupt
 			}
-			node.state, err = applyStateDelta(parent.state, delta)
+			node.state, err = applyStateDeltaVersion(parent.state, delta, store.parameters.CommitmentAt(node.tip.Height))
 			if err != nil || node.state.Root() != node.tip.StateRoot {
 				return storage.ErrCorrupt
 			}
@@ -1058,6 +1058,9 @@ func encodePersistedState(value *state.Memory) ([]byte, error) {
 }
 
 func decodePersistedState(input []byte) (*state.Memory, error) {
+	return decodePersistedStateVersion(input, state.CommitmentV0)
+}
+func decodePersistedStateVersion(input []byte, version uint16) (*state.Memory, error) {
 	if len(input) == 0 || len(input) > maxPersistedStateBytes {
 		return nil, storage.ErrCorrupt
 	}
@@ -1077,7 +1080,7 @@ func decodePersistedState(input []byte) (*state.Memory, error) {
 	if err := decoder.Finish(); err != nil {
 		return nil, err
 	}
-	return state.New(resources)
+	return state.NewVersion(resources, version)
 }
 
 type stateDelta struct {
@@ -1205,30 +1208,28 @@ func decodeStateDelta(input []byte) (stateDelta, error) {
 }
 
 func applyStateDelta(before *state.Memory, delta stateDelta) (*state.Memory, error) {
+	return applyStateDeltaVersion(before, delta, before.CommitmentVersion())
+}
+func applyStateDeltaVersion(before *state.Memory, delta stateDelta, version uint16) (*state.Memory, error) {
 	if before == nil {
 		return nil, storage.ErrCorrupt
 	}
-	resources := make(map[types.ResourceID]resource.Resource, before.Len()+len(delta.created))
-	for _, item := range before.Resources() {
-		resources[item.ID] = item
-	}
-	for _, id := range delta.deleted {
-		if _, exists := resources[id]; !exists {
+	current := before
+	if before.CommitmentVersion() != version {
+		if before.CommitmentVersion() != state.CommitmentV0 || version != state.CommitmentRadixV1 {
 			return nil, storage.ErrCorrupt
 		}
-		delete(resources, id)
-	}
-	for _, item := range delta.created {
-		if _, exists := resources[item.ID]; exists {
-			return nil, storage.ErrCorrupt
+		var err error
+		current, err = state.NewVersion(before.Resources(), version)
+		if err != nil {
+			return nil, errors.Join(storage.ErrCorrupt, err)
 		}
-		resources[item.ID] = item
 	}
-	values := make([]resource.Resource, 0, len(resources))
-	for _, item := range resources {
-		values = append(values, item)
+	result, err := current.WithChanges(delta.deleted, delta.created)
+	if err != nil {
+		return nil, errors.Join(storage.ErrCorrupt, err)
 	}
-	return state.New(values)
+	return result, nil
 }
 
 func workConfigHash(base Base, parameters workblock.Parameters) types.Hash {
@@ -1247,6 +1248,10 @@ func workConfigHash(base Base, parameters workblock.Parameters) types.Hash {
 	encoder.U64(parameters.TargetSpacing)
 	encoder.U64(parameters.ASERTHalfLife)
 	encoder.U16(parameters.FeeDelay)
+	if parameters.RadixActivationHeight != 0 {
+		encoder.U64(parameters.RadixActivationHeight)
+		return types.DomainHash("OMESH/workchain/config/v3", encoder.Bytes())
+	}
 	return types.DomainHash("OMESH/workchain/config/v0", encoder.Bytes())
 }
 
@@ -1517,4 +1522,11 @@ func equalTimestamps(left, right []uint64) bool {
 		}
 	}
 	return true
+}
+
+func commitmentForNode(base Base, p workblock.Parameters, height uint64) uint16 {
+	if height == base.Tip.Height {
+		return base.State.CommitmentVersion()
+	}
+	return p.CommitmentAt(height)
 }

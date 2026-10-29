@@ -3,6 +3,24 @@
 OutcomeMesh is pre-alpha research software. It must not be used to secure real
 assets.
 
+## Scheduled radix transition
+
+WorkGraph v3 binds the new state commitment to the seal through a separate payload
+hash domain. Header admission and execution require the scheduled version; peer
+negotiation pins the exact activation height. The offline migration preserves
+all retained forks, exact-work incumbents and original block bytes. Source locks
+and read-only access protect the stopped original under the trusted-path model.
+
+A pending destination is not executable. A current review ID, complete replay
+and cold reconstruction precede profile publication. Migration cannot reset
+custody obligations: pruned, bound, pinned and operational-effect stores are
+refused, and current archive operations reject a nonzero radix schedule. These
+restrictions must remain until versioned custody bindings are specified.
+
+The original can still be copied or restarted under its old schedule. This
+procedure is not independent fencing, a public upgrade authorization or a signed
+network checkpoint. See [the migration trust boundaries](WORKGRAPH_RADIX_MIGRATION.md).
+
 ## Protected properties
 
 The version-0 kernel aims to protect:

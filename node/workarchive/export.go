@@ -68,7 +68,7 @@ func exportDirectory(
 	options ExportOptions,
 	beforePublish func() error,
 ) (Manifest, types.Hash, error) {
-	if path == "" || chain == nil || anchorID.IsZero() || binding.Validate() != nil ||
+	if path == "" || chain == nil || !chain.LegacyArchiveCompatible() || anchorID.IsZero() || binding.Validate() != nil ||
 		options.Validate() != nil {
 		return Manifest{}, types.Hash{}, ErrArchive
 	}

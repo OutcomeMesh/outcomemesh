@@ -30,7 +30,13 @@ var workForestSelectedMagic = []byte{
 }
 
 func (router *Router) openPersistentTrees() error {
-	entries, err := prepareWorkRoot(router.config.WorkRoot)
+	var entries []os.DirEntry
+	var err error
+	if router.config.ReadOnly {
+		entries, err = readWorkRoot(router.config.WorkRoot)
+	} else {
+		entries, err = prepareWorkRoot(router.config.WorkRoot)
+	}
 	if err != nil {
 		return err
 	}
@@ -91,6 +97,9 @@ func (router *Router) openPersistentTrees() error {
 		return err
 	}
 	if !exists || router.selectedID != previous {
+		if router.config.ReadOnly {
+			return storage.ErrCorrupt
+		}
 		if err := saveWorkForestSelection(router.config.WorkRoot, router.selectedID); err != nil {
 			return err
 		}
@@ -168,6 +177,11 @@ func saveWorkForestSelection(root string, selected types.Hash) error {
 func (router *Router) openWorkTree(base workchain.Base) (*workchain.Store, error) {
 	if router.config.WorkRoot == "" {
 		return workchain.New(base, router.config.Work)
+	}
+	if router.config.ReadOnly {
+		policy := router.config.WorkPolicy
+		policy.MaxHistoryBytes /= uint64(router.config.MaxWorkTrees)
+		return workchain.OpenExistingReadOnly(filepath.Join(router.config.WorkRoot, base.Tip.ID.String()), base, router.config.Work, policy)
 	}
 	path, err := ensureWorkTreeDirectory(router.config.WorkRoot, base.Tip.ID)
 	if err != nil {

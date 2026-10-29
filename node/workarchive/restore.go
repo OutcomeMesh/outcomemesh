@@ -37,6 +37,9 @@ func VerifyArchiveDirectory(
 	parameters workblock.Parameters,
 	limits Limits,
 ) (Manifest, error) {
+	if parameters.RadixActivationHeight != 0 {
+		return Manifest{}, ErrArchive
+	}
 	chain, err := workchain.New(base, parameters)
 	if err != nil {
 		return Manifest{}, err
@@ -75,7 +78,7 @@ func restoreDirectory(
 	workPolicy workchain.Policy,
 	hooks restoreHooks,
 ) (Manifest, error) {
-	if archivePath == "" || destinationPath == "" || limits.Validate() != nil {
+	if parameters.RadixActivationHeight != 0 || archivePath == "" || destinationPath == "" || limits.Validate() != nil {
 		return Manifest{}, ErrArchive
 	}
 	if _, err := os.Lstat(destinationPath); err == nil {
@@ -165,7 +168,7 @@ func replayArchiveDirectory(
 	limits Limits,
 	chain replayChain,
 ) (Manifest, error) {
-	if path == "" || chain == nil || limits.Validate() != nil ||
+	if path == "" || chain == nil || parameters.RadixActivationHeight != 0 || limits.Validate() != nil ||
 		checkpoint.Verify(policy) != nil || base.Tip.ID != policy.Binding.BaseID ||
 		parameters.NetworkID != policy.Binding.NetworkID ||
 		parameters.ActivationHeight != policy.Binding.ActivationHeight {

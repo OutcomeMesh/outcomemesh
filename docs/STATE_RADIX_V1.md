@@ -1,10 +1,9 @@
-# Incremental state commitment for protocol 2
+# Incremental state commitment v1
 
-Protocol 2 is an explicit, experimental **new-chain** option for the standalone
-ledger. Genesis, block headers and transaction receipts carry version 2. Its
-state commitment has its own version number, 1. WorkGraph already owns block
-version 1 and continues to use the original state commitment. These namespaces
-must not be confused.
+State commitment v1 is a compressed immutable radix tree. Standalone protocol 2
+selects it in genesis and uses genesis, block and receipt version 2. WorkGraph
+block version 3 selects it at an explicit activation height. Block versions and
+state commitment versions are separate namespaces.
 
 ## Activation and compatibility
 
@@ -30,10 +29,12 @@ signatures separate from other chains. Old binaries reject genesis/header versio
 2. Transport envelopes and chunked snapshot resource encoding keep their existing
 version; this does not mean they select the state commitment.
 
-There is no height-triggered migration, existing-chain conversion, WorkGraph
-activation or mainnet activation. WorkGraph configuration, construction and
-execution explicitly refuse radix state. A live upgrade needs its own signed
-activation policy, transition anchor, fork rules and independent review.
+Standalone protocol 2 remains a new-chain option. Existing WorkGraph chains can
+use the bounded offline migration and explicit height transition specified in
+[WORKGRAPH_RADIX_MIGRATION.md](WORKGRAPH_RADIX_MIGRATION.md). Existing protocol-0
+bytes and unscheduled WorkGraph v1 roots remain unchanged. Public network
+activation, independently approved checkpoints and archive/custody migration
+remain separate requirements.
 
 ## Commitment definition
 

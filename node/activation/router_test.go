@@ -268,7 +268,7 @@ func TestRoutedBlockCodecEnforcesActivationHeight(t *testing.T) {
 	if _, err := Decode(routedWork.CanonicalBytes(), config.Work.ActivationHeight+1); !errors.Is(err, ErrBoundary) {
 		t.Fatalf("early v1 error=%v", err)
 	}
-	if _, err := Decode([]byte{0, 2}, config.Work.ActivationHeight); !errors.Is(err, ErrEncoding) {
+	if _, err := Decode([]byte{0, 4}, config.Work.ActivationHeight); !errors.Is(err, ErrEncoding) {
 		t.Fatalf("unknown version error=%v", err)
 	}
 	baseTip, err := ledger.TipByID(legacyID)

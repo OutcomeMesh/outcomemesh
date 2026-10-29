@@ -17,6 +17,7 @@ import (
 )
 
 const Version1 uint16 = 1
+const Version3 uint16 = 3 // WorkGraph with the radix state commitment
 
 var (
 	ErrParameters = errors.New("invalid work block parameters")
@@ -28,6 +29,8 @@ var (
 )
 
 type Parameters struct {
+	// Zero preserves v1 forever. Nonzero schedules v3 on every branch at this height.
+	RadixActivationHeight     uint64
 	NetworkID                 uint32
 	BlockSubsidy              uint64
 	RewardMaturity            uint64
@@ -120,7 +123,7 @@ func PreparePayload(
 	transactions []outcome.Transaction,
 	parameters Parameters,
 ) (*Payload, error) {
-	if preState == nil || preState.CommitmentVersion() != state.CommitmentV0 || !parameters.valid() {
+	if preState == nil || !parameters.valid() {
 		return nil, ErrParameters
 	}
 	if err := validatePosition(position, parameters); err != nil {
@@ -129,7 +132,10 @@ func PreparePayload(
 	if len(transactions) > legacyblock.MaxTransactions {
 		return nil, legacyblock.ErrTransactionCount
 	}
-	current := preState
+	current, err := stateForHeight(preState, position.Height, parameters)
+	if err != nil {
+		return nil, err
+	}
 	previousWorkRoot := workgraph.EmptyRoot()
 	var payoutResources []resource.Resource
 	var payoutBatch *workgraph.Batch
@@ -189,7 +195,7 @@ func PreparePayload(
 	var fees uint64
 	for index, transaction := range transactions {
 		executed, err := execution.Apply(current, transaction, execution.Context{
-			NetworkID: parameters.NetworkID, Height: position.Height,
+			StateCommitment: parameters.CommitmentAt(position.Height), NetworkID: parameters.NetworkID, Height: position.Height,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("transaction %d: %w", index, err)
@@ -200,7 +206,7 @@ func PreparePayload(
 		}
 		current = executed.State
 		receipts[index] = legacyblock.Receipt{
-			Version: legacyblock.Version0, TxID: executed.TxID, PostStateRoot: executed.StateRoot, Fee: executed.Fee,
+			Version: receiptVersion(parameters.CommitmentAt(position.Height)), TxID: executed.TxID, PostStateRoot: executed.StateRoot, Fee: executed.Fee,
 		}
 	}
 	txRoot, err := legacyblock.TransactionRoot(transactions)
@@ -223,14 +229,14 @@ func PreparePayload(
 	if err != nil {
 		return nil, ErrReward
 	}
-	payloadRoot, err := workgraph.PayloadCommitmentV1(
+	payloadRoot, err := payloadCommitment(parameters.VersionAt(position.Height),
 		txRoot, receiptRoot, current.Root(), previousWorkRoot, feeQueueRoot, feeAward,
 	)
 	if err != nil {
 		return nil, err
 	}
 	header := Header{
-		Version: Version1,
+		Version: parameters.VersionAt(position.Height),
 		Seal: workgraph.Share{
 			Version: workgraph.Version0, NetworkID: parameters.NetworkID, Height: position.Height,
 			AnchorParent: position.ParentID, Timestamp: position.Timestamp, Target: position.Target,
@@ -309,7 +315,7 @@ func ValidateAndExecute(
 	if err != nil {
 		return Result{}, err
 	}
-	if candidate.Header.TxRoot != payload.header.TxRoot || candidate.Header.ReceiptRoot != payload.header.ReceiptRoot ||
+	if candidate.Header.Version != payload.header.Version || candidate.Header.TxRoot != payload.header.TxRoot || candidate.Header.ReceiptRoot != payload.header.ReceiptRoot ||
 		candidate.Header.StateRoot != payload.header.StateRoot ||
 		candidate.Header.PreviousWorkRoot != payload.header.PreviousWorkRoot ||
 		candidate.Header.FeeQueueRoot != payload.header.FeeQueueRoot ||
@@ -336,6 +342,9 @@ func ValidateHeaderAt(position Position, header Header, parameters Parameters, v
 	}
 	if err := header.ValidateBasic(); err != nil {
 		return err
+	}
+	if header.Version != parameters.VersionAt(position.Height) {
+		return ErrParameters
 	}
 	seal := header.Seal
 	if seal.NetworkID != parameters.NetworkID || seal.Height != position.Height ||
@@ -375,7 +384,7 @@ func ValidateAndExecuteAt(
 
 func (parameters Parameters) valid() bool {
 	_, _, rewardErr := workgraph.RewardRates(parameters.BlockSubsidy)
-	return parameters.NetworkID != 0 && rewardErr == nil && parameters.RewardMaturity != 0 &&
+	return (parameters.RadixActivationHeight == 0 || parameters.RadixActivationHeight >= parameters.ActivationHeight) && parameters.NetworkID != 0 && rewardErr == nil && parameters.RewardMaturity != 0 &&
 		parameters.ActivationHeight != 0 && parameters.DifficultyAnchorTimestamp != 0 &&
 		workgraph.ExactShareRatio(parameters.DifficultyAnchorTarget) &&
 		parameters.TargetSpacing != 0 && parameters.ASERTHalfLife != 0 &&

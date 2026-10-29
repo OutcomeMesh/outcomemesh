@@ -328,6 +328,27 @@ func PayloadCommitmentV1(
 	), nil
 }
 
+// PayloadCommitmentV3 binds the incremental-state WorkGraph semantics into the WorkSeal ID.
+func PayloadCommitmentV3(
+	transactionRoot types.Hash,
+	receiptRoot types.Hash,
+	stateRoot types.Hash,
+	previousWorkRoot types.Hash,
+	feeQueueRoot types.Hash,
+	feeAward uint64,
+) (types.Hash, error) {
+	if transactionRoot.IsZero() || receiptRoot.IsZero() || stateRoot.IsZero() ||
+		previousWorkRoot.IsZero() || feeQueueRoot.IsZero() {
+		return types.Hash{}, ErrPayload
+	}
+	var award [8]byte
+	binary.BigEndian.PutUint64(award[:], feeAward)
+	return types.DomainHash(
+		"OMESH/workgraph/payload/v3", transactionRoot[:], receiptRoot[:], stateRoot[:],
+		previousWorkRoot[:], feeQueueRoot[:], award[:],
+	), nil
+}
+
 func DerivedTarget(anchorTarget types.Hash) (types.Hash, error) {
 	if anchorTarget.IsZero() {
 		return types.Hash{}, ErrTarget

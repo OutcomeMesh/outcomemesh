@@ -453,3 +453,5 @@ func mustStatementID(t testing.TB, statement Statement) types.Hash {
 	}
 	return id
 }
+
+func (chain *fakeChain) LegacyArchiveCompatible() bool { return chain != nil }

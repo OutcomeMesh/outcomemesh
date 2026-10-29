@@ -132,7 +132,8 @@ func NewNode(
 		return nil, ErrConfiguration
 	}
 	protocol, err := New(Config{
-		NetworkID: document.NetworkID, GenesisID: genesisID, ActivationHeight: work.ActivationHeight,
+		RadixActivationHeight: work.RadixActivationHeight,
+		NetworkID:             document.NetworkID, GenesisID: genesisID, ActivationHeight: work.ActivationHeight,
 		Features:      wire.ChainFeatureVersionedSyncV1 | wire.ChainFeaturePeerDiscoveryV1,
 		MaxFrameBytes: config.MaxFrameBytes,
 	})
@@ -293,7 +294,7 @@ func (node *Node) ValidateHeaders(
 			median = medianTimestamp(history)
 		}
 		switch header.Version() {
-		case legacyblock.Version0:
+		case legacyblock.Version0, legacyblock.Version2:
 			value, ok := header.LegacyHeader()
 			if !ok {
 				return ErrBatch
@@ -305,7 +306,7 @@ func (node *Node) ValidateHeaders(
 			if err := legacyblock.ValidateHeaderAt(context, value, node.legacy, validationTime); err != nil {
 				return err
 			}
-		case workblock.Version1:
+		case workblock.Version1, workblock.Version3:
 			value, ok := header.WorkHeader()
 			if !ok {
 				return ErrBatch

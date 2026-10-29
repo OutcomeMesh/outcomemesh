@@ -16,13 +16,13 @@ const (
 )
 
 func (header Header) ValidateBasic() error {
-	if header.Version != Version1 {
+	if header.Version != Version1 && header.Version != Version3 {
 		return ErrParameters
 	}
 	if err := header.Seal.ValidateBasic(); err != nil {
 		return err
 	}
-	payloadRoot, err := workgraph.PayloadCommitmentV1(
+	payloadRoot, err := payloadCommitment(header.Version,
 		header.TxRoot, header.ReceiptRoot, header.StateRoot, header.PreviousWorkRoot,
 		header.FeeQueueRoot, header.FeeAward,
 	)

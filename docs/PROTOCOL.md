@@ -1,10 +1,10 @@
 # Protocol specification
 
-Status: version 0 baseline; explicit experimental protocol 2 for new standalone chains
+Status: standalone versions 0 and 2; explicit experimental WorkGraph versions 1 and 3.
 
-This document describes the current deterministic standalone vertical slice. It
-includes blocks, proof of work, atomic storage, and reward maturity; networking,
-WorkGraph, committees, Wasm, privacy, and zero-knowledge proofs remain excluded.
+This document specifies deterministic execution, blocks, work, rewards and the
+versioned peer envelopes. Committees, Wasm, privacy and zero-knowledge proofs
+remain outside the implemented consensus rules.
 
 ## Explicit protocol 2 state commitment
 
@@ -12,9 +12,18 @@ Protocol 0 keeps the exact original roots and bytes described below. Protocol 2
 uses genesis/header/receipt version 2 and state commitment version 1, defined in
 [STATE_RADIX_V1.md](STATE_RADIX_V1.md). That definition, including its hash domains,
 branch shape, encoding and activation restrictions, is part of this specification.
-Resources and transactions keep their original formats. Version 1 is reserved
-for the separate WorkGraph block protocol. Existing chains cannot switch merely
-by updating a binary or editing a local setting.
+Resources and transactions keep their original formats. WorkGraph uses block
+versions 1 and 3. Existing chains cannot switch merely by updating a binary or
+editing a local setting.
+
+## Explicit WorkGraph v3 state transition
+
+[WORKGRAPH_RADIX_MIGRATION.md](WORKGRAPH_RADIX_MIGRATION.md) defines the scheduled
+v1-to-v3 boundary, its first-block conversion order, receipt version, seal payload
+domain, persistent profile and peer negotiation. Those rules are part of this
+specification. Unscheduled WorkGraph remains v1. The standalone protocol-2 path
+can enter v3 only at its first WorkGraph block. No existing consensus bytes are
+reinterpreted, and no network is automatically activated by installing this code.
 
 ## Numeric conventions
 

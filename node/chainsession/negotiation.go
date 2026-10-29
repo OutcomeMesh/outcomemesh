@@ -19,11 +19,12 @@ var (
 )
 
 type Config struct {
-	NetworkID        uint32
-	GenesisID        types.Hash
-	ActivationHeight uint64
-	Features         uint64
-	MaxFrameBytes    uint32
+	RadixActivationHeight uint64
+	NetworkID             uint32
+	GenesisID             types.Hash
+	ActivationHeight      uint64
+	Features              uint64
+	MaxFrameBytes         uint32
 }
 
 func DefaultConfig(networkID uint32, genesisID types.Hash, activationHeight uint64) Config {
@@ -51,7 +52,7 @@ func New(config Config) (*Protocol, error) {
 	if config.MaxFrameBytes == 0 {
 		config.MaxFrameBytes = defaults.MaxFrameBytes
 	}
-	if config.NetworkID == 0 || config.GenesisID.IsZero() || config.ActivationHeight == 0 ||
+	if (config.RadixActivationHeight != 0 && config.RadixActivationHeight < config.ActivationHeight) || config.NetworkID == 0 || config.GenesisID.IsZero() || config.ActivationHeight == 0 ||
 		config.Features&wire.ChainFeatureVersionedSyncV1 == 0 ||
 		config.MaxFrameBytes < wire.MinVersionedChainFrameBodyBytes ||
 		config.MaxFrameBytes > uint32(wire.MaxVersionedFrameBodyBytes) {
@@ -73,6 +74,10 @@ func (protocol *Protocol) Hello(tip storage.Tip) (wire.ChainHello, error) {
 		Features: protocol.config.Features, TipID: tip.ID, StateRoot: tip.StateRoot,
 		TipHeight: tip.Height, CumulativeWork: append([]byte(nil), tip.CumulativeWork...),
 		MaxFrameBytes: protocol.config.MaxFrameBytes,
+	}
+	if protocol.config.RadixActivationHeight != 0 {
+		result.Version = wire.ChainHelloRadix
+		result.RadixActivationHeight = protocol.config.RadixActivationHeight
 	}
 	if err := result.Validate(); err != nil {
 		return wire.ChainHello{}, err
@@ -96,7 +101,7 @@ func (protocol *Protocol) Negotiate(remote wire.ChainHello) (Limits, error) {
 	if remote.GenesisID != protocol.config.GenesisID {
 		return Limits{}, ErrGenesis
 	}
-	if remote.ActivationHeight != protocol.config.ActivationHeight {
+	if remote.RadixActivationHeight != protocol.config.RadixActivationHeight || remote.ActivationHeight != protocol.config.ActivationHeight {
 		return Limits{}, ErrActivation
 	}
 	if remote.Features&protocol.config.Features&wire.ChainFeatureVersionedSyncV1 == 0 {

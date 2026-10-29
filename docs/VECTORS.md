@@ -290,3 +290,31 @@ Original protocol 0 vectors above remain unchanged. Expected identifiers:
 | Three-resource radix root | `ce66a5c56a00da5d070906ba5e3ffa337782c295c72f4f68a43087ec7efadd8b` |
 | Protocol 2 genesis ID | `79f0789eb503f702395b925d51001f5992cb28ba1d740f73c4a99ccfe34b2a19` |
 | Protocol 2 first block ID | `c0e0d2da278978c32c12eecd67fe697db48f9832f9eed6e98db262d87572dae8` |
+
+## WorkGraph block version 3
+
+The deterministic empty-state activation fixture in
+`TestGoldenVersion3BlockVector` retains the v1 fixture's network, height, parent,
+timestamp, target and miner. It schedules radix at height 1. Header size is 361
+bytes and full block size is 363 bytes. The payload domain is
+`OMESH/workgraph/payload/v3` and the first valid nonce is 9.
+
+Canonical block bytes:
+
+```text
+000300000000004d0000000000000001c03ea83b20b7f068ecf378fe3dde1662213fb410c87757e466b0314b05a0c14a000000006553f100007fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff407d668ae524a7f74b0e9eba82c12562eb03e8bb158927abd0bdf6cd10a69d78ace6904f805047b8675a3129f84d0916fa60cfc9516bfca85033202e1a3852a7052626f83be9e4801476397dd982d7deebdc46ea2557d9dbfb3bd366d4bf6c4c000000000000000904c1265c23e8244ab55cbcaba33ab962f964a57ca1a5efa845230bfe4543825da86672452e301a6893e2060f6cfa5f57379e4496a03b4d78aff11ae014e60852a8eda3c66a2a850ff6a9f70fe1d238e12563b3e6bfde86db03f2dfab1c890802e531199c8b262bb18f7820ba0f7c1156b81940f52cebb9c205c946f2e7b57ca020d44be30322640c368aff4cf516cd220bf70227f9f1558f65166116387cdd61ae00000000000000000000
+```
+
+Block ID: `0041e1b81fcf70c9e90d09111fb3faf5077c1f570d2c74732028ff0ce64e330c`.
+State root: `eda3c66a2a850ff6a9f70fe1d238e12563b3e6bfde86db03f2dfab1c890802e5`.
+The original version-1 vector remains unchanged.
+
+## WorkGraph radix activation profile
+
+`TestGoldenRadixActivationProfile` fixes a local profile with network 1, genesis
+ID `01` followed by 31 zero bytes, WorkGraph activation 2, radix activation 5,
+fee delay 3, four trees and a 67,108,864-byte forest budget. The 72 bytes are:
+
+```text
+4f4d574f524b000200000001010000000000000000000000000000000000000000000000000000000000000000000000000000020003000400000000040000000000000000000005
+```

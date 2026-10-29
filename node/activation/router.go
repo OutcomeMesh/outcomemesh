@@ -28,9 +28,10 @@ const (
 )
 
 type Config struct {
-	Legacy legacyblock.Parameters
-	Work   workblock.Parameters
-	Now    func() uint64
+	ReadOnly bool
+	Legacy   legacyblock.Parameters
+	Work     workblock.Parameters
+	Now      func() uint64
 	// WorkRoot enables the catalog-free persistent v1 forest. Empty keeps the
 	// router in memory. WorkPolicy.MaxHistoryBytes is a forest-wide logical
 	// ceiling split evenly across MaxWorkTrees, not a per-tree allowance.
@@ -127,7 +128,7 @@ func validConfig(config Config) bool {
 	legacy := config.Legacy
 	work := config.Work
 	_, _, rewardErr := workgraph.RewardRates(work.BlockSubsidy)
-	return legacy.ProtocolVersion == legacyblock.Version0 && config.Now != nil && legacy.Validate() == nil && work.ActivationHeight > 0 &&
+	return (legacy.ProtocolVersion == legacyblock.Version0 || (legacy.ProtocolVersion == legacyblock.Version2 && work.RadixActivationHeight == work.ActivationHeight)) && work.Validate() == nil && config.Now != nil && legacy.Validate() == nil && work.ActivationHeight > 0 &&
 		legacy.NetworkID == work.NetworkID && legacy.BlockSubsidy == work.BlockSubsidy &&
 		legacy.RewardMaturity == work.RewardMaturity &&
 		legacy.AnchorTimestamp == work.DifficultyAnchorTimestamp &&
@@ -145,6 +146,10 @@ func (router *Router) Submit(candidate Block) (storage.Tip, error) {
 		return storage.Tip{}, ErrConfiguration
 	}
 	router.mu.Lock()
+	if router.config.ReadOnly {
+		router.mu.Unlock()
+		return storage.Tip{}, ErrConfiguration
+	}
 	if router.closed {
 		router.mu.Unlock()
 		return storage.Tip{}, storage.ErrClosed
@@ -180,7 +185,7 @@ func (router *Router) submitLocked(candidate Block) (storage.Tip, *WorkAdmission
 	}
 	var admission *WorkAdmission
 	switch candidate.Version() {
-	case legacyblock.Version0:
+	case legacyblock.Version0, legacyblock.Version2:
 		legacy, ok := candidate.LegacyBlock()
 		if !ok {
 			return storage.Tip{}, nil, ErrEncoding
@@ -188,7 +193,7 @@ func (router *Router) submitLocked(candidate Block) (storage.Tip, *WorkAdmission
 		if _, err := router.legacy.SubmitAt(legacy, router.config.Now()); err != nil {
 			return storage.Tip{}, nil, err
 		}
-	case workblock.Version1:
+	case workblock.Version1, workblock.Version3:
 		work, ok := candidate.WorkBlock()
 		if !ok {
 			return storage.Tip{}, nil, ErrEncoding
@@ -652,6 +657,9 @@ func (router *Router) selectedTipLocked() (storage.Tip, *workchain.Store, error)
 func (router *Router) persistSelectionLocked() error {
 	if !router.selectDirty {
 		return nil
+	}
+	if router.config.ReadOnly {
+		return storage.ErrCorrupt
 	}
 	if router.config.WorkRoot == "" {
 		router.selectDirty = false

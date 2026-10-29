@@ -529,6 +529,9 @@ func newChainFixture(
 	activationHeight uint64,
 	sessionConfig SessionConfig,
 ) chainFixture {
+	return newChainFixtureWithCommitments(t, networkID, activationHeight, sessionConfig, 0, genesis.Version0)
+}
+func newChainFixtureWithCommitments(t testing.TB, networkID uint32, activationHeight uint64, sessionConfig SessionConfig, radixHeight uint64, genesisVersion uint16) chainFixture {
 	t.Helper()
 	var target types.Hash
 	target[1] = 0x7f
@@ -536,7 +539,7 @@ func newChainFixture(
 		target[index] = 0xff
 	}
 	document := genesis.Document{
-		Version: genesis.Version0, NetworkID: networkID, Timestamp: 1_700_000_000,
+		Version: genesisVersion, NetworkID: networkID, Timestamp: 1_700_000_000,
 		Target: target, BlockSubsidy: 10_220,
 	}
 	ledger, err := reference.New(document)
@@ -547,7 +550,7 @@ func newChainFixture(
 	activationConfig := activation.Config{
 		Legacy: legacy,
 		Work: workblock.Parameters{
-			NetworkID: networkID, BlockSubsidy: document.BlockSubsidy,
+			RadixActivationHeight: radixHeight, NetworkID: networkID, BlockSubsidy: document.BlockSubsidy,
 			RewardMaturity: legacy.RewardMaturity, ActivationHeight: activationHeight,
 			DifficultyAnchorTimestamp: document.Timestamp, DifficultyAnchorTarget: document.Target,
 			TargetSpacing: legacy.TargetSpacing, ASERTHalfLife: legacy.ASERTHalfLife, FeeDelay: 3,

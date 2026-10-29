@@ -45,7 +45,7 @@ func composeDirectory(
 	options ExportOptions,
 	beforePublish func() error,
 ) (Manifest, types.Hash, error) {
-	if path == "" || previousArchivePath == "" || chain == nil || anchorID.IsZero() ||
+	if path == "" || previousArchivePath == "" || chain == nil || !chain.LegacyArchiveCompatible() || parameters.RadixActivationHeight != 0 || anchorID.IsZero() ||
 		options.Validate() != nil {
 		return Manifest{}, types.Hash{}, ErrArchiveCompose
 	}

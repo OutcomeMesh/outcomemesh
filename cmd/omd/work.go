@@ -44,21 +44,23 @@ const (
 var workActivationMagic = [8]byte{'O', 'M', 'W', 'O', 'R', 'K', 0, 1}
 
 type workActivationProfile struct {
-	NetworkID        uint32
-	GenesisID        types.Hash
-	ActivationHeight uint64
-	FeeDelay         uint16
-	MaxTrees         uint16
-	MaxHistoryBytes  uint64
+	RadixActivationHeight uint64
+	NetworkID             uint32
+	GenesisID             types.Hash
+	ActivationHeight      uint64
+	FeeDelay              uint16
+	MaxTrees              uint16
+	MaxHistoryBytes       uint64
 }
 
 func runWorkEnable(arguments []string) error {
 	flags := flag.NewFlagSet("work-enable", flag.ContinueOnError)
 	data := flags.String("data", defaultDataDirectory, "initialized node data directory")
 	activationHeight := flags.Uint64("activation-height", 0, "first WorkGraph block height")
+	radixHeight := flags.Uint64("radix-height", 0, "first WorkGraph v3 block; zero keeps v1")
 	feeDelay := flags.Uint("fee-delay", 3, "fork-local delayed-fee queue depth")
 	maxTrees := flags.Uint("max-trees", activation.DefaultMaxWorkTrees, "maximum persisted activation-base trees")
-	maxHistoryBytes := flags.Uint64("max-history-bytes", workchain.DefaultMaxHistoryBytes, "forest-wide logical v1 history budget")
+	maxHistoryBytes := flags.Uint64("max-history-bytes", workchain.DefaultMaxHistoryBytes, "forest-wide logical WorkGraph history budget")
 	confirmGenesis := flags.String("confirm-genesis", "", "exact genesis ID required to enable the experimental path")
 	if err := flags.Parse(arguments); err != nil {
 		return err
@@ -75,8 +77,11 @@ func runWorkEnable(arguments []string) error {
 	if err != nil {
 		return err
 	}
-	if document.Version != genesis.Version0 {
-		return errors.New("WorkGraph requires protocol 0 genesis; protocol 2 activation is not defined")
+	if *radixHeight != 0 && *radixHeight < *activationHeight {
+		return errors.New("radix-height must be at or after activation-height")
+	}
+	if document.Version == genesis.Version2 && *radixHeight != *activationHeight {
+		return errors.New("protocol 2 requires radix-height equal to activation-height")
 	}
 	if !workgraph.ExactShareRatio(document.Target) {
 		return errors.New("genesis target cannot preserve the exact 512:1 WorkGraph threshold ratio; use at least 9 leading difficulty bits")
@@ -97,6 +102,9 @@ func runWorkEnable(arguments []string) error {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
+	if _, err := os.Lstat(filepath.Join(*data, workActivationPending)); !errors.Is(err, os.ErrNotExist) {
+		return errors.New("activation is incomplete; work-enable cannot publish a pending migration")
+	}
 	store, err := openStore(*data, document)
 	if err != nil {
 		return err
@@ -109,8 +117,20 @@ func runWorkEnable(arguments []string) error {
 	if tip.Height >= *activationHeight {
 		return fmt.Errorf("activation height %d must be above current v0 height %d", *activationHeight, tip.Height)
 	}
+	if *radixHeight != 0 {
+		blocks, err := store.MigrationBlocks(maximumMigrationBytes)
+		if err != nil {
+			return err
+		}
+		for _, b := range blocks {
+			if b.Header.Height >= *activationHeight {
+				return errors.New("activation-height must be above every retained legacy fork")
+			}
+		}
+	}
 	profile := workActivationProfile{
-		NetworkID: document.NetworkID, GenesisID: genesisID, ActivationHeight: *activationHeight,
+		RadixActivationHeight: *radixHeight,
+		NetworkID:             document.NetworkID, GenesisID: genesisID, ActivationHeight: *activationHeight,
 		FeeDelay: uint16(*feeDelay), MaxTrees: uint16(*maxTrees), MaxHistoryBytes: *maxHistoryBytes,
 	}
 	router, err := openWorkRouter(store, document, profile, *data, nil)
@@ -124,8 +144,8 @@ func runWorkEnable(arguments []string) error {
 		return err
 	}
 	fmt.Printf(
-		"work_enabled network=%d genesis=%s activation_height=%d fee_delay=%d max_trees=%d max_history_bytes=%d\n",
-		profile.NetworkID, profile.GenesisID, profile.ActivationHeight, profile.FeeDelay,
+		"work_enabled network=%d genesis=%s activation_height=%d radix_height=%d fee_delay=%d max_trees=%d max_history_bytes=%d\n",
+		profile.NetworkID, profile.GenesisID, profile.ActivationHeight, profile.RadixActivationHeight, profile.FeeDelay,
 		profile.MaxTrees, profile.MaxHistoryBytes,
 	)
 	return nil
@@ -156,8 +176,8 @@ func runWorkStatus(arguments []string) error {
 		return err
 	}
 	fmt.Printf(
-		"work_status network=%d activation_height=%d height=%d tip=%s state=%s resources=%d cumulative_work=%x trees=%d/%d nodes=%d history_bytes=%d history_limit=%d\n",
-		document.NetworkID, profile.ActivationHeight, tip.Height, tip.ID, tip.StateRoot,
+		"work_status network=%d activation_height=%d radix_height=%d commitment=%d height=%d tip=%s state=%s resources=%d cumulative_work=%x trees=%d/%d nodes=%d history_bytes=%d history_limit=%d\n",
+		document.NetworkID, profile.ActivationHeight, profile.RadixActivationHeight, state.CommitmentVersion(), tip.Height, tip.ID, tip.StateRoot,
 		state.Len(), tip.CumulativeWork, forest.Trees, forest.MaxTrees, forest.Nodes,
 		forest.HistoryBytes, forest.MaxHistoryBytes,
 	)
@@ -332,8 +352,8 @@ func runWorkMine(arguments []string) error {
 				return err
 			}
 			id, _ := routed.ID()
-			fmt.Printf("work_mined version=0 height=%d id=%s nonce=%d elapsed=%s state=%s\n",
-				tip.Height, id, candidate.Header.Nonce, time.Since(started).Round(time.Millisecond), tip.StateRoot)
+			fmt.Printf("work_mined version=%d height=%d id=%s nonce=%d elapsed=%s state=%s\n",
+				candidate.Header.Version, tip.Height, id, candidate.Header.Nonce, time.Since(started).Round(time.Millisecond), tip.StateRoot)
 			continue
 		}
 		inclusion, err := workgraph.InclusionRoot(nil)
@@ -396,8 +416,8 @@ func runWorkMine(arguments []string) error {
 		if err != nil {
 			return err
 		}
-		fmt.Printf("work_mined version=1 height=%d id=%s nonce=%d weak_shares=%d included_shares=%d capacity_rejections=%d elapsed=%s state=%s\n",
-			tip.Height, id, mined.WinningNonce, mined.WeakShares, len(mined.Block.Shares),
+		fmt.Printf("work_mined version=%d height=%d id=%s nonce=%d weak_shares=%d included_shares=%d capacity_rejections=%d elapsed=%s state=%s\n",
+			mined.Block.Header.Version, tip.Height, id, mined.WinningNonce, mined.WeakShares, len(mined.Block.Shares),
 			mined.CapacityRejections, time.Since(started).Round(time.Millisecond), tip.StateRoot)
 	}
 	return nil
@@ -776,20 +796,29 @@ func openWorkRouter(
 	data string,
 	observer func(activation.WorkAdmission),
 ) (*activation.Router, error) {
+	return openWorkRouterMode(ledger, document, profile, data, observer, false)
+}
+func openWorkRouterMode(ledger storage.Ledger, document genesis.Document, profile workActivationProfile, data string, observer func(activation.WorkAdmission), readOnly bool) (*activation.Router, error) {
 	if err := validateWorkActivation(profile, document); err != nil {
 		return nil, err
 	}
 	legacy := legacyblock.ParametersFromGenesis(document)
-	forestRoot, err := filepath.Abs(filepath.Join(data, workForestDirectory))
+	resolved, err := filepath.EvalSymlinks(data)
+	if err != nil {
+		return nil, err
+	}
+	forestRoot, err := filepath.Abs(filepath.Join(resolved, workForestDirectory))
 	if err != nil {
 		return nil, err
 	}
 	policy := workchain.DefaultPolicy()
 	policy.MaxHistoryBytes = profile.MaxHistoryBytes
 	return activation.New(ledger, activation.Config{
-		Legacy: legacy,
+		ReadOnly: readOnly,
+		Legacy:   legacy,
 		Work: workblock.Parameters{
-			NetworkID: document.NetworkID, BlockSubsidy: document.BlockSubsidy,
+			RadixActivationHeight: profile.RadixActivationHeight,
+			NetworkID:             document.NetworkID, BlockSubsidy: document.BlockSubsidy,
 			RewardMaturity: legacy.RewardMaturity, ActivationHeight: profile.ActivationHeight,
 			DifficultyAnchorTimestamp: document.Timestamp, DifficultyAnchorTarget: document.Target,
 			TargetSpacing: legacy.TargetSpacing, ASERTHalfLife: legacy.ASERTHalfLife,
@@ -801,14 +830,14 @@ func openWorkRouter(
 }
 
 func validateWorkActivation(profile workActivationProfile, document genesis.Document) error {
-	if document.Version != genesis.Version0 {
-		return errors.New("WorkGraph requires protocol 0 genesis; protocol 2 activation is not defined")
+	if document.Version == genesis.Version2 && profile.RadixActivationHeight != profile.ActivationHeight {
+		return errors.New("protocol 2 requires radix activation at the first WorkGraph block")
 	}
 	genesisID, err := document.ID()
 	if err != nil {
 		return err
 	}
-	if profile.NetworkID != document.NetworkID || profile.GenesisID != genesisID ||
+	if (profile.RadixActivationHeight != 0 && profile.RadixActivationHeight < profile.ActivationHeight) || profile.NetworkID != document.NetworkID || profile.GenesisID != genesisID ||
 		profile.ActivationHeight == 0 || profile.FeeDelay == 0 || profile.FeeDelay > workgraph.MaxFeeDelay ||
 		profile.MaxTrees == 0 || profile.MaxTrees > activation.MaxWorkTreesLimit ||
 		profile.MaxHistoryBytes < minimumHistoryBytes {
@@ -833,7 +862,11 @@ func loadWorkActivation(data string, document genesis.Document) (workActivationP
 }
 
 func (profile workActivationProfile) canonicalBytes() []byte {
-	encoded := make([]byte, workActivationSize)
+	size := workActivationSize
+	if profile.RadixActivationHeight != 0 {
+		size += 8
+	}
+	encoded := make([]byte, size)
 	copy(encoded[:8], workActivationMagic[:])
 	binary.BigEndian.PutUint32(encoded[8:12], profile.NetworkID)
 	copy(encoded[12:44], profile.GenesisID[:])
@@ -841,23 +874,38 @@ func (profile workActivationProfile) canonicalBytes() []byte {
 	binary.BigEndian.PutUint16(encoded[52:54], profile.FeeDelay)
 	binary.BigEndian.PutUint16(encoded[54:56], profile.MaxTrees)
 	binary.BigEndian.PutUint64(encoded[56:64], profile.MaxHistoryBytes)
+	if profile.RadixActivationHeight != 0 {
+		encoded[7] = 2
+		binary.BigEndian.PutUint64(encoded[64:72], profile.RadixActivationHeight)
+	}
 	return encoded
 }
 
 func decodeWorkActivation(encoded []byte) (workActivationProfile, error) {
-	if len(encoded) != workActivationSize || !bytes.Equal(encoded[:8], workActivationMagic[:]) {
-		return workActivationProfile{}, errors.New("invalid WorkGraph activation profile encoding")
-	}
 	var result workActivationProfile
+	if len(encoded) != 64 && len(encoded) != 72 {
+		return result, errors.New("invalid WorkGraph activation profile length")
+	}
+	magic := workActivationMagic
+	if len(encoded) == 72 {
+		magic[7] = 2
+	}
+	if !bytes.Equal(encoded[:8], magic[:]) {
+		return result, errors.New("invalid WorkGraph activation profile encoding")
+	}
 	result.NetworkID = binary.BigEndian.Uint32(encoded[8:12])
 	copy(result.GenesisID[:], encoded[12:44])
 	result.ActivationHeight = binary.BigEndian.Uint64(encoded[44:52])
 	result.FeeDelay = binary.BigEndian.Uint16(encoded[52:54])
 	result.MaxTrees = binary.BigEndian.Uint16(encoded[54:56])
 	result.MaxHistoryBytes = binary.BigEndian.Uint64(encoded[56:64])
-	if result.NetworkID == 0 || result.GenesisID.IsZero() || result.ActivationHeight == 0 ||
-		result.FeeDelay == 0 || result.FeeDelay > workgraph.MaxFeeDelay || result.MaxTrees == 0 ||
-		result.MaxTrees > activation.MaxWorkTreesLimit || result.MaxHistoryBytes < minimumHistoryBytes {
+	if len(encoded) == 72 {
+		result.RadixActivationHeight = binary.BigEndian.Uint64(encoded[64:72])
+		if result.RadixActivationHeight == 0 || result.RadixActivationHeight < result.ActivationHeight {
+			return workActivationProfile{}, errors.New("invalid radix activation height")
+		}
+	}
+	if result.NetworkID == 0 || result.GenesisID.IsZero() || result.ActivationHeight == 0 || result.FeeDelay == 0 || result.FeeDelay > workgraph.MaxFeeDelay || result.MaxTrees == 0 || result.MaxTrees > activation.MaxWorkTreesLimit || result.MaxHistoryBytes < minimumHistoryBytes {
 		return workActivationProfile{}, errors.New("invalid WorkGraph activation profile fields")
 	}
 	return result, nil

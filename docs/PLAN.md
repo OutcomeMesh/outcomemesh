@@ -28,6 +28,27 @@ using `PRODUCTION_READINESS.md`. The denominator is this full launch plan, not
 the current slice. Small completed tasks do not automatically increase the score;
 an estimate never overrides an unpassed exit gate.
 
+## WorkGraph state commitment slice (2026-10-29)
+
+Implemented: explicit block v3 activation, radix receipts, persistent fork and
+checkpoint reconstruction, schedule negotiation and reviewed offline migration
+of complete unbound histories. See [the transition specification and operating
+procedure](WORKGRAPH_RADIX_MIGRATION.md). Existing v0/v1 commitments remain valid
+under their original rules.
+
+Remaining work, in order:
+
+1. Version archive/checkpoint/custody bindings to commit the schedule before
+   permitting migration or pruning of stores with retained obligations.
+2. Define the independently approved network activation policy and transition
+   checkpoint; local operator profiles alone do not authorize public activation.
+3. Extend migration beyond the initial bounded history, with resumable streaming
+   and durable progress that cannot publish partial state.
+4. Reduce persistent diff derivation and snapshot materialization costs, then
+   establish operational resource limits for the full node.
+
+This slice does not close M5 or any mainnet launch gate.
+
 ## Active custody V2 integration slice (2026-10-27)
 
 The separate experimental V2 path now mandates assignment witness policy,
