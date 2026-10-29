@@ -1,0 +1,14 @@
+{
+  "binary_sha256": "2d1ca4a26bdb496666de55e00f37840e3fea8bcb6e4fa95ac3ad034baae6fc00",
+  "guard_uid": 65531,
+  "participant_uid": 65534,
+  "choices": 2,
+  "conflicting_choices_refused": 2,
+  "stale_restart_refused": true,
+  "exact_reply_preserved": true,
+  "tunnel_cut_refused": true,
+  "participant_cannot_read_guard": true,
+  "external_cursor_retained_on_b": true,
+  "independent_operator": false,
+  "transport": "SSH via operator workstation"
+}

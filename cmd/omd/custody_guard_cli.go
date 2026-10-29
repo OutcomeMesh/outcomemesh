@@ -40,7 +40,7 @@ func runCustodyGuard(ctx context.Context, args []string, out io.Writer) error {
 	attempt := f.String("attempt", "", "serve: one exact signed lost-response request")
 	revokeAttempt := f.String("revoke-attempt", "", "serve: one exact signed lost-response revocation")
 	replaceAttempt := f.String("replace-attempt", "", "serve: one exact signed lost-response replacement")
-	listen := f.String("listen", "", "serve: explicit IP:port on the guard network")
+	listen := f.String("listen", "", "serve: literal loopback IP:port behind an authenticated tunnel")
 	output := f.String("out", "", "create: fresh public Identity artifact outside guard root")
 	expected := f.String("expected-review-id", "", "exact public review")
 	if e := parsePruneFlags(f, args[1:]); e != nil {
@@ -70,7 +70,7 @@ func runCustodyGuard(ctx context.Context, args []string, out io.Writer) error {
 	*root = filepath.Join(parent, filepath.Base(abs))
 	if !create {
 		host, _, err := net.SplitHostPort(*listen)
-		if err != nil || net.ParseIP(host) == nil {
+		if err != nil || net.ParseIP(host) == nil || !net.ParseIP(host).IsLoopback() {
 			return wire.ErrGuard
 		}
 	}

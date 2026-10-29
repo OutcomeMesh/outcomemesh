@@ -22,13 +22,19 @@ const ReplacementRoute = "/outcomemesh/custody-guard/replace/1"
 
 // Client transports public signed choices. It never follows redirects or uses
 // proxy environment variables. Authenticity comes from the pinned seal key;
-// use a private network or TLS for confidentiality and resistance to traffic DoS.
+// use an authenticated tunnel for loopback HTTP, or HTTPS for remote endpoints.
 type Client struct{ URL string }
 
 func ValidateURL(raw string) error {
 	u, e := url.Parse(raw)
 	if e != nil || u.Host == "" || u.User != nil || u.Fragment != "" || u.RawQuery != "" || (u.Scheme != "http" && u.Scheme != "https") || u.Path != "" && u.Path != "/" {
 		return wire.ErrGuard
+	}
+	if u.Scheme == "http" {
+		ip := net.ParseIP(u.Hostname())
+		if ip == nil || !ip.IsLoopback() {
+			return wire.ErrGuard
+		}
 	}
 	return nil
 }
@@ -169,6 +175,10 @@ func Handler(s *Store) http.Handler {
 func Serve(ctx context.Context, l net.Listener, s *Store) error {
 	if ctx == nil || l == nil || s == nil {
 		return ErrStore
+	}
+	address, ok := l.Addr().(*net.TCPAddr)
+	if !ok || !address.IP.IsLoopback() {
+		return errors.New("guard HTTP must bind a loopback address; use an authenticated tunnel")
 	}
 	srv := &http.Server{Handler: Handler(s), ReadHeaderTimeout: 2 * time.Second, ReadTimeout: 5 * time.Second, WriteTimeout: 5 * time.Second, IdleTimeout: 2 * time.Second, MaxHeaderBytes: 4096}
 	bounded := &limitedListener{Listener: l, slots: make(chan struct{}, 16)}

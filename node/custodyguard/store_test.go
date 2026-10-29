@@ -303,3 +303,16 @@ func TestGuardRequestCanonicalVector(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestGuardURLRequiresProtectedRemoteTransport(t *testing.T) {
+	for _, raw := range []string{"http://0.0.0.0:1", "http://192.0.2.1:1", "http://localhost:1", "http://guard.example", "http://127.0.0.1.evil:1"} {
+		if ValidateURL(raw) == nil {
+			t.Fatalf("plaintext remote endpoint accepted: %s", raw)
+		}
+	}
+	for _, raw := range []string{"http://127.0.0.1:1", "http://[::1]:1", "https://guard.example"} {
+		if err := ValidateURL(raw); err != nil {
+			t.Fatal(raw, err)
+		}
+	}
+}
