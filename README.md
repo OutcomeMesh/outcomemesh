@@ -33,7 +33,12 @@ Protected profile-5 archive execution now has an unprivileged QUIC relay and a
 [reproducible two-host fault campaign](docs/CUSTODY_PROFILE5_WAN.md): packet loss,
 service restarts, exact retained-response recovery and original admission/Serve
 closure. This remains an experimental operator subsystem under a trusted host
-boundary; it does not activate mainnet.
+boundary; it does not activate mainnet. Explicitly guarded deployments can now
+require an [independent choice seal](docs/CUSTODY_INDEPENDENT_GUARD.md) on service
+effects and admission/execution/Serve votes. Copies of subject keys and journals
+cannot select conflicting accepted choices while that external signer remains
+intact outside their control. Its own key/storage protection and independent
+operation are still deployment gates.
 
 Milestones 0–4 are complete under the repository's written exit gates. The
 deterministic kernel, signed ledger, standalone PoW chain, and bounded QUIC

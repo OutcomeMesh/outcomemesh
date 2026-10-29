@@ -88,9 +88,12 @@ Next required work remains ordered:
    profile-5 constructors and accounting-only Plan2 execution still refuse.
    The [joint profile-5 WAN campaign](CUSTODY_PROFILE5_WAN.md) now covers actual
    A/B execution, packet partitions, process death, exact recovery and original
-   admission closure across two hosts. Lost sessions remain held. Next deploy
-   independently operated/protected A/B domains and witnesses with external
-   monotone/key storage, extend physical-failure and long-retention acceptance
+   admission closure across two hosts. Lost sessions remain held. The [independent guard adapter](CUSTODY_INDEPENDENT_GUARD.md)
+   now makes external one-choice seals mandatory in explicitly guarded deployments,
+   including full original admission prefixes and service/Serve results. Next deploy
+   it outside all participant backup/control domains with independent operators and
+   protected monotone/key storage, bind external per-subject revocation/key recovery,
+   extend physical-failure and long-retention acceptance
    and obtain independent review. No consensus/mainnet activation follows.
 4. Specify safe progress for split votes and its quorum/rollback assumptions;
    never reset a retained slot to recover availability.

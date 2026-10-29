@@ -195,7 +195,7 @@ func (o *Owner) applyExecutionServe(ctx context.Context, p v2.ProtectedCommand, 
 		return nil, e
 	}
 	id, _ := r.CoreID()
-	ef, e := o.executionEffect(c, p.Admission, kind, id, head, seq, checked)
+	ef, e := o.executionEffect(ctx, c, p.Admission, kind, id, head, seq, checked)
 	if e != nil {
 		return nil, e
 	}

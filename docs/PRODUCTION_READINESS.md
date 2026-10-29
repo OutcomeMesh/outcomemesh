@@ -595,3 +595,15 @@ preserved. See [the campaign](CUSTODY_PROFILE5_WAN.md) and its evidence. This
 advances already credited operator/WAN work; it does not close independent copy
 fencing, physical failures, external audit or public-testnet gates. The weighted
 score remains approximately **44/100**.
+
+
+## 2026-10-29: external choice guard implementation
+
+Mandatory external seals now fence conflicting admission/execution/Serve votes
+and service effects under explicitly signed guarded deployments. The retained
+software signer, bounded reviewed CLI and clone/fault/lifecycle checks are
+specified in [CUSTODY_INDEPENDENT_GUARD.md](CUSTODY_INDEPENDENT_GUARD.md). This
+advances the copy-fencing implementation but does not close its independent
+operator, non-exportable key/monotone storage and review acceptance boundary.
+No hardware/root-of-trust clone protection or new WAN campaign is claimed.
+The weighted launch estimate remains **44/100**.

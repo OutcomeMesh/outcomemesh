@@ -1,0 +1,278 @@
+{
+  "date": "2026-10-29",
+  "base_commit": "31b98830e6cb8b90da1a79356dc3f0fea3279d39",
+  "scope": "Opt-in independent custody choice guard; controlled local API, HTTP and subprocess acceptance, not a new WAN or mainnet campaign.",
+  "environment": {
+    "toolchain": "go version go1.26.7 darwin/arm64",
+    "GOMAXPROCS": 2,
+    "GOFLAGS": "-p=1",
+    "production_build_CGO_ENABLED": 0
+  },
+  "final_source": {
+    "files": 816,
+    "manifest_format": "sha256 + two spaces + repository-relative path + newline, sorted by path; .go, go.mod, go.sum and Makefile only",
+    "manifest_sha256": "d6340602acc6c1f11426fa4e3204c3e702f64dbaadbf112557f2c047dc7ffde5",
+    "omd_darwin_arm64_sha256": "b24b5253709321d15510b71647418ca7ab10076e264aa878110a9993d5b49931"
+  },
+  "acceptance": {
+    "guarded_lifecycle": {
+      "admission_votes": 6,
+      "execution_and_serve_votes": 9,
+      "service_effects": 4,
+      "guard_choices": 19,
+      "spent": 2,
+      "pending": 0,
+      "source_sequence": 1
+    },
+    "concurrent_copied_requests": 32,
+    "allowed_conflicting_choices": 0,
+    "cold_guard_process_recovery": "byte-identical seal; conflicting copied-key request refused",
+    "short_proof_mutations": {
+      "single_bit": 9160,
+      "truncated_prefixes": 1145,
+      "trailing_byte_cases": 4
+    },
+    "legacy_wire_vectors": "unchanged",
+    "guarded_artifact_vector": "60b16189b119bc9f1d9c09373925928bbd03d7c8f079e26500d54b0b01f629a3",
+    "guarded_short_proofs_vector": "690664e0b9093dc2625c760b6f9fc7eb05fa5473d07a3e9853d3e42504485b4f",
+    "guard_request_vector": "95921e85545bdf9d43507d06e36ac511b38bedc99c4c4f7b53459af5049886e7"
+  },
+  "checks": [
+    {
+      "name": "admission-focused",
+      "command": [
+        "go",
+        "test",
+        "-race",
+        "./node/custodyv2",
+        "-run",
+        "^Test(Admission|RemoteImported|Protected5|GuardedProfile5)",
+        "-skip",
+        "^TestAdmissionDelivery",
+        "-count=1",
+        "-timeout=20m"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 390.39,
+      "log_sha256": "e494869b9260d9fe26431ff4161123d25c867292112aeb04d784b9769b55084c",
+      "output": "ok  \tgithub.com/outcomemesh/outcomemesh/node/custodyv2\t385.190s\n"
+    },
+    {
+      "name": "admission-regression",
+      "command": [
+        "go",
+        "test",
+        "-race",
+        "./node/custodyv2",
+        "-run",
+        "^Test(Admission|RemoteImported|Protected5|GuardedProfile5)",
+        "-count=1",
+        "-timeout=20m"
+      ],
+      "exit_code": -15,
+      "elapsed_seconds": 868.231,
+      "status": "interrupted_by_agent",
+      "reason": "Broad prefix also selected unrelated, expensive AdmissionDelivery suites; split the applicable existing Makefile groups instead. No pass is claimed for this invocation.",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "output": ""
+    },
+    {
+      "name": "build",
+      "command": [
+        "go",
+        "build",
+        "-trimpath",
+        "-o",
+        ".git/guard-acceptance-20261029/omd",
+        "./cmd/omd"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 24.318,
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "output": ""
+    },
+    {
+      "name": "cli-regression",
+      "command": [
+        "go",
+        "test",
+        "-race",
+        "./cmd/omd",
+        "-run",
+        "^Test(CustodyGuardCLI|WitnessCLI|RequiredGatewayCLI|CustodyV2Admission)",
+        "-count=1",
+        "-timeout=20m"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 307.74,
+      "log_sha256": "deecacf0ef8dbd6440c9edd0bd5e3081940f06cf414920515bc55507ffaff37b",
+      "output": "ok  \tgithub.com/outcomemesh/outcomemesh/cmd/omd\t292.698s\n"
+    },
+    {
+      "name": "fuzz-admission",
+      "command": [
+        "go",
+        "test",
+        "./node/custodyv2",
+        "-run",
+        "^$",
+        "-fuzz",
+        "^FuzzAdmissionDecoders$",
+        "-fuzztime=10s"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 16.357,
+      "log_sha256": "3710884644bd317d5cb17f198dcc29a67234869303adf6ed5866f7eb70054bc5",
+      "output": "fuzz: elapsed: 0s, gathering baseline coverage: 0/7 completed\nfuzz: elapsed: 0s, gathering baseline coverage: 7/7 completed, now fuzzing with 2 workers\nfuzz: elapsed: 3s, execs: 9 (3/sec), new interesting: 0 (total: 7)\nfuzz: elapsed: 6s, execs: 9 (0/sec), new interesting: 0 (total: 7)\nfuzz: elapsed: 9s, execs: 9 (0/sec), new interesting: 0 (total: 7)\nfuzz: elapsed: 11s, execs: 9 (0/sec), new interesting: 0 (total: 7)\nPASS\nok  \tgithub.com/outcomemesh/outcomemesh/node/custodyv2\t12.205s\n"
+    },
+    {
+      "name": "fuzz-artifacts",
+      "command": [
+        "go",
+        "test",
+        "./node/custodyv2",
+        "-run",
+        "^$",
+        "-fuzz",
+        "^FuzzGuardedProfile5Artifacts$",
+        "-fuzztime=10s"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 26.732,
+      "log_sha256": "f04ee6652bafb5af29020eb61bcb27b3d061396d86ab1b142a4c69a1cee33fd1",
+      "output": "fuzz: elapsed: 0s, gathering baseline coverage: 0/13 completed\nfuzz: elapsed: 1s, gathering baseline coverage: 13/13 completed, now fuzzing with 2 workers\nfuzz: elapsed: 3s, execs: 28 (9/sec), new interesting: 1 (total: 14)\nfuzz: elapsed: 6s, execs: 28 (0/sec), new interesting: 1 (total: 14)\nfuzz: elapsed: 9s, execs: 28 (0/sec), new interesting: 1 (total: 14)\nfuzz: elapsed: 11s, execs: 28 (0/sec), new interesting: 1 (total: 14)\nPASS\nok  \tgithub.com/outcomemesh/outcomemesh/node/custodyv2\t12.814s\n"
+    },
+    {
+      "name": "fuzz-fence",
+      "command": [
+        "go",
+        "test",
+        "./node/custodyfence",
+        "-run",
+        "^$",
+        "-fuzz",
+        "^FuzzIndependentFenceCodecs$",
+        "-fuzztime=10s"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 12.947,
+      "log_sha256": "e0c5853230a2bef05ab8dac68845204b242423256dfc402a7fa7cc3840d404b8",
+      "output": "fuzz: elapsed: 0s, gathering baseline coverage: 0/35 completed\nfuzz: elapsed: 0s, gathering baseline coverage: 35/35 completed, now fuzzing with 2 workers\nfuzz: elapsed: 3s, execs: 895 (298/sec), new interesting: 0 (total: 35)\nfuzz: elapsed: 6s, execs: 72846 (23984/sec), new interesting: 0 (total: 35)\nfuzz: elapsed: 9s, execs: 72846 (0/sec), new interesting: 0 (total: 35)\nfuzz: elapsed: 11s, execs: 72846 (0/sec), new interesting: 0 (total: 35)\nPASS\nok  \tgithub.com/outcomemesh/outcomemesh/node/custodyfence\t11.526s\n"
+    },
+    {
+      "name": "fuzz-request",
+      "command": [
+        "go",
+        "test",
+        "./node/custodyguard",
+        "-run",
+        "^$",
+        "-fuzz",
+        "^FuzzGuardRequest$",
+        "-fuzztime=10s"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 13.691,
+      "log_sha256": "84be92d6cd46983b00be06f4da23e8eea6302fd4438e241b38589e1c498edf78",
+      "output": "fuzz: elapsed: 0s, gathering baseline coverage: 0/2 completed\nfuzz: elapsed: 0s, gathering baseline coverage: 2/2 completed, now fuzzing with 2 workers\nfuzz: elapsed: 3s, execs: 60129 (20036/sec), new interesting: 4 (total: 6)\nfuzz: elapsed: 6s, execs: 143983 (27951/sec), new interesting: 5 (total: 7)\nfuzz: elapsed: 9s, execs: 227592 (27877/sec), new interesting: 5 (total: 7)\nfuzz: elapsed: 11s, execs: 230221 (1394/sec), new interesting: 5 (total: 7)\nPASS\nok  \tgithub.com/outcomemesh/outcomemesh/node/custodyguard\t11.397s\n"
+    },
+    {
+      "name": "legacy-runtime",
+      "command": [
+        "go",
+        "test",
+        "-race",
+        "./node/custodygateway",
+        "-run",
+        "^TestProtected5(AcceptedSourceExactRecoveryAndOldKeysRefused|UnclaimedClosesWithServicesAndCannotExecute|ConsumptionFaultCannotReexecuteAfterColdOpen)$",
+        "-count=1",
+        "-timeout=20m"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 296.728,
+      "log_sha256": "9913f15733bab0d007f35cf20fbcaf2cf75b634d58dc05a2de122d441fe6d2d4",
+      "output": "ok  \tgithub.com/outcomemesh/outcomemesh/node/custodygateway\t289.458s\n"
+    },
+    {
+      "name": "units",
+      "command": [
+        "go",
+        "test",
+        "-race",
+        "./node/custodyguard/...",
+        "./node/custodyfence/...",
+        "./node/custodygateway/gatewaywire",
+        "-count=1"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 19.559,
+      "log_sha256": "c7bf970e3ff0299db8f1b139726665d33f1cf417590b8f28e13c06149e7741c0",
+      "output": "ok  \tgithub.com/outcomemesh/outcomemesh/node/custodyguard\t2.152s\n?   \tgithub.com/outcomemesh/outcomemesh/node/custodyguard/guardwire\t[no test files]\nok  \tgithub.com/outcomemesh/outcomemesh/node/custodyfence\t2.818s\n?   \tgithub.com/outcomemesh/outcomemesh/node/custodyfence/custodyproof\t[no test files]\nok  \tgithub.com/outcomemesh/outcomemesh/node/custodyfence/witnessnet\t4.267s\nok  \tgithub.com/outcomemesh/outcomemesh/node/custodyfence/witnesswire\t1.575s\nok  \tgithub.com/outcomemesh/outcomemesh/node/custodygateway/gatewaywire\t4.998s\n"
+    },
+    {
+      "name": "vet",
+      "command": [
+        "go",
+        "vet",
+        "./..."
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 7.261,
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "output": ""
+    },
+    {
+      "name": "guarded-lifecycle",
+      "command_text": "go test -race ./node/custodygateway -run ^TestGuardedProfile5 -count=1",
+      "exit_code": 0,
+      "log_sha256": "262977462ed8a7271c8a9a7a83e0a60e5266348fcd4e50fbf344bd115f0ad3ed",
+      "output": "ok  \tgithub.com/outcomemesh/outcomemesh/node/custodygateway\t247.852s\n"
+    },
+    {
+      "name": "guard-daemon-process",
+      "command_text": "go test -race ./node/custodyguard -run ^TestGuardProcessKilled -count=1",
+      "exit_code": 0,
+      "log_sha256": "53a1ab0f9ef7bb897d54e415da93660476141c4efce48c12e84f9c3863ba448d",
+      "output": "ok  \tgithub.com/outcomemesh/outcomemesh/node/custodyguard\t1.652s\n"
+    },
+    {
+      "name": "final-new-tests",
+      "command_text": "go test -race ./node/custodyguard/... ./node/custodyv2 -run ^Test(Guard|GuardedProof) -count=1",
+      "exit_code": 0,
+      "log_sha256": "a3ade47cf6f40ba7e41f0609ec69e71c88c851432fee66ad3671a1c6b219902f",
+      "output": "ok  \tgithub.com/outcomemesh/outcomemesh/node/custodyguard\t2.243s\n?   \tgithub.com/outcomemesh/outcomemesh/node/custodyguard/guardwire\t[no test files]\nok  \tgithub.com/outcomemesh/outcomemesh/node/custodyv2\t20.958s\n"
+    },
+    {
+      "name": "proof-bit-mutations",
+      "command_text": "go test ./node/custodyv2 -run ^TestGuardedProofByteMutations$ -count=1",
+      "exit_code": 0,
+      "log_sha256": "007adddf7b9b7d86bad89807bc49e03db7b61d28345633631e486ee614995553",
+      "output": "ok  \tgithub.com/outcomemesh/outcomemesh/node/custodyv2\t2.684s\n"
+    },
+    {
+      "name": "fuzz-proofs",
+      "command_text": "GOMAXPROCS=1 go test ./node/custodyv2 -run ^$ -fuzz ^FuzzGuardedProofCodecs$ -fuzztime=10s",
+      "exit_code": 0,
+      "log_sha256": "1e74b93fadf8052003539ffcea0db4c051e14d4ce644e6ad3c71b22c835d8a5d",
+      "output": "fuzz: elapsed: 0s, gathering baseline coverage: 0/4 completed\nfuzz: elapsed: 0s, gathering baseline coverage: 4/4 completed, now fuzzing with 1 workers\nfuzz: elapsed: 3s, execs: 6 (2/sec), new interesting: 0 (total: 4)\nfuzz: elapsed: 6s, execs: 6 (0/sec), new interesting: 0 (total: 4)\nfuzz: elapsed: 9s, execs: 6 (0/sec), new interesting: 0 (total: 4)\nfuzz: elapsed: 11s, execs: 6 (0/sec), new interesting: 0 (total: 4)\nPASS\nok  \tgithub.com/outcomemesh/outcomemesh/node/custodyv2\t12.013s\n"
+    },
+    {
+      "name": "final-vet",
+      "command_text": "go vet ./node/custodyguard/... ./node/custodyfence/... ./node/custodyv2 ./node/custodygateway/... ./cmd/omd",
+      "exit_code": 0,
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "output": ""
+    }
+  ],
+  "boundaries": [
+    "This pass records tests during implementation and the final source/build digest; not every command was rerun after test-only or formatting refinements.",
+    "The broad admission invocation was interrupted by the agent after also selecting unrelated expensive delivery suites. Applicable focused groups passed; the interrupted invocation is not a pass.",
+    "Fuzz runs are short smoke checks; low execution counts of nested artifact targets are retained in outputs, not extrapolated into coverage claims.",
+    "No full make test-all or complete test-process run in this pass.",
+    "Guard key and state must remain outside all protected subject copies; no HSM/non-exportable-key or whole-trusted-environment clone protection.",
+    "One guard is a shared safety/availability dependency; no independent operators or new two-server fault acceptance in this pass.",
+    "Status/outer gateway cursors and per-subject revocation are not independently mirrored; a local Revoke alone does not disable a leaked subject key at this guard.",
+    "A cloned subject can win a first valid choice or deny availability; accepted non-equivocation is not physical at-most-once execution."
+  ],
+  "production_readiness_estimate": 44
+}

@@ -9,6 +9,7 @@ import (
 	"github.com/outcomemesh/outcomemesh/core/types"
 	review "github.com/outcomemesh/outcomemesh/node/custodycutover/review"
 	"github.com/outcomemesh/outcomemesh/node/custodyfence"
+	guard "github.com/outcomemesh/outcomemesh/node/custodyguard/guardwire"
 	"github.com/outcomemesh/outcomemesh/node/workarchive"
 )
 
@@ -16,8 +17,9 @@ const MaximumNativeAdmissionGenesisBytes = MaximumAssignmentBytes + workarchive.
 const MaximumAdmissionGenesisBytes = max(MaximumNativeAdmissionGenesisBytes, review.MaximumProposalBytes+20)
 const MaximumAdmissionClosureBytes = MaximumServeCertificateBytes + 2*MaximumProtectedServeReceiptBytes + 64
 const MaximumAdmissionEntryBytes = MaximumContextBytes + MaximumAdmissionClosureBytes + 256
+const MaximumAdmissionVoteBytes = AdmissionVoteBytes + guard.SealBytes
 const AdmissionVoteBytes = 10 + 2*32 + 64
-const MaximumAdmissionCertificateBytes = MaximumAdmissionEntryBytes + custodyfence.MaximumWitnesses*AdmissionVoteBytes + 32
+const MaximumAdmissionCertificateBytes = MaximumAdmissionEntryBytes + custodyfence.MaximumWitnesses*MaximumAdmissionVoteBytes + 32
 
 var ErrAdmission = errors.New("invalid custody V2 assignment admission or closure")
 var ErrAdmissionHead = errors.New("custody V2 admission position differs")
@@ -472,6 +474,7 @@ func (e AdmissionEntry) Verify(g AdmissionGenesis) error {
 }
 
 type AdmissionVote struct {
+	GuardSeal [64]byte
 	Version   uint16
 	EntryID   types.Hash
 	Witness   [32]byte
@@ -498,23 +501,38 @@ func (v AdmissionVote) CanonicalBytes() ([]byte, error) {
 	if !ed25519.Verify(v.Witness[:], h[:], v.Signature[:]) {
 		return nil, ErrAdmission
 	}
-	return append(b, v.Signature[:]...), nil
+	raw := append(b, v.Signature[:]...)
+	if v.GuardSeal != ([64]byte{}) {
+		copy(raw[:8], []byte("OMCVAVG1"))
+		raw = append(raw, v.GuardSeal[:]...)
+	}
+	return raw, nil
 }
 func DecodeAdmissionVote(b []byte) (AdmissionVote, error) {
 	var v AdmissionVote
-	if len(b) != AdmissionVoteBytes {
+	if len(b) != AdmissionVoteBytes && len(b) != MaximumAdmissionVoteBytes {
 		return v, ErrAdmission
 	}
 	d := codec.NewDecoder(b)
-	if !magic(d, "OMCVAVT2") {
+	m, _ := d.Fixed(8)
+	if string(m) != "OMCVAVT2" && string(m) != "OMCVAVG1" {
 		return v, ErrAdmission
 	}
 	v.Version, _ = d.U16()
 	fixed(d, v.EntryID[:])
 	fixed(d, v.Witness[:])
 	fixed(d, v.Signature[:])
-	_, e := v.CanonicalBytes()
-	return v, e
+	if string(m) == "OMCVAVG1" {
+		fixed(d, v.GuardSeal[:])
+		if v.GuardSeal == ([64]byte{}) {
+			return AdmissionVote{}, ErrAdmission
+		}
+	}
+	raw, e := v.CanonicalBytes()
+	if e != nil || !bytes.Equal(raw, b) {
+		return AdmissionVote{}, ErrAdmission
+	}
+	return v, nil
 }
 
 // signAdmissionVote is private: the durable assignment witness adapter must
@@ -551,12 +569,17 @@ func (c AdmissionCertificate) CanonicalBytes() ([]byte, error) {
 	}
 	id, _ := c.Entry.ID()
 	out := codec.NewEncoder(len(b) + len(c.Votes)*AdmissionVoteBytes + 32)
-	out.Fixed([]byte("OMCVAQC2"))
+	guarded := c.Votes[0].GuardSeal != ([64]byte{})
+	if guarded {
+		out.Fixed([]byte("OMCVAQG1"))
+	} else {
+		out.Fixed([]byte("OMCVAQC2"))
+	}
 	out.U16(c.Version)
 	out.BytesField(b)
 	out.U8(uint8(len(c.Votes)))
 	for i, v := range c.Votes {
-		if v.Version != c.Version || v.EntryID != id || (i > 0 && bytes.Compare(c.Votes[i-1].Witness[:], v.Witness[:]) >= 0) {
+		if (v.GuardSeal != ([64]byte{})) != guarded || v.Version != c.Version || v.EntryID != id || (i > 0 && bytes.Compare(c.Votes[i-1].Witness[:], v.Witness[:]) >= 0) {
 			return nil, ErrAdmission
 		}
 		b, e := v.CanonicalBytes()
@@ -573,7 +596,8 @@ func DecodeAdmissionCertificate(b []byte) (AdmissionCertificate, error) {
 		return c, ErrAdmission
 	}
 	d := codec.NewDecoder(b)
-	if !magic(d, "OMCVAQC2") {
+	m, _ := d.Fixed(8)
+	if string(m) != "OMCVAQC2" && string(m) != "OMCVAQG1" {
 		return c, ErrAdmission
 	}
 	c.Version, _ = d.U16()
@@ -586,12 +610,16 @@ func DecodeAdmissionCertificate(b []byte) (AdmissionCertificate, error) {
 		return c, e
 	}
 	n, e := d.U8()
-	if e != nil || n == 0 || n > custodyfence.MaximumWitnesses || d.Remaining() != int(n)*AdmissionVoteBytes {
+	size := AdmissionVoteBytes
+	if string(m) == "OMCVAQG1" {
+		size = MaximumAdmissionVoteBytes
+	}
+	if e != nil || n == 0 || n > custodyfence.MaximumWitnesses || d.Remaining() != int(n)*size {
 		return c, ErrAdmission
 	}
 	c.Votes = make([]AdmissionVote, n)
 	for i := range c.Votes {
-		b, _ := d.Fixed(AdmissionVoteBytes)
+		b, _ := d.Fixed(size)
 		c.Votes[i], e = DecodeAdmissionVote(b)
 		if e != nil {
 			return c, e
@@ -621,6 +649,14 @@ func (c AdmissionCertificate) Verify(g AdmissionGenesis) error {
 		return ErrAdmission
 	}
 	for _, v := range c.Votes {
+		key := AdmissionGuard(c.Entry)
+		if key == ([32]byte{}) {
+			if v.GuardSeal != ([64]byte{}) {
+				return ErrAdmission
+			}
+		} else if AdmissionGuardRequest(c.Entry, v.Witness).VerifySeal(key, v.GuardSeal) != nil {
+			return ErrAdmission
+		}
 		found := false
 		for _, key := range g.Assignment.Policy.Witnesses {
 			if key == v.Witness {
@@ -633,4 +669,15 @@ func (c AdmissionCertificate) Verify(g AdmissionGenesis) error {
 		}
 	}
 	return nil
+}
+
+func AdmissionGuard(e AdmissionEntry) [32]byte {
+	if e.Context.Plan.Deployment != nil {
+		return e.Context.Plan.Deployment.Guard
+	}
+	return [32]byte{}
+}
+func AdmissionGuardRequest(e AdmissionEntry, witness [32]byte) guard.Request {
+	id, _ := e.ID()
+	return guard.Request{Kind: guard.Admission, Subject: witness, Namespace: e.GenesisID, Slot: e.ExpectedSequence, Choice: id}
 }

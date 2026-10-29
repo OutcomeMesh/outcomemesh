@@ -10,6 +10,34 @@ Full planned production readiness is approximately **44/100**, using the weighte
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
 
+## 2026-10-29: independent choice seals for guarded services and witnesses
+
+The [external guard adapter](CUSTODY_INDEPENDENT_GUARD.md) fixes one choice per
+subject, stable namespace and sequence/operation slot. Its separate private key
+and bounded durable journal live outside protected participants. A distinct,
+five-party signed deployment makes guard proofs mandatory in original admission
+prefixes, execution/Serve quorums and Result5/Receipt5/Serve effects. Old encodings
+retain their bytes and meaning; removing a proof cannot downgrade a guarded job.
+
+The reviewed CLI creates and serves the original guard; gateway and witness
+commands bind its delivery endpoint into review. Startup requires an independent
+exact cursor or one matching retained attempt. Writes precede signatures; crashes,
+partial evidence, conflicts and unavailable guards never reset a slot. Controlled
+tests cover concurrent copied keys, empty witness stores, real process death and
+cold exact recovery. The complete archive lifecycle retains 19 choices and closes
+at spent=2, pending=0, source=1. Canonical vectors, malformed proofs, decoder fuzz
+smoke and legacy regressions accompany the adapter. The small proof decoders also
+exercise every single-bit mutation, every truncated prefix and trailing bytes.
+
+The guard itself is a shared software trust boundary. It cannot exclude a clone
+of its own key/state, distinguish which copy submitted the first valid choice,
+or replace independent operators and protected monotone storage. Status messages
+and local gateway revocation are not mirrored by it. External per-subject
+revocation/key recovery and a separately deployed fault campaign remain next.
+[Validation record](evidence/custody-independent-guard-20261029.json) retains
+commands, outputs, digests and the interrupted broad invocation separately.
+No new WAN, hardware-clone, audit or mainnet acceptance is claimed; **44/100**.
+
 ## 2026-10-29: protected profile-5 joint WAN execution and recovery
 
 The [profile-5 QUIC relay](CUSTODY_PROFILE5_WAN.md) now delivers exact signed

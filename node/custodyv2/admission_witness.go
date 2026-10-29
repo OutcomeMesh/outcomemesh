@@ -2,6 +2,7 @@ package custodyv2
 
 import (
 	"bytes"
+	"context"
 	"crypto/ed25519"
 	"encoding/json"
 	"errors"
@@ -10,9 +11,11 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/outcomemesh/outcomemesh/core/types"
 	"github.com/outcomemesh/outcomemesh/node/custodyfence"
+	guard "github.com/outcomemesh/outcomemesh/node/custodyguard/guardwire"
 )
 
 // The local byte limit is independent of the signed operation budget. Admission
@@ -29,6 +32,7 @@ var ErrAdmissionStorage = errors.New("custody V2 admission journal capacity rese
 // not protect raw keys, rolled-back backups or deliberate re-enrollment.
 // This coordinator does not activate admission in raw V2 execution runtimes.
 type AdmissionWitness struct {
+	guard              guard.Chooser
 	mu                 sync.Mutex
 	path               string
 	genesis            AdmissionGenesis
@@ -396,7 +400,19 @@ func (w *AdmissionWitness) VoteAt(before custodyfence.WitnessPin, entry Admissio
 		w.failed = true
 		return AdmissionVote{}, e
 	}
-	return signAdmissionVote(entry, w.key)
+	v, e := signAdmissionVote(entry, w.key)
+	if e != nil {
+		return AdmissionVote{}, e
+	}
+	if key := AdmissionGuard(entry); key != ([32]byte{}) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		v.GuardSeal, e = guard.Obtain(ctx, w.guard, key, AdmissionGuardRequest(entry, w.public), w.key)
+		if e != nil {
+			return AdmissionVote{}, e
+		}
+	}
+	return v, nil
 }
 func (w *AdmissionWitness) canCommitAt(before custodyfence.WitnessPin, cert AdmissionCertificate, raw []byte) error {
 	if e := w.checkProtectedEnrollment(cert.Entry); e != nil {
@@ -594,4 +610,11 @@ func (w *AdmissionWitness) checkProtectedEnrollment(entry AdmissionEntry) error 
 		return ErrEnrollmentRequired
 	}
 	return nil
+}
+
+// SetGuard selects delivery only. The signed policy pins the verification key.
+func (w *AdmissionWitness) SetGuard(client guard.Chooser) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.guard = client
 }

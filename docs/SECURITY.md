@@ -1463,3 +1463,21 @@ exact attempt unresolved. A historical Prepare reply cannot restore a lost
 private session or clear its obligation. The two-host acceptance uses public
 fixture keys and one operator, not independent trust domains or root/VM-clone
 resistance. No network operation grants raw archive access or global revocation.
+
+
+## Independent guard and copied custody owners (2026-10-29)
+
+[Guarded deployments](CUSTODY_INDEPENDENT_GUARD.md) require an external durable
+one-choice seal for original admission/execution/Serve votes and accepted gateway
+effects. Local key/journal clones cannot create conflicting accepted choices while
+the pinned guard remains intact outside their control. A clone may win first or
+cause denial of service; no availability or physical at-most-once claim follows.
+The guard itself is a trusted software signer, not a non-exportable key or
+hardware monotone counter. A copy of its own key and state defeats the boundary.
+The single guard key is a shared dependency. Retain exact startup cursors outside
+its backups; never reset, re-enroll, adopt a suspect tip or downgrade a signed
+policy after a lost reply. Existing imported registry/issuance assumptions remain.
+Local gateway revocation and status messages are not mirrored by the external
+guard yet; a leaked subject key requires freezing that external boundary too.
+External operator separation, hardware/storage fault acceptance and review remain
+open; this slice earns no production-readiness point by itself.

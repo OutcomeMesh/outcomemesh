@@ -238,6 +238,23 @@ func FuzzAdmissionDecoders(fz *testing.F) {
 		}
 		fz.Add(b)
 	}
+	// Opaque seal bytes exercise the new framing; semantic key checks are covered
+	// by the guarded imported lifecycle test.
+	guarded := q
+	guarded.Votes = append([]AdmissionVote(nil), q.Votes...)
+	for i := range guarded.Votes {
+		guarded.Votes[i].GuardSeal[0] = 1
+	}
+	gb, e := guarded.CanonicalBytes()
+	if e != nil {
+		fz.Fatal(e)
+	}
+	fz.Add(gb)
+	gv, e := guarded.Votes[0].CanonicalBytes()
+	if e != nil {
+		fz.Fatal(e)
+	}
+	fz.Add(gv)
 	fz.Fuzz(func(t *testing.T, b []byte) {
 		if x, e := DecodeAdmissionGenesis(b); e == nil {
 			again, _ := x.CanonicalBytes()

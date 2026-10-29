@@ -10,8 +10,8 @@ import (
 )
 
 const ProtectedVersion uint16 = 5
-const MaximumProtectedReceiptBytes = ReceiptBytes + gateway.EffectBytes + 32
-const MaximumProtectedServeReceiptBytes = ServeReceiptBytes + gateway.EffectBytes + 32
+const MaximumProtectedReceiptBytes = ReceiptBytes + gateway.MaximumEffectBytes + 32
+const MaximumProtectedServeReceiptBytes = ServeReceiptBytes + gateway.MaximumEffectBytes + 32
 
 func ProtectedContext(c Context) bool {
 	return c.Assignment.Policy.Version == PolicyVersionImported && c.Plan.Version == ProtectedVersion && c.Plan.Deployment != nil
@@ -31,7 +31,7 @@ func protectedEncode(magic string, core []byte, effect *gateway.Effect) ([]byte,
 	return out.Bytes(), nil
 }
 func protectedDecode(raw []byte, magic string, max int) ([]byte, *gateway.Effect, error) {
-	if len(raw) > max+gateway.EffectBytes+32 {
+	if len(raw) > max+gateway.MaximumEffectBytes+32 {
 		return nil, nil, ErrProtocol
 	}
 	d := codec.NewDecoder(raw)
@@ -42,7 +42,7 @@ func protectedDecode(raw []byte, magic string, max int) ([]byte, *gateway.Effect
 	if e != nil {
 		return nil, nil, e
 	}
-	eb, e := d.Fixed(gateway.EffectBytes)
+	eb, e := d.Fixed(d.Remaining())
 	if e != nil || d.Finish() != nil {
 		return nil, nil, ErrProtocol
 	}
@@ -71,7 +71,7 @@ func VerifyProtectedEffect(c Context, e *gateway.Effect, kind uint8, artifact, h
 	if _, err = e.CanonicalBytes(); err != nil || e.DeploymentID != did || e.ScopeID != sid || e.Kind != kind || e.ArtifactID != artifact || e.SourceSequence != seq || e.SourceHead != head || e.CheckedAt != at || e.Signer != key {
 		return ErrProtocol
 	}
-	return nil
+	return e.VerifyGuard(d.Guard)
 }
 func (r Result) core() Result                { r.Version = Version2; r.Protection = nil; return r }
 func (r Result) CoreID() (types.Hash, error) { return r.core().ID() }
@@ -83,7 +83,7 @@ func (r Result) protectedBytes() ([]byte, error) {
 	return protectedEncode("OMCVRES5", b, r.Protection)
 }
 func decodeProtectedResult(raw []byte) (Result, error) {
-	b, effect, e := protectedDecode(raw, "OMCVRES5", MaximumResultBytes-gateway.EffectBytes-32)
+	b, effect, e := protectedDecode(raw, "OMCVRES5", MaximumResultBytes-gateway.MaximumEffectBytes-32)
 	if e != nil {
 		return Result{}, e
 	}

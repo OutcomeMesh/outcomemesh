@@ -2,6 +2,7 @@ package custodyv2_test
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,11 +12,12 @@ import (
 	f "github.com/outcomemesh/outcomemesh/internal/fencetest"
 	"github.com/outcomemesh/outcomemesh/node/custodyfence"
 	wire "github.com/outcomemesh/outcomemesh/node/custodygateway/gatewaywire"
+	guard "github.com/outcomemesh/outcomemesh/node/custodyguard/guardwire"
 	v2 "github.com/outcomemesh/outcomemesh/node/custodyv2"
 	"github.com/outcomemesh/outcomemesh/node/workarchive"
 )
 
-func artifactFixture(t testing.TB) (v2.Context, v2.Result, v2.Bundle, v2.Receipt, v2.AdmissionClosure) {
+func artifactFixture(t testing.TB, guarded ...bool) (v2.Context, v2.Result, v2.Bundle, v2.Receipt, v2.AdmissionClosure) {
 	t.Helper()
 	check := func(e error) {
 		t.Helper()
@@ -37,6 +39,9 @@ func artifactFixture(t testing.TB) (v2.Context, v2.Result, v2.Bundle, v2.Receipt
 		return d
 	}
 	dep := wire.Deployment{A: mk("a", 201, false), B: mk("b", 202, true), GenesisID: f.Hash("g"), GenesisDescriptorID: f.Hash("gd"), EnrollmentID: f.Hash("enrol"), ImportID: f.Hash("import"), PairID: f.Hash("pair"), MinimumRetainUntil: c.Initial.RetainUntil, Authority: c.Assignment.Base.AuthorityPublicKey, Control: c.Assignment.Base.RemoteControlPublicKey}
+	if len(guarded) > 0 && guarded[0] {
+		dep.Guard = f.Public(240)
+	}
 	for _, r := range []struct {
 		role string
 		seed byte
@@ -66,7 +71,7 @@ func artifactFixture(t testing.TB) (v2.Context, v2.Result, v2.Bundle, v2.Receipt
 	sid, _ := scope.ID()
 	cmd, e := (custodyfence.Command{Version: 1, ScopeID: sid, ExpectedHead: sid, Kind: custodyfence.Claim, EvidenceID: v2.SessionID(f.Public(250))}).Sign(f.Key(14))
 	check(e)
-	claim := f.Certificate(cmd, 70, 71, 72)
+	claim := guardFixtureCertificate(dep, cmd)
 	objects, e := workarchive.OpenObjectStore(filepath.Join(t.TempDir(), "objects"), workarchive.DefaultObjectStorePolicy())
 	check(e)
 	for _, d := range c.Manifest.Chunks {
@@ -89,6 +94,11 @@ func artifactFixture(t testing.TB) (v2.Context, v2.Result, v2.Bundle, v2.Receipt
 	effect := func(kind uint8, id types.Hash, key byte) wire.Effect {
 		ef, e := (wire.Effect{Kind: kind, DeploymentID: did, ScopeID: sid, AdmissionID: f.Hash("admit"), BindingID: f.Hash("binding"), ArtifactID: id, SourceSequence: entry.Sequence, SourceHead: head, CheckedAt: at}).Sign(f.Key(key))
 		check(e)
+		if dep.Guard != ([32]byte{}) {
+			q, e := ef.GuardRequest()
+			check(e)
+			ef.GuardSeal = guardFixtureSeal(q)
+		}
 		return ef
 	}
 	rid, _ := r.CoreID()
@@ -103,7 +113,7 @@ func artifactFixture(t testing.TB) (v2.Context, v2.Result, v2.Bundle, v2.Receipt
 	id, _ := r.ID()
 	record, e := (custodyfence.Command{Version: 1, ScopeID: sid, ExpectedSequence: state.Position.Sequence, ExpectedHead: state.Position.HeadID, Kind: custodyfence.RecordResult, ClaimID: cid, EvidenceID: id}).Sign(f.Key(14))
 	check(e)
-	bundle := v2.Bundle{Version: 2, Result: r, Chain: []custodyfence.Certificate{claim, f.Certificate(record, 70, 71, 72)}}
+	bundle := v2.Bundle{Version: 2, Result: r, Chain: []custodyfence.Certificate{claim, guardFixtureCertificate(dep, record)}}
 	check(bundle.Verify(c))
 	plan, _ := c.Plan.ID()
 	bid, _ := bundle.ID()
@@ -125,7 +135,7 @@ func artifactFixture(t testing.TB) (v2.Context, v2.Result, v2.Bundle, v2.Receipt
 	}
 	decision, e := proposal.Decision(c, f.Key(1))
 	check(e)
-	cert := v2.ServeCertificate{Version: 2, Proposal: proposal, Decision: f.Certificate(decision, 70, 71, 72)}
+	cert := v2.ServeCertificate{Version: 2, Proposal: proposal, Decision: guardFixtureCertificate(dep, decision)}
 	check(cert.Verify(c))
 	retain, e := proposal.Retention(c)
 	check(e)
@@ -275,6 +285,106 @@ func FuzzProtected5Artifacts(fz *testing.F) {
 			if b, e := decode(raw); e == nil && !bytes.Equal(b, raw) {
 				t.Fatal("noncanonical protected artifact")
 			}
+		}
+	})
+}
+
+func guardFixtureSeal(q guard.Request) (seal [64]byte) {
+	h, e := q.SealDigest()
+	if e != nil {
+		panic(e)
+	}
+	copy(seal[:], ed25519.Sign(f.Key(240), h[:]))
+	return
+}
+func guardFixtureCertificate(d wire.Deployment, c custodyfence.Command) custodyfence.Certificate {
+	q := f.Certificate(c, 70, 71, 72)
+	if d.Guard != ([32]byte{}) {
+		for i := range q.Votes {
+			q.Votes[i].GuardSeal = guardFixtureSeal(custodyfence.VoteGuardRequest(c, q.Votes[i].Witness))
+		}
+	}
+	return q
+}
+func TestGuardedProfile5ArtifactVectorsAndMutations(t *testing.T) {
+	c, r, b, a, cl := artifactFixture(t, true)
+	var all []byte
+	for _, v := range []interface{ CanonicalBytes() ([]byte, error) }{c, r, b, a, cl, cl.Serve.Proposal, cl.A, cl.B} {
+		raw, e := v.CanonicalBytes()
+		if e != nil {
+			t.Fatal(e)
+		}
+		all = append(all, raw...)
+	}
+	got := types.DomainHash("OMESH/test/guarded-profile5/vector", all).String()
+	const want = "60b16189b119bc9f1d9c09373925928bbd03d7c8f079e26500d54b0b01f629a3"
+	if got != want {
+		t.Fatal("guarded vector", got)
+	}
+	for _, ef := range []*wire.Effect{r.Protection, a.Protection, cl.A.Protection, cl.B.Protection} {
+		if e := ef.VerifyGuard(c.Plan.Deployment.Guard); e != nil {
+			t.Fatal(e)
+		}
+		copy := *ef
+		copy.GuardSeal[0] ^= 1
+		if copy.VerifyGuard(c.Plan.Deployment.Guard) == nil {
+			t.Fatal("mutated seal accepted")
+		}
+		if ef.VerifyGuard(f.Public(239)) == nil {
+			t.Fatal("foreign guard key")
+		}
+	}
+	r.Protection.GuardSeal = [64]byte{}
+	if r.Verify(c, b.Chain[0]) == nil {
+		t.Fatal("stripped effect accepted")
+	}
+}
+func FuzzGuardedProfile5Artifacts(fz *testing.F) {
+	c, r, b, a, cl := artifactFixture(fz, true)
+	for i, v := range []interface{ CanonicalBytes() ([]byte, error) }{c.Plan, c, r, b, a, cl, cl.A, cl.Serve.Proposal, cl.Serve, cl.Serve.Decision, b.Chain[0].Votes[0], *r.Protection, *c.Plan.Deployment} {
+		raw, e := v.CanonicalBytes()
+		if e != nil {
+			fz.Fatal(e)
+		}
+		fz.Add(uint8(i), raw)
+	}
+	fz.Fuzz(func(t *testing.T, kind uint8, raw []byte) {
+		var v interface{ CanonicalBytes() ([]byte, error) }
+		var e error
+		switch kind % 13 {
+		case 0:
+			v, e = v2.DecodePlan(raw)
+		case 1:
+			v, e = v2.DecodeContext(raw)
+		case 2:
+			v, e = v2.DecodeResult(raw)
+		case 3:
+			v, e = v2.DecodeBundle(raw)
+		case 4:
+			v, e = v2.DecodeReceipt(raw)
+		case 5:
+			v, e = v2.DecodeAdmissionClosure(raw)
+		case 6:
+			v, e = v2.DecodeServeReceipt(raw)
+		case 7:
+			v, e = v2.DecodeServeProposal(raw)
+		case 8:
+			v, e = v2.DecodeServeCertificate(raw)
+		case 9:
+			v, e = custodyfence.DecodeCertificate(raw)
+		case 10:
+			v, e = custodyfence.DecodeVote(raw)
+		case 11:
+			v, e = wire.DecodeEffect(raw)
+		case 12:
+			v, e = wire.DecodeDeployment(raw)
+		}
+		if e != nil {
+			return
+		}
+		encoded, e := v.CanonicalBytes()
+		if e != nil || !bytes.Equal(raw, encoded) {
+			t.Fatal("noncanonical guarded artifact")
 		}
 	})
 }

@@ -2,6 +2,7 @@ package custodyfence
 
 import (
 	"bytes"
+	"context"
 	"crypto/ed25519"
 	"errors"
 	"fmt"
@@ -9,8 +10,10 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/outcomemesh/outcomemesh/core/types"
+	guard "github.com/outcomemesh/outcomemesh/node/custodyguard/guardwire"
 )
 
 var (
@@ -31,6 +34,7 @@ type WitnessPin struct {
 // Commit requires a quorum, not merely the local witness's vote. There are at
 // most three transitions; no expiry, unlock, force-reset or view change exists.
 type Witness struct {
+	guard              guard.Chooser
 	mu                 sync.Mutex
 	path               string
 	key                ed25519.PrivateKey
@@ -297,7 +301,19 @@ func (w *Witness) voteLocked(command Command) (Vote, error) {
 		w.failed = true
 		return Vote{}, err
 	}
-	return signVote(command, w.key)
+	v, e := signVote(command, w.key)
+	if e != nil {
+		return Vote{}, e
+	}
+	if w.state.scope.Guard != ([32]byte{}) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		v.GuardSeal, e = guard.Obtain(ctx, w.guard, w.state.scope.Guard, VoteGuardRequest(command, w.public), w.key)
+		if e != nil {
+			return Vote{}, e
+		}
+	}
+	return v, nil
 }
 
 // Commit accepts a quorum certificate even if this witness locked a competing
@@ -536,3 +552,6 @@ func syncDir(path string) error {
 	}
 	return errors.Join(f.Sync(), f.Close())
 }
+
+// SetGuard selects delivery only. The signed policy pins the verification key.
+func (w *Witness) SetGuard(client guard.Chooser) { w.mu.Lock(); defer w.mu.Unlock(); w.guard = client }

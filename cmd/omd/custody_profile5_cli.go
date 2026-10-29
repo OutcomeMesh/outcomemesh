@@ -49,6 +49,7 @@ func runCustodyProfile5(ctx context.Context, args []string, out io.Writer) error
 	descriptorPath := f.String("descriptor", "", "pinned complete gateway descriptor; extract only")
 	descriptorID := f.String("descriptor-id", "", "independent gateway descriptor pin; extract only")
 	action := f.String("action", "", "deployment, sign-deployment, command, sign-request, configure, extract")
+	guardKey := f.String("guard-key", "", "independently retained external guard public key; deployment only")
 	mode := f.String("mode", "review", "review or run")
 	input := f.String("input", "", "complete public preparation input")
 	root := f.String("root", "", "original isolated service owner; configure only")
@@ -67,6 +68,9 @@ func runCustodyProfile5(ctx context.Context, args []string, out io.Writer) error
 		return gateway.ErrExecution
 	}
 	if (*root != "") != (*action == "configure") || (*keyPath != "") != (*action == "sign-deployment" || *action == "sign-request") || (*role != "") != (*action == "sign-deployment") {
+		return gateway.ErrExecution
+	}
+	if *guardKey != "" && *action != "deployment" {
 		return gateway.ErrExecution
 	}
 	var e error
@@ -134,6 +138,13 @@ func runCustodyProfile5(ctx context.Context, args []string, out io.Writer) error
 		dep, e = gateway.PrepareDeployment(p)
 		if e != nil {
 			return e
+		}
+		if *guardKey != "" {
+			k, err := witnessID("guard-key", *guardKey)
+			if err != nil {
+				return err
+			}
+			dep.Guard = [32]byte(k)
 		}
 		artifact, e = dep.CanonicalBytes()
 		summary = dep

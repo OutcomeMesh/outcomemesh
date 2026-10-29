@@ -17,10 +17,10 @@ test:
 	$(GO) test ./...
 
 test-race:
-	# Eleven disjoint groups keep the growing custody suite within normal timeouts.
+	# Twelve disjoint groups keep the growing custody suite within normal timeouts.
 	$(GO) test -race ./... -run '^TestArchive'
 	$(GO) test -race ./... -run '^TestPrune'
-	$(GO) test -race ./... -skip '^(TestArchive|TestPrune|TestRemote|TestManagedCustody|TestAdmission|TestRequired|TestCustody)'
+	$(GO) test -race ./... -skip '^(TestArchive|TestPrune|TestRemote|TestManagedCustody|TestAdmission|TestRequired|TestCustody|TestGuardedProfile5)'
 	$(GO) test -race ./... -run '^TestCustody' -skip '^TestCustodyV2'
 	$(GO) test -race ./... -run '^TestCustodyV2' -skip '^TestCustodyV2(Enrolled|Required)'
 	$(GO) test -race ./... -run '^TestCustodyV2Enrolled'
@@ -29,8 +29,13 @@ test-race:
 	$(GO) test -race ./... -run '^TestRemote'
 	$(GO) test -race ./... -run '^Test(Admission|Required)' -skip '^TestAdmissionDelivery'
 	$(GO) test -race ./... -run '^TestAdmissionDelivery'
+	$(GO) test -race ./... -run '^TestGuardedProfile5'
 
 test-fuzz-smoke:
+	$(GO) test ./node/custodyv2 -run '^$$' -fuzz '^FuzzGuardedProofCodecs$$' -fuzztime=$(FUZZTIME)
+	$(GO) test ./node/custodyv2 -run '^$$' -fuzz '^FuzzAdmissionDecoders$$' -fuzztime=$(FUZZTIME)
+	$(GO) test ./node/custodyguard -run '^$$' -fuzz '^FuzzGuardRequest$$' -fuzztime=$(FUZZTIME)
+	$(GO) test ./node/custodyv2 -run '^$$' -fuzz '^FuzzGuardedProfile5Artifacts$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodygateway/gatewayrelay -run '^$$' -fuzz '^FuzzGatewayRelayAttempt$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodygateway -run '^$$' -fuzz '^FuzzProtected5Commands$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodygateway/gatewaywire -run '^$$' -fuzz '^FuzzProtected5Wire$$' -fuzztime=$(FUZZTIME)

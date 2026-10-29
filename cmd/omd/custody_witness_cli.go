@@ -22,6 +22,7 @@ import (
 	"github.com/outcomemesh/outcomemesh/node/custodyfence"
 	"github.com/outcomemesh/outcomemesh/node/custodyfence/witnessnet"
 	"github.com/outcomemesh/outcomemesh/node/custodyfence/witnesswire"
+	guardclient "github.com/outcomemesh/outcomemesh/node/custodyguard"
 	libp2ptransport "github.com/outcomemesh/outcomemesh/node/transport/libp2p"
 )
 
@@ -79,6 +80,7 @@ func runWitness(ctx context.Context, args []string, input io.ReadCloser, out io.
 	}
 	f := flag.NewFlagSet(args[0], flag.ContinueOnError)
 	f.SetOutput(io.Discard)
+	guardURL := f.String("guard-url", "", "external guard endpoint; verification key comes from the signed policy")
 	mode := f.String("mode", "review", "review by default; explicit create, serve, exchange, publish, vote, commit or recovery")
 	scopePath := f.String("scope", "", "existing canonical independent witness scope")
 	scopePin := f.String("scope-id", "", "independent scope ID")
@@ -441,10 +443,13 @@ func runWitness(ctx context.Context, args []string, input io.ReadCloser, out io.
 			return errors.New("create/serve cannot select vote, certificate or output artifacts")
 		}
 	}
+	if *guardURL != "" && (args[0] != witnessServerCommand || scope.Guard == ([32]byte{}) || guardclient.ValidateURL(*guardURL) != nil) {
+		return custodyfence.ErrScope
+	}
 	public, err := json.Marshal(struct {
-		Command, Action string
-		Context         any
-	}{args[0], action, descriptor})
+		Command, Action, GuardURL string
+		Context                   any
+	}{args[0], action, *guardURL, descriptor})
 	if err != nil {
 		return err
 	}
@@ -574,6 +579,9 @@ func runWitness(ctx context.Context, args []string, input io.ReadCloser, out io.
 		return err
 	}
 	defer func() { returnErr = errors.Join(returnErr, w.Close()) }()
+	if *guardURL != "" {
+		w.SetGuard(guardclient.Client{URL: *guardURL})
+	}
 	switch *mode {
 	case "vote":
 		v, err := w.VoteAt(expected, command)

@@ -716,3 +716,32 @@ through the existing kernel-UID-checked Unix client; it has no execution owner.
 Legacy custody protocols are not enabled as fallback. Independent peer/descriptor
 pins, allowlist, request/response validation and exact cold recovery are specified
 in [the network contract](CUSTODY_PROFILE5_WAN.md).
+
+
+## Independent custody guard extension (experimental, 2026-10-29)
+
+The optional [guarded Plan5 deployment](CUSTODY_INDEPENDENT_GUARD.md) changes no
+consensus rule. Its nonzero Guard public key is included in a distinct deployment
+body (`OMCGDG01`) endorsed by issuer, authority, control and both services. The
+key must differ from gateway clients, services, participants, consumers, auditors
+and witnesses. Derived execution and Serve scopes bind this same key; Serve
+retains its underlying Version0 command semantics and execution Version1.
+
+A guard request is `OMCGREQ1 || kind:u8 || subject:32 || namespace:32 || slot:u64
+|| choice:32 || subject-signature:64` (177 bytes, big-endian slot). The subject
+signs DomainHash(`OMESH/custody-guard/v1/request`, unsigned request). The guard
+signs DomainHash(`OMESH/custody-guard/v1/seal`, unsigned request), only after
+durably fixing that complete request. The slot ID hashes the unsigned request
+without its final choice under `OMESH/custody-guard/v1/slot`. Kinds 1, 2, 3 mean
+fence, service effect and admission. Their namespaces/slots/choices are fixed by
+the table in the linked specification, not supplied by the seal recipient.
+
+Guarded votes/effects retain their original inner signature domains, replace the
+outer magic, and append exactly 64 bytes of seal. Guarded scope adds the key after
+its witness list; guarded deployment adds it immediately after the magic. Guarded
+quorums contain only guarded votes of the fixed extended size. Missing, all-zero,
+foreign, mixed or rebound seals fail verification under a guarded policy. No
+counter-signature supplied by an artifact can select the verifier's guard key.
+Every certificate in a guarded admission binding must use that exact deployment
+from its original genesis sequence zero; unguarded history cannot be grafted onto
+it. Legacy bytes retain legacy meaning and no clone-protection claim.

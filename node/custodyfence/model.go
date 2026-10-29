@@ -12,16 +12,18 @@ import (
 
 	"github.com/outcomemesh/outcomemesh/core/codec"
 	"github.com/outcomemesh/outcomemesh/core/types"
+	guard "github.com/outcomemesh/outcomemesh/node/custodyguard/guardwire"
 )
 
 const (
 	Version0                uint16 = 0
 	Version1                uint16 = 1
 	MaximumWitnesses               = 16
-	MaximumScopeBytes              = 8 + 2 + 4*32 + 2*32 + 2 + MaximumWitnesses*32
+	MaximumScopeBytes              = 32 + 8 + 2 + 4*32 + 2*32 + 2 + MaximumWitnesses*32
 	CommandBytes                   = 8 + 2 + 32 + 8 + 32 + 1 + 2*32 + 64
 	VoteBytes                      = 8 + 2 + 32 + 32 + 64
-	MaximumCertificateBytes        = 8 + 2 + CommandBytes + 1 + MaximumWitnesses*VoteBytes
+	MaximumVoteBytes               = VoteBytes + guard.SealBytes
+	MaximumCertificateBytes        = 8 + 2 + CommandBytes + 1 + MaximumWitnesses*MaximumVoteBytes
 )
 
 var (
@@ -37,6 +39,7 @@ var (
 // new assignment/proof version, or callers could bypass it with a new scope.
 // Witness keys must differ from both participant control keys.
 type Scope struct {
+	Guard                                   [32]byte
 	Version                                 uint16
 	AssignmentID, IntentID, PlanID, BeginID types.Hash
 	Owner, Controller                       [32]byte
@@ -52,7 +55,14 @@ func (s Scope) CanonicalBytes() ([]byte, error) {
 		return nil, ErrScope
 	}
 	e := codec.NewEncoder(MaximumScopeBytes)
-	e.Fixed([]byte("OMCFSC00"))
+	if s.Guard == ([32]byte{}) {
+		e.Fixed([]byte("OMCFSC00"))
+	} else {
+		if s.Guard == s.Owner || s.Guard == s.Controller {
+			return nil, ErrScope
+		}
+		e.Fixed([]byte("OMCFSG01"))
+	}
 	e.U16(s.Version)
 	for _, id := range []types.Hash{s.AssignmentID, s.IntentID, s.PlanID, s.BeginID} {
 		e.Fixed(id[:])
@@ -62,10 +72,13 @@ func (s Scope) CanonicalBytes() ([]byte, error) {
 	e.U8(s.Threshold)
 	e.U8(uint8(n))
 	for i, key := range s.Witnesses {
-		if types.Hash(key).IsZero() || key == s.Owner || key == s.Controller || (i > 0 && bytes.Compare(s.Witnesses[i-1][:], key[:]) >= 0) {
+		if types.Hash(key).IsZero() || key == s.Guard || key == s.Owner || key == s.Controller || (i > 0 && bytes.Compare(s.Witnesses[i-1][:], key[:]) >= 0) {
 			return nil, ErrScope
 		}
 		e.Fixed(key[:])
+	}
+	if s.Guard != ([32]byte{}) {
+		e.Fixed(s.Guard[:])
 	}
 	return e.Bytes(), nil
 }
@@ -85,7 +98,7 @@ func DecodeScope(b []byte) (Scope, error) {
 	}
 	d := codec.NewDecoder(b)
 	magic, _ := d.Fixed(8)
-	if string(magic) != "OMCFSC00" {
+	if string(magic) != "OMCFSC00" && string(magic) != "OMCFSG01" {
 		return s, ErrScope
 	}
 	s.Version, _ = d.U16()
@@ -94,12 +107,22 @@ func DecodeScope(b []byte) (Scope, error) {
 	}
 	s.Threshold, _ = d.U8()
 	n, err := d.U8()
-	if err != nil || n > MaximumWitnesses || d.Remaining() != int(n)*32 {
+	extra := 0
+	if string(magic) == "OMCFSG01" {
+		extra = 32
+	}
+	if err != nil || n > MaximumWitnesses || d.Remaining() != int(n)*32+extra {
 		return Scope{}, ErrScope
 	}
 	s.Witnesses = make([][32]byte, int(n))
 	for i := range s.Witnesses {
 		readFixed(d, s.Witnesses[i][:])
+	}
+	if extra != 0 {
+		readFixed(d, s.Guard[:])
+		if s.Guard == ([32]byte{}) {
+			return Scope{}, ErrScope
+		}
 	}
 	if _, err := s.CanonicalBytes(); err != nil {
 		return Scope{}, err
@@ -234,6 +257,7 @@ func DecodeCommand(b []byte) (Command, error) {
 // Vote is a durable witness's endorsement, not permission to execute an effect.
 // Its signing API is deliberately private; Witness.Vote persists the lock first.
 type Vote struct {
+	GuardSeal [64]byte
 	Version   uint16
 	CommandID types.Hash
 	Witness   [32]byte
@@ -254,7 +278,12 @@ func (v Vote) CanonicalBytes() ([]byte, error) {
 	if !ed25519.Verify(v.Witness[:], h[:], v.Signature[:]) {
 		return nil, ErrQuorum
 	}
-	return append(b, v.Signature[:]...), nil
+	raw := append(b, v.Signature[:]...)
+	if v.GuardSeal != ([64]byte{}) {
+		copy(raw[:8], []byte("OMCFVG01"))
+		raw = append(raw, v.GuardSeal[:]...)
+	}
+	return raw, nil
 }
 func signVote(c Command, key ed25519.PrivateKey) (Vote, error) {
 	id, err := c.ID()
@@ -274,20 +303,27 @@ func signVote(c Command, key ed25519.PrivateKey) (Vote, error) {
 }
 func DecodeVote(b []byte) (Vote, error) {
 	var v Vote
-	if len(b) != VoteBytes {
+	if len(b) != VoteBytes && len(b) != MaximumVoteBytes {
 		return v, ErrQuorum
 	}
 	d := codec.NewDecoder(b)
 	magic, _ := d.Fixed(8)
-	if string(magic) != "OMCFVT00" {
+	if string(magic) != "OMCFVT00" && string(magic) != "OMCFVG01" {
 		return v, ErrQuorum
 	}
 	v.Version, _ = d.U16()
 	readFixed(d, v.CommandID[:])
 	readFixed(d, v.Witness[:])
 	readFixed(d, v.Signature[:])
-	if _, err := v.CanonicalBytes(); err != nil {
-		return Vote{}, err
+	if string(magic) == "OMCFVG01" {
+		readFixed(d, v.GuardSeal[:])
+		if v.GuardSeal == ([64]byte{}) {
+			return Vote{}, ErrQuorum
+		}
+	}
+	raw, err := v.CanonicalBytes()
+	if err != nil || !bytes.Equal(raw, b) {
+		return Vote{}, ErrQuorum
 	}
 	return v, nil
 }
@@ -310,12 +346,17 @@ func (c Certificate) CanonicalBytes() ([]byte, error) {
 	}
 	id, _ := c.Command.ID()
 	e := codec.NewEncoder(MaximumCertificateBytes)
-	e.Fixed([]byte("OMCFQC00"))
+	guarded := c.Votes[0].GuardSeal != ([64]byte{})
+	if guarded {
+		e.Fixed([]byte("OMCFQG01"))
+	} else {
+		e.Fixed([]byte("OMCFQC00"))
+	}
 	e.U16(c.Version)
 	e.Fixed(b)
 	e.U8(uint8(len(c.Votes)))
 	for i, v := range c.Votes {
-		if v.Version != c.Version || v.CommandID != id || (i > 0 && bytes.Compare(c.Votes[i-1].Witness[:], v.Witness[:]) >= 0) {
+		if (v.GuardSeal != ([64]byte{})) != guarded || v.Version != c.Version || v.CommandID != id || (i > 0 && bytes.Compare(c.Votes[i-1].Witness[:], v.Witness[:]) >= 0) {
 			return nil, ErrQuorum
 		}
 		b, err := v.CanonicalBytes()
@@ -337,6 +378,9 @@ func (c Certificate) Verify(s Scope) error {
 		return ErrQuorum
 	}
 	for _, v := range c.Votes {
+		if v.VerifyGuard(s, c.Command) != nil {
+			return ErrQuorum
+		}
 		found := false
 		for _, key := range s.Witnesses {
 			if v.Witness == key {
@@ -357,7 +401,7 @@ func DecodeCertificate(b []byte) (Certificate, error) {
 	}
 	d := codec.NewDecoder(b)
 	magic, _ := d.Fixed(8)
-	if string(magic) != "OMCFQC00" {
+	if string(magic) != "OMCFQC00" && string(magic) != "OMCFQG01" {
 		return c, ErrQuorum
 	}
 	c.Version, _ = d.U16()
@@ -370,12 +414,16 @@ func DecodeCertificate(b []byte) (Certificate, error) {
 		return c, err
 	}
 	n, err := d.U8()
-	if err != nil || n > MaximumWitnesses || d.Remaining() != int(n)*VoteBytes {
+	size := VoteBytes
+	if string(magic) == "OMCFQG01" {
+		size = MaximumVoteBytes
+	}
+	if err != nil || n > MaximumWitnesses || d.Remaining() != int(n)*size {
 		return Certificate{}, ErrQuorum
 	}
 	c.Votes = make([]Vote, int(n))
 	for i := range c.Votes {
-		raw, _ := d.Fixed(VoteBytes)
+		raw, _ := d.Fixed(size)
 		c.Votes[i], err = DecodeVote(raw)
 		if err != nil {
 			return Certificate{}, err
@@ -396,4 +444,24 @@ func fenceDomain(version uint16, suffix string) string {
 		return "OMESH/custody-fence/" + suffix + "/v1"
 	}
 	return "OMESH/custody-fence/" + suffix + "/v0"
+}
+
+func VoteGuardRequest(c Command, witness [32]byte) guard.Request {
+	id, _ := c.ID()
+	return guard.Request{Kind: guard.Fence, Subject: witness, Namespace: c.ScopeID, Slot: c.ExpectedSequence, Choice: id}
+}
+
+// VerifyGuard is also used when accepting a single network vote, before quorum assembly.
+func (v Vote) VerifyGuard(s Scope, c Command) error {
+	id, e := c.ID()
+	if e != nil || v.CommandID != id || v.Version != c.Version {
+		return ErrQuorum
+	}
+	if s.Guard == ([32]byte{}) {
+		if v.GuardSeal != ([64]byte{}) {
+			return ErrQuorum
+		}
+		return nil
+	}
+	return VoteGuardRequest(c, v.Witness).VerifySeal(s.Guard, v.GuardSeal)
 }

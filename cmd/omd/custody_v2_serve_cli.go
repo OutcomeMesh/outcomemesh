@@ -341,7 +341,7 @@ func runCustodyV2Serve(ctx context.Context, args []string, out io.Writer) (retur
 		}
 		q := custodyfence.Certificate{Version: scope.Version, Command: cmd}
 		for i, path := range paths {
-			b, e := load(path, ids[i], custodyfence.VoteBytes)
+			b, e := load(path, ids[i], custodyfence.MaximumVoteBytes)
 			if e != nil {
 				return e
 			}

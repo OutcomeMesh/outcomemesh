@@ -5,6 +5,7 @@ package custodygateway
 import (
 	"bytes"
 	"fmt"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"sort"
@@ -17,12 +18,16 @@ import (
 	cut "github.com/outcomemesh/outcomemesh/node/custodycutover"
 	"github.com/outcomemesh/outcomemesh/node/custodyfence"
 	wire "github.com/outcomemesh/outcomemesh/node/custodygateway/gatewaywire"
+	guard "github.com/outcomemesh/outcomemesh/node/custodyguard"
+	guardwire "github.com/outcomemesh/outcomemesh/node/custodyguard/guardwire"
 	v2 "github.com/outcomemesh/outcomemesh/node/custodyv2"
 	"github.com/outcomemesh/outcomemesh/node/transport"
 	"github.com/outcomemesh/outcomemesh/node/workarchive"
 )
 
 type protectedFixture struct {
+	guard        guardwire.Chooser
+	guardStore   *guard.Store
 	source       fixture.Source
 	a, b         *Owner
 	aroot, broot string
@@ -63,7 +68,7 @@ func mustProtected(t testing.TB, o *Owner, d wire.Descriptor, p v2.ProtectedComm
 	fixture.Require(t, e)
 	return b
 }
-func newProtectedFixture(t testing.TB) *protectedFixture {
+func newProtectedFixture(t testing.TB, guarded ...bool) *protectedFixture {
 	t.Helper()
 	src := fixture.New(t)
 	x := &protectedFixture{source: src}
@@ -104,6 +109,19 @@ func newProtectedFixture(t testing.TB) *protectedFixture {
 	bb, _ := x.bd.CanonicalBytes()
 	dep, e := PrepareDeployment(DeploymentPreparation{gb, eb, pb, ab, bb})
 	fixture.Require(t, e)
+	if len(guarded) > 0 && guarded[0] {
+		subjects := append([][32]byte{x.ad.Gateway, x.bd.Gateway}, g.Assignment.Policy.Witnesses...)
+		sort.Slice(subjects, func(i, j int) bool { return bytes.Compare(subjects[i][:], subjects[j][:]) < 0 })
+		parent, e := filepath.EvalSymlinks(t.TempDir())
+		fixture.Require(t, e)
+		x.guardStore, e = guard.Create(filepath.Join(parent, "independent-guard"), guard.Config{Subjects: subjects, Limit: 128})
+		fixture.Require(t, e)
+		t.Cleanup(func() { x.guardStore.Close() })
+		server := httptest.NewServer(guard.Handler(x.guardStore))
+		t.Cleanup(server.Close)
+		x.guard = guard.Client{URL: server.URL}
+		dep.Guard = x.guardStore.Identity().PublicKey
+	}
 	for _, role := range []struct {
 		name string
 		seed byte
@@ -137,6 +155,8 @@ func newProtectedFixture(t testing.TB) *protectedFixture {
 	fixture.Require(t, e)
 	x.b, e = Open(x.broot, bid, bp, nil)
 	fixture.Require(t, e)
+	x.a.SetGuard(x.guard)
+	x.b.SetGuard(x.guard)
 	gid, _ := g.ID()
 	x.state, e = v2.NewAdmissionState(g, gid)
 	fixture.Require(t, e)
@@ -170,6 +190,7 @@ func newProtectedFixture(t testing.TB) *protectedFixture {
 	for _, seed := range []byte{70, 71, 72} {
 		w, e := v2.CreateAdmissionWitness(filepath.Join(src.Root, fmt.Sprint("admission-", seed)), g, gid, f.Key(seed), b)
 		fixture.Require(t, e)
+		w.SetGuard(x.guard)
 		x.admission = append(x.admission, w)
 		t.Cleanup(func() { w.Close() })
 	}
@@ -213,6 +234,7 @@ func (x *protectedFixture) claim(t testing.TB) custodyfence.Certificate {
 	for _, seed := range []byte{70, 71, 72} {
 		w, e := custodyfence.Create(filepath.Join(x.source.Root, fmt.Sprint("slot-", seed)), s, sid, f.Key(seed))
 		fixture.Require(t, e)
+		w.SetGuard(x.guard)
 		x.jobWitnesses = append(x.jobWitnesses, w)
 		t.Cleanup(func() { w.Close() })
 		vote, e := w.Vote(candidate.Claim)
@@ -437,7 +459,7 @@ func TestProtected5ServerClockAndInvalidProofDoNotConsume(t *testing.T) {
 		t.Fatal("minority consumed", e)
 	}
 }
-func protectedQuorum(t testing.TB, root string, scope custodyfence.Scope, cmd custodyfence.Command) custodyfence.Certificate {
+func protectedQuorum(t testing.TB, root string, scope custodyfence.Scope, cmd custodyfence.Command, guardians ...guardwire.Chooser) custodyfence.Certificate {
 	t.Helper()
 	sid, _ := scope.ID()
 	q := custodyfence.Certificate{Version: scope.Version, Command: cmd}
@@ -447,6 +469,9 @@ func protectedQuorum(t testing.TB, root string, scope custodyfence.Scope, cmd cu
 		fixture.Require(t, e)
 		defer w.Close()
 		ws = append(ws, w)
+		if len(guardians) > 0 {
+			w.SetGuard(guardians[0])
+		}
 		vote, e := w.Vote(cmd)
 		fixture.Require(t, e)
 		q.Votes = append(q.Votes, vote)

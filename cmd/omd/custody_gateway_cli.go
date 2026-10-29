@@ -21,6 +21,7 @@ import (
 	gateway "github.com/outcomemesh/outcomemesh/node/custodygateway"
 	client "github.com/outcomemesh/outcomemesh/node/custodygateway/gatewayclient"
 	wire "github.com/outcomemesh/outcomemesh/node/custodygateway/gatewaywire"
+	guardclient "github.com/outcomemesh/outcomemesh/node/custodyguard"
 	v2 "github.com/outcomemesh/outcomemesh/node/custodyv2"
 )
 
@@ -44,6 +45,7 @@ func runCustodyGateway(ctx context.Context, args []string, out io.Writer) error 
 	participantUID := f.Uint("participant-uid", 0, "separate unprivileged Linux participant UID")
 	eventLimit := f.Uint("event-limit", wire.MaximumEvents, "bounded lifetime gateway event count")
 	clients := f.String("clients", "", "comma-separated participant Ed25519 public keys, hexadecimal")
+	guardURL := f.String("guard-url", "", "external guard endpoint; verification key comes from the signed policy")
 	mode := f.String("mode", "review", "review or run")
 	root := f.String("root", "", "original private owner root; must be outside participant access")
 	input := f.String("input", "", "strict JSON config or unsigned descriptor/request")
@@ -61,6 +63,9 @@ func runCustodyGateway(ctx context.Context, args []string, out io.Writer) error 
 		return e
 	}
 	if f.NArg() != 0 || (*mode != "review" && *mode != "run") {
+		return wire.ErrArtifact
+	}
+	if *guardURL != "" && (*action != "serve" || guardclient.ValidateURL(*guardURL) != nil) {
 		return wire.ErrArtifact
 	}
 	valid := map[string]bool{"identity-create": true, "identity-public": true, "descriptor-sign": true, "descriptor-prepare": true, "configure": true, "request-sign": true, "response-inspect": true, "call": true, "serve": true, "cleanup-socket": true}
@@ -280,17 +285,17 @@ func runCustodyGateway(ctx context.Context, args []string, out io.Writer) error 
 		}
 	}
 	public, e := json.Marshal(struct {
-		Action, Root, Socket, Key, Output string
-		Inputs                            map[string]string
-		DescriptorID                      types.Hash
-		SocketID                          types.Hash
-		Position                          wire.Position
-		ParticipantUID                    uint
-		EventLimit                        uint
-		Clients                           [][32]byte
-		Runtime                           any
-		Request                           wire.Request
-	}{*action, *root, *socket, *keyPath, *output, paths, did, socketID, pin, *participantUID, *eventLimit, actorKeys, runtimeSummary, req})
+		Action, Root, Socket, Key, Output, GuardURL string
+		Inputs                                      map[string]string
+		DescriptorID                                types.Hash
+		SocketID                                    types.Hash
+		Position                                    wire.Position
+		ParticipantUID                              uint
+		EventLimit                                  uint
+		Clients                                     [][32]byte
+		Runtime                                     any
+		Request                                     wire.Request
+	}{*action, *root, *socket, *keyPath, *output, *guardURL, paths, did, socketID, pin, *participantUID, *eventLimit, actorKeys, runtimeSummary, req})
 	if e != nil {
 		return e
 	}
@@ -395,6 +400,9 @@ func runCustodyGateway(ctx context.Context, args []string, out io.Writer) error 
 			return e
 		}
 		defer owner.Close()
+		if *guardURL != "" {
+			owner.SetGuard(guardclient.Client{URL: *guardURL})
+		}
 		e = gateway.Serve(ctx, owner, *socket, func(id types.Hash) error {
 			p, revoked := owner.Position()
 			return writePruneOutputLine(out, fmt.Sprintf("custody_gateway_ready socket_id=%s sequence=%d head=%s revoked=%t execution_granted=false\n", id, p.Sequence, p.Head, revoked))

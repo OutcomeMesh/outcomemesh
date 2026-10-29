@@ -331,6 +331,13 @@ func (p Plan) ValidateDraft(a Assignment) error {
 		if a.Policy.Version != PolicyVersionImported || d.ImportID != a.Policy.ImportID || d.Authority != a.Base.AuthorityPublicKey || d.Control != a.Base.RemoteControlPublicKey {
 			return ErrProtocol
 		}
+		if d.Guard != ([32]byte{}) {
+			for _, k := range append([][32]byte{a.Base.ReplicaPublicKey, a.Base.RemoteTransportPublicKey, p.ClientTransportPublicKey, p.ServeConsumer, p.Intent.ConsumerPublicKey}, a.Policy.Witnesses...) {
+				if k == d.Guard {
+					return ErrProtocol
+				}
+			}
+		}
 		for _, k := range append([][32]byte{d.A.Issuer, d.A.Gateway, d.B.Gateway}, a.Policy.Witnesses...) {
 			if p.ClientTransportPublicKey == k {
 				return ErrProtocol
@@ -349,6 +356,9 @@ func (p Plan) ValidateDraft(a Assignment) error {
 		roles = append(roles, c.PublicKey)
 	}
 	for _, role := range roles {
+		if p.Deployment != nil && p.Deployment.Guard != ([32]byte{}) && p.Deployment.Guard == role {
+			return ErrProtocol
+		}
 		if p.ClientTransportPublicKey == role {
 			return ErrProtocol
 		}
@@ -490,6 +500,9 @@ func (c Context) Scope() (custodyfence.Scope, error) {
 	iid, _ := c.Plan.Intent.ID()
 	begin := types.DomainHash("OMESH/custody/v2/begin/id", pid[:])
 	s := custodyfence.Scope{Version: custodyfence.Version1, AssignmentID: aid, IntentID: iid, PlanID: pid, BeginID: begin, Owner: c.Assignment.Base.RemoteControlPublicKey, Controller: c.Assignment.Base.AuthorityPublicKey, Threshold: c.Assignment.Policy.Threshold, Witnesses: append([][32]byte(nil), c.Assignment.Policy.Witnesses...)}
+	if c.Plan.Deployment != nil {
+		s.Guard = c.Plan.Deployment.Guard
+	}
 	_, e := s.ID()
 	return s, e
 }

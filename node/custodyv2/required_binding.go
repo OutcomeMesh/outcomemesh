@@ -132,6 +132,16 @@ func (b AdmissionBinding) Verify(c Context) error {
 		return e
 	}
 	for _, q := range b.Chain {
+		if c.Plan.Deployment != nil && c.Plan.Deployment.Guard != ([32]byte{}) {
+			if q.Entry.Context.Plan.Deployment == nil {
+				return ErrAdmissionRequired
+			}
+			want, _ := c.Plan.Deployment.ID()
+			got, e := q.Entry.Context.Plan.Deployment.ID()
+			if e != nil || got != want {
+				return ErrAdmissionRequired
+			}
+		}
 		if e := state.Apply(q); e != nil {
 			return e
 		}

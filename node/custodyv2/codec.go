@@ -12,7 +12,7 @@ import (
 )
 
 const MaximumContextBytes = workarchive.MaximumManifestBytes + MaximumAssignmentBytes + MaximumPlanBytes + 2*workarchive.MaximumReplicaReceiptBytes + 4096
-const MaximumResultBytes = workarchive.MaximumCustodyJournalEntryBytes + 1024 + gateway.EffectBytes + 32
+const MaximumResultBytes = workarchive.MaximumCustodyJournalEntryBytes + 1024 + gateway.MaximumEffectBytes + 32
 const MaximumBundleBytes = MaximumResultBytes + 3*(custodyfence.MaximumCertificateBytes+10) + 64
 
 func (c Context) CanonicalBytes() ([]byte, error) {

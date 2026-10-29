@@ -201,7 +201,7 @@ func DecodeResponse(b []byte) (Response, error) {
 	if err != nil {
 		return Response{}, err
 	}
-	v, err := d.BytesField(custodyfence.VoteBytes)
+	v, err := d.BytesField(custodyfence.MaximumVoteBytes)
 	if err != nil || d.Finish() != nil {
 		return Response{}, ErrProtocol
 	}
@@ -235,6 +235,9 @@ func ValidateResponse(s custodyfence.Scope, r Request, response Response, witnes
 			return ErrProtocol
 		}
 	case Vote:
+		if response.Vote.VerifyGuard(s, r.Command) != nil {
+			return ErrProtocol
+		}
 		cid, _ := r.Command.ID()
 		if response.Version != r.Version || actual.Position != r.Expected.Position || actual.PendingID != cid || response.Vote.CommandID != cid || response.Vote.Witness != witness {
 			return ErrProtocol

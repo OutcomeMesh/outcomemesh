@@ -487,6 +487,15 @@ func FuzzIndependentFenceCodecs(f *testing.F) {
 	for _, b := range [][]byte{scope, cb, vb, qb, nil} {
 		f.Add(b)
 	}
+	s.Guard = testPublic(50)
+	sg, _ := s.CanonicalBytes()
+	f.Add(sg)
+	vote.GuardSeal[0] = 1
+	vg, _ := vote.CanonicalBytes()
+	f.Add(vg)
+	cert.Votes = []Vote{vote}
+	qg, _ := cert.CanonicalBytes()
+	f.Add(qg)
 	f.Fuzz(func(t *testing.T, b []byte) {
 		if x, err := DecodeScope(b); err == nil {
 			out, err := x.CanonicalBytes()

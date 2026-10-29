@@ -116,6 +116,7 @@ func (o *Owner) verifyDeployment(d wire.Deployment, pair cut.SourceHandoffPair) 
 	if e != nil {
 		return e
 	}
+	expected.Guard = d.Guard
 	id, e := expected.ID()
 	actual, e2 := d.ID()
 	if e != nil || e2 != nil || id != actual {

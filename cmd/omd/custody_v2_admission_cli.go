@@ -18,6 +18,7 @@ import (
 
 	"github.com/outcomemesh/outcomemesh/core/types"
 	"github.com/outcomemesh/outcomemesh/node/custodyfence"
+	guardclient "github.com/outcomemesh/outcomemesh/node/custodyguard"
 	v2 "github.com/outcomemesh/outcomemesh/node/custodyv2"
 )
 
@@ -43,6 +44,7 @@ func runCustodyV2Admission(ctx context.Context, args []string, out io.Writer) (r
 	}
 	flags := flag.NewFlagSet(args[0], flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
+	guardURL := flags.String("guard-url", "", "external guard endpoint; verification key comes from the signed policy")
 	mode := flags.String("mode", "review", "review or run")
 	action := flags.String("action", "", "genesis, inspect-genesis, inspect-history, admit-entry, close-entry, witness-create, witness-vote, witness-commit, witness-status, certificate")
 	enrollmentPath := flags.String("enrollment", "", "complete imported registry selection; required for profile 5")
@@ -376,7 +378,7 @@ func runCustodyV2Admission(ctx context.Context, args []string, out io.Writer) (r
 		}
 		cert = v2.AdmissionCertificate{Version: v2.Version2, Entry: entry}
 		for i, path := range paths {
-			b, e := load(path, ids[i], v2.AdmissionVoteBytes)
+			b, e := load(path, ids[i], v2.MaximumAdmissionVoteBytes)
 			if e != nil {
 				return e
 			}
@@ -409,7 +411,10 @@ func runCustodyV2Admission(ctx context.Context, args []string, out io.Writer) (r
 			}
 		}
 	}
-	public := map[string]any{"action": *action, "genesis_id": gid.String(), "genesis_descriptor_id": did.String(), "inputs": pins, "root": *root, "sign_key": *signKey, "witness": *witness, "sequence": *sequence, "head_id": *head, "pending_id": *pending, "out": *output, "coordinator_only": true, "execution_granted": false}
+	if *guardURL != "" && (*action != "witness-vote" || v2.AdmissionGuard(entry) == ([32]byte{}) || guardclient.ValidateURL(*guardURL) != nil) {
+		return v2.ErrAdmission
+	}
+	public := map[string]any{"guard_url": *guardURL, "action": *action, "genesis_id": gid.String(), "genesis_descriptor_id": did.String(), "inputs": pins, "root": *root, "sign_key": *signKey, "witness": *witness, "sequence": *sequence, "head_id": *head, "pending_id": *pending, "out": *output, "coordinator_only": true, "execution_granted": false}
 	reviewBytes, e := json.Marshal(public)
 	if e != nil {
 		return e
@@ -472,6 +477,9 @@ func runCustodyV2Admission(ctx context.Context, args []string, out io.Writer) (r
 			return e
 		}
 		defer func() { returnErr = errors.Join(returnErr, w.Close()) }()
+		if *guardURL != "" {
+			w.SetGuard(guardclient.Client{URL: *guardURL})
+		}
 		if *action == "witness-vote" {
 			vote, e := w.VoteAt(before, entry)
 			if e != nil {

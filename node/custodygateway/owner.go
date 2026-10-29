@@ -18,6 +18,7 @@ import (
 	"github.com/outcomemesh/outcomemesh/core/types"
 	cut "github.com/outcomemesh/outcomemesh/node/custodycutover"
 	wire "github.com/outcomemesh/outcomemesh/node/custodygateway/gatewaywire"
+	guard "github.com/outcomemesh/outcomemesh/node/custodyguard/guardwire"
 	v2 "github.com/outcomemesh/outcomemesh/node/custodyv2"
 	"github.com/outcomemesh/outcomemesh/node/workarchive"
 )
@@ -36,6 +37,7 @@ type Config struct {
 	Objects             string
 }
 type Owner struct {
+	guard             guard.Chooser
 	execution         *executionRuntime
 	executionHook     func(string) error
 	clock             func() uint64
@@ -585,3 +587,6 @@ func DraftDescriptor(root string, c Config, participantUID uint32, clients [][32
 	d = wire.Descriptor{RootID: id.RootID, SourceID: hid, GenesisID: c.Pins.GenesisID, GenesisDescriptorID: c.Pins.GenesisDescriptorID, EnrollmentID: c.Pins.EnrollmentID, ObjectsID: objectsID, Gateway: id.PublicKey, Issuer: b.Registry.Issuer, Clients: append([][32]byte(nil), clients...), OwnerUID: uint32(os.Geteuid()), ParticipantUID: participantUID, EventLimit: eventLimit}
 	return d, nil
 }
+
+// SetGuard selects delivery only. The signed policy pins the verification key.
+func (w *Owner) SetGuard(client guard.Chooser) { w.mu.Lock(); defer w.mu.Unlock(); w.guard = client }

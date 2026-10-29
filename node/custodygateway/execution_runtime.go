@@ -17,6 +17,7 @@ import (
 	cut "github.com/outcomemesh/outcomemesh/node/custodycutover"
 	"github.com/outcomemesh/outcomemesh/node/custodyfence"
 	wire "github.com/outcomemesh/outcomemesh/node/custodygateway/gatewaywire"
+	guard "github.com/outcomemesh/outcomemesh/node/custodyguard/guardwire"
 	v2 "github.com/outcomemesh/outcomemesh/node/custodyv2"
 	"github.com/outcomemesh/outcomemesh/node/workarchive"
 )
@@ -94,7 +95,7 @@ func (o *Owner) preflightProtected(ctx context.Context, p v2.ProtectedCommand) e
 		}
 		return nil
 	}
-	if o.execution == nil {
+	if o.execution == nil || (o.execution.deployment.Guard != ([32]byte{}) && o.guard == nil) {
 		return ErrExecution
 	}
 	if e := v2.VerifyProtectedBinding(p.Admission, o.b, o.execution.deployment); e != nil {
@@ -258,7 +259,7 @@ func (o *Owner) prepareExecution(c v2.Context, sid types.Hash) ([]byte, error) {
 	o.execution.sessions[sid] = &liveExecution{key, candidate}
 	return raw, nil
 }
-func (o *Owner) executionEffect(c v2.Context, b v2.AdmissionBinding, kind uint8, artifact, head types.Hash, seq, at uint64) (wire.Effect, error) {
+func (o *Owner) executionEffect(ctx context.Context, c v2.Context, b v2.AdmissionBinding, kind uint8, artifact, head types.Hash, seq, at uint64) (wire.Effect, error) {
 	scope, _ := c.Scope()
 	sid, _ := scope.ID()
 	did, _ := o.execution.deployment.ID()
@@ -270,7 +271,21 @@ func (o *Owner) executionEffect(c v2.Context, b v2.AdmissionBinding, kind uint8,
 	if e != nil {
 		return wire.Effect{}, e
 	}
-	return (wire.Effect{Kind: kind, DeploymentID: did, ScopeID: sid, AdmissionID: aid, BindingID: bid, ArtifactID: artifact, SourceSequence: seq, SourceHead: head, CheckedAt: at}).Sign(o.key)
+	ef, e := (wire.Effect{Kind: kind, DeploymentID: did, ScopeID: sid, AdmissionID: aid, BindingID: bid, ArtifactID: artifact, SourceSequence: seq, SourceHead: head, CheckedAt: at}).Sign(o.key)
+	if e != nil {
+		return wire.Effect{}, e
+	}
+	if key := o.execution.deployment.Guard; key != ([32]byte{}) {
+		q, e := ef.GuardRequest()
+		if e != nil {
+			return wire.Effect{}, e
+		}
+		ef.GuardSeal, e = guard.Obtain(ctx, o.guard, key, q, o.key)
+		if e != nil {
+			return wire.Effect{}, e
+		}
+	}
+	return ef, nil
 }
 func (o *Owner) checkResultAdmission(b v2.AdmissionBinding, r v2.Result) error {
 	bid, _ := b.ID()
@@ -345,7 +360,7 @@ func (o *Owner) executeJob(ctx context.Context, p v2.ProtectedCommand, c v2.Cont
 	}
 	id, _ := result.CoreID()
 	head, _ := entry.ID()
-	effect, e := o.executionEffect(c, p.Admission, wire.EffectExecute, id, head, entry.Sequence, record.Proof.RespondedAt)
+	effect, e := o.executionEffect(ctx, c, p.Admission, wire.EffectExecute, id, head, entry.Sequence, record.Proof.RespondedAt)
 	if e != nil {
 		return nil, e
 	}
@@ -509,7 +524,7 @@ func (o *Owner) acceptJob(ctx context.Context, p v2.ProtectedCommand, c v2.Conte
 		return nil, e
 	}
 	id, _ := r.CoreID()
-	ef, e := o.executionEffect(c, p.Admission, wire.EffectAccept, id, head, r.SourceSequence, checked)
+	ef, e := o.executionEffect(ctx, c, p.Admission, wire.EffectAccept, id, head, r.SourceSequence, checked)
 	if e != nil {
 		return nil, e
 	}
