@@ -3,7 +3,8 @@ package state
 import (
 	"errors"
 	"fmt"
-	"sort"
+	"math/bits"
+	"sync"
 
 	"github.com/outcomemesh/outcomemesh/core/resource"
 	"github.com/outcomemesh/outcomemesh/core/types"
@@ -16,119 +17,171 @@ var (
 	ErrBalanceOverflow   = errors.New("balance overflow")
 )
 
-// Memory is the deterministic, immutable-by-convention reference state used by
-// the first protocol milestone. Its fields are private and every state change
-// returns a new value, so failed transaction execution cannot partially mutate
-// the pre-state.
+// Memory is immutable. Resource and owner/asset indexes share unchanged AVL
+// subtrees between snapshots; no mutation can leak into a parent or sibling.
+// The cached root retains the exact sorted-leaf v0 commitment.
 type Memory struct {
-	resources map[types.ResourceID]resource.Resource
+	resources *indexNode[leaf]
+	accounts  *indexNode[account]
+	rootOnce  sync.Once
+	root      types.Hash
+}
+type leaf struct {
+	value resource.Resource
+	hash  types.Hash
+}
+type account struct {
+	resources *indexNode[leaf]
+	low, high uint64
 }
 
-func Empty() *Memory {
-	return &Memory{resources: make(map[types.ResourceID]resource.Resource)}
+func accountKey(owner types.Address, asset types.AssetID) string {
+	var key [64]byte
+	copy(key[:32], owner[:])
+	copy(key[32:], asset[:])
+	return string(key[:])
 }
-
+func Empty() *Memory { return &Memory{} }
 func New(resources []resource.Resource) (*Memory, error) {
 	result := Empty()
-	for index, value := range resources {
-		if err := value.Validate(); err != nil {
-			return nil, fmt.Errorf("resource %d: %w", index, err)
+	for i, v := range resources {
+		if err := v.Validate(); err != nil {
+			return nil, fmt.Errorf("resource %d: %w", i, err)
 		}
-		if _, exists := result.resources[value.ID]; exists {
-			return nil, fmt.Errorf("resource %d: %w: %s", index, ErrDuplicateResource, value.ID)
+		if _, exists := result.Get(v.ID); exists {
+			return nil, fmt.Errorf("resource %d: %w: %s", i, ErrDuplicateResource, v.ID)
 		}
-		result.resources[value.ID] = value
+		result.insert(v)
 	}
 	return result, nil
 }
-
 func (state *Memory) Len() int {
 	if state == nil {
 		return 0
 	}
-	return len(state.resources)
+	return size(state.resources)
 }
-
 func (state *Memory) Get(id types.ResourceID) (resource.Resource, bool) {
 	if state == nil {
 		return resource.Resource{}, false
 	}
-	value, exists := state.resources[id]
-	return value, exists
+	v, ok := find(state.resources, string(id[:]))
+	return v.value, ok
 }
 
-// Resources returns a detached snapshot sorted by resource identifier.
+// Resources returns a detached snapshot in the protocol's resource-ID order.
 func (state *Memory) Resources() []resource.Resource {
 	if state == nil {
 		return nil
 	}
-
-	result := make([]resource.Resource, 0, len(state.resources))
-	for _, value := range state.resources {
-		result = append(result, value)
-	}
-	sort.Slice(result, func(left, right int) bool {
-		return types.CompareResourceID(result[left].ID, result[right].ID) < 0
-	})
+	return resourceList(state.resources)
+}
+func resourceList(n *indexNode[leaf]) []resource.Resource {
+	result := make([]resource.Resource, 0, size(n))
+	walk(n, func(v leaf) { result = append(result, v.value) })
 	return result
 }
 
+// ResourcesFor visits only the selected owner's asset, retaining the same
+// deterministic input-selection order as filtering Resources().
+func (state *Memory) ResourcesFor(owner types.Address, asset types.AssetID) []resource.Resource {
+	if state == nil {
+		return nil
+	}
+	a, _ := find(state.accounts, accountKey(owner, asset))
+	return resourceList(a.resources)
+}
 func (state *Memory) Balance(owner types.Address, asset types.AssetID) (uint64, error) {
-	return state.balance(owner, asset, nil)
-}
-
-// SpendableBalance excludes resources whose spend-after height has not arrived.
-// Balance intentionally remains the total amount committed to the owner.
-func (state *Memory) SpendableBalance(owner types.Address, asset types.AssetID, height uint64) (uint64, error) {
-	return state.balance(owner, asset, &height)
-}
-
-func (state *Memory) balance(owner types.Address, asset types.AssetID, height *uint64) (uint64, error) {
 	if state == nil {
 		return 0, nil
 	}
-
-	var balance uint64
-	for _, value := range state.resources {
-		if value.Owner != owner || value.Asset != asset {
-			continue
-		}
-		if height != nil && value.SpendAfter > *height {
-			continue
-		}
-		var err error
-		balance, err = types.AddAmount(balance, value.Amount)
-		if err != nil {
-			return 0, fmt.Errorf("%w for owner %s and asset %s", ErrBalanceOverflow, owner, asset)
-		}
+	a, _ := find(state.accounts, accountKey(owner, asset))
+	if a.high != 0 {
+		return 0, balanceError(owner, asset)
 	}
-	return balance, nil
+	return a.low, nil
+}
+func balanceError(owner types.Address, asset types.AssetID) error {
+	return fmt.Errorf("%w for owner %s and asset %s", ErrBalanceOverflow, owner, asset)
 }
 
+// SpendableBalance excludes future resources and scans only the selected account.
+func (state *Memory) SpendableBalance(owner types.Address, asset types.AssetID, h uint64) (uint64, error) {
+	if state == nil {
+		return 0, nil
+	}
+	a, _ := find(state.accounts, accountKey(owner, asset))
+	var total uint64
+	var overflow bool
+	walk(a.resources, func(v leaf) {
+		if v.value.SpendAfter <= h {
+			next, carry := bits.Add64(total, v.value.Amount, 0)
+			total = next
+			overflow = overflow || carry != 0
+		}
+	})
+	if overflow {
+		return 0, balanceError(owner, asset)
+	}
+	return total, nil
+}
 func (state *Memory) Root() types.Hash {
-	resources := state.Resources()
-	if len(resources) == 0 {
+	if state == nil {
 		return types.DomainHash(types.DomainStateEmpty)
 	}
-
-	level := make([]types.Hash, len(resources))
-	for index, value := range resources {
-		level[index] = types.DomainHash(types.DomainStateLeaf, value.CanonicalBytes())
-	}
-
-	for len(level) > 1 {
-		next := make([]types.Hash, 0, (len(level)+1)/2)
-		for index := 0; index < len(level); index += 2 {
-			left := level[index]
-			right := left
-			if index+1 < len(level) {
-				right = level[index+1]
-			}
-			next = append(next, types.DomainHash(types.DomainStateNode, left[:], right[:]))
+	state.rootOnce.Do(func() {
+		if state.Len() == 0 {
+			state.root = types.DomainHash(types.DomainStateEmpty)
+			return
 		}
-		level = next
+		level := make([]types.Hash, 0, state.Len())
+		walk(state.resources, func(v leaf) { level = append(level, v.hash) })
+		for len(level) > 1 {
+			count := (len(level) + 1) / 2
+			for i := 0; i < count; i++ {
+				left := level[2*i]
+				right := left
+				if 2*i+1 < len(level) {
+					right = level[2*i+1]
+				}
+				level[i] = types.DomainHash(types.DomainStateNode, left[:], right[:])
+			}
+			level = level[:count]
+		}
+		state.root = level[0]
+	})
+	return state.root
+}
+
+// insert/erase operate only on a newly allocated Memory. All shared tree nodes
+// and cached resource hashes remain immutable. A 128-bit aggregate preserves
+// overflow detection even when a later diff removes resources from that account.
+func (state *Memory) insert(value resource.Resource) {
+	v := leaf{value: value, hash: types.DomainHash(types.DomainStateLeaf, value.CanonicalBytes())}
+	key := string(value.ID[:])
+	group := accountKey(value.Owner, value.Asset)
+	a, _ := find(state.accounts, group)
+	var carry uint64
+	a.low, carry = bits.Add64(a.low, value.Amount, 0)
+	a.high += carry
+	a.resources = put(a.resources, key, v)
+	state.accounts = put(state.accounts, group, a)
+	state.resources = put(state.resources, key, v)
+}
+func (state *Memory) erase(value resource.Resource) {
+	key := string(value.ID[:])
+	group := accountKey(value.Owner, value.Asset)
+	a, _ := find(state.accounts, group)
+	var borrow uint64
+	a.low, borrow = bits.Sub64(a.low, value.Amount, 0)
+	a.high -= borrow
+	a.resources = remove(a.resources, key)
+	if a.resources == nil {
+		state.accounts = remove(state.accounts, group)
+	} else {
+		state.accounts = put(state.accounts, group, a)
 	}
-	return level[0]
+	state.resources = remove(state.resources, key)
 }
 
 // WithChanges validates a complete diff against the pre-state and returns a
@@ -145,7 +198,7 @@ func (state *Memory) WithChanges(consumed []types.ResourceID, created []resource
 			return nil, fmt.Errorf("consumed resource %d: %w: %s", index, ErrDuplicateResource, id)
 		}
 		consumedSet[id] = struct{}{}
-		if _, exists := state.resources[id]; !exists {
+		if _, exists := state.Get(id); !exists {
 			return nil, fmt.Errorf("consumed resource %d: %w: %s", index, ErrResourceNotFound, id)
 		}
 	}
@@ -159,20 +212,21 @@ func (state *Memory) WithChanges(consumed []types.ResourceID, created []resource
 			return nil, fmt.Errorf("created resource %d: %w: %s", index, ErrDuplicateResource, value.ID)
 		}
 		createdSet[value.ID] = struct{}{}
-		if _, exists := state.resources[value.ID]; exists {
+		if _, exists := state.Get(value.ID); exists {
 			return nil, fmt.Errorf("created resource %d: %w: %s", index, ErrResourceExists, value.ID)
 		}
 	}
 
-	result := &Memory{resources: make(map[types.ResourceID]resource.Resource, len(state.resources)-len(consumed)+len(created))}
-	for id, value := range state.resources {
-		result.resources[id] = value
+	if len(consumed) == 0 && len(created) == 0 {
+		return state, nil
 	}
+	result := &Memory{resources: state.resources, accounts: state.accounts}
 	for _, id := range consumed {
-		delete(result.resources, id)
+		v, _ := state.Get(id)
+		result.erase(v)
 	}
 	for _, value := range created {
-		result.resources[value.ID] = value
+		result.insert(value)
 	}
 	return result, nil
 }

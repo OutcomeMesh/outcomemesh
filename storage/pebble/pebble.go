@@ -513,8 +513,9 @@ func (store *Store) Commit(parent storage.Tip, candidate block.Block, postState 
 	}
 	activeDeleted, activeCreated := deleted, created
 	var canonical map[uint64]types.Hash
+	var commonHeight uint64
 	if wins {
-		canonical, err = store.canonicalPathUnlocked(next, candidate)
+		canonical, commonHeight, err = store.canonicalSuffixUnlocked(current, next, candidate)
 		if err != nil {
 			return storage.Tip{}, err
 		}
@@ -577,7 +578,7 @@ func (store *Store) Commit(parent storage.Tip, candidate block.Block, postState 
 		if err := store.runCommitHook(stageAfterResources); err != nil {
 			return storage.Tip{}, err
 		}
-		if err := batch.DeleteRange(blockLower, blockUpper, nil); err != nil {
+		if err := batch.DeleteRange(blockKey(commonHeight+1), blockUpper, nil); err != nil {
 			return storage.Tip{}, err
 		}
 		for height, id := range canonical {
@@ -611,32 +612,46 @@ func (store *Store) Commit(parent storage.Tip, candidate block.Block, postState 
 	return current, nil
 }
 
-func (store *Store) canonicalPathUnlocked(next storage.Tip, candidate block.Block) (map[uint64]types.Hash, error) {
-	result := make(map[uint64]types.Hash, next.Height)
+// canonicalSuffixUnlocked stops at the retained common ancestor. A normal
+// append reads/writes one height; a reorganization touches only the divergent
+// suffix. The common prefix stays in the same atomic height-index batch.
+func (store *Store) canonicalSuffixUnlocked(current, next storage.Tip, candidate block.Block) (map[uint64]types.Hash, uint64, error) {
+	result := make(map[uint64]types.Hash)
 	cursor := next.ID
-	for height := next.Height; height > 0; height-- {
-		var value block.Block
-		if cursor == next.ID {
-			value = candidate
-		} else {
+	for h := next.Height; h > 0; h-- {
+		if h <= current.Height {
+			indexed, err := store.getCopy(blockKey(h))
+			if err != nil || len(indexed) != types.HashSize {
+				return nil, 0, storage.ErrCorrupt
+			}
+			if bytes.Equal(indexed, cursor[:]) {
+				ancestor, err := store.tipByIDUnlocked(cursor)
+				if err != nil || ancestor.Height != h {
+					return nil, 0, storage.ErrCorrupt
+				}
+				return result, h, nil
+			}
+		}
+		value := candidate
+		if cursor != next.ID {
 			var err error
 			value, err = store.blockByIDUnlocked(cursor)
 			if err != nil {
-				return nil, err
+				return nil, 0, err
 			}
 		}
 		id, err := value.Header.ID()
-		if err != nil || id != cursor || value.Header.Height != height {
-			return nil, storage.ErrCorrupt
+		if err != nil || id != cursor || value.Header.Height != h {
+			return nil, 0, storage.ErrCorrupt
 		}
-		result[height] = cursor
+		result[h] = cursor
 		cursor = value.Header.Parent
 	}
-	genesisNode, err := store.tipByIDUnlocked(cursor)
-	if err != nil || genesisNode.Height != 0 {
-		return nil, storage.ErrCorrupt
+	genesis, err := store.tipByIDUnlocked(cursor)
+	if err != nil || genesis.Height != 0 {
+		return nil, 0, storage.ErrCorrupt
 	}
-	return result, nil
+	return result, 0, nil
 }
 
 func (store *Store) runCommitHook(stage commitStage) error {

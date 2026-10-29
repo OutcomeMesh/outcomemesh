@@ -77,7 +77,7 @@ func (pool *Pool) Add(preState *state.Memory, transaction outcome.Transaction, c
 	if err != nil {
 		return types.Hash{}, err
 	}
-	if _, err := execution.Apply(preState, cloned, context); err != nil {
+	if _, err := execution.ApplyTransition(preState, cloned, context); err != nil {
 		return types.Hash{}, err
 	}
 	id, err := cloned.ID()
@@ -152,7 +152,7 @@ func (pool *Pool) Select(preState *state.Memory, context execution.Context, maxT
 		if entry.Size > maxBytes-usedBytes {
 			continue
 		}
-		result, err := execution.Apply(current, entry.Transaction, context)
+		result, err := execution.ApplyTransition(current, entry.Transaction, context)
 		if err != nil {
 			continue
 		}
@@ -178,7 +178,7 @@ func (pool *Pool) Revalidate(preState *state.Memory, context execution.Context) 
 	pool.bytes = 0
 	removed := make([]types.Hash, 0)
 	for _, entry := range entries {
-		if _, err := execution.Apply(preState, entry.Transaction, context); err != nil || pool.conflicts(entry) {
+		if _, err := execution.ApplyTransition(preState, entry.Transaction, context); err != nil || pool.conflicts(entry) {
 			removed = append(removed, entry.ID)
 			continue
 		}

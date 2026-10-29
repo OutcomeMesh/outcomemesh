@@ -59,7 +59,7 @@ func BuildNativeTransfer(preState *state.Memory, privateKey ed25519.PrivateKey, 
 
 	inputs := make([]resource.Ref, 0)
 	var selected uint64
-	for _, value := range preState.Resources() {
+	for _, value := range preState.ResourcesFor(owner, native) {
 		if value.Owner != owner || value.Asset != native {
 			continue
 		}
