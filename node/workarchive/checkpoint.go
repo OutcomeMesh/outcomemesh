@@ -18,7 +18,9 @@ import (
 
 const (
 	StatementVersion0      uint16 = 0
+	StatementVersion1      uint16 = 1
 	CheckpointVersion0     uint16 = 0
+	CheckpointVersion1     uint16 = 1
 	MinimumAttestors              = 2
 	MaximumAttestors              = 64
 	MaximumStatementBytes         = 512
@@ -46,10 +48,11 @@ var (
 // Binding prevents an attested statement from being replayed across a network,
 // genesis, activation boundary, or independently rooted WorkChain tree.
 type Binding struct {
-	NetworkID        uint32
-	GenesisID        types.Hash
-	ActivationHeight uint64
-	BaseID           types.Hash
+	NetworkID             uint32
+	GenesisID             types.Hash
+	ActivationHeight      uint64
+	RadixActivationHeight uint64
+	BaseID                types.Hash
 }
 
 // Statement commits one selected WorkGraph ancestry and the separately
@@ -57,17 +60,18 @@ type Binding struct {
 // Sequence/PreviousID form a monotonic statement chain without requiring a
 // mutable signature set to be part of the predecessor identifier.
 type Statement struct {
-	Version           uint16
-	NetworkID         uint32
-	GenesisID         types.Hash
-	ActivationHeight  uint64
-	BaseID            types.Hash
-	Sequence          uint64
-	PreviousID        types.Hash
-	Anchor            storage.Tip
-	AncestryNodes     uint64
-	AncestryRoot      types.Hash
-	ArchiveManifestID types.Hash
+	Version               uint16
+	NetworkID             uint32
+	GenesisID             types.Hash
+	ActivationHeight      uint64
+	RadixActivationHeight uint64
+	BaseID                types.Hash
+	Sequence              uint64
+	PreviousID            types.Hash
+	Anchor                storage.Tip
+	AncestryNodes         uint64
+	AncestryRoot          types.Hash
+	ArchiveManifestID     types.Hash
 }
 
 type Attestation struct {
@@ -93,7 +97,7 @@ type Policy struct {
 // statement names the current selected ancestry. Implementations must not
 // mutate selection while answering these calls.
 type Chain interface {
-	LegacyArchiveCompatible() bool
+	ArchiveScheduleCompatible(uint64) bool
 	BaseID() (types.Hash, error)
 	TipByID(types.Hash) (storage.Tip, error)
 	SelectedAncestryCommitment(types.Hash) (types.Hash, uint64, error)
@@ -102,7 +106,7 @@ type Chain interface {
 
 func (binding Binding) Validate() error {
 	if binding.NetworkID == 0 || binding.GenesisID.IsZero() || binding.ActivationHeight == 0 ||
-		binding.BaseID.IsZero() {
+		binding.BaseID.IsZero() || (binding.RadixActivationHeight != 0 && binding.RadixActivationHeight < binding.ActivationHeight) {
 		return ErrPolicy
 	}
 	return nil
@@ -111,7 +115,7 @@ func (binding Binding) Validate() error {
 func (statement Statement) Validate(binding Binding) error {
 	if binding.Validate() != nil || statement.validateShape() != nil ||
 		statement.NetworkID != binding.NetworkID || statement.GenesisID != binding.GenesisID ||
-		statement.ActivationHeight != binding.ActivationHeight || statement.BaseID != binding.BaseID {
+		statement.ActivationHeight != binding.ActivationHeight || statement.BaseID != binding.BaseID || statement.RadixActivationHeight != binding.RadixActivationHeight {
 		return ErrStatement
 	}
 	return nil
@@ -128,6 +132,9 @@ func (statement Statement) CanonicalBytes() ([]byte, error) {
 	encoder.Fixed(statement.GenesisID[:])
 	encoder.U64(statement.ActivationHeight)
 	encoder.Fixed(statement.BaseID[:])
+	if statement.Version == StatementVersion1 {
+		encoder.U64(statement.RadixActivationHeight)
+	}
 	encoder.U64(statement.Sequence)
 	encoder.Fixed(statement.PreviousID[:])
 	encoder.BytesField(statement.Anchor.CanonicalBytes())
@@ -169,6 +176,11 @@ func DecodeStatement(input []byte) (Statement, error) {
 		return Statement{}, decodeErr
 	} else {
 		copy(statement.BaseID[:], value)
+	}
+	if statement.Version == StatementVersion1 {
+		if statement.RadixActivationHeight, err = decoder.U64(); err != nil {
+			return Statement{}, err
+		}
 	}
 	if statement.Sequence, err = decoder.U64(); err != nil {
 		return Statement{}, err
@@ -236,7 +248,7 @@ func NewCheckpoint(statement Statement, attestations []Attestation) (Checkpoint,
 		return Checkpoint{}, ErrCheckpoint
 	}
 	checkpoint := Checkpoint{
-		Version: CheckpointVersion0, Statement: statement,
+		Version: statement.Version, Statement: statement,
 		Attestations: append([]Attestation(nil), attestations...),
 	}
 	sort.Slice(checkpoint.Attestations, func(left, right int) bool {
@@ -251,7 +263,7 @@ func NewCheckpoint(statement Statement, attestations []Attestation) (Checkpoint,
 }
 
 func (checkpoint Checkpoint) Verify(policy Policy) error {
-	if checkpoint.Version != CheckpointVersion0 || checkpoint.Statement.Validate(policy.Binding) != nil ||
+	if checkpoint.Version != checkpoint.Statement.Version || checkpoint.Statement.Validate(policy.Binding) != nil ||
 		policy.validate() != nil || checkpoint.validateAttestations() != nil ||
 		len(checkpoint.Attestations) < int(policy.RequiredAttestations) {
 		return ErrCheckpoint
@@ -269,7 +281,7 @@ func (checkpoint Checkpoint) Verify(policy Policy) error {
 }
 
 func (checkpoint Checkpoint) CanonicalBytes() ([]byte, error) {
-	if checkpoint.Version != CheckpointVersion0 || checkpoint.validateAttestations() != nil {
+	if checkpoint.Version != checkpoint.Statement.Version || checkpoint.validateAttestations() != nil {
 		return nil, ErrCheckpoint
 	}
 	statementBytes, err := checkpoint.Statement.CanonicalBytes()
@@ -302,7 +314,7 @@ func DecodeCheckpoint(input []byte) (Checkpoint, error) {
 		return Checkpoint{}, ErrCheckpoint
 	}
 	version, err := decoder.U16()
-	if err != nil || version != CheckpointVersion0 {
+	if err != nil || (version != CheckpointVersion0 && version != CheckpointVersion1) {
 		return Checkpoint{}, ErrCheckpoint
 	}
 	statementBytes, err := decoder.BytesField(MaximumStatementBytes)
@@ -344,7 +356,7 @@ func DecodeCheckpoint(input []byte) (Checkpoint, error) {
 // selected ancestry and commits every parent back to the immutable activation
 // base. It remains read-only and does not authorize pruning by itself.
 func VerifyChain(checkpoint Checkpoint, policy Policy, chain Chain) error {
-	if chain == nil || !chain.LegacyArchiveCompatible() || checkpoint.Verify(policy) != nil {
+	if chain == nil || !chain.ArchiveScheduleCompatible(policy.Binding.RadixActivationHeight) || checkpoint.Verify(policy) != nil {
 		return ErrCheckpoint
 	}
 	baseID, err := chain.BaseID()
@@ -387,7 +399,9 @@ func VerifySuccessor(previous, current Checkpoint, policy Policy, chain Chain) e
 }
 
 func (statement Statement) validateShape() error {
-	if statement.Version != StatementVersion0 || statement.NetworkID == 0 ||
+	if (statement.Version != StatementVersion0 && statement.Version != StatementVersion1) ||
+		(statement.Version == StatementVersion0 && statement.RadixActivationHeight != 0) ||
+		(statement.Version == StatementVersion1 && (statement.RadixActivationHeight == 0 || statement.RadixActivationHeight < statement.ActivationHeight)) || statement.NetworkID == 0 ||
 		statement.GenesisID.IsZero() || statement.ActivationHeight == 0 || statement.BaseID.IsZero() ||
 		statement.Sequence == 0 || statement.Anchor.Validate() != nil ||
 		statement.Anchor.Height < statement.ActivationHeight ||
@@ -413,7 +427,7 @@ func (statement Statement) signatureMessage() ([]byte, error) {
 }
 
 func (checkpoint Checkpoint) validateAttestations() error {
-	if checkpoint.Statement.validateShape() != nil || len(checkpoint.Attestations) < MinimumAttestors ||
+	if checkpoint.Version != checkpoint.Statement.Version || checkpoint.Statement.validateShape() != nil || len(checkpoint.Attestations) < MinimumAttestors ||
 		len(checkpoint.Attestations) > MaximumAttestors {
 		return ErrCheckpoint
 	}

@@ -3,6 +3,7 @@
 package workchain
 
 import (
+	"context"
 	"encoding/hex"
 	"errors"
 	"os"
@@ -229,4 +230,51 @@ func TestPositionStorageCrashHelper(t *testing.T) {
 		action = positionAction(t, f, kind)
 	}
 	t.Fatal("mutation returned before kill", action())
+}
+
+func TestProtectedRadixMigrationProcessCrashAtomicity(t *testing.T) {
+	for _, stage := range positionFaultStages() {
+		t.Run(stage, func(t *testing.T) {
+			f := newPositionFixture(t, 5)
+			if _, err := f.chain.PruneCanonicalPrefixOnce(f.operation(), func() (uint64, error) { return 200, nil }); err != nil {
+				t.Fatal(err)
+			}
+			before := migrationObligations(t, f.chain)
+			r, err := f.chain.ReviewRadixSchedule(context.Background(), 20)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = f.chain.Close(); err != nil {
+				t.Fatal(err)
+			}
+			killPositionChild(t, f, "radix-migration", stage)
+			intent, committed, confirmed := positionFaultOutcome(stage)
+			if committed {
+				next := f.parameters
+				next.RadixActivationHeight = 20
+				f.chain, err = OpenRadixMigratedPositionPinnedWithPolicy(f.path, f.pins, f.base, next, f.policy, testStorageID(), r.ID())
+			} else {
+				f.chain, err = OpenPositionPinnedWithPolicy(f.path, f.pins, f.base, f.parameters, f.policy, testStorageID())
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertMigrationObligations(t, before, f.chain)
+			sequence := r.Before.Sequence
+			if committed {
+				sequence++
+			}
+			requirePosition(t, f.chain, sequence, intent && !confirmed)
+			if intent && !confirmed {
+				err = f.chain.ResumeStorageConfirmation()
+				if committed {
+					if err != nil {
+						t.Fatal(err)
+					}
+				} else if !errors.Is(err, ErrStoragePinPending) {
+					t.Fatal("resolved absent write", err)
+				}
+			}
+		})
+	}
 }

@@ -2,6 +2,7 @@ package workchain
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -133,6 +134,15 @@ func TestPositionStorageRootInspectionIsReadOnlyAndPinnedOnly(t *testing.T) {
 func positionAction(t testing.TB, f *positionFixture, kind string) func() error {
 	t.Helper()
 	switch kind {
+	case "radix-migration":
+		return func() error {
+			r, err := f.chain.ReviewRadixSchedule(context.Background(), 20)
+			if err != nil {
+				return err
+			}
+			_, err = f.chain.MigrateRadixSchedule(context.Background(), 20, r.ID())
+			return err
+		}
 	case "block":
 		tip, err := f.chain.Tip()
 		if err != nil {

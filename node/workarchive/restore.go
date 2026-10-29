@@ -37,9 +37,6 @@ func VerifyArchiveDirectory(
 	parameters workblock.Parameters,
 	limits Limits,
 ) (Manifest, error) {
-	if parameters.RadixActivationHeight != 0 {
-		return Manifest{}, ErrArchive
-	}
 	chain, err := workchain.New(base, parameters)
 	if err != nil {
 		return Manifest{}, err
@@ -78,7 +75,7 @@ func restoreDirectory(
 	workPolicy workchain.Policy,
 	hooks restoreHooks,
 ) (Manifest, error) {
-	if parameters.RadixActivationHeight != 0 || archivePath == "" || destinationPath == "" || limits.Validate() != nil {
+	if parameters.RadixActivationHeight != policy.Binding.RadixActivationHeight || archivePath == "" || destinationPath == "" || limits.Validate() != nil {
 		return Manifest{}, ErrArchive
 	}
 	if _, err := os.Lstat(destinationPath); err == nil {
@@ -168,7 +165,7 @@ func replayArchiveDirectory(
 	limits Limits,
 	chain replayChain,
 ) (Manifest, error) {
-	if path == "" || chain == nil || parameters.RadixActivationHeight != 0 || limits.Validate() != nil ||
+	if path == "" || chain == nil || parameters.RadixActivationHeight != policy.Binding.RadixActivationHeight || limits.Validate() != nil ||
 		checkpoint.Verify(policy) != nil || base.Tip.ID != policy.Binding.BaseID ||
 		parameters.NetworkID != policy.Binding.NetworkID ||
 		parameters.ActivationHeight != policy.Binding.ActivationHeight {
@@ -216,11 +213,11 @@ func replayArchiveDirectory(
 			return Manifest{}, err
 		}
 		canonical, err := chunk.CanonicalBytes()
-		if err != nil || !bytes.Equal(canonical, encoded) || chunk.Version != manifest.Version ||
+		if err != nil || !bytes.Equal(canonical, encoded) || chunk.Version != manifestChunkVersion(manifest.Version) ||
 			chunk.Index != descriptor.Index ||
 			chunk.NetworkID != manifest.Binding.NetworkID || chunk.BaseID != manifest.Binding.BaseID ||
 			(manifest.Version == ManifestVersion0 && chunk.AnchorID != manifest.Anchor.ID) ||
-			(manifest.Version == ManifestVersion1 && !chunk.AnchorID.IsZero()) ||
+			(manifest.Version != ManifestVersion0 && !chunk.AnchorID.IsZero()) ||
 			chunk.FirstHeight != descriptor.FirstHeight ||
 			len(chunk.Blocks) != int(descriptor.BlockCount) {
 			return Manifest{}, ErrChunk

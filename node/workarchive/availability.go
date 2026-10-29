@@ -489,7 +489,7 @@ func (receipt ReplicaReceipt) signatureMessage() ([]byte, error) {
 }
 
 func (receipt ReplicaReceipt) verifyShape() error {
-	if (receipt.Version != ReplicaReceiptVersion0 && receipt.Version != ReplicaReceiptVersion1) ||
+	if receipt.Binding.RadixActivationHeight != 0 || (receipt.Version != ReplicaReceiptVersion0 && receipt.Version != ReplicaReceiptVersion1) ||
 		receipt.Binding.Validate() != nil ||
 		receipt.StatementID.IsZero() || receipt.ManifestID.IsZero() || receipt.AnchorID.IsZero() ||
 		receipt.LocationID.IsZero() || receipt.StoredAt == 0 || receipt.RetainUntil <= receipt.StoredAt ||

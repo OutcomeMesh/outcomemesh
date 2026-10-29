@@ -38,8 +38,13 @@ under their original rules.
 
 Remaining work, in order:
 
-1. Version archive/checkpoint/custody bindings to commit the schedule before
-   permitting migration or pruning of stores with retained obligations.
+1. Complete schedule-bound custody receipt, admission and retention continuity
+   before enabling new canonical pruning on migrated protected stores. Manifest
+   v2, statement/checkpoint v1, same-prefix archive migration and an in-place
+   original-position-journal transition are implemented; see
+   [archive and protected-storage migration](RADIX_ARCHIVE_STORAGE_MIGRATION.md).
+   Existing effects, floors and custody evidence are retained. Managed custody
+   owners do not yet switch their active binding to the new schedule.
 2. Define the independently approved network activation policy and transition
    checkpoint; local operator profiles alone do not authorize public activation.
 3. Extend migration beyond the initial bounded history, with resumable streaming

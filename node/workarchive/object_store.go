@@ -417,11 +417,11 @@ func validateChunkObject(manifest Manifest, descriptor ChunkDescriptor, encoded 
 		return ErrObject
 	}
 	canonical, err := chunk.CanonicalBytes()
-	if err != nil || !bytes.Equal(canonical, encoded) || chunk.Version != manifest.Version ||
+	if err != nil || !bytes.Equal(canonical, encoded) || chunk.Version != manifestChunkVersion(manifest.Version) ||
 		chunk.Index != descriptor.Index || chunk.NetworkID != manifest.Binding.NetworkID ||
 		chunk.BaseID != manifest.Binding.BaseID ||
 		(manifest.Version == ManifestVersion0 && chunk.AnchorID != manifest.Anchor.ID) ||
-		(manifest.Version == ManifestVersion1 && !chunk.AnchorID.IsZero()) ||
+		(manifest.Version != ManifestVersion0 && !chunk.AnchorID.IsZero()) ||
 		chunk.FirstHeight != descriptor.FirstHeight ||
 		len(chunk.Blocks) != int(descriptor.BlockCount) {
 		return ErrObject

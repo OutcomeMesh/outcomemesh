@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sort"
 	"strings"
 	"syscall"
@@ -21,6 +22,7 @@ import (
 	"github.com/outcomemesh/outcomemesh/node/workarchive"
 	"github.com/outcomemesh/outcomemesh/node/workchain"
 	"github.com/outcomemesh/outcomemesh/storage"
+	pebblestore "github.com/outcomemesh/outcomemesh/storage/pebble"
 )
 
 type archiveVerificationFlags struct {
@@ -151,10 +153,15 @@ func (values *archiveVerificationFlags) load() (archiveVerificationContext, erro
 	}
 	if manifest.Binding.NetworkID != document.NetworkID ||
 		manifest.Binding.GenesisID != genesisID ||
-		manifest.Binding.ActivationHeight != profile.ActivationHeight {
+		manifest.Binding.ActivationHeight != profile.ActivationHeight ||
+		manifest.Binding.RadixActivationHeight != profile.RadixActivationHeight {
 		return archiveVerificationContext{}, errors.New("archive binding does not match node activation")
 	}
-	ledger, err := openStore(*values.data, document)
+	dataPath, err := canonicalPruneLineageDirectory(*values.data)
+	if err != nil {
+		return archiveVerificationContext{}, err
+	}
+	ledger, err := pebblestore.OpenExistingReadOnly(filepath.Join(dataPath, ledgerDirectory), document, pebblestore.DefaultPolicy())
 	if err != nil {
 		return archiveVerificationContext{}, err
 	}
@@ -172,7 +179,7 @@ func (values *archiveVerificationFlags) load() (archiveVerificationContext, erro
 		DifficultyAnchorTimestamp: document.Timestamp,
 		DifficultyAnchorTarget:    document.Target,
 		TargetSpacing:             legacy.TargetSpacing, ASERTHalfLife: legacy.ASERTHalfLife,
-		FeeDelay: profile.FeeDelay,
+		FeeDelay: profile.FeeDelay, RadixActivationHeight: profile.RadixActivationHeight,
 	}
 	validationChain, err := workchain.New(base, parameters)
 	if err != nil {

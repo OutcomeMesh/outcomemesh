@@ -101,6 +101,7 @@ type workPersistence struct {
 	initializeCommit func(*pebble.Batch) error
 	pins             *storagePositionPins
 	position         StoragePosition
+	radixMigrationID types.Hash
 }
 
 // Open creates or reopens the isolated version-1 Pebble coordinator. All
@@ -124,6 +125,10 @@ func openWithPolicy(path string, base Base, parameters workblock.Parameters, pol
 
 // The caller owns pins.lock until a successful return transfers it to Store.
 func openWithPositionPins(path string, base Base, parameters workblock.Parameters, policy Policy, storageID types.Hash, existingOnly bool, initializeCommit func(*pebble.Batch) error, pins *storagePositionPins) (*Store, error) {
+	return openWithPositionPinsMigration(path, base, parameters, policy, storageID, existingOnly, initializeCommit, pins, types.Hash{})
+}
+
+func openWithPositionPinsMigration(path string, base Base, parameters workblock.Parameters, policy Policy, storageID types.Hash, existingOnly bool, initializeCommit func(*pebble.Batch) error, pins *storagePositionPins, migrationID types.Hash) (*Store, error) {
 	if policy.MaxHistoryBytes == 0 {
 		return nil, storage.ErrHistoryLimit
 	}
@@ -136,8 +141,8 @@ func openWithPositionPins(path string, base Base, parameters workblock.Parameter
 		return nil, err
 	}
 	persistence := &workPersistence{
-		rootPath: path,
-		db:       db, policy: policy, checkpoints: make(map[types.Hash]struct{}), storageID: storageID, initializeCommit: initializeCommit, pins: pins,
+		rootPath: path, radixMigrationID: migrationID,
+		db: db, policy: policy, checkpoints: make(map[types.Hash]struct{}), storageID: storageID, initializeCommit: initializeCommit, pins: pins,
 	}
 	if err := persistence.initializeOrLoad(store, base, !existingOnly); err != nil {
 		_ = db.Close()
@@ -210,6 +215,9 @@ func (persistence *workPersistence) initializeOrLoad(store *Store, base Base, al
 	}
 	if !bytes.Equal(storedConfig, configured[:]) {
 		return ErrConfiguration
+	}
+	if err := persistence.validateRadixMigration(base, store.parameters); err != nil {
+		return err
 	}
 	return persistence.load(store, base)
 }

@@ -14,6 +14,7 @@ import (
 const (
 	ManifestVersion0     uint16 = 0
 	ManifestVersion1     uint16 = 1
+	ManifestVersion2     uint16 = 2
 	ChunkVersion0        uint16 = 0
 	ChunkVersion1        uint16 = 1
 	DefaultChunkBlocks          = 128
@@ -95,7 +96,8 @@ type Manifest struct {
 }
 
 func (manifest Manifest) Validate() error {
-	if (manifest.Version != ManifestVersion0 && manifest.Version != ManifestVersion1) ||
+	if (manifest.Version != ManifestVersion0 && manifest.Version != ManifestVersion1 && manifest.Version != ManifestVersion2) ||
+		((manifest.Version == ManifestVersion2) != (manifest.Binding.RadixActivationHeight != 0)) ||
 		manifest.Binding.Validate() != nil ||
 		manifest.Anchor.Validate() != nil ||
 		manifest.Anchor.Height < manifest.Binding.ActivationHeight ||
@@ -154,6 +156,9 @@ func (manifest Manifest) CanonicalBytes() ([]byte, error) {
 	encoder.Fixed(manifestMagic[:])
 	encoder.U16(manifest.Version)
 	encodeBinding(encoder, manifest.Binding)
+	if manifest.Version == ManifestVersion2 {
+		encoder.U64(manifest.Binding.RadixActivationHeight)
+	}
 	encoder.BytesField(manifest.Anchor.CanonicalBytes())
 	encoder.U64(manifest.AncestryNodes)
 	encoder.Fixed(manifest.AncestryRoot[:])
@@ -190,6 +195,11 @@ func DecodeManifest(input []byte) (Manifest, error) {
 	}
 	if manifest.Binding, err = decodeBinding(decoder); err != nil {
 		return Manifest{}, err
+	}
+	if manifest.Version == ManifestVersion2 {
+		if manifest.Binding.RadixActivationHeight, err = decoder.U64(); err != nil {
+			return Manifest{}, err
+		}
 	}
 	tipBytes, err := decoder.BytesField(256)
 	if err != nil {
@@ -281,9 +291,13 @@ func (manifest Manifest) ArchiveStatement(
 		Version:   StatementVersion0,
 		NetworkID: manifest.Binding.NetworkID, GenesisID: manifest.Binding.GenesisID,
 		ActivationHeight: manifest.Binding.ActivationHeight, BaseID: manifest.Binding.BaseID,
-		Sequence: sequence, PreviousID: previousID, Anchor: manifest.Anchor,
+		RadixActivationHeight: manifest.Binding.RadixActivationHeight,
+		Sequence:              sequence, PreviousID: previousID, Anchor: manifest.Anchor,
 		AncestryNodes: manifest.AncestryNodes, AncestryRoot: manifest.AncestryRoot,
 		ArchiveManifestID: manifestID,
+	}
+	if manifest.Version == ManifestVersion2 {
+		statement.Version = StatementVersion1
 	}
 	if err := statement.Validate(manifest.Binding); err != nil {
 		return Statement{}, err
@@ -466,4 +480,12 @@ func chunkFixedBytes(version uint16) int {
 		result += types.HashSize
 	}
 	return result
+}
+
+// Manifest v2 retains stable v1 chunks; only its schedule-bound envelope changes.
+func manifestChunkVersion(version uint16) uint16 {
+	if version == ManifestVersion2 {
+		return ChunkVersion1
+	}
+	return version
 }

@@ -103,3 +103,13 @@ func (s *Store) LegacyArchiveCompatible() bool {
 	defer s.mu.RUnlock()
 	return !s.closed && s.parameters.RadixActivationHeight == 0
 }
+
+// ArchiveScheduleCompatible requires exact schedule agreement, including zero.
+func (s *Store) ArchiveScheduleCompatible(height uint64) bool {
+	if s == nil {
+		return false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.openErrorLocked() == nil && s.parameters.RadixActivationHeight == height
+}

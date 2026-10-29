@@ -132,7 +132,10 @@ An existing WorkGraph directory uses `work-migrate-radix`. Stop the node, review
 the proposed migration and run it with the returned review ID. The command
 replays retained history into a fresh directory and preserves the source.
 Follow [the migration procedure](docs/WORKGRAPH_RADIX_MIGRATION.md) before moving
-an existing chain. Publishing a local profile does not activate a public network.
+an existing chain. Archive successors and protected stores have a separate
+[reviewed migration procedure](docs/RADIX_ARCHIVE_STORAGE_MIGRATION.md), which
+retains original obligations and position journals. Publishing a local profile
+does not activate a public network.
 
 ## Repository layout
 

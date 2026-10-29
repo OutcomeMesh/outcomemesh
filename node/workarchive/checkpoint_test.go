@@ -275,6 +275,13 @@ func FuzzDecodeStatementNeverPanics(f *testing.F) {
 		f.Fatal(err)
 	}
 	f.Add(encoded)
+	statement.Version = StatementVersion1
+	statement.RadixActivationHeight = 100
+	v1, err := statement.CanonicalBytes()
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Add(v1)
 	f.Add([]byte("not-a-statement"))
 	f.Fuzz(func(t *testing.T, input []byte) {
 		statement, err := DecodeStatement(input)
@@ -299,6 +306,14 @@ func FuzzDecodeCheckpointNeverPanics(f *testing.F) {
 		f.Fatal(err)
 	}
 	f.Add(encoded)
+	statement.Version = StatementVersion1
+	statement.RadixActivationHeight = 100
+	v1 := signedCheckpoint(f, statement, keys[:2])
+	v1Bytes, err := v1.CanonicalBytes()
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Add(v1Bytes)
 	f.Add([]byte("not-a-checkpoint"))
 	f.Fuzz(func(t *testing.T, input []byte) {
 		checkpoint, err := DecodeCheckpoint(input)
@@ -454,4 +469,6 @@ func mustStatementID(t testing.TB, statement Statement) types.Hash {
 	return id
 }
 
-func (chain *fakeChain) LegacyArchiveCompatible() bool { return chain != nil }
+func (chain *fakeChain) ArchiveScheduleCompatible(height uint64) bool {
+	return chain != nil && height == 0
+}

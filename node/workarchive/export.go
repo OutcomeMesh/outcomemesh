@@ -37,7 +37,7 @@ func DefaultExportOptions() ExportOptions {
 }
 
 func (options ExportOptions) Validate() error {
-	if (options.Version != ManifestVersion0 && options.Version != ManifestVersion1) ||
+	if (options.Version != ManifestVersion0 && options.Version != ManifestVersion1 && options.Version != ManifestVersion2) ||
 		options.BlocksPerChunk == 0 || options.BlocksPerChunk > MaximumChunkBlocks ||
 		options.Limits.Validate() != nil {
 		return ErrArchiveLimit
@@ -68,7 +68,7 @@ func exportDirectory(
 	options ExportOptions,
 	beforePublish func() error,
 ) (Manifest, types.Hash, error) {
-	if path == "" || chain == nil || !chain.LegacyArchiveCompatible() || anchorID.IsZero() || binding.Validate() != nil ||
+	if path == "" || chain == nil || !chain.ArchiveScheduleCompatible(binding.RadixActivationHeight) || anchorID.IsZero() || binding.Validate() != nil ||
 		options.Validate() != nil {
 		return Manifest{}, types.Hash{}, ErrArchive
 	}
@@ -129,6 +129,7 @@ func publishArchiveDirectory(
 ) (Manifest, types.Hash, error) {
 	if path == "" || binding.Validate() != nil || plan.Anchor.Validate() != nil ||
 		plan.Anchor.Height < binding.ActivationHeight || plan.AncestryRoot.IsZero() ||
+		((options.Version == ManifestVersion2) != (binding.RadixActivationHeight != 0)) ||
 		plan.BlockCount == 0 || plan.BlockCount > options.Limits.MaximumBlocks ||
 		plan.AncestryNodes != plan.BlockCount+1 || options.Validate() != nil || stream == nil {
 		return Manifest{}, types.Hash{}, ErrArchive
@@ -162,7 +163,7 @@ func publishArchiveDirectory(
 			return ErrArchiveLimit
 		}
 		chunk := Chunk{
-			Version: options.Version, NetworkID: binding.NetworkID, BaseID: binding.BaseID,
+			Version: manifestChunkVersion(options.Version), NetworkID: binding.NetworkID, BaseID: binding.BaseID,
 			Index:       uint32(len(descriptors)),
 			FirstHeight: current[0].Header.Seal.Height,
 			Blocks:      append([]workblock.Block(nil), current...),
@@ -202,6 +203,7 @@ func publishArchiveDirectory(
 	emit := func(block workblock.Block, flushAfter bool) error {
 		if blockCount >= plan.BlockCount || block.ValidateBasic() != nil ||
 			block.Header.Seal.NetworkID != binding.NetworkID ||
+			block.Header.Version != (workblock.Parameters{RadixActivationHeight: binding.RadixActivationHeight}).VersionAt(expectedHeight) ||
 			block.Header.Seal.Height != expectedHeight ||
 			block.Header.Seal.AnchorParent != expectedParent {
 			return ErrArchiveOrder
@@ -213,7 +215,7 @@ func publishArchiveDirectory(
 		blockBytes := block.CanonicalBytes()
 		blockFieldBytes := uvarintSize(uint64(len(blockBytes))) + len(blockBytes)
 		candidateCount := len(current) + 1
-		candidateBytes := chunkFixedBytes(options.Version) +
+		candidateBytes := chunkFixedBytes(manifestChunkVersion(options.Version)) +
 			uvarintSize(uint64(candidateCount)) + currentFieldBytes + blockFieldBytes
 		if len(current) == int(options.BlocksPerChunk) ||
 			(len(current) > 0 && candidateBytes > MaximumChunkBytes) {
@@ -221,7 +223,7 @@ func publishArchiveDirectory(
 				return err
 			}
 			candidateCount = 1
-			candidateBytes = chunkFixedBytes(options.Version) +
+			candidateBytes = chunkFixedBytes(manifestChunkVersion(options.Version)) +
 				uvarintSize(1) + blockFieldBytes
 		}
 		if candidateCount > MaximumChunkBlocks || candidateBytes > MaximumChunkBytes {

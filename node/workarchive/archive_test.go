@@ -236,7 +236,7 @@ func TestArchiveCodecRejectsTrailingOversizeAndInvalidPolicy(t *testing.T) {
 	}
 	unknownManifest := append([]byte(nil), manifestBytes...)
 	unknownManifest[len(manifestMagic)] = 0
-	unknownManifest[len(manifestMagic)+1] = 2
+	unknownManifest[len(manifestMagic)+1] = 3
 	if _, err := DecodeManifest(unknownManifest); !errors.Is(err, ErrManifest) {
 		t.Fatalf("unknown archive manifest version error=%v", err)
 	}
@@ -257,7 +257,7 @@ func TestArchiveCodecRejectsTrailingOversizeAndInvalidPolicy(t *testing.T) {
 		t.Fatalf("over-maximum chunk target error=%v", err)
 	}
 	invalidOptions = DefaultExportOptions()
-	invalidOptions.Version = ManifestVersion1 + 1
+	invalidOptions.Version = ManifestVersion2 + 1
 	if err := invalidOptions.Validate(); !errors.Is(err, ErrArchiveLimit) {
 		t.Fatalf("unknown archive output version error=%v", err)
 	}
@@ -344,6 +344,17 @@ func FuzzDecodeArchiveManifestNeverPanics(f *testing.F) {
 	manifestV1Bytes, _ := archiveCodecSeedsForVersion(f, ManifestVersion1)
 	f.Add(manifestBytes)
 	f.Add(manifestV1Bytes)
+	v2, err := DecodeManifest(manifestV1Bytes)
+	if err != nil {
+		f.Fatal(err)
+	}
+	v2.Version = ManifestVersion2
+	v2.Binding.RadixActivationHeight = 10
+	v2Bytes, err := v2.CanonicalBytes()
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Add(v2Bytes)
 	f.Add([]byte("not-an-archive-manifest"))
 	f.Fuzz(func(t *testing.T, input []byte) {
 		manifest, err := DecodeManifest(input)

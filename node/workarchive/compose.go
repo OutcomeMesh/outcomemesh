@@ -45,7 +45,7 @@ func composeDirectory(
 	options ExportOptions,
 	beforePublish func() error,
 ) (Manifest, types.Hash, error) {
-	if path == "" || previousArchivePath == "" || chain == nil || !chain.LegacyArchiveCompatible() || parameters.RadixActivationHeight != 0 || anchorID.IsZero() ||
+	if path == "" || previousArchivePath == "" || chain == nil || !chain.ArchiveScheduleCompatible(policy.Binding.RadixActivationHeight) || parameters.RadixActivationHeight != policy.Binding.RadixActivationHeight || anchorID.IsZero() ||
 		options.Validate() != nil {
 		return Manifest{}, types.Hash{}, ErrArchiveCompose
 	}
@@ -88,7 +88,7 @@ func composeDirectory(
 		history.BlockIDs[int(previous.BlockCount)-1] != previous.Anchor.ID {
 		return Manifest{}, types.Hash{}, ErrArchiveCompose
 	}
-	if previous.Version == ManifestVersion1 && options.Version == ManifestVersion1 {
+	if previous.Version != ManifestVersion0 && options.Version != ManifestVersion0 {
 		for _, descriptor := range previous.Chunks {
 			if descriptor.BlockCount > options.BlocksPerChunk {
 				return Manifest{}, types.Hash{}, ErrArchiveCompose
@@ -186,11 +186,11 @@ func streamArchiveBlocks(
 			return err
 		}
 		canonical, err := chunk.CanonicalBytes()
-		if err != nil || !bytes.Equal(canonical, encoded) || chunk.Version != manifest.Version ||
+		if err != nil || !bytes.Equal(canonical, encoded) || chunk.Version != manifestChunkVersion(manifest.Version) ||
 			chunk.Index != descriptor.Index ||
 			chunk.NetworkID != manifest.Binding.NetworkID || chunk.BaseID != manifest.Binding.BaseID ||
 			(manifest.Version == ManifestVersion0 && chunk.AnchorID != manifest.Anchor.ID) ||
-			(manifest.Version == ManifestVersion1 && !chunk.AnchorID.IsZero()) ||
+			(manifest.Version != ManifestVersion0 && !chunk.AnchorID.IsZero()) ||
 			chunk.FirstHeight != descriptor.FirstHeight ||
 			len(chunk.Blocks) != int(descriptor.BlockCount) {
 			return errors.Join(ErrChunk, err)

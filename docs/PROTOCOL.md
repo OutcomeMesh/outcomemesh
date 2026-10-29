@@ -830,3 +830,28 @@ Context, full bundle, both role signatures, source lineage and the independent
 effect seal are mandatory. Unknown work has no closing authorization. The v0
 state commitment and consensus receipt roots are unchanged by the accompanying
 [index optimization](STATE_SCALING.md). No activation rule is waived.
+
+
+## Scheduled archive and protected-storage migration (experimental)
+
+WorkGraph block v3 follows the explicit height rules in
+[WorkGraph radix activation](WORKGRAPH_RADIX_MIGRATION.md). Historical blocks,
+resource identities, maturity and delayed fees are not rewritten.
+
+Archive manifest v2 and statement/checkpoint v1 commit the nonzero radix height.
+A signed migration advances the old statement sequence by exactly one and binds
+its previous ID while retaining the same anchor, ancestry and v1 chunk bytes.
+The original attestor trust set and quorum authorize the successor. Original
+receipts retain their original IDs and deadlines; a successor is not availability
+credit or a new custody admission.
+
+A protected WorkChain can schedule a future height only with its original
+confirmed independent position journal and exact database review. Configuration,
+permanent migration receipt and next storage position commit atomically. Existing
+states, canonical floor, fee queues, storage identity and retained effects do not
+change. Reopening requires the retained review ID and the original journal's
+matching intent. Recovery confirms only an already committed transition. An
+intent without that database record remains held. New canonical pruning and
+custody issuance under the new schedule remain gated. Encoding, continuity and
+operational limits are specified in
+[archive and protected-storage migration](RADIX_ARCHIVE_STORAGE_MIGRATION.md).

@@ -72,10 +72,12 @@ at 1,000,000. These limits bound the replay request before destination creation;
 opening an existing database still materializes its retained state. Larger
 histories need a separately designed streaming migration.
 
-Current archive and custody formats do not bind the new schedule. Export,
-composition, archive replay and canonical-prefix pruning therefore refuse
-scheduled radix stores. Existing custody obligations must not be dropped or
-reissued to bypass this restriction. Their versioned migration remains open.
+Manifest v2 and statement/checkpoint v1 bind the new schedule. A separate
+[archive and protected-storage procedure](RADIX_ARCHIVE_STORAGE_MIGRATION.md)
+preserves old archive objects, retained effects and the original position journal.
+The complete-history command above still refuses protected or pruned sources.
+Custody receipts and new canonical-prefix pruning on scheduled stores remain
+disabled until their admission and retention transition is versioned.
 
 ## Operator procedure
 
