@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -164,7 +165,7 @@ func runCustodySchedule(ctx context.Context, args []string, out io.Writer) (retu
 	}
 	writes := *mode == "prepare" || *mode == "sign" || *mode == "cosign" || *mode == "receipt"
 	if writes != (*output != "") {
-		return errors.New("prepare/sign/cosign require out; other modes forbid it")
+		return errors.New("prepare/sign/cosign/receipt require out; other modes forbid it")
 	}
 	id, err := managedCustodyExternalID("assignment-id", *aid)
 	if err != nil {
@@ -464,6 +465,37 @@ func runCustodySchedule(ctx context.Context, args []string, out io.Writer) (retu
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintln(out, string(b))
-	return err
+	return writeCustodyScheduleReport(ctx, out, b)
+}
+
+// Owner locks are already released before reporting. Adopt native pipes so a
+// blocked reader cannot prevent SIGINT/SIGTERM from ending the command after a
+// durable write. Lost output never rolls back an artifact or authority decision.
+func writeCustodyScheduleReport(ctx context.Context, output io.Writer, report []byte) (returnErr error) {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if file, ok := output.(*os.File); ok {
+		info, err := file.Stat()
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeNamedPipe != 0 && (runtime.GOOS == "darwin" || runtime.GOOS == "linux") {
+			writer, err := ownPruneEffectOutput(output)
+			if err != nil {
+				return err
+			}
+			defer func() { returnErr = errors.Join(returnErr, writer.Close()) }()
+			done := make(chan struct{})
+			stop := context.AfterFunc(ctx, func() { defer close(done); _ = writer.Close() })
+			defer func() {
+				if !stop() {
+					<-done
+				}
+			}()
+			output = writer
+		}
+	}
+	_, err := fmt.Fprintln(output, string(report))
+	return errors.Join(err, ctx.Err())
 }

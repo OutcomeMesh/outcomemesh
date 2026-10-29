@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -9,9 +10,11 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/outcomemesh/outcomemesh/core/types"
 	"github.com/outcomemesh/outcomemesh/node/custodyauthority"
@@ -178,5 +181,44 @@ func TestCustodyScheduleCLIPrepareSignApplyAndLiveQUIC(t *testing.T) {
 	}
 	if got := f.snapshot(t); got.Authority.Pending != before.Authority.Pending {
 		t.Fatal("migration implicitly released pending work")
+	}
+}
+
+func TestCustodyScheduleReportCancelsBlockedNativeOutput(t *testing.T) {
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
+		t.Skip("native pipe adoption is macOS/Linux")
+	}
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	defer writer.Close()
+	if err := writer.SetWriteDeadline(time.Now().Add(25 * time.Millisecond)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := writer.Write(bytes.Repeat([]byte("x"), 1<<20)); !os.IsTimeout(err) {
+		t.Fatal("pipe did not fill", err)
+	}
+	if err := writer.SetWriteDeadline(time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- writeCustodyScheduleReport(ctx, writer, []byte(`{"mode":"apply"}`)) }()
+	select {
+	case err := <-done:
+		t.Fatal("full output unexpectedly returned", err)
+	case <-time.After(30 * time.Millisecond):
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatal("cancellation lost", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("blocked output ignored cancellation")
 	}
 }
