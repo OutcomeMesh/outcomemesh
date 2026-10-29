@@ -312,3 +312,41 @@ func TestProtectedRadixMigrationRejectsMissingReceiptAndUnpinnedStores(t *testin
 		t.Fatal("missing migration proof recreated")
 	}
 }
+
+func TestProtectedRadixMigrationOpenRejectsMissingAndAliasedDatabase(t *testing.T) {
+	f := newPositionFixture(t, 3)
+	r, err := f.chain.ReviewRadixSchedule(context.Background(), 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.chain.MigrateRadixSchedule(context.Background(), 5, r.ID()); err != nil {
+		t.Fatal(err)
+	}
+	if err = f.chain.Close(); err != nil {
+		t.Fatal(err)
+	}
+	next := f.parameters
+	next.RadixActivationHeight = 5
+	missing := filepath.Join(t.TempDir(), "absent")
+	if s, err := OpenRadixMigratedPositionPinnedWithPolicy(missing, f.pins, f.base, next, f.policy, testStorageID(), r.ID()); err == nil {
+		s.Close()
+		t.Fatal("opened missing database")
+	}
+	if _, err = os.Lstat(missing); !os.IsNotExist(err) {
+		t.Fatal("missing root was created", err)
+	}
+	t.Run("symlink", func(t *testing.T) {
+		alias := filepath.Join(t.TempDir(), "alias")
+		if err := os.Symlink(f.path, alias); err != nil {
+			t.Skip("symlink unavailable", err)
+		}
+		if s, err := OpenRadixMigratedPositionPinnedWithPolicy(alias, f.pins, f.base, next, f.policy, testStorageID(), r.ID()); err == nil {
+			s.Close()
+			t.Fatal("database alias accepted")
+		}
+	})
+	f.chain, err = OpenRadixMigratedPositionPinnedWithPolicy(f.path, f.pins, f.base, next, f.policy, testStorageID(), r.ID())
+	if err != nil {
+		t.Fatal("rejected path leaked ownership", err)
+	}
+}

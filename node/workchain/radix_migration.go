@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"errors"
+	"os"
 	"path/filepath"
 
 	"github.com/cockroachdb/pebble/v2"
@@ -179,12 +180,22 @@ func (s *Store) MigrateRadixSchedule(ctx context.Context, height uint64, expecte
 // opens the ORIGINAL pin identity under the old configuration; the database
 // must contain that exact transition at an intent in this same journal.
 func OpenRadixMigratedPositionPinnedWithPolicy(path, pinsPath string, base Base, parameters workblock.Parameters, policy Policy, storageID, expected types.Hash) (_ *Store, err error) {
-	if expected.IsZero() || parameters.RadixActivationHeight == 0 || parameters.Validate() != nil {
+	if storageID.IsZero() || expected.IsZero() || parameters.RadixActivationHeight == 0 || parameters.Validate() != nil {
 		return nil, ErrRadixMigration
 	}
 	path, pinsPath, err = positionPaths(path, pinsPath)
 	if err != nil {
 		return nil, err
+	}
+	if policy.MaxHistoryBytes == 0 {
+		return nil, storage.ErrHistoryLimit
+	}
+	if _, err := New(base, parameters); err != nil {
+		return nil, err
+	}
+	info, err := os.Lstat(path)
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return nil, errors.Join(ErrStoragePosition, err)
 	}
 	old := parameters
 	old.RadixActivationHeight = 0
