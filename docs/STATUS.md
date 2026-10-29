@@ -10,6 +10,19 @@ Full planned production readiness is approximately **44/100**, using the weighte
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
 
+## 2026-10-29: Go 1.27.3 and packaged pre-alpha releases
+
+Go 1.27.3 is now the minimum supported toolchain and the compiler used for
+official binary archives. Go 1.26.7 support has ended. The Swiss dependency used
+by storage is pinned to its Go 1.27-compatible revision.
+
+The [release workflow](RELEASES.md) packages Linux/macOS amd64 and arm64 binaries
+from a clean tagged commit. It includes version metadata, dependency notices,
+source manifests, checksums and GitHub build provenance. Releases start as draft
+prereleases. Repository policy covers reviewed changes to main, immutable version
+tags, dependency updates and private vulnerability reporting. No mainnet or
+consensus activation follows; readiness remains **44/100**.
+
 ## 2026-10-29: permanent external revocation for copied custody keys
 
 The [guard service](CUSTODY_INDEPENDENT_GUARD.md) now optionally pins a separate

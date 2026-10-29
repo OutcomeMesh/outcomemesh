@@ -1,0 +1,76 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag on main with successful CI
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  draft:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      actions: read
+      id-token: write
+      attestations: write
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+      GOTOOLCHAIN: local
+      GOMAXPROCS: '2'
+      GOFLAGS: -p=2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require a retained tag, main ancestry and successful CI
+        run: |
+          python3 - <<'PY'
+          import os, sys
+          sys.path.insert(0, 'scripts')
+          from release import validate_version
+          validate_version(os.environ['TAG'])
+          PY
+          test "$(git rev-parse HEAD)" = "$(git rev-parse "refs/tags/$TAG^{commit}")"
+          git merge-base --is-ancestor HEAD origin/main
+          test -f "docs/releases/$TAG.md"
+          COUNT=$(gh run list --workflow ci.yml --commit "$(git rev-parse HEAD)" --branch main --event push --status success --limit 20 --json databaseId --jq length)
+          test "$COUNT" -gt 0
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo 'This release already exists; existing assets will not be overwritten.' >&2
+            exit 1
+          fi
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: .go-version
+          cache: true
+      - name: Build pinned official archives
+        run: python3 scripts/release.py --version "$TAG" --out dist
+      - run: cd dist && sha256sum --check SHA256SUMS
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            dist/*.tar.gz
+            dist/BUILDINFO.json
+            dist/SHA256SUMS
+            dist/SOURCE_MANIFEST.sha256
+      - name: Prepare draft prerelease
+        run: |
+          gh release create "$TAG" dist/* --verify-tag --draft --prerelease --latest=false \
+            --title "OutcomeMesh Core $TAG" --notes-file "docs/releases/$TAG.md"

@@ -267,7 +267,10 @@ still requires a protected issuer and mandatory protocol validation.
 
 ## Build and run
 
-Go 1.26.7 is the pinned toolchain. With it available as `go`:
+Go **1.27.3** is the minimum supported and pinned toolchain. Go 1.26.7 support
+has ended. Official Linux/macOS binaries also use Go 1.27.3; see
+[downloads](https://github.com/OutcomeMesh/outcomemesh/releases) and the
+[release guide](docs/RELEASES.md). With Go 1.27.3 available as `go`:
 
 ```sh
 make test-all

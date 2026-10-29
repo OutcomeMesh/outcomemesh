@@ -110,12 +110,12 @@ process variants exercise the same reviewed commands. Per-job Claim/Result/Serve
 endorsements in this lifecycle are explicitly deterministic fixture signatures;
 registry and admission votes come from the real original witness CLI.
 
-Reproduce the local gates with Go 1.26.7:
+Reproduce the local gates with Go 1.27.3:
 
 ```sh
-GOTOOLCHAIN=go1.26.7 GOMAXPROCS=2 GOFLAGS=-p=1 make -j1 test-all
-GOTOOLCHAIN=go1.26.7 GOMAXPROCS=2 go test -tags=integration ./cmd/omd -run '^TestProcessCustodyV2(Enrolled|Required)AdmissionAndExecution$' -count=1 -timeout=2m
-GOTOOLCHAIN=go1.26.7 GOMAXPROCS=2 go test ./node/custodyv2 -run '^$' -fuzz '^FuzzEnrolledBindingDecoder$' -fuzztime=5s
+GOTOOLCHAIN=go1.27.3 GOMAXPROCS=2 GOFLAGS=-p=1 make -j1 test-all
+GOTOOLCHAIN=go1.27.3 GOMAXPROCS=2 go test -tags=integration ./cmd/omd -run '^TestProcessCustodyV2(Enrolled|Required)AdmissionAndExecution$' -count=1 -timeout=2m
+GOTOOLCHAIN=go1.27.3 GOMAXPROCS=2 go test ./node/custodyv2 -run '^$' -fuzz '^FuzzEnrolledBindingDecoder$' -fuzztime=5s
 ```
 
 [Acceptance report](evidence/custody-v2-enrolled-20261028.json) records 13 new

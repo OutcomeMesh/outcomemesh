@@ -79,10 +79,10 @@ Example builds from the selected source revision, for Linux amd64 targets:
 
 ```sh
 mkdir -p bin
-GOTOOLCHAIN=go1.26.7 CGO_ENABLED=0 go build -trimpath -o bin/omd-native ./cmd/omd
-GOTOOLCHAIN=go1.26.7 CGO_ENABLED=0 go test -c -tags=integration -trimpath -o bin/omd-native.test ./cmd/omd
-GOTOOLCHAIN=go1.26.7 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -o bin/omd-linux-amd64 ./cmd/omd
-GOTOOLCHAIN=go1.26.7 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go test -c -tags=integration -trimpath -o bin/omd-linux-amd64.test ./cmd/omd
+GOTOOLCHAIN=go1.27.3 CGO_ENABLED=0 go build -trimpath -o bin/omd-native ./cmd/omd
+GOTOOLCHAIN=go1.27.3 CGO_ENABLED=0 go test -c -tags=integration -trimpath -o bin/omd-native.test ./cmd/omd
+GOTOOLCHAIN=go1.27.3 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -o bin/omd-linux-amd64 ./cmd/omd
+GOTOOLCHAIN=go1.27.3 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go test -c -tags=integration -trimpath -o bin/omd-linux-amd64.test ./cmd/omd
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/remote_acceptance -p 'test_*.py'
 ```
 

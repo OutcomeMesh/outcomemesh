@@ -139,9 +139,9 @@ counters, held accounting and process cleanup. Its
 are historical fixture proofs, not live permissions or real-value endorsements.
 
 ```sh
-GOTOOLCHAIN=go1.26.7 GOMAXPROCS=2 GOFLAGS=-p=1 make -j1 test-all
-GOTOOLCHAIN=go1.26.7 GOMAXPROCS=2 go test -tags=integration ./cmd/omd -run '^TestProcessCustodyV2EnrolledDeliveryColdStoresAndLostOutput$' -count=1 -timeout=2m
-GOTOOLCHAIN=go1.26.7 GOMAXPROCS=2 go test ./node/custodyv2 -run '^$' -fuzz '^FuzzEnrolledDeliveryPublicPackets$' -fuzztime=5s
+GOTOOLCHAIN=go1.27.3 GOMAXPROCS=2 GOFLAGS=-p=1 make -j1 test-all
+GOTOOLCHAIN=go1.27.3 GOMAXPROCS=2 go test -tags=integration ./cmd/omd -run '^TestProcessCustodyV2EnrolledDeliveryColdStoresAndLostOutput$' -count=1 -timeout=2m
+GOTOOLCHAIN=go1.27.3 GOMAXPROCS=2 go test ./node/custodyv2 -run '^$' -fuzz '^FuzzEnrolledDeliveryPublicPackets$' -fuzztime=5s
 ```
 
 Extract the public archive into a separate directory and set

@@ -70,6 +70,8 @@ func run(arguments []string) error {
 		return errors.New("missing command")
 	}
 	switch arguments[0] {
+	case "version", "--version":
+		return runVersion(arguments[1:], os.Stdout)
 	case "keygen":
 		return runKeygen(arguments[1:])
 	case "init":
@@ -1626,6 +1628,7 @@ func defaultDevelopmentAddress() types.Address {
 }
 
 func printUsage() {
+	fmt.Println("version: omd version [--json]")
 	fmt.Printf("custody guard revocation: omd %s --action <sign|send|inspect> --mode <review|run> [flags]\n", custodyGuardRevokeCommand)
 	fmt.Printf("independent custody guard: omd %s --action <create|serve> --mode <review|run> [flags]\n", custodyGuardCommand)
 	fmt.Println("OutcomeMesh standalone development node")

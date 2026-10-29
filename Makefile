@@ -1,8 +1,10 @@
 GO ?= go
+GOTOOLCHAIN ?= go$(shell cat .go-version)
+export GOTOOLCHAIN
 FUZZTIME ?= 3s
 WORKROLLOVERCYCLES ?= 256
 
-.PHONY: build fmt vet test test-race test-fuzz-smoke test-process test-remote-support test-work-rollover-soak test-economic-review economic-review test-calibration test-all
+.PHONY: build fmt vet test test-race test-fuzz-smoke test-process test-remote-support test-work-rollover-soak test-economic-review economic-review test-calibration test-all release
 
 build:
 	$(GO) build -trimpath -o bin/omd ./cmd/omd
@@ -17,19 +19,7 @@ test:
 	$(GO) test ./...
 
 test-race:
-	# Twelve disjoint groups keep the growing custody suite within normal timeouts.
-	$(GO) test -race ./... -run '^TestArchive'
-	$(GO) test -race ./... -run '^TestPrune'
-	$(GO) test -race ./... -skip '^(TestArchive|TestPrune|TestRemote|TestManagedCustody|TestAdmission|TestRequired|TestCustody|TestGuardedProfile5)'
-	$(GO) test -race ./... -run '^TestCustody' -skip '^TestCustodyV2'
-	$(GO) test -race ./... -run '^TestCustodyV2' -skip '^TestCustodyV2(Enrolled|Required)'
-	$(GO) test -race ./... -run '^TestCustodyV2Enrolled'
-	$(GO) test -race ./... -run '^TestCustodyV2Required'
-	$(GO) test -race ./... -run '^TestManagedCustody'
-	$(GO) test -race ./... -run '^TestRemote'
-	$(GO) test -race ./... -run '^Test(Admission|Required)' -skip '^TestAdmissionDelivery'
-	$(GO) test -race ./... -run '^TestAdmissionDelivery'
-	$(GO) test -race ./... -run '^TestGuardedProfile5'
+	GO="$(GO)" python3 scripts/ci.py all
 
 test-fuzz-smoke:
 	$(GO) test ./node/custodyv2 -run '^$$' -fuzz '^FuzzGuardedProofCodecs$$' -fuzztime=$(FUZZTIME)
@@ -206,3 +196,6 @@ test-calibration:
 	$(GO) test ./sim/workgraphmodel -run '^(TestHoeffding.*Upper99PPM|TestPublicTestnetCalibration)' -count=1 -v
 
 test-all: fmt vet test-race
+
+release:
+	python3 scripts/release.py --version "$(VERSION)" --out "$(OUT)"

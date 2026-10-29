@@ -22,15 +22,17 @@ in commits, issue bodies or test fixtures.
 
 ## Development environment
 
-Use Go 1.26.7, the toolchain recorded in `go.mod`. From the repository root:
+Use Go 1.27.3, recorded in `go.mod` and `.go-version`. Go 1.26.7 is no longer
+supported. Official binary packaging follows [the release guide](docs/RELEASES.md).
+From the repository root:
 
 ```sh
-GOTOOLCHAIN=go1.26.7 make build
-GOTOOLCHAIN=go1.26.7 go test ./path/to/changed/package -run '^TestRelevantBehavior$' -count=1
-GOTOOLCHAIN=go1.26.7 make -j1 test-all
+GOTOOLCHAIN=go1.27.3 make build
+GOTOOLCHAIN=go1.27.3 go test ./path/to/changed/package -run '^TestRelevantBehavior$' -count=1
+GOTOOLCHAIN=go1.27.3 make -j1 test-all
 ```
 
-`test-all` formats the code, runs vet and covers the test suite in seven disjoint
+`test-all` formats the code, runs vet and covers the test suite in twelve disjoint
 race-enabled groups. Run the focused checks while developing, then the required
 repository gates before submitting a core change. Do not raise timeouts or
 weaken assertions to hide a regression. Document a failure and its cause.

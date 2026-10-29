@@ -123,18 +123,18 @@ workflow is a separate remaining task, not successful custody completion.
 
 ## Verification and remaining scope
 
-Use Go 1.26.7. Focused normal/race tests cover the wire, explicit peer/rate
+Use Go 1.27.3. Focused normal/race tests cover the wire, explicit peer/rate
 isolation, owned execution, immutable source identity, proof expiry and exact
 Begin/Drain/Complete recovery. Integration process tests kill B before data and
 after its journal commit before response delivery, reopen A's original owner,
 and exercise exact cached recovery without fresh signing.
 
 ```sh
-GOTOOLCHAIN=go1.26.7 go test -race -tags=integration \
+GOTOOLCHAIN=go1.27.3 go test -race -tags=integration \
   ./node/custodyauthority/store ./node/custodyauthority/remotewire \
   ./node/transport/libp2p -run '^(TestRemote|TestControl|TestQUICRemoteCustody)' \
   -count=1 -timeout=2m
-GOTOOLCHAIN=go1.26.7 make -j1 test-all
+GOTOOLCHAIN=go1.27.3 make -j1 test-all
 ```
 
 The separate [operator/server CLI](REMOTE_CUSTODY_OPERATOR.md) now supervises

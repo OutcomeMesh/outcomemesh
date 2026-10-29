@@ -91,7 +91,7 @@ before requesting this proposal.
 
 ## Reproduction
 
-Use Go 1.26.7, pure Go native Linux builds, the pinned module cache and the
+Use Go 1.27.3, pure Go native Linux builds, the pinned module cache and the
 integration-tagged `omd.test`. The built-in test helpers are opt-in:
 
 - `TestExportCustodyV2WANFixture`: private `OUTCOMEMESH_REMOTE_FIXTURE_OUT` and

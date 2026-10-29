@@ -188,9 +188,9 @@ public-testnet evidence remain launch gates. Readiness remains **44/100**.
 ## Checks
 
 ```sh
-GOTOOLCHAIN=go1.26.7 GOMAXPROCS=2 GOFLAGS=-p=1 make -j1 test-all
-GOTOOLCHAIN=go1.26.7 GOMAXPROCS=2 GOFLAGS=-p=1 go test -tags=integration ./cmd/omd -run '^TestProcessRemoteCutoverColdPreparationAndLostOutput$' -count=1 -timeout=2m
-GOTOOLCHAIN=go1.26.7 GOMAXPROCS=2 GOFLAGS=-p=1 go test ./node/custodycutover -run '^$' -fuzz '^FuzzCutoverPublicArtifacts$' -fuzztime=5s
+GOTOOLCHAIN=go1.27.3 GOMAXPROCS=2 GOFLAGS=-p=1 make -j1 test-all
+GOTOOLCHAIN=go1.27.3 GOMAXPROCS=2 GOFLAGS=-p=1 go test -tags=integration ./cmd/omd -run '^TestProcessRemoteCutoverColdPreparationAndLostOutput$' -count=1 -timeout=2m
+GOTOOLCHAIN=go1.27.3 GOMAXPROCS=2 GOFLAGS=-p=1 go test ./node/custodycutover -run '^$' -fuzz '^FuzzCutoverPublicArtifacts$' -fuzztime=5s
 ```
 
 Coverage includes complete one- and two-cycle histories, opaque/unmatched

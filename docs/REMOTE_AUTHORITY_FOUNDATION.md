@@ -174,11 +174,11 @@ both record machines, checks V0 delivery refusal and kills original processes
 at publication boundaries:
 
 ```sh
-GOTOOLCHAIN=go1.26.7 go test -race -tags=integration \
+GOTOOLCHAIN=go1.27.3 go test -race -tags=integration \
   ./node/custodyauthority/... ./node/workarchive \
   -run '^(TestRemote|TestWorker|TestPlanAndSeal|TestPlanRejects|TestCustodyRemoteAssignment|TestAdmissionLegacyWire|TestCompletionLegacyWire)' \
   -count=1 -timeout=2m
-GOTOOLCHAIN=go1.26.7 make -j1 test-all
+GOTOOLCHAIN=go1.27.3 make -j1 test-all
 ```
 
 `TestRemoteCoordinatorProcessCrashBarriers` covers twelve real process kills

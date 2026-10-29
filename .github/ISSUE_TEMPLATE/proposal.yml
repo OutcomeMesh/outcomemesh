@@ -1,0 +1,25 @@
+name: Protocol or feature proposal
+description: Propose a change before implementing it.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What concrete use case or limitation does this address?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Explain the change, alternatives and relevant plan item.
+    validations:
+      required: true
+  - type: textarea
+    id: compatibility
+    attributes:
+      label: Compatibility and trust assumptions
+      description: Describe effects on consensus, stored data, recovery, operators and existing clients.
+    validations:
+      required: true

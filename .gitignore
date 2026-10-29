@@ -5,3 +5,5 @@ data/
 coverage/
 *.coverprofile
 *.test
+dist/
+__pycache__/

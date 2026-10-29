@@ -1,0 +1,28 @@
+name: Bug report
+description: Report a reproducible problem in OutcomeMesh Core.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: 'For a security vulnerability, use Security → Report a vulnerability. Do not post secrets or unpublished exploit details here.'
+  - type: textarea
+    id: behavior
+    attributes:
+      label: What happened?
+      description: Include the expected behavior and what you observed.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Use a minimal example without private keys, credentials or private operator data.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Version and environment
+      description: Paste omd version --json, your operating system and relevant public configuration.
+    validations:
+      required: true

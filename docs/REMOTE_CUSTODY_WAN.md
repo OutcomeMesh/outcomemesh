@@ -18,13 +18,13 @@ still verifies B's independently pinned transport identity.
 
 ## Artifacts and fixture boundary
 
-Select and record a frozen source revision/manifest. Build with Go 1.26.7 for
+Select and record a frozen source revision/manifest. Build with Go 1.27.3 for
 the actual target architecture, using the same module inputs and build flags:
 
 ```sh
-CGO_ENABLED=0 GOTOOLCHAIN=go1.26.7 go build -mod=readonly -p=2 -trimpath -buildvcs=false -o omd ./cmd/omd
-CGO_ENABLED=0 GOTOOLCHAIN=go1.26.7 go test -c -mod=readonly -p=2 -tags=integration -trimpath -o omd.test ./cmd/omd
-CGO_ENABLED=0 GOTOOLCHAIN=go1.26.7 go test -c -mod=readonly -p=2 -tags=integration -trimpath -o store.test ./node/custodyauthority/store
+CGO_ENABLED=0 GOTOOLCHAIN=go1.27.3 go build -mod=readonly -p=2 -trimpath -buildvcs=false -o omd ./cmd/omd
+CGO_ENABLED=0 GOTOOLCHAIN=go1.27.3 go test -c -mod=readonly -p=2 -tags=integration -trimpath -o omd.test ./cmd/omd
+CGO_ENABLED=0 GOTOOLCHAIN=go1.27.3 go test -c -mod=readonly -p=2 -tags=integration -trimpath -o store.test ./node/custodyauthority/store
 make test-remote-support
 ```
 

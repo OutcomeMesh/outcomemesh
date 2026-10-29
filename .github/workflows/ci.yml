@@ -1,0 +1,119 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  GOTOOLCHAIN: local
+  GOMAXPROCS: '2'
+  GOFLAGS: -p=2
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.groups.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: groups
+        run: echo "matrix=$(python3 scripts/ci.py matrix)" >> "$GITHUB_OUTPUT"
+
+  hygiene:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: .go-version
+          cache: true
+      - name: Source and dependency consistency
+        run: |
+          test "$(go env GOVERSION)" = "go$(cat .go-version)"
+          test -z "$(gofmt -l $(git ls-files '*.go'))"
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+          go mod verify
+          go vet ./...
+          python3 -m unittest discover -s scripts -p test_release.py
+          make test-remote-support
+
+  race:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: .go-version
+          cache: true
+      - name: Core suite
+        env:
+          GROUP: ${{ matrix.group }}
+        run: python3 scripts/ci.py "$GROUP"
+
+  macos:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: .go-version
+          cache: true
+      - run: go test -race ./core/... ./storage/... ./node/custodyguard/... ./node/custodyfence/... -count=1 -timeout=20m
+      - run: CGO_ENABLED=0 go build -mod=readonly -trimpath -o "$RUNNER_TEMP/omd" ./cmd/omd
+      - run: '"$RUNNER_TEMP/omd" version --json'
+
+  archives:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: .go-version
+          cache: true
+      - run: python3 scripts/release.py --version v0.0.0-ci --out "$RUNNER_TEMP/outcomemesh-archives"
+      - run: cd "$RUNNER_TEMP/outcomemesh-archives" && sha256sum --check SHA256SUMS
+
+  required:
+    if: always()
+    needs: [prepare, hygiene, race, macos, archives]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require every gate
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          results = json.loads(os.environ['RESULTS'])
+          failed = [name for name, value in results.items() if value['result'] != 'success']
+          if failed:
+              raise SystemExit('Required jobs did not succeed: ' + ', '.join(failed))
+          PY

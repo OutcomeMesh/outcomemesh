@@ -2,7 +2,7 @@
 
 Status: active
 Protocol maturity: research / pre-alpha
-Implementation language: Go 1.26.7
+Implementation language: Go 1.27.3
 Initial build mode: pure Go, `CGO_ENABLED=0`
 
 ## Execution rules

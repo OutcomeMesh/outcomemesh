@@ -184,9 +184,9 @@ Synthetic closure receipts in the reference arithmetic test are explicitly marke
 they are not evidence that the disabled imported runtime executed.
 
 ```sh
-GOTOOLCHAIN=go1.26.7 GOMAXPROCS=2 GOFLAGS=-p=1 make -j1 test-all
-GOTOOLCHAIN=go1.26.7 GOMAXPROCS=2 GOFLAGS=-p=1 go test -tags=integration ./cmd/omd -run '^TestProcessRemoteImportedAccountingColdRecovery$' -count=1 -timeout=2m
-GOTOOLCHAIN=go1.26.7 GOMAXPROCS=2 GOFLAGS=-p=1 go test ./node/custodyv2 -run '^$' -fuzz '^FuzzImportedAdmissionCodecs$' -fuzztime=5s
+GOTOOLCHAIN=go1.27.3 GOMAXPROCS=2 GOFLAGS=-p=1 make -j1 test-all
+GOTOOLCHAIN=go1.27.3 GOMAXPROCS=2 GOFLAGS=-p=1 go test -tags=integration ./cmd/omd -run '^TestProcessRemoteImportedAccountingColdRecovery$' -count=1 -timeout=2m
+GOTOOLCHAIN=go1.27.3 GOMAXPROCS=2 GOFLAGS=-p=1 go test ./node/custodyv2 -run '^$' -fuzz '^FuzzImportedAdmissionCodecs$' -fuzztime=5s
 ```
 
 The [public manifest](evidence/custody-import-public-20261028.json) and
