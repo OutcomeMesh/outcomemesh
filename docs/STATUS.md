@@ -10,6 +10,29 @@ Full planned production readiness is approximately **44/100**, using the weighte
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
 
+## 2026-10-30: original Prune outcomes after migration
+
+Original inventory-bound Prune work now has a reviewed CLI resolution path after
+schedule migration. The old request, ticket, inventory, executor and evidence ID
+remain unchanged. Consumer and authority signatures produce a v2 completion for
+one original migrated owner; application rechecks the confirmed original outcome
+and actual accepted ticket. Exact retries preserve spent IDs and other obligations.
+
+Confirmed never-started work may explicitly cancel under the migrated primary
+owner. The original cancellation record is independently confirmed before it can
+support completion. A retained start blocks cancellation. Recovery of Started
+reads only a matching old effect from the original migrated protected storage;
+absence or a read error leaves the outcome unknown. Pending executor records
+have their own explicit continuation and never trigger deletion.
+
+Verification covers successful and cancelled outcomes, each replica's original
+accounting, interrupted completion/result/cancellation records, process kills,
+stale reviews, owner/pair/scope/evidence substitutions, lost CLI output and frozen
+v2 completion signatures. [The operator procedure](PRUNE_MIGRATED_OUTCOMES.md)
+records the local trust boundary. Unknown starts without an exact retained effect,
+unprepared legacy work, remote schedule integration and independent deployment
+remain open. Production readiness remains **44/100**.
+
 ## 2026-10-30: reviewed cleanup preparation and completion
 
 The scheduled cleanup workflow now runs through the CLI from an immutable plan

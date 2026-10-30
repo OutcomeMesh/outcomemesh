@@ -915,3 +915,25 @@ pending-command continuation preserves retained bytes. Executor continuation
 confirms only an already retained inventory-bound start or result; it never opens
 the chain, repeats deletion or infers success from an absent effect. Historical
 retries preserve both old obligations and permanently spent operation IDs.
+
+
+### Original Prune outcomes under migrated local owners
+
+The migrated-outcome adapter does not alter the original archive inventory,
+request, admission, effect or cancellation encodings. A version 2 Complete binds
+the selected owner's migration proof ID and the unchanged original ticket and
+outcome ID. The old inventory's attestor policy verifies the migration proof.
+Application requires the actual original operation and independently confirmed
+executor result; a signed preparation alone cannot release pending work.
+
+Cancellation after migration is allowed only while the original pinned executor
+is confirmed Admitted with no pending transition. Its original primary ticket is
+guarded under the owner's new schedule through the existing cancellation record
+and independent confirmation. Any retained start blocks this branch. Cancellation
+itself completes no obligation and does not free a spent operation identity.
+
+A Started executor may retain its exact legacy effect from the original migrated
+storage pair. Recovery never invokes deletion. Missing effects and copied or
+mismatched storage do not provide no-effect evidence. The local reviewed workflow
+is specified in [Prune outcomes after migration](PRUNE_MIGRATED_OUTCOMES.md);
+remote scope transitions and full-copy fencing remain outside this adapter.

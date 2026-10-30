@@ -73,6 +73,11 @@ func TestCustodyScheduleQuorumCLIOriginalOwnersAndStrictInputs(t *testing.T) {
 func prepareCustodyScheduleQuorumCLI(t testing.TB) (*pruneEffectCLIFixture, workarchive.Checkpoint, string, []custodyScheduleQuorumSource) {
 	t.Helper()
 	f := newPruneEffectCLIFixture(t, false)
+	return migratePruneCLIFixtureOwners(t, f)
+}
+
+func migratePruneCLIFixtureOwners(t testing.TB, f *pruneEffectCLIFixture) (*pruneEffectCLIFixture, workarchive.Checkpoint, string, []custodyScheduleQuorumSource) {
+	t.Helper()
 	p := f.inventory.Policy
 	original, err := loadArchiveManifest(f.manifestPath)
 	if err != nil {

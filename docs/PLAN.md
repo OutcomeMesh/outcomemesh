@@ -58,9 +58,14 @@ Remaining work, in order:
    inventory packaging, effect export and per-replica completion now cover this
    local workflow. Explicit continuation confirms retained start/result records
    without repeating deletion or releasing unknown work.
-   Next: evidence-based resolution of unknown starts and pre-migration Prune
-   obligations, then remote v1/profile-5 witness and execution transitions. Legacy
-   prune transports remain unchanged.
+   Original archive-bound Prune tickets can now complete after migration using
+   their unchanged retained effect or cancellation. Confirmed never-started work
+   can cancel under its migrated original owner; retained starts cannot. An old
+   committed effect can resolve a Started executor through the original migrated
+   storage pair without repeating deletion. See [migrated Prune outcomes](PRUNE_MIGRATED_OUTCOMES.md).
+   Next: evidence for unresolved starts that have no matching retained effect,
+   then remote v1/profile-5 witness and execution transitions. Unprepared/raw
+   legacy paths remain gated; legacy prune transports remain unchanged.
 2. Define the independently approved network activation policy and transition
    checkpoint; local operator profiles alone do not authorize public activation.
 3. Extend migration beyond the initial bounded history, with resumable streaming

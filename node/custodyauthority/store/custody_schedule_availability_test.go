@@ -13,6 +13,11 @@ import (
 func scheduledQuorumFixture(t testing.TB) (*archivePruneFixture, []ScheduledCustodyReplicaSource, workarchive.Checkpoint) {
 	t.Helper()
 	p := newArchivePruneFixtureWithRenewals(t, []int{1, 2})
+	return migratePruneFixtureOwners(t, p)
+}
+
+func migratePruneFixtureOwners(t testing.TB, p *archivePruneFixture) (*archivePruneFixture, []ScheduledCustodyReplicaSource, workarchive.Checkpoint) {
+	t.Helper()
 	next, statement, err := workarchive.PrepareRadixArchiveMigration(p.replicas[0].Directory, p.policy.Checkpoint, p.policy.CheckpointPolicy, p.f.base, p.f.parameters, p.policy.Checkpoint.Statement.Anchor.Height+10, workarchive.DefaultLimits())
 	if err != nil {
 		t.Fatal(err)

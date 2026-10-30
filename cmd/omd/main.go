@@ -104,6 +104,8 @@ func run(arguments []string) error {
 		return runPeersQUIC(arguments[1:])
 	case "auto-sync-quic":
 		return runAutoSyncQUIC(arguments[1:])
+	case migratedPruneOutcomeCommand, migratedPruneSignCommand, migratedPruneCosignCommand, migratedPruneApplyCommand:
+		return runMigratedPruneCLI(arguments)
 	case scheduledPlanCommand, scheduledSignCommand, scheduledCosignCommand, scheduledApplyCommand, scheduledInventoryCommand, scheduledEffectCommand:
 		return runScheduledPruneOperatorCLI(arguments)
 	case scheduledPruneCommand:
@@ -1644,6 +1646,7 @@ func printUsage() {
 	fmt.Printf("custody service replacement: omd %s --mode <review|run> [flags]\n", custodyGatewayReplaceCommand)
 	fmt.Printf("independent custody guard: omd %s --action <create|serve> --mode <review|run> [flags]\n", custodyGuardCommand)
 	fmt.Println("OutcomeMesh standalone development node")
+	fmt.Printf("migrated prune resolution: omd %s|%s|%s|%s [flags]\n", migratedPruneOutcomeCommand, migratedPruneSignCommand, migratedPruneCosignCommand, migratedPruneApplyCommand)
 	fmt.Printf("scheduled prune preparation: omd %s|%s|%s|%s|%s|%s [flags]\n", scheduledPlanCommand, scheduledSignCommand, scheduledCosignCommand, scheduledApplyCommand, scheduledInventoryCommand, scheduledEffectCommand)
 	fmt.Printf("scheduled archive cleanup: omd %s [flags]; review by default\n", scheduledPruneCommand)
 	fmt.Printf("scheduled custody quorum: omd %s [flags]; inspect original owners and journals\n", custodyScheduleQuorumCommand)

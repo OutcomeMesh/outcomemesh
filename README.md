@@ -65,6 +65,8 @@ Scheduled pruning verifies the live storage quorum and complete archives before
 removing old history, with retained effects for recovery. Its CLI covers plan
 preparation, separate signatures, admission, execution and per-replica completion.
 Original obligations and spent operation IDs remain in their existing journals.
+[Original Prune outcomes](docs/PRUNE_MIGRATED_OUTCOMES.md) can be resolved after
+migration using their retained results or an explicit cancellation before start.
 Remote execution still
 requires its own schedule integration. The [custody migration guide](docs/CUSTODY_RADIX_SCHEDULE.md)
 describes the supported path and its limits.

@@ -490,9 +490,10 @@ the reviewed plan. Version 2 command/entry signature domains are unchanged.
 ## Remaining gates
 
 Unknown starts without a committed effect still need their own evidence path;
-confirming a retained start does not establish a no-effect outcome. Existing
-pre-migration Prune obligations remain held until their own exact evidence can
-be verified. Legacy fixed-width transports still reject v2.
+confirming a retained start does not establish a no-effect outcome. [Pre-migration Prune resolution](PRUNE_MIGRATED_OUTCOMES.md) now handles
+original inventory-bound results, retained cancellation, and explicit cancellation
+of confirmed never-started work. An unresolved start remains held without its
+exact effect. Legacy fixed-width transports still reject v2.
 
 Remote assignment v1 and profile-5 require a versioned scope transition covering
 witnesses, guards, execution plans and source acceptance. They remain refused by
