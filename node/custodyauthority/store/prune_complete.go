@@ -88,7 +88,7 @@ func (executor *PruneExecutor) validateCompletion(entry custodyauthority.Entry) 
 	}
 	command := entry.Command
 	if entry.AuthorityPublicKey != executor.assignment.AuthorityPublicKey || command.Kind != custodyauthority.Complete ||
-		command.AssignmentID != binding.AssignmentID || command.ActorPublicKey != binding.ConsumerPublicKey ||
+		command.ScheduleID != binding.ScheduleID || command.AssignmentID != binding.AssignmentID || command.ActorPublicKey != binding.ConsumerPublicKey ||
 		command.TicketID != binding.TicketID || command.EvidenceID != evidence {
 		return ErrPruneCompletion
 	}

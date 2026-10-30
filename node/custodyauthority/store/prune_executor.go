@@ -443,6 +443,9 @@ func (executor *PruneExecutor) Execute(ctx context.Context, coordinator *Coordin
 	if err := executor.operationCheck(); err != nil {
 		return workchain.CanonicalPruneCommit{}, err
 	}
+	if !executor.request.ScheduleID.IsZero() {
+		return workchain.CanonicalPruneCommit{}, ErrPruneArchivePolicy
+	}
 	if ctx == nil || authorize == nil {
 		return workchain.CanonicalPruneCommit{}, ErrPruneRequest
 	}
@@ -509,7 +512,7 @@ func (executor *PruneExecutor) executeGuardedInventory(ctx context.Context, chai
 	}
 	commit, err := chain.PruneCanonicalPrefixOnce(workchain.CanonicalPruneOperation{
 		AssignmentID: executor.request.AssignmentID, TicketID: binding.TicketID, Boundary: executor.request.Boundary,
-		StorageID: executor.request.StorageID,
+		StorageID: executor.request.StorageID, ScheduleID: executor.request.ScheduleID,
 	}, func() (uint64, error) {
 		if err := ctx.Err(); err != nil {
 			return 0, err

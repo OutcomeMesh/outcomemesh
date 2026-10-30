@@ -864,10 +864,40 @@ signed receipt wrapper. Assignment v0 identity and original journal entries do
 not change. All subsequent live actions bind the exact schedule ID; migration
 preserves pending operations, spent capacity and receipt deadlines. Legacy
 command/entry encodings and fixed-width wire formats remain unchanged. Remote
-assignment v1 and new canonical pruning remain gated pending their explicit
-schedule-bound evidence and execution formats. Terminal v1 commits the exact
+assignment v1 remains gated pending its explicit schedule-bound evidence and
+execution formats. Terminal v1 commits the exact
 schedule while retaining the original admission and response; reviewed v2
 completion drains only that ticket. A separate scheduled availability bundle
 requires original assignments, full lineages, distinct trusted replicas and
 unchanged receipt deadlines. The owned quorum CLI performs a point-in-time
 inspection without changing accounting or permitting pruning.
+
+New local Audit/Serve admissions use reviewed command/entry v2 under the same
+assignment. The one-time migration occupies a reserved journal slot and does not
+increase MaximumOperations or MaximumPending. Completed operation IDs remain spent.
+
+Scheduled canonical pruning uses a separate immutable `OMCSPINV` inventory (v0),
+request v2 and effect v2. Each selected replica supplies its original assignment,
+explicit schedule proof, current wrapped receipt and co-signed Prune admission.
+Their admissions bind one common primary request ID, but each commits its own
+assignment schedule ID. Full original receipt lineages and target archive replay
+are mandatory. Original owners and journals remain held through the final storage
+mutation; retention and monotonic wall time are checked again at that boundary.
+
+Request/effect v2 append ScheduleID after StorageID and use their respective
+`/id/v2` domains. Floor v2 appends the nonzero RadixActivationHeight after
+RetainUntil, followed by PruneTicketID. The ticket is zero in a request and is set
+only by the atomic storage effect. Legacy v0/v1 bytes and domains are unchanged.
+Cold replay requires nonzero historical schedule heights to match storage config;
+legacy floors/effects remain valid historical evidence after migration. Scheduled
+pruning requires a protected, position-pinned store and the dedicated quorum path.
+Generic pruning and legacy archive adapters do not accept scheduled requests.
+
+Deletion, floor advancement, history accounting and the effect commit together.
+A retained start binds the inventory before any deletion. An unknown outcome
+cannot be retried, cancelled as no-effect or used to release obligations. Recovery
+may retain only the exact committed effect. Per-replica completion is a separate
+co-signed action and preserves every other pending and spent operation. These
+rules apply to the bounded local same-prefix migration, not remote assignment v1
+or profile-5 execution. See the custody migration guide for owner assumptions,
+format bounds and the remaining operator CLI preparation work.

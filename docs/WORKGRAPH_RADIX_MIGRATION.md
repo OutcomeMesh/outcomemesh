@@ -78,8 +78,10 @@ preserves old archive objects, retained effects and the original position journa
 The complete-history command above still refuses protected or pruned sources.
 A separate [local custody transition](CUSTODY_RADIX_SCHEDULE.md) preserves
 active Audit/Serve tickets and wraps original receipts with explicit schedule
-consent. Reviewed completion, remote execution and canonical-prefix pruning
-remain gated until their full admission and retention paths carry that scope.
+consent. New local admissions and reviewed completions preserve that original
+accounting. A dedicated scheduled pruning adapter verifies full archives and live
+retention under the original owners. Its complete operator preparation/signing
+workflow and remote execution migration remain gated.
 
 ## Operator procedure
 

@@ -66,7 +66,7 @@ func CosignReviewedScheduledCustodyCommand(assignment Assignment, command Comman
 }
 
 func validateReviewedScheduledCustodyCommand(assignment Assignment, command Command, purpose Purpose) error {
-	// Only completion of an original local ticket is enabled in this workflow.
+	// Local Audit/Serve admissions and completions retain the original budget.
 	if assignment.Version != Version0 || command.Version != ScheduleVersion2 {
 		return ErrCustodyReview
 	}
@@ -84,6 +84,13 @@ func validateReviewedScheduledCustodyCommand(assignment Assignment, command Comm
 		return ErrHead
 	}
 	switch command.Kind {
+	case Admit:
+		if command.Purpose != purpose {
+			return ErrCommand
+		}
+		if command.ExpectedSequence < 1 || command.ExpectedSequence > 2*uint64(assignment.MaximumOperations)-1 {
+			return ErrLimit
+		}
 	case Complete:
 		if command.ExpectedSequence < 2 || command.ExpectedSequence > 2*uint64(assignment.MaximumOperations)+1 {
 			return ErrLimit

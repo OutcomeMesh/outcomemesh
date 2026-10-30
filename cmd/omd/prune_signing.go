@@ -115,6 +115,9 @@ func runPruneSigning(ctx context.Context, arguments []string, output io.Writer) 
 	if err != nil {
 		return err
 	}
+	if !request.ScheduleID.IsZero() {
+		return errors.New("legacy prune signing does not accept a scheduled request")
+	}
 	primaryAssignment := assignment
 	primaryAssignmentID := assignmentID
 	if secondary {

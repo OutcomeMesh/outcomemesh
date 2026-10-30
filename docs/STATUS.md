@@ -10,6 +10,33 @@ Full planned production readiness is approximately **44/100**, using the weighte
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
 
+## 2026-10-30: scheduled admissions and canonical cleanup
+
+New local Audit/Serve tickets bind the migrated schedule, current original
+journal cursor and exact reviewed command. A second complete exchange continues
+both original journals. Completing a ticket releases its pending slot; its
+operation identity remains spent under the original assignment budget.
+
+Scheduled canonical cleanup now consumes a separately pinned inventory containing
+original assignments, schedule proofs, current wrapped receipts, co-signed prune
+admissions and protected storage/executor identities. All selected original
+coordinators and journals remain held through archive replay, a final live
+retention check, atomic storage deletion and durable result retention. The effect
+records the schedule and floor. Cleanup itself completes no authority obligation.
+
+The `work-archive-prune-scheduled` CLI opens existing original roots for review,
+execution with an exact review ID, or effect-only recovery. Lost output cannot
+undo the effect or authorize another execution. A retained start without a proven
+effect remains held. Library preparation and explicit per-replica completion are
+available; their reviewed CLI signing/application flow is the next operator slice.
+Remote v1/profile-5 migration and independent deployment remain open.
+
+Verification includes a second managed exchange, old-operation replay refusal,
+quorum/source substitutions, final retention expiry and backwards clocks, process
+termination before/after the effect, copied-storage rejection, lost CLI output,
+activation crossing and cold state replay. Canonical vectors and decoder fuzzing
+cover the new inventory and versioned storage records. Readiness remains **44/100**.
+
 ## 2026-10-30: scheduled completion and storage quorum
 
 Original Audit/Serve tickets can now complete through the reviewed CLI after
@@ -25,8 +52,9 @@ release. It rejects duplicate keys/locations, mismatched schedules, unconfirmed
 authority writes, stale receipts and substituted sources. Reports are historical
 inspection evidence and do not authorize pruning.
 
-New scheduled admission, canonical pruning, remote v1/profile-5 migration and
-independent deployment remain open. This implementation does not close a weighted
+At that stage, scheduled admission, canonical pruning, remote migration and
+independent deployment remained open. The follow-up above adds the local admission
+and cleanup paths. This implementation does not close a weighted
 mainnet gate; readiness remains **44/100**. Formats, operating procedure and fixed
 reference values are in the [custody migration guide](CUSTODY_RADIX_SCHEDULE.md).
 

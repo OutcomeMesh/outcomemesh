@@ -847,6 +847,7 @@ func (persistence *workPersistence) load(store *Store, base Base) error {
 	} else {
 		if !floorExists || floorID == store.baseID || floorNode.block == nil ||
 			floorNode.result.FeeQueue == nil || !storage.EqualTips(floorNode.tip, store.floor.Anchor) ||
+			(store.floor.RadixActivationHeight != 0 && store.floor.RadixActivationHeight != store.parameters.RadixActivationHeight) ||
 			store.floor.Anchor.Height < store.parameters.ActivationHeight ||
 			uint64(len(archivedHeaders)) != store.floor.Anchor.Height-store.parameters.ActivationHeight {
 			return storage.ErrCorrupt
@@ -1287,6 +1288,9 @@ func encodeCanonicalFloor(floor CanonicalFloor) ([]byte, error) {
 	if !floor.PruneTicketID.IsZero() {
 		version = 1
 	}
+	if floor.RadixActivationHeight != 0 {
+		version = 2
+	}
 	encoder.U16(version)
 	encoder.Fixed(floor.BaseID[:])
 	encoder.BytesField(floor.Anchor.CanonicalBytes())
@@ -1297,7 +1301,10 @@ func encodeCanonicalFloor(floor CanonicalFloor) ([]byte, error) {
 	encoder.Fixed(floor.AvailabilityID[:])
 	encoder.U64(floor.VerifiedAt)
 	encoder.U64(floor.RetainUntil)
-	if version == 1 {
+	if version == 2 {
+		encoder.U64(floor.RadixActivationHeight)
+	}
+	if version >= 1 {
 		encoder.Fixed(floor.PruneTicketID[:])
 	}
 	if encoder.Len() > maxCanonicalFloorBytes {
@@ -1312,7 +1319,7 @@ func decodeCanonicalFloor(input []byte) (CanonicalFloor, error) {
 	}
 	decoder := codec.NewDecoder(input)
 	version, err := decoder.U16()
-	if err != nil || version > 1 {
+	if err != nil || version > 2 {
 		return CanonicalFloor{}, storage.ErrCorrupt
 	}
 	result := CanonicalFloor{Pruned: true}
@@ -1351,13 +1358,19 @@ func decodeCanonicalFloor(input []byte) (CanonicalFloor, error) {
 	if result.RetainUntil, err = decoder.U64(); err != nil {
 		return CanonicalFloor{}, err
 	}
-	if version == 1 {
+	if version == 2 {
+		result.RadixActivationHeight, err = decoder.U64()
+		if err != nil || result.RadixActivationHeight == 0 {
+			return CanonicalFloor{}, storage.ErrCorrupt
+		}
+	}
+	if version >= 1 {
 		value, err := decoder.Fixed(types.HashSize)
 		if err != nil {
 			return CanonicalFloor{}, storage.ErrCorrupt
 		}
 		copy(result.PruneTicketID[:], value)
-		if result.PruneTicketID.IsZero() {
+		if version == 1 && result.PruneTicketID.IsZero() {
 			return CanonicalFloor{}, storage.ErrCorrupt
 		}
 	}

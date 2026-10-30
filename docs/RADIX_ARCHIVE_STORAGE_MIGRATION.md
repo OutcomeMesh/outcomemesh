@@ -162,8 +162,10 @@ original pruned floor and effects. New archive export, exact-schedule replay,
 restoration and object transfer support v2 envelopes. Local custody owners can
 append a [schedule transition](CUSTODY_RADIX_SCHEDULE.md) while retaining their
 original assignment, active Audit/Serve tickets and receipt lineage. Reviewed
-terminal completion/admission, remote/profile-5 cutover and new canonical-prefix
-pruning on scheduled stores remain gated. A local migration is not authorization to substitute
+Audit/Serve admission and completion now preserve the same accounting. A dedicated
+scheduled cleanup path consumes a pinned quorum inventory and rechecks retention
+at the storage mutation. Its operator preparation/signing flow and remote/profile-5
+cutover remain open. A local migration is not authorization to substitute
 new archive IDs in an old inventory or erase an unresolved outcome.
 
 ## Canonical reference values

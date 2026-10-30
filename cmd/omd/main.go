@@ -104,6 +104,8 @@ func run(arguments []string) error {
 		return runPeersQUIC(arguments[1:])
 	case "auto-sync-quic":
 		return runAutoSyncQUIC(arguments[1:])
+	case scheduledPruneCommand:
+		return runScheduledPruneCLI(arguments[1:])
 	case custodyScheduleQuorumCommand:
 		return runCustodyScheduleQuorumCLI(arguments[1:])
 	case custodyScheduleCommand:
@@ -1640,6 +1642,7 @@ func printUsage() {
 	fmt.Printf("custody service replacement: omd %s --mode <review|run> [flags]\n", custodyGatewayReplaceCommand)
 	fmt.Printf("independent custody guard: omd %s --action <create|serve> --mode <review|run> [flags]\n", custodyGuardCommand)
 	fmt.Println("OutcomeMesh standalone development node")
+	fmt.Printf("scheduled archive cleanup: omd %s [flags]; review by default\n", scheduledPruneCommand)
 	fmt.Printf("scheduled custody quorum: omd %s [flags]; inspect original owners and journals\n", custodyScheduleQuorumCommand)
 	fmt.Printf("experimental independent witnesses: omd <%s|%s|%s|%s> [flags]; review by default\n", witnessServerCommand, witnessClientCommand, witnessRequestCommand, witnessQuorumCommand)
 	fmt.Printf("optional command-only custody transport: omd <%s|%s|%s> [flags]\n", pruneServeCommand, pruneAdmissionCommand, pruneCompletionCommand)

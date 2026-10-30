@@ -124,9 +124,6 @@ func BuildCustodyAdmitCommand(scope CustodyCommandScope, purpose custodyauthorit
 	if err := ValidateCustodyCommandScope(scope); err != nil {
 		return custodyauthority.Command{}, err
 	}
-	if scope.Schedule != nil {
-		return custodyauthority.Command{}, ErrCustodyCommandScope
-	}
 	var operation types.Hash
 	var err error
 	switch purpose {
@@ -148,6 +145,10 @@ func BuildCustodyAdmitCommand(scope CustodyCommandScope, purpose custodyauthorit
 	draft := custodyauthority.Command{Version: custodyauthority.Version0, AssignmentID: scope.AssignmentID,
 		ExpectedSequence: position.Sequence, ExpectedHead: position.HeadID, Kind: custodyauthority.Admit, Purpose: purpose,
 		OperationID: operation, ActorPublicKey: consumer}
+	if scope.Schedule != nil {
+		draft.Version = custodyauthority.ScheduleVersion2
+		draft.ScheduleID = scope.scheduleID()
+	}
 	if _, err := CustodyCommandReviewID(scope.Assignment, draft, purpose); err != nil {
 		return custodyauthority.Command{}, err
 	}
@@ -172,9 +173,13 @@ func validateCustodyAdmission(scope CustodyCommandScope, admission custodyauthor
 	if c.Purpose == custodyauthority.Serve {
 		supplied = challenge
 	}
-	legacy := scope
-	legacy.Schedule = nil // The retained ticket keeps its original version and ID.
-	want, err := BuildCustodyAdmitCommand(legacy, c.Purpose, c.ActorPublicKey,
+	admittedScope := scope
+	if c.Version == custodyauthority.Version0 {
+		admittedScope.Schedule = nil // Original tickets retain their pre-transition ID.
+	} else if c.Version != custodyauthority.ScheduleVersion2 || scope.Schedule == nil || c.ScheduleID != scope.scheduleID() {
+		return ErrCustodyCommandScope
+	}
+	want, err := BuildCustodyAdmitCommand(admittedScope, c.Purpose, c.ActorPublicKey,
 		custodyauthority.Position{Sequence: c.ExpectedSequence, HeadID: c.ExpectedHead}, supplied)
 	if err != nil {
 		return err

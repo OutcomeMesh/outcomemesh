@@ -73,16 +73,17 @@ type CheckpointReport struct {
 // authorized canonical-prefix prune. The immutable activation BaseID remains
 // the tree identity; Anchor is the oldest locally executable block.
 type CanonicalFloor struct {
-	Pruned         bool
-	BaseID         types.Hash
-	Anchor         storage.Tip
-	AncestryNodes  uint64
-	AncestryRoot   types.Hash
-	StatementID    types.Hash
-	ManifestID     types.Hash
-	AvailabilityID types.Hash
-	VerifiedAt     uint64
-	RetainUntil    uint64
+	RadixActivationHeight uint64
+	Pruned                bool
+	BaseID                types.Hash
+	Anchor                storage.Tip
+	AncestryNodes         uint64
+	AncestryRoot          types.Hash
+	StatementID           types.Hash
+	ManifestID            types.Hash
+	AvailabilityID        types.Hash
+	VerifiedAt            uint64
+	RetainUntil           uint64
 	// PruneTicketID links a ticketed prune to its result in the same transaction.
 	// It is local provenance, not a remotely verified authority grant.
 	PruneTicketID types.Hash
@@ -663,7 +664,10 @@ func (store *Store) pruneCanonicalPrefix(
 func (store *Store) pruneCanonicalPrefixLocked(
 	boundary CanonicalFloor, authorize func() (uint64, error), effect *CanonicalPruneEffect,
 ) (CanonicalPruneReport, error) {
-	if store.parameters.RadixActivationHeight != 0 {
+	if boundary.RadixActivationHeight != store.parameters.RadixActivationHeight {
+		return CanonicalPruneReport{}, ErrCanonicalPrune
+	}
+	if boundary.RadixActivationHeight != 0 && (effect == nil || effect.Operation.ScheduleID.IsZero() || store.persistence == nil || store.persistence.pins == nil || store.persistence.storageID.IsZero()) {
 		return CanonicalPruneReport{}, ErrCanonicalPrune
 	}
 	if store.persistence != nil && !store.persistence.storageID.IsZero() && effect == nil {

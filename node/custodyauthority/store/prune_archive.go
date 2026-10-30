@@ -92,6 +92,9 @@ func (executor *PruneExecutor) executeArchive(ctx context.Context, chain *workch
 	if err := executor.operationCheck(); err != nil {
 		return workchain.CanonicalPruneCommit{}, err
 	}
+	if !executor.request.ScheduleID.IsZero() {
+		return workchain.CanonicalPruneCommit{}, ErrPruneArchivePolicy
+	}
 	if ctx == nil {
 		return workchain.CanonicalPruneCommit{}, ErrPruneArchivePolicy
 	}

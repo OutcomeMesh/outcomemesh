@@ -49,8 +49,15 @@ Remaining work, in order:
    Reviewed CLI completion now drains original Audit/Serve tickets under the new
    schedule. A separate quorum format and CLI verify original owners, full
    receipt lineage and unchanged deadlines without changing accounting.
-   Next: scheduled admission and canonical pruning with final mutation-time
-   retention checks, then remote v1/profile-5 witness and execution transitions.
+   Scheduled Audit/Serve admission now continues the same journals and spent
+   budget. The scheduled pruning adapter holds every original owner and journal,
+   replays full archives, checks retention at storage commit and records the exact
+   effect without completing tickets. Its owned CLI supports review, execution
+   and effect recovery from an independently pinned inventory.
+   Next: reviewed CLI preparation/signing/admission and per-replica completion of
+   scheduled pruning, explicit resolution of retained start/result uncertainty,
+   then remote v1/profile-5 witness and execution transitions. Library preparation
+   and completion are available; legacy prune transports remain unchanged.
 2. Define the independently approved network activation policy and transition
    checkpoint; local operator profiles alone do not authorize public activation.
 3. Extend migration beyond the initial bounded history, with resumable streaming

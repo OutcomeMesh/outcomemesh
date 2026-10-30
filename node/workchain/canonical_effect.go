@@ -47,6 +47,7 @@ func (store *Store) VerifyContext(networkID uint32, activationHeight uint64, bas
 // request and enforce current authority; these unsigned fields confer no grant.
 // Boundary.PruneTicketID must be zero: only the committing store installs it.
 type CanonicalPruneOperation struct {
+	ScheduleID   types.Hash
 	AssignmentID types.Hash
 	TicketID     types.Hash
 	// StorageID is zero only for legacy unbound databases. Nonzero is a pinned
@@ -137,7 +138,7 @@ func (store *Store) CanonicalPruneEffect(ticketID types.Hash) (CanonicalPruneEff
 }
 
 func (operation CanonicalPruneOperation) validate() error {
-	if operation.AssignmentID.IsZero() || operation.TicketID.IsZero() ||
+	if (operation.ScheduleID.IsZero() != (operation.Boundary.RadixActivationHeight == 0)) || (!operation.ScheduleID.IsZero() && operation.StorageID.IsZero()) || operation.AssignmentID.IsZero() || operation.TicketID.IsZero() ||
 		!operation.Boundary.PruneTicketID.IsZero() || operation.Boundary.validate() != nil {
 		return ErrCanonicalPrune
 	}
@@ -148,7 +149,7 @@ func equalPruneOperation(left, right CanonicalPruneOperation) bool {
 	l, le := encodeCanonicalFloor(left.Boundary)
 	r, re := encodeCanonicalFloor(right.Boundary)
 	return le == nil && re == nil && left.AssignmentID == right.AssignmentID &&
-		left.TicketID == right.TicketID && left.StorageID == right.StorageID && bytes.Equal(l, r)
+		left.ScheduleID == right.ScheduleID && left.TicketID == right.TicketID && left.StorageID == right.StorageID && bytes.Equal(l, r)
 }
 
 func (effect CanonicalPruneEffect) validate() error {
@@ -178,11 +179,17 @@ func (effect CanonicalPruneEffect) CanonicalBytes() ([]byte, error) {
 	if !effect.Operation.StorageID.IsZero() {
 		version = 1
 	}
+	if !effect.Operation.ScheduleID.IsZero() {
+		version = 2
+	}
 	e.U16(version)
 	e.Fixed(effect.Operation.AssignmentID[:])
 	e.Fixed(effect.Operation.TicketID[:])
-	if version == 1 {
+	if version >= 1 {
 		e.Fixed(effect.Operation.StorageID[:])
+	}
+	if version == 2 {
+		e.Fixed(effect.Operation.ScheduleID[:])
 	}
 	e.BytesField(floor)
 	e.U64(effect.VerifiedAt)
@@ -207,6 +214,9 @@ func (effect CanonicalPruneEffect) ID() (types.Hash, error) {
 	if !effect.Operation.StorageID.IsZero() {
 		domain = "OMESH/workgraph/canonical-prune-effect/id/v1"
 	}
+	if !effect.Operation.ScheduleID.IsZero() {
+		domain = "OMESH/workgraph/canonical-prune-effect/id/v2"
+	}
 	return types.DomainHash(domain, encoded), nil
 }
 
@@ -220,7 +230,7 @@ func DecodeCanonicalPruneEffect(input []byte) (CanonicalPruneEffect, error) {
 		return CanonicalPruneEffect{}, storage.ErrCorrupt
 	}
 	version, err := d.U16()
-	if err != nil || version > 1 {
+	if err != nil || version > 2 {
 		return CanonicalPruneEffect{}, storage.ErrCorrupt
 	}
 	var result CanonicalPruneEffect
@@ -231,13 +241,23 @@ func DecodeCanonicalPruneEffect(input []byte) (CanonicalPruneEffect, error) {
 		}
 		copy(destination[:], value)
 	}
-	if version == 1 {
+	if version >= 1 {
 		value, err := d.Fixed(types.HashSize)
 		if err != nil {
 			return CanonicalPruneEffect{}, storage.ErrCorrupt
 		}
 		copy(result.Operation.StorageID[:], value)
 		if result.Operation.StorageID.IsZero() {
+			return CanonicalPruneEffect{}, storage.ErrCorrupt
+		}
+	}
+	if version == 2 {
+		value, err := d.Fixed(types.HashSize)
+		if err != nil {
+			return CanonicalPruneEffect{}, storage.ErrCorrupt
+		}
+		copy(result.Operation.ScheduleID[:], value)
+		if result.Operation.ScheduleID.IsZero() {
 			return CanonicalPruneEffect{}, storage.ErrCorrupt
 		}
 	}
@@ -325,6 +345,9 @@ func (persistence *workPersistence) verifyPruneEffects(store *Store) error {
 			return storage.ErrCorrupt
 		}
 		b := effect.Operation.Boundary
+		if b.RadixActivationHeight != 0 && b.RadixActivationHeight != store.parameters.RadixActivationHeight {
+			return storage.ErrCorrupt
+		}
 		anchor, found := tipAt(b.Anchor.ID)
 		previous, previousFound := tipAt(effect.Report.PreviousFloorID)
 		if !found || !previousFound || b.BaseID != store.baseID || !storage.EqualTips(anchor, b.Anchor) ||

@@ -129,8 +129,13 @@ func TestCustodyScheduleCompletionRejectsWrongScopeAndLegacyTerminal(t *testing.
 	if _, err := CaptureCustodyTerminal(t.Context(), owner, CustodyTerminalCaptureConfig{Scope: legacy, Admission: terminal.Admission, JournalPath: f.config.JournalPath, JournalLimits: f.config.JournalLimits}); err == nil {
 		t.Fatal("legacy capture used new authority")
 	}
-	if _, err := BuildCustodyAdmitCommand(scope, custodyauthority.Audit, scope.Intent.ConsumerPublicKey, before.Confirmed, workarchive.CustodyChallenge{}); err == nil {
-		t.Fatal("implicitly enabled new admissions")
+	draft, err := BuildCustodyAdmitCommand(scope, custodyauthority.Audit, scope.Intent.ConsumerPublicKey, before.Confirmed, workarchive.CustodyChallenge{})
+	if err != nil || draft.Version != custodyauthority.ScheduleVersion2 || draft.ScheduleID != scope.scheduleID() {
+		t.Fatal("admission draft lost explicit schedule", err)
+	}
+	entry := managedCommandApplyTestSign(t, draft)
+	if _, err := owner.Append(t.Context(), entry); err == nil {
+		t.Fatal("previously spent operation admitted again")
 	}
 	if !reflect.DeepEqual(before, testCoordination(t, owner)) {
 		t.Fatal("rejection changed accounting")

@@ -253,19 +253,138 @@ execution permission and is not accepted as a canonical pruning permit. Distinct
 location commitments do not independently prove separate operators or machines.
 Copying all original owner roots and their keys remains outside this local fence.
 
+## New Audit/Serve admissions
+
+The existing custody command preparation, consumer signing, authority co-signing
+and controlled application commands accept new admissions when an explicit
+schedule proof and ID are supplied. An Audit operation binds the new audit
+intent; Serve binds the challenge produced from that intent. Both retain the
+original assignment, initial receipt, journal and budget. The intent selects the
+current original journal sequence, head and receipt. Use a new intent and a new
+artifact directory for each cycle; do not initialize replacement journals.
+
+The resulting command/entry uses v2 and the original assignment's schedule ID.
+Static admission review requires sequence 1 through `2 * MaximumOperations - 1`.
+The original coordinator still checks its actual position, phase, pending limit,
+spent operations and current scope. A signed draft is not an accepted ticket.
+Completing a previous ticket frees a pending slot without restoring spent
+capacity. Reissuing a completed intent or challenge remains forbidden.
+
+## Scheduled canonical cleanup
+
+The cleanup path uses original assignment v0 owners after their explicit schedule
+migration. It accepts same-prefix target archives, with each target manifest and
+checkpoint bound to the configured radix height. It also works after the selected
+chain crosses that activation height; replay keeps the current radix resources,
+fee queue, balances and root intact.
+
+`ScheduledPruneInventory` is a separate, immutable preparation artifact. Magic
+`OMCSPINV`, version 0, precedes the canonical request, executor binding, storage
+pair ID, target checkpoint, original attestor policy, replica policy and selected
+replicas in strict original-key order. Each replica carries its original
+assignment, schedule proof, wrapped current receipt and co-signed Prune admission.
+The ID domain is `OMESH/custody-prune/scheduled-inventory/id/v0`; the maximum size
+is 64 MiB. Full original journal lineages are read at execution rather than
+trusted from a supplied report. Their aggregate replay budget remains 256 MiB.
+
+The primary request v2 binds its original assignment and schedule, consumer,
+protected StorageID and exact target floor. Every selected replica admits that
+same request ID under its own original assignment and schedule. Duplicate keys,
+locations, assignments, directories and overlapping owner roots are refused.
+The package commits the independently retained executor and storage pair IDs.
+
+Preparation currently uses `BuildScheduledPruneAdmission`, original coordinator
+application, `CreatePinnedPruneExecutor`/`Admit` and `SaveScheduledPruneInventory`.
+Create a separate executor pair for the new operation. Preserve every old
+executor, original authority pair, pending ticket and journal. The legacy offline
+executor preparation command can retain a v2 request, but legacy prune signing
+and fixed-width delivery commands do not accept scheduled commands. A complete
+reviewed CLI preparation/signing/application workflow is still a separate gate.
+
+The owned execution CLI consumes an already prepared, independently pinned
+inventory and existing original roots:
+
+```sh
+omd work-archive-prune-scheduled \
+  --mode review \
+  --inventory /operator/scheduled.inventory \
+  --inventory-id <independently-retained-inventory-id> \
+  --data /operator/activation-base \
+  --sources /operator/scheduled-prune-sources.json \
+  --executor /owners/prune-executor \
+  --executor-pins /pins/prune-executor \
+  --chain /owners/workchain \
+  --chain-pins /pins/workchain \
+  --storage-migration-id <original-storage-migration-review-id> \
+  --canonical-retention <configured-retention> \
+  --max-challenge-lifetime-seconds <original-policy-value> \
+  --max-proof-age-seconds <original-policy-value> \
+  --max-renewal-term-seconds <original-policy-value>
+```
+
+The source file is a bounded strict JSON array. Supply one entry per selected
+original assignment, with these exact field names:
+
+```json
+[{
+  "assignment_id": "<original-assignment-id>",
+  "authority": "/owners/replica-a-authority",
+  "authority_pins": "/pins/replica-a-authority",
+  "journal": "/journals/replica-a",
+  "directory": "/archives/replica-a-target"
+}]
+```
+
+The actual quorum requires at least two distinct selected replicas. The example
+shows the fields for one row. Storage policy and journal/replay limits must match
+the retained deployment. `--data` supplies an existing read-only activation base;
+it must be disjoint from all operational roots and input artifacts.
+
+Review returns a ReviewID committing the package, configured paths and policies,
+storage migration, executor position, every authority position and journal head.
+Execute repeats the same arguments with `--mode execute --expected-review-id
+<ReviewID>`. It reopens the original owners, verifies the exact review, reads all
+current original lineages and replays every full target archive. The final
+storage authorization rejects stale receipts, insufficient remaining retention,
+backwards time, cancellation and substituted owners. Original authority and
+journal guards remain held until the durable result is retained. All owners
+close before CLI output.
+
+Before deletion, the executor durably retains a start bound to this inventory.
+Storage atomically commits the deletion, floor, byte accounting and exact v2
+effect. A crash after that commit can be resolved with a new review and
+`--mode recover --expected-review-id <new-ReviewID>`. Recovery reads the existing
+effect and never runs deletion again. A start without a proven effect remains
+held; absence is not a no-effect certificate. Pending independent executor or
+storage confirmations require their own explicit recovery, not implicit startup
+repair. Lost stdout does not roll back a retained effect.
+
+Cleanup completes no tickets. `CompleteScheduledArchiveReplica` accepts a separate
+consumer-signed, authority-co-signed v2 Complete for each original replica after
+the exact effect is durably retained. It verifies the actual admitted operation,
+resynchronizes the immutable inventory and holds the original owner through
+acceptance. Exact retries retain the same evidence; all other pending and spent
+work remains unchanged. Reviewed CLI preparation for these completions remains
+open.
+
+These are trusted local owner APIs. Keep owner roots, pins and immutable archive
+copies under exclusive administration during each operation. A location ID does
+not prove physical independence, and copied keys plus all owner/pin roots are
+not fenced by this local workflow. The implementation does not establish an
+independently operated remote quorum.
+
 ## Remaining gates
 
-New scheduled admission, reconciliation and remote completion transports still
-need their own reviewed evidence paths. Existing v0 admissions can be completed
-as described above; new commands must not manufacture a response or reset an
-assignment to clear unknown work. Legacy fixed-width transports still reject v2.
+Scheduled pruning preparation/signing/admission and per-replica completion need
+an end-to-end reviewed CLI workflow. Reconciliation and unknown-start resolution
+need their own evidence paths; they must not clear outstanding work or manufacture
+a response. Legacy fixed-width transports still reject v2.
 
 Remote assignment v1 and profile-5 require a versioned scope transition covering
 witnesses, guards, execution plans and source acceptance. They remain refused by
-this migration. New canonical pruning remains gated until its own durable effect
-path consumes scheduled quorum evidence and rechecks retention at the final
-storage mutation. Inspection alone does not authorize that mutation. No mainnet
-readiness gate is closed by this implementation.
+this migration. New native post-activation archive custody, independent operator
+deployment and larger streaming migrations also remain open. No mainnet readiness
+gate is closed by this bounded local implementation.
 
 ## Canonical reference values
 
@@ -280,3 +399,12 @@ fix these IDs. They are format references, not live network identities.
 | Version 2 reviewed completion entry | `a2140ed64a446e75bc486a57bd795f1897bd66aacf6fbc615e8571fa91bc6f9b` |
 | Version 1 scheduled terminal | `ab32d8670864c297614117b67a7f2ee749b1d231abfc96939833d26c301461fa` |
 | Scheduled availability bundle | `a6d73873151636c75628811875244828d0d523aa818797378d3ed7294135e33e` |
+
+The frozen scheduled-pruning fixture uses disposable test keys and is stored in
+`node/custodyauthority/store/testdata/scheduled_prune_v0.json`. It fixes:
+
+| Artifact | ID |
+| --- | --- |
+| Scheduled prune inventory v0 | `0d2a41131debe84ee9c8555fa03fbd0ebca9fc6f8a9299702668998e8ee5c49e` |
+| Scheduled prune request v2 | `4f783c20cdf453dfbcd8b954963f3d39b05ca585f2cb80797d6eb6bc3f75e5e3` |
+| Scheduled prune effect v2 | `5d6ec18c4926f6268593539b560a24534d44918385aa20bd75c98b2f61297351` |
