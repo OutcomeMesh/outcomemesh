@@ -49,8 +49,12 @@ jobs:
           git diff --exit-code -- go.mod go.sum
           go mod verify
           go vet ./...
-          python3 -m unittest discover -s scripts -p test_release.py
+          python3 -m unittest discover -s scripts -p 'test_release*.py'
           make test-remote-support
+      - name: Prune fence process recovery and decoder fuzzing
+        run: |
+          go test -tags=integration ./node/custodyauthority/store -run '^TestPruneFenceProcessDeathKeepsObligations$' -count=1 -timeout=3m
+          go test ./node/prunefence -run '^$' -fuzz '^FuzzPruneFenceArtifacts$' -fuzztime=10s
 
   race:
     needs: prepare
@@ -83,7 +87,7 @@ jobs:
         with:
           go-version-file: .go-version
           cache: true
-      - run: go test -race ./core/... ./storage/... ./node/custodyguard/... ./node/custodyfence/... -count=1 -timeout=20m
+      - run: go test -race ./core/... ./storage/... ./node/custodyguard/... ./node/custodyfence/... ./node/prunefence/... -count=1 -timeout=20m
       - run: CGO_ENABLED=0 go build -mod=readonly -trimpath -o "$RUNNER_TEMP/omd" ./cmd/omd
       - run: '"$RUNNER_TEMP/omd" version --json'
 

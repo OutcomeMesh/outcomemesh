@@ -11,6 +11,7 @@ from pathlib import Path, PurePosixPath
 import re
 import subprocess
 import tarfile
+import tempfile
 
 ROOT = Path(__file__).resolve().parent.parent
 PLATFORMS = (('linux', 'amd64'), ('linux', 'arm64'), ('darwin', 'amd64'), ('darwin', 'arm64'))
@@ -91,7 +92,21 @@ def require_source(commit, manifest):
         raise ValueError('source changed during packaging; partial output is not a release')
 
 
-def build(version, destination):
+def compare_archives(first, second):
+    def files(root):
+        result = {}
+        for path in Path(root).iterdir():
+            if path.is_symlink() or not path.is_file():
+                raise ValueError('unexpected object in release output')
+            result[path.name] = sha(path.read_bytes())
+        if not result:
+            raise ValueError('empty release output')
+        return result
+    if files(first) != files(second):
+        raise ValueError('independent builds produced different release bytes')
+
+
+def build(version, destination, *, cache=None):
     validate_version(version)
     toolchain = (ROOT / '.go-version').read_text().strip()
     if not re.fullmatch(r'1\.[0-9]+\.[0-9]+', toolchain):
@@ -104,6 +119,8 @@ def build(version, destination):
     epoch = int(run('git', 'show', '-s', '--format=%ct', 'HEAD'))
     date = datetime.datetime.fromtimestamp(epoch, datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
     env = {**os.environ, 'GOTOOLCHAIN': 'go' + toolchain, 'GOENV': 'off', 'GOWORK': 'off', 'GOFLAGS': '', 'GOEXPERIMENT': '', 'CGO_ENABLED': '0', 'GOAMD64': 'v1', 'GOARM64': 'v8.0'}
+    if cache is not None:
+        env['GOCACHE'] = str(cache)
     if run('go', 'env', 'GOVERSION', env=env) != 'go' + toolchain:
         raise ValueError('official build requires the exact pinned Go toolchain')
     subprocess.run(['go', 'mod', 'verify'], cwd=ROOT, env=env, check=True)
@@ -141,7 +158,16 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--version', required=True)
     parser.add_argument('--out', required=True)
+    parser.add_argument('--verify-reproducible', action='store_true', help='build twice with separate caches and compare every output byte')
     args = parser.parse_args()
     if not args.out:
         parser.error('--out must name a new output directory')
-    build(args.version, args.out)
+    if args.verify_reproducible:
+        with tempfile.TemporaryDirectory(prefix='outcomemesh-repro-') as temporary:
+            base = Path(temporary)
+            build(args.version, args.out, cache=base / 'cache-a')
+            build(args.version, base / 'repeat', cache=base / 'cache-b')
+            compare_archives(args.out, base / 'repeat')
+            print('Both builds produced identical archives and metadata.', flush=True)
+    else:
+        build(args.version, args.out)

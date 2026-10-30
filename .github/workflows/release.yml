@@ -38,19 +38,9 @@ jobs:
           ref: ${{ inputs.tag || github.ref_name }}
           fetch-depth: 0
           persist-credentials: false
-      - name: Require a retained tag, main ancestry and successful CI
+      - name: Require annotated tag and latest CI and CodeQL gates
         run: |
-          python3 - <<'PY'
-          import os, sys
-          sys.path.insert(0, 'scripts')
-          from release import validate_version
-          validate_version(os.environ['TAG'])
-          PY
-          test "$(git rev-parse HEAD)" = "$(git rev-parse "refs/tags/$TAG^{commit}")"
-          git merge-base --is-ancestor HEAD origin/main
-          test -f "docs/releases/$TAG.md"
-          COUNT=$(gh run list --workflow ci.yml --commit "$(git rev-parse HEAD)" --branch main --event push --status success --limit 20 --json databaseId --jq length)
-          test "$COUNT" -gt 0
+          python3 scripts/release_gate.py --tag "$TAG"
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo 'This release already exists; existing assets will not be overwritten.' >&2
             exit 1
@@ -59,9 +49,11 @@ jobs:
         with:
           go-version-file: .go-version
           cache: true
-      - name: Build pinned official archives
-        run: python3 scripts/release.py --version "$TAG" --out dist
+      - name: Build twice and compare pinned official archives
+        run: python3 scripts/release.py --version "$TAG" --out dist --verify-reproducible
       - run: cd dist && sha256sum --check SHA256SUMS
+      - name: Recheck gates before attestation and draft creation
+        run: python3 scripts/release_gate.py --tag "$TAG"
       - name: Attest build provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:

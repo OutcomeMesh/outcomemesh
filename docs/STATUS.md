@@ -1,6 +1,6 @@
 # Implementation status
 
-Updated: 2026-10-30
+Updated: 2026-10-31
 
 This file records evidence against `PLAN.md`. A milestone remains open until all
 of its exit gates pass; implementing most deliverables does not close it.
@@ -9,6 +9,33 @@ Full planned production readiness is approximately **44/100**, using the weighte
 [readiness baseline](PRODUCTION_READINESS.md). This is an engineering estimate,
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
+
+## 2026-10-31: independent claim before scheduled Prune
+
+New scheduled Prune requests can bind an independent witness policy before
+admission. The managed executor retains one volatile-session candidate, collects
+the original scope's claim quorum and confirms the start before the actual
+storage target consumes its one-use permit. The result retains the matching
+session signature. Authority histories, existing pending work and spent IDs
+remain intact; each replica completes its original ticket separately.
+
+The CLI covers policy publication, scope export, original admissions, network
+quorum collection, deletion and completion. A cold candidate or a start without
+a signed result stays held. Neither local cancellation nor bare-effect recovery
+can turn it into permission. Old request formats remain unchanged. See
+[independent Prune authorization](PRUNE_FENCE.md) for compatibility and limits.
+
+Coverage includes real witness services with quorum outages, competing copies,
+wrong storage bindings, concurrent permit use, full CLI accounting, fixed vectors,
+decoder fuzzing and process termination around candidate, start and result writes.
+Independent deployment and missing-result settlement remain open. This slice
+does not close a weighted launch gate; readiness remains **44/100**.
+
+The release workflow now requires annotated tags, complete latest CI and CodeQL
+attempts on the exact main commit, and identical outputs from two builds with
+separate caches. Repository checks can be audited and missing CI/CodeQL
+requirements added without removing existing protections. Releases remain draft
+prereleases; these controls do not authorize mainnet.
 
 ## 2026-10-30: recovery of interrupted guarded result sealing
 
