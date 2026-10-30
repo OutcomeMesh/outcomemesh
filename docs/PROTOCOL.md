@@ -865,4 +865,9 @@ not change. All subsequent live actions bind the exact schedule ID; migration
 preserves pending operations, spent capacity and receipt deadlines. Legacy
 command/entry encodings and fixed-width wire formats remain unchanged. Remote
 assignment v1 and new canonical pruning remain gated pending their explicit
-schedule-bound evidence and execution formats.
+schedule-bound evidence and execution formats. Terminal v1 commits the exact
+schedule while retaining the original admission and response; reviewed v2
+completion drains only that ticket. A separate scheduled availability bundle
+requires original assignments, full lineages, distinct trusted replicas and
+unchanged receipt deadlines. The owned quorum CLI performs a point-in-time
+inspection without changing accounting or permitting pruning.

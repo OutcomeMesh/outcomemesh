@@ -34,13 +34,10 @@ func CaptureCustodyTerminal(ctx context.Context, original *Coordinator, config C
 		return CustodyTerminal{}, err
 	}
 	config.Scope = scope
-	ticket, err := config.Admission.ID()
-	if err != nil {
+	if _, err := config.Admission.ID(); err != nil {
 		return CustodyTerminal{}, err
 	}
-	c := config.Admission.Command
-	binding := OperationBinding{AssignmentID: config.Scope.AssignmentID, TicketID: ticket, ConsumerPublicKey: c.ActorPublicKey,
-		OperationID: c.OperationID, Purpose: c.Purpose}
+	binding := custodyAdmissionBinding(config.Scope, config.Admission)
 	err = original.WithOperation(ctx, binding, func() (returnErr error) {
 		retained, err := readRegular(filepath.Join(original.authority.path, assignmentName), custodyauthority.MaximumAssignmentBytes)
 		if err != nil {
@@ -55,8 +52,7 @@ func CaptureCustodyTerminal(ctx context.Context, original *Coordinator, config C
 				return err
 			}
 		}
-		journal, _, err := workarchive.OpenExistingCustodyJournalWithLimits(ctx, config.JournalPath,
-			config.Scope.Manifest, config.Scope.InitialReceipt, config.Scope.CustodyPolicy, config.JournalLimits)
+		journal, _, err := openManagedCustodyJournal(ctx, config.JournalPath, config.Scope.Manifest, config.Scope.InitialReceipt, config.Scope.CustodyPolicy, config.JournalLimits, config.Scope.Schedule, config.Scope.Assignment)
 		if err != nil {
 			return err
 		}
@@ -68,7 +64,7 @@ func CaptureCustodyTerminal(ctx context.Context, original *Coordinator, config C
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		terminal, err = CaptureCustodyTerminalLocked(config.Scope, config.Admission, decision)
+		terminal, err = captureCustodyTerminalLocked(ctx, config.Scope, config.Admission, decision)
 		if err != nil {
 			return err
 		}
@@ -83,34 +79,17 @@ func CaptureCustodyTerminal(ctx context.Context, original *Coordinator, config C
 // Snapshot all slice-bearing static inputs before entering a live owner. No
 // caller-owned configuration slice is retained across source locking or I/O.
 func freezeCustodyCommandEvidenceScope(scope CustodyCommandScope) (CustodyCommandScope, error) {
-	if err := ValidateCustodyCommandScope(scope); err != nil {
-		return CustodyCommandScope{}, err
-	}
-	b, err := scope.Assignment.CanonicalBytes()
-	if err != nil {
-		return CustodyCommandScope{}, err
-	}
-	if scope.Assignment, err = custodyauthority.DecodeAssignment(b); err != nil {
-		return CustodyCommandScope{}, err
-	}
-	b, err = scope.Manifest.CanonicalBytes()
-	if err != nil {
-		return CustodyCommandScope{}, err
-	}
-	if scope.Manifest, err = workarchive.DecodeManifest(b); err != nil {
-		return CustodyCommandScope{}, err
-	}
-	scope.CustodyPolicy.TrustedAuditors = append([][32]byte(nil), scope.CustodyPolicy.TrustedAuditors...)
-	if err := ValidateCustodyCommandScope(scope); err != nil {
-		return CustodyCommandScope{}, err
-	}
-	return scope, nil
+	return cloneCustodyCommandScope(scope)
 }
 
 // CaptureCustodyTerminalLocked is source-only validation. The caller MUST hold
 // the original selected pending-ticket coordinator guard and this active source
 // decision through every effect. It never acquires or reenters an owner lock.
 func CaptureCustodyTerminalLocked(scope CustodyCommandScope, admission custodyauthority.Entry, decision *workarchive.CustodyJournalDecision) (CustodyTerminal, error) {
+	return captureCustodyTerminalLocked(context.Background(), scope, admission, decision)
+}
+
+func captureCustodyTerminalLocked(ctx context.Context, scope CustodyCommandScope, admission custodyauthority.Entry, decision *workarchive.CustodyJournalDecision) (CustodyTerminal, error) {
 	if decision == nil {
 		return CustodyTerminal{}, ErrCustodyTerminal
 	}
@@ -120,7 +99,11 @@ func CaptureCustodyTerminalLocked(scope CustodyCommandScope, admission custodyau
 	}
 	terminal := CustodyTerminal{Version: CustodyTerminalVersion0, AssignmentID: scope.AssignmentID,
 		Admission: admission, Intent: scope.Intent, Entry: head}
-	if err := ValidateCustodyTerminalDecision(scope, terminal, decision); err != nil {
+	if scope.Schedule != nil {
+		terminal.Version = CustodyTerminalVersion1
+		terminal.ScheduleID = scope.scheduleID()
+	}
+	if err := validateCustodyTerminalDecision(ctx, scope, terminal, decision); err != nil {
 		return CustodyTerminal{}, err
 	}
 	return terminal, nil
@@ -130,11 +113,20 @@ func CaptureCustodyTerminalLocked(scope CustodyCommandScope, admission custodyau
 // CURRENT source head under a caller-held active decision. It is not a reusable
 // current authority grant. No older-history search is performed.
 func ValidateCustodyTerminalDecision(scope CustodyCommandScope, terminal CustodyTerminal, decision *workarchive.CustodyJournalDecision) error {
+	return validateCustodyTerminalDecision(context.Background(), scope, terminal, decision)
+}
+
+func validateCustodyTerminalDecision(ctx context.Context, scope CustodyCommandScope, terminal CustodyTerminal, decision *workarchive.CustodyJournalDecision) error {
 	if decision == nil {
 		return ErrCustodyTerminal
 	}
 	if err := terminal.Validate(scope); err != nil {
 		return err
+	}
+	if scope.Schedule != nil {
+		if _, _, err := decision.ScheduleLineage(ctx, scope.Schedule.Proof, scope.Assignment, scope.Schedule.Policy); err != nil {
+			return err
+		}
 	}
 	state, err := decision.State()
 	if err != nil {

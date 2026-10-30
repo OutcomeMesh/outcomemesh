@@ -137,7 +137,7 @@ func (service *ManagedCustodyTerminalCaptureService) reviewLocked(ctx context.Co
 	if err := retainedCustodyCommand(owner, service.admission, true); err != nil {
 		return ManagedCustodyCaptureReview{}, CustodyTerminal{}, err
 	}
-	terminal, err := CaptureCustodyTerminalLocked(service.source.scope, service.admission, decision)
+	terminal, err := captureCustodyTerminalLocked(ctx, service.source.scope, service.admission, decision)
 	if err != nil {
 		return ManagedCustodyCaptureReview{}, CustodyTerminal{}, err
 	}

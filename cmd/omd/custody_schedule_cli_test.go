@@ -182,6 +182,7 @@ func TestCustodyScheduleCLIPrepareSignApplyAndLiveQUIC(t *testing.T) {
 	if got := f.snapshot(t); got.Authority.Pending != before.Authority.Pending {
 		t.Fatal("migration implicitly released pending work")
 	}
+	completeScheduledCustodyCLI(t, f, append(append([]string{}, proofArgs...), trusted...))
 }
 
 func TestCustodyScheduleReportCancelsBlockedNativeOutput(t *testing.T) {

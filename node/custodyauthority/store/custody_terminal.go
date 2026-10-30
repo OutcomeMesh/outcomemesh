@@ -16,7 +16,8 @@ import (
 
 const (
 	CustodyTerminalVersion0     uint16 = 0
-	MaximumCustodyTerminalBytes        = 8 + 2 + types.HashSize + 30 + custodyauthority.MaximumEntryBytes +
+	CustodyTerminalVersion1     uint16 = 1
+	MaximumCustodyTerminalBytes        = 8 + 2 + 2*types.HashSize + 30 + custodyauthority.MaximumEntryBytes +
 		workarchive.MaximumCustodyAuditIntentBytes + workarchive.MaximumCustodyJournalEntryBytes
 )
 
@@ -30,6 +31,7 @@ var (
 // execution permission; live capture/apply must separately hold current owners.
 type CustodyTerminal struct {
 	Version      uint16
+	ScheduleID   types.Hash
 	AssignmentID types.Hash
 	Admission    custodyauthority.Entry
 	Intent       workarchive.CustodyAuditIntent
@@ -37,7 +39,8 @@ type CustodyTerminal struct {
 }
 
 func (terminal CustodyTerminal) validateShape() error {
-	if terminal.Version != CustodyTerminalVersion0 || terminal.AssignmentID.IsZero() ||
+	if (terminal.Version != CustodyTerminalVersion0 && terminal.Version != CustodyTerminalVersion1) ||
+		(terminal.Version == CustodyTerminalVersion0) != terminal.ScheduleID.IsZero() || terminal.AssignmentID.IsZero() ||
 		terminal.Intent.Validate() != nil || terminal.Intent.AssignmentID != terminal.AssignmentID {
 		return ErrCustodyTerminal
 	}
@@ -89,6 +92,9 @@ func (terminal CustodyTerminal) CanonicalBytes() ([]byte, error) {
 	e.Fixed(custodyTerminalMagic[:])
 	e.U16(terminal.Version)
 	e.Fixed(terminal.AssignmentID[:])
+	if terminal.Version == CustodyTerminalVersion1 {
+		e.Fixed(terminal.ScheduleID[:])
+	}
 	e.BytesField(admission)
 	e.BytesField(intent)
 	e.BytesField(entry)
@@ -117,6 +123,13 @@ func DecodeCustodyTerminal(input []byte) (CustodyTerminal, error) {
 		return CustodyTerminal{}, errors.Join(ErrCustodyTerminal, err)
 	}
 	copy(terminal.AssignmentID[:], id)
+	if terminal.Version == CustodyTerminalVersion1 {
+		v, err := d.Fixed(types.HashSize)
+		if err != nil {
+			return CustodyTerminal{}, ErrCustodyTerminal
+		}
+		copy(terminal.ScheduleID[:], v)
+	}
 	admission, err := d.BytesField(custodyauthority.MaximumEntryBytes)
 	if err != nil {
 		return CustodyTerminal{}, errors.Join(ErrCustodyTerminal, err)
@@ -149,7 +162,11 @@ func (terminal CustodyTerminal) ID() (types.Hash, error) {
 	if err != nil {
 		return types.Hash{}, err
 	}
-	return types.DomainHash("OMESH/custody-authority/custody-terminal/id/v0", b), nil
+	domain := "OMESH/custody-authority/custody-terminal/id/v0"
+	if terminal.Version == CustodyTerminalVersion1 {
+		domain = "OMESH/custody-authority/custody-terminal/id/v1"
+	}
+	return types.DomainHash(domain, b), nil
 }
 
 // Validate replays all proof/signature checks at the record's original
@@ -162,7 +179,7 @@ func (terminal CustodyTerminal) Validate(scope CustodyCommandScope) error {
 	if _, err := terminal.CanonicalBytes(); err != nil {
 		return err
 	}
-	if terminal.AssignmentID != scope.AssignmentID || terminal.Intent != scope.Intent {
+	if terminal.ScheduleID != scope.scheduleID() || terminal.AssignmentID != scope.AssignmentID || terminal.Intent != scope.Intent {
 		return ErrCustodyTerminal
 	}
 	if err := ValidateCustodyCommandChallenge(scope, terminal.Entry.Record.Challenge); err != nil {

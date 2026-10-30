@@ -80,6 +80,7 @@ func runCustodyCommand(ctx context.Context, arguments []string, input io.ReadClo
 }
 
 type custodyCommandScopeFlags struct {
+	schedule                                                                *custodyScheduleFlags
 	assignment, assignmentID, manifest, receipt, intent, intentID, previous *string
 	policy                                                                  archiveCustodyPolicyFlags
 }
@@ -94,6 +95,7 @@ type custodyCommandSources struct {
 
 func addCustodyCommandScopeFlags(f *flag.FlagSet) custodyCommandScopeFlags {
 	return custodyCommandScopeFlags{
+		schedule:     addCustodyScheduleFlags(f),
 		assignment:   f.String("assignment", "", "existing canonical assignment"),
 		assignmentID: f.String("assignment-id", "", "independently retained assignment ID"),
 		manifest:     f.String("manifest", "", "existing canonical archive manifest"),
@@ -180,6 +182,10 @@ func (f custodyCommandScopeFlags) loadVersion(version uint16) (authoritystore.Cu
 		return scope, paths, err
 	}
 	scope.CustodyPolicy = workarchive.CustodyPolicy{TrustedAuditors: append([][32]byte(nil), scope.Assignment.Auditors...), MaximumChallengeLifetime: *f.policy.challengeLifetime, MaximumProofAge: *f.policy.proofAge, MaximumRenewalTerm: *f.policy.renewalTerm}
+	scope.Schedule, err = f.schedule.load(scope.Assignment)
+	if err != nil {
+		return scope, paths, err
+	}
 	if version == custodyauthority.Version1 {
 		return scope, paths, authoritystore.ValidateRemoteCustodyCommandScope(scope)
 	}
@@ -277,6 +283,7 @@ func custodyCommandForbid(present map[string]bool, names ...string) error {
 
 // Public metadata deliberately omits the intent nonce and every private seed.
 type custodyCommandPublicScope struct {
+	ScheduleID        string                    `json:"schedule_id,omitempty"`
 	Sources           custodyCommandSources     `json:"sources"`
 	AssignmentID      string                    `json:"assignment_id"`
 	ManifestID        string                    `json:"manifest_id"`
@@ -298,5 +305,9 @@ type custodyCommandPublicScope struct {
 
 func custodyCommandPublic(scope authoritystore.CustodyCommandScope, paths custodyCommandSources) custodyCommandPublicScope {
 	id, _ := scope.Intent.ID()
-	return custodyCommandPublicScope{Sources: paths, AssignmentID: scope.AssignmentID.String(), ManifestID: scope.Assignment.ManifestID.String(), InitialReceiptID: scope.Assignment.InitialReceiptID.String(), CustodyPolicyID: scope.Assignment.CustodyPolicyID.String(), IntentID: id.String(), PriorSequence: scope.Intent.PriorSequence, PriorHeadID: scope.Intent.PriorHeadID.String(), PriorReceiptID: scope.Intent.PriorReceiptID.String(), ConsumerPublicKey: fmt.Sprintf("%x", scope.Intent.ConsumerPublicKey), AuditorPublicKey: fmt.Sprintf("%x", scope.Intent.AuditorPublicKey), ReplicaPeerID: scope.Intent.ReplicaPeerID.String(), IssuedAt: scope.Intent.IssuedAt, ExpiresAt: scope.Intent.ExpiresAt, RenewUntil: scope.Intent.RenewUntil, RequestedSamples: scope.Intent.RequestedSamples, Policy: scope.CustodyPolicy}
+	schedule := ""
+	if scope.Schedule != nil {
+		schedule = scope.Schedule.ExpectedID.String()
+	}
+	return custodyCommandPublicScope{ScheduleID: schedule, Sources: paths, AssignmentID: scope.AssignmentID.String(), ManifestID: scope.Assignment.ManifestID.String(), InitialReceiptID: scope.Assignment.InitialReceiptID.String(), CustodyPolicyID: scope.Assignment.CustodyPolicyID.String(), IntentID: id.String(), PriorSequence: scope.Intent.PriorSequence, PriorHeadID: scope.Intent.PriorHeadID.String(), PriorReceiptID: scope.Intent.PriorReceiptID.String(), ConsumerPublicKey: fmt.Sprintf("%x", scope.Intent.ConsumerPublicKey), AuditorPublicKey: fmt.Sprintf("%x", scope.Intent.AuditorPublicKey), ReplicaPeerID: scope.Intent.ReplicaPeerID.String(), IssuedAt: scope.Intent.IssuedAt, ExpiresAt: scope.Intent.ExpiresAt, RenewUntil: scope.Intent.RenewUntil, RequestedSamples: scope.Intent.RequestedSamples, Policy: scope.CustodyPolicy}
 }

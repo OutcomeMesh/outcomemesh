@@ -14,7 +14,7 @@ import (
 )
 
 func managedCommandApplyTestScope(f *managedAuditFixture) CustodyCommandScope {
-	return CustodyCommandScope{Assignment: f.serve.archive.policy.Assignments[0], AssignmentID: f.config.AssignmentID,
+	return CustodyCommandScope{Schedule: f.config.Schedule, Assignment: f.serve.archive.policy.Assignments[0], AssignmentID: f.config.AssignmentID,
 		Manifest: f.config.Manifest, InitialReceipt: f.config.InitialReceipt, CustodyPolicy: f.config.CustodyPolicy,
 		Intent: f.intent, PreviousReceipt: f.config.InitialReceipt}
 }

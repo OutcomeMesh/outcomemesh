@@ -249,7 +249,7 @@ func (service *ManagedCustodyCommandService) reviewLocked(ctx context.Context, d
 	if err != nil {
 		return ManagedCustodyCommandReview{}, err
 	}
-	if err := service.validateSourceLocked(decision); err != nil {
+	if err := service.validateSourceLocked(ctx, decision); err != nil {
 		return ManagedCustodyCommandReview{}, err
 	}
 	state, err := decision.State()
@@ -314,9 +314,9 @@ func (service *ManagedCustodyCommandService) validateSelectedLocked(current Coor
 	return false, owner.authority.state.ValidateNext(entry)
 }
 
-func (service *ManagedCustodyCommandService) validateSourceLocked(decision *workarchive.CustodyJournalDecision) error {
+func (service *ManagedCustodyCommandService) validateSourceLocked(ctx context.Context, decision *workarchive.CustodyJournalDecision) error {
 	if service.entry.Command.Kind == custodyauthority.Complete {
-		return ValidateCustodyTerminalDecision(service.source.scope, service.terminal, decision)
+		return validateCustodyTerminalDecision(ctx, service.source.scope, service.terminal, decision)
 	}
 	state, err := decision.State()
 	if err != nil {
@@ -465,11 +465,11 @@ func custodyAdmissionBinding(scope CustodyCommandScope, admission custodyauthori
 	ticket, _ := admission.ID() // callers validate canonical admission first
 	c := admission.Command
 	return OperationBinding{AssignmentID: scope.AssignmentID, TicketID: ticket, ConsumerPublicKey: c.ActorPublicKey,
-		OperationID: c.OperationID, Purpose: c.Purpose}
+		OperationID: c.OperationID, Purpose: c.Purpose, ScheduleID: scope.scheduleID()}
 }
 
 func validateCustodyOperationSnapshot(snapshot custodyauthority.Snapshot, binding OperationBinding) error {
-	if snapshot.AssignmentID != binding.AssignmentID {
+	if snapshot.AssignmentID != binding.AssignmentID || snapshot.ScheduleID != binding.ScheduleID {
 		return custodyauthority.ErrAssignment
 	}
 	if snapshot.Phase != custodyauthority.Accepting && snapshot.Phase != custodyauthority.Stopping {
@@ -526,6 +526,10 @@ func cloneCustodyCommandScopeVersion(scope CustodyCommandScope, version uint16) 
 	if err != nil {
 		return CustodyCommandScope{}, err
 	}
+	scope.Schedule, _, err = scope.Schedule.detached()
+	if err != nil {
+		return CustodyCommandScope{}, err
+	}
 	scope.CustodyPolicy.TrustedAuditors = append([][32]byte(nil), scope.CustodyPolicy.TrustedAuditors...)
 	return scope, nil
 }
@@ -540,7 +544,7 @@ func openManagedCustodyCommandSource(ctx context.Context, owner *Coordinator, sc
 			return nil, err
 		}
 	}
-	journal, _, err := workarchive.OpenExistingCustodyJournalWithLimits(ctx, journalPath, scope.Manifest, scope.InitialReceipt, scope.CustodyPolicy, limits)
+	journal, _, err := openManagedCustodyJournal(ctx, journalPath, scope.Manifest, scope.InitialReceipt, scope.CustodyPolicy, limits, scope.Schedule, scope.Assignment)
 	if err != nil {
 		return nil, err
 	}
@@ -583,7 +587,13 @@ func openManagedCustodyCommandSource(ctx context.Context, owner *Coordinator, sc
 	for _, id := range []types.Hash{scope.AssignmentID, intentID, previousID} {
 		e.Fixed(id[:])
 	}
-	source.scopeID = types.DomainHash("OMESH/local/custody-command-scope/v0", e.Bytes())
+	domain := "OMESH/local/custody-command-scope/v0"
+	if scope.Schedule != nil {
+		id := scope.scheduleID()
+		e.Fixed(id[:])
+		domain = "OMESH/local/custody-command-scope/v1"
+	}
+	source.scopeID = types.DomainHash(domain, e.Bytes())
 	if err := source.validate(); err != nil {
 		return nil, err
 	}

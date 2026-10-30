@@ -10,6 +10,26 @@ Full planned production readiness is approximately **44/100**, using the weighte
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
 
+## 2026-10-30: scheduled completion and storage quorum
+
+Original Audit/Serve tickets can now complete through the reviewed CLI after
+schedule migration. Terminal v1 and authority command/entry v2 commit the exact
+schedule, original admission and retained result. Capture and application hold
+the original coordinator and journal; explicit recovery accepts only the retained
+attempt. Spent operations, other pending tickets and receipt dates remain intact.
+
+Scheduled availability has a separate canonical bundle and verifier. The new
+`work-archive-custody-quorum` CLI holds all original owners and journals, verifies
+the complete lineage of each current receipt and checks freshness again before
+release. It rejects duplicate keys/locations, mismatched schedules, unconfirmed
+authority writes, stale receipts and substituted sources. Reports are historical
+inspection evidence and do not authorize pruning.
+
+New scheduled admission, canonical pruning, remote v1/profile-5 migration and
+independent deployment remain open. This implementation does not close a weighted
+mainnet gate; readiness remains **44/100**. Formats, operating procedure and fixed
+reference values are in the [custody migration guide](CUSTODY_RADIX_SCHEDULE.md).
+
 ## 2026-10-30: active local custody schedule migration
 
 [Local custody assignments](CUSTODY_RADIX_SCHEDULE.md) can append one
@@ -25,10 +45,9 @@ The wrapper commits the new schedule without changing timestamps or retention.
 Portable verification requires the complete original receipt lineage. Scheduled
 journal replay rejects a prefix older than the migration cursor.
 
-Reviewed terminal completion/admission, availability/pruning and remote
-v1/profile-5 schedule transitions remain open. Original pending tickets stay
-pending until their verified completion path is extended. This local slice does
-not close a mainnet gate; readiness remains **44/100**.
+At this migration stage, completion, availability and remote transitions were
+still gated. The completion and quorum follow-up above supplies the local paths;
+scheduled admission, pruning and remote v1/profile-5 transitions remain open.
 
 ## 2026-10-29: archive and protected-storage radix migration
 

@@ -46,8 +46,11 @@ Remaining work, in order:
    Existing effects, floors and custody evidence are retained. Managed custody
    v0 owners now migrate active Audit/Serve tickets through an original-history
    version 2 entry and preserve receipt lineage; see [custody schedule migration](CUSTODY_RADIX_SCHEDULE.md).
-   Next: schedule-bound terminal completion/admission, availability quorum and
-   pruning, then remote v1/profile-5 witness and execution scope transitions.
+   Reviewed CLI completion now drains original Audit/Serve tickets under the new
+   schedule. A separate quorum format and CLI verify original owners, full
+   receipt lineage and unchanged deadlines without changing accounting.
+   Next: scheduled admission and canonical pruning with final mutation-time
+   retention checks, then remote v1/profile-5 witness and execution transitions.
 2. Define the independently approved network activation policy and transition
    checkpoint; local operator profiles alone do not authorize public activation.
 3. Extend migration beyond the initial bounded history, with resumable streaming

@@ -16,6 +16,7 @@ var ErrCustodyCommandScope = errors.New("custody command scope does not match it
 // authority and opens no owner or journal. PreviousReceipt is the intent's exact
 // predecessor; current source continuity is checked separately under a decision.
 type CustodyCommandScope struct {
+	Schedule        *CustodyScheduleContext
 	Assignment      custodyauthority.Assignment
 	AssignmentID    types.Hash
 	Manifest        workarchive.Manifest
@@ -36,6 +37,18 @@ func ValidateRemoteCustodyCommandScope(scope CustodyCommandScope) error {
 }
 
 func validateCustodyCommandScopeVersion(scope CustodyCommandScope, version uint16) error {
+	if scope.Schedule != nil {
+		if version != custodyauthority.Version0 {
+			return ErrCustodyCommandScope
+		}
+		s, _, err := scope.Schedule.detached()
+		if err != nil {
+			return err
+		}
+		if err := s.Proof.Verify(scope.Assignment, s.Policy); err != nil {
+			return err
+		}
+	}
 	id, err := scope.Assignment.ID()
 	if err != nil || scope.Assignment.Version != version || scope.AssignmentID.IsZero() || id != scope.AssignmentID || scope.Intent.AssignmentID != id || scope.Intent.Validate() != nil {
 		return errors.Join(ErrCustodyCommandScope, err)
@@ -111,6 +124,9 @@ func BuildCustodyAdmitCommand(scope CustodyCommandScope, purpose custodyauthorit
 	if err := ValidateCustodyCommandScope(scope); err != nil {
 		return custodyauthority.Command{}, err
 	}
+	if scope.Schedule != nil {
+		return custodyauthority.Command{}, ErrCustodyCommandScope
+	}
 	var operation types.Hash
 	var err error
 	switch purpose {
@@ -156,7 +172,9 @@ func validateCustodyAdmission(scope CustodyCommandScope, admission custodyauthor
 	if c.Purpose == custodyauthority.Serve {
 		supplied = challenge
 	}
-	want, err := BuildCustodyAdmitCommand(scope, c.Purpose, c.ActorPublicKey,
+	legacy := scope
+	legacy.Schedule = nil // The retained ticket keeps its original version and ID.
+	want, err := BuildCustodyAdmitCommand(legacy, c.Purpose, c.ActorPublicKey,
 		custodyauthority.Position{Sequence: c.ExpectedSequence, HeadID: c.ExpectedHead}, supplied)
 	if err != nil {
 		return err
@@ -195,6 +213,10 @@ func BuildCustodyCompleteCommand(scope CustodyCommandScope, admission custodyaut
 	draft := custodyauthority.Command{Version: custodyauthority.Version0, AssignmentID: scope.AssignmentID,
 		ExpectedSequence: position.Sequence, ExpectedHead: position.HeadID, Kind: custodyauthority.Complete,
 		TicketID: ticket, EvidenceID: evidence, ActorPublicKey: admission.Command.ActorPublicKey}
+	if scope.Schedule != nil {
+		draft.Version = custodyauthority.ScheduleVersion2
+		draft.ScheduleID = scope.Schedule.ExpectedID
+	}
 	if _, err := CustodyCommandReviewID(scope.Assignment, draft, admission.Command.Purpose); err != nil {
 		return custodyauthority.Command{}, err
 	}
@@ -204,14 +226,33 @@ func BuildCustodyCompleteCommand(scope CustodyCommandScope, admission custodyaut
 // These aliases retain the scope-facing API while the exact existing signature
 // messages are implemented next to the authority codecs.
 func CustodyCommandReviewID(a custodyauthority.Assignment, c custodyauthority.Command, p custodyauthority.Purpose) (types.Hash, error) {
+	if c.Version == custodyauthority.ScheduleVersion2 {
+		return custodyauthority.ScheduledCustodyCommandReviewID(a, c, p)
+	}
 	return custodyauthority.CustodyCommandReviewID(a, c, p)
 }
 func CustodyEntryReviewID(a custodyauthority.Assignment, c custodyauthority.Command, p custodyauthority.Purpose) (types.Hash, error) {
+	if c.Version == custodyauthority.ScheduleVersion2 {
+		return custodyauthority.ScheduledCustodyEntryReviewID(a, c, p)
+	}
 	return custodyauthority.CustodyEntryReviewID(a, c, p)
 }
 func SignReviewedCustodyCommand(a custodyauthority.Assignment, c custodyauthority.Command, p custodyauthority.Purpose, id types.Hash, key ed25519.PrivateKey) (custodyauthority.Command, error) {
+	if c.Version == custodyauthority.ScheduleVersion2 {
+		return custodyauthority.SignReviewedScheduledCustodyCommand(a, c, p, id, key)
+	}
 	return custodyauthority.SignReviewedCustodyCommand(a, c, p, id, key)
 }
 func CosignReviewedCustodyCommand(a custodyauthority.Assignment, c custodyauthority.Command, p custodyauthority.Purpose, id types.Hash, key ed25519.PrivateKey) (custodyauthority.Entry, error) {
+	if c.Version == custodyauthority.ScheduleVersion2 {
+		return custodyauthority.CosignReviewedScheduledCustodyCommand(a, c, p, id, key)
+	}
 	return custodyauthority.CosignReviewedCustodyCommand(a, c, p, id, key)
+}
+
+func (scope CustodyCommandScope) scheduleID() types.Hash {
+	if scope.Schedule != nil {
+		return scope.Schedule.ExpectedID
+	}
+	return types.Hash{}
 }

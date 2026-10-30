@@ -60,7 +60,8 @@ Archive custody remains a separate operational subsystem. Its protections depend
 on the configured owners, witnesses, services and deployment boundaries. The
 archive formats support a scheduled WorkGraph v3 chain. Local custody owners
 can migrate active Audit/Serve tickets while preserving original receipt history.
-Remote execution, reviewed completion and pruning still require their own
+Reviewed CLI completion and storage quorum inspection preserve that same
+accounting. Remote execution, new admissions and pruning still require their own
 schedule integration. The [custody migration guide](docs/CUSTODY_RADIX_SCHEDULE.md)
 describes the supported path and its limits.
 

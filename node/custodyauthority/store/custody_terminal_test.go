@@ -238,6 +238,14 @@ func TestCustodyTerminalCaptureCurrentHeadAndIndependentTickets(t *testing.T) {
 }
 
 func FuzzDecodeCustodyTerminal(f *testing.F) {
+	scheduled := custodyTerminalGolden(f)
+	scheduled.Version = CustodyTerminalVersion1
+	scheduled.ScheduleID = testHash(222)
+	encoded, err := scheduled.CanonicalBytes()
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Add(encoded)
 	terminal := custodyTerminalGolden(f)
 	b, _ := terminal.CanonicalBytes()
 	f.Add(b)
@@ -253,4 +261,40 @@ func FuzzDecodeCustodyTerminal(f *testing.F) {
 			t.Fatal("accepted noncanonical terminal", err)
 		}
 	})
+}
+
+func TestCustodyScheduledTerminalCanonicalVector(t *testing.T) {
+	terminal := custodyTerminalGolden(t)
+	terminal.Version = CustodyTerminalVersion1
+	terminal.ScheduleID = testHash(222)
+	raw, err := terminal.CanonicalBytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := DecodeCustodyTerminal(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, err := decoded.CanonicalBytes()
+	if err != nil || !bytes.Equal(raw, again) {
+		t.Fatal("scheduled terminal roundtrip")
+	}
+	id, _ := terminal.ID()
+	if id.String() != "ab32d8670864c297614117b67a7f2ee749b1d231abfc96939833d26c301461fa" {
+		t.Fatal("scheduled terminal vector changed", id)
+	}
+	for i := range raw {
+		if _, err := DecodeCustodyTerminal(raw[:i]); err == nil {
+			t.Fatalf("truncation %d", i)
+		}
+	}
+	terminal.Version = CustodyTerminalVersion0
+	if _, err := terminal.CanonicalBytes(); err == nil {
+		t.Fatal("v0 terminal carried schedule")
+	}
+	terminal.Version = CustodyTerminalVersion1
+	terminal.ScheduleID = types.Hash{}
+	if _, err := terminal.CanonicalBytes(); err == nil {
+		t.Fatal("scheduled terminal missing scope")
+	}
 }

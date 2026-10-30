@@ -133,21 +133,139 @@ held until explicit recovery. A confirmed retry does not reapply migration.
 Unknown custody execution outcomes remain pending; migration is not evidence
 that they did or did not execute.
 
+## Completing retained Audit and Serve tickets
+
+The existing terminal and command CLI accepts the same four explicit schedule
+flags as the managed pair: `--schedule-proof`, `--schedule-id`,
+`--schedule-attestors`, and `--schedule-quorum`. The original manifest, assignment,
+initial receipt, intent and immediate predecessor remain required. Each completion
+uses its original admission; Audit and Serve drain independently.
+
+1. Use `work-archive-custody-terminal` in review mode with the original authority,
+   pins, journal and admission. Enter control mode and issue `review`, then
+   `capture <review-id>` to publish the exact selected terminal to `--out`.
+   Capture requires the original pending ticket and current journal head. It
+   replays the complete original lineage, including the migration cursor.
+2. Review `work-archive-custody-command-sign --kind complete` with the captured
+   `--terminal` and `--terminal-id`, original `--admission` and `--admission-id`,
+   and explicitly retained `--expected-sequence` and `--expected-head`.
+   Sign only that review with the original consumer key.
+3. Review and co-sign that command with `work-archive-custody-command-cosign`
+   and the original authority key. Neither step opens an owner or selects a
+   newer authority position.
+4. Use `work-archive-custody-command-apply` with the exact entry and terminal.
+   Review the owned service, then issue `apply <review-id>` in control mode.
+   An outstanding retained intent requires `resume <review-id>` instead.
+   Close the service before transferring its original roots to another process.
+
+These commands use the existing CLI input and artifact rules described in the
+[custody operator guide](CUSTODY_OPERATOR_CLI.md). Add the schedule flags to every
+stage, including review, signing, capture, application and recovery. Omitting
+those flags does not adopt the owner's current schedule implicitly.
+
+Terminal version 1 retains magic `OMCATRM0` and adds the 32-byte schedule ID
+immediately after the assignment ID. The original admission, intent and journal
+entry follow as length-prefixed canonical values. Its ID domain is
+`OMESH/custody-authority/custody-terminal/id/v1`. Version 0 is unchanged and cannot
+carry a schedule ID. A version 1 terminal is evidence for its exact schedule;
+it does not create a new response or change receipt dates.
+
+Reviewed completion commands and entries use authority version 2 and its
+signature domains. `EvidenceID` commits the complete version 1 terminal;
+`TicketID` remains the original version 0 admission ID. Review limits include
+the reserved migration entry. The local command-source identity adds the
+schedule ID after assignment, intent and predecessor IDs, under
+`OMESH/local/custody-command-scope/v1`. With no schedule the original v0 scope and
+review behavior remain unchanged.
+
+A fresh completion holds the original coordinator and source journal decision
+through durable application. Recovery checks the exact retained intent and
+schedule. A confirmed retry returns the retained entry, including after the
+other ticket completes. It does not release another ticket or refund spent
+operation capacity. Missing results, advanced unrelated heads and unknown
+execution outcomes remain held.
+
+## Inspecting storage quorum
+
+`omd work-archive-custody-quorum` inspects existing owners and journals without
+changing them. It requires an independently pinned target statement and explicit
+original attestor and replica trust lists. For example:
+
+```sh
+omd work-archive-custody-quorum \
+  --sources /operator/scheduled-sources.json \
+  --checkpoint /operator/target.checkpoint \
+  --checkpoint-id <target-statement-id> \
+  --attestors <attestor-key-1>,<attestor-key-2> --attestor-quorum 2 \
+  --replicas <replica-key-1>,<replica-key-2> --replica-quorum 2 \
+  --max-receipt-age-seconds 1000 --min-remaining-term-seconds 100 \
+  --max-challenge-lifetime-seconds 60 --max-proof-age-seconds 100 \
+  --max-renewal-term-seconds 20000
+```
+
+The JSON source list contains between 2 and 64 objects. Each object supplies
+these exact fields; use independently retained IDs and existing canonical paths:
+
+```json
+{
+  "assignment": "/operator/replica-a.assignment",
+  "assignment_id": "<original-assignment-id>",
+  "authority": "/replica-a/authority",
+  "authority_pins": "/replica-a/authority-pins",
+  "journal": "/replica-a/custody",
+  "schedule_proof": "/operator/replica-a.schedule",
+  "schedule_id": "<replica-a-schedule-proof-id>",
+  "scheduled_receipt": "/operator/replica-a.receipt",
+  "scheduled_receipt_id": "<scheduled-receipt-id>"
+}
+```
+
+The list is bounded to 1 MiB. Duplicate or unknown JSON fields, omitted required
+fields, extra JSON values and duplicate flags are rejected. Each replica has its
+own schedule proof ID because its assignment and journal cursor are distinct.
+The original custody policy must match each assignment. A mixed policy requires
+separate preparation; this command does not infer policy limits from evidence.
+
+Inspection holds all original coordinators and journal decisions until the final
+freshness check. Every owner must have confirmed the selected schedule, have no
+unconfirmed authority intent and be unretired. Outstanding ordinary tickets are
+allowed and remain unchanged. Each wrapped receipt must be the current receipt
+in that original journal. All votes must name one exact original archive and
+one target statement. Repeated keys, locations, assignments or schedule proofs
+cannot count twice. Pending, missing, replaced, shortened and overlapping roots
+are refused. Owners close before output, including output failure/cancellation.
+
+`ScheduledAvailabilityBundle` is a separate canonical format: magic `OMWSAVL0`,
+version 0, target statement ID, manifest ID, anchor ID, radix activation height,
+a bounded count and length-prefixed scheduled receipts sorted by replica key.
+Its ID domain is `OMESH/workgraph/archive/scheduled-availability/id/v0`.
+The bundle is at most 64 KiB. Verification also requires the independently
+retained original assignments, original attestor policy, replica policy and
+complete lineage for each vote. The aggregate manifest and journal evidence
+budget is 256 MiB; each lineage has at most 1,024 entries. No clocks enter
+consensus: availability is evaluated at the caller's inspection time, using
+only original signed receipt dates. The CLI samples time again after replay and
+owner/source rechecks. Its JSON report includes the bundle, its ID and the final
+`checked_at` time.
+
+The report is historical evidence of this inspection. It grants no future
+execution permission and is not accepted as a canonical pruning permit. Distinct
+location commitments do not independently prove separate operators or machines.
+Copying all original owner roots and their keys remains outside this local fence.
+
 ## Remaining gates
 
-The version 2 state machine supports draining existing tickets, but the existing
-reviewed terminal, offline admission/completion and reconciliation services have
-not yet acquired schedule-bound source/evidence formats. Their legacy commands
-are refused after migration. Until those adapters are integrated, keep the
-original pending obligations; do not manufacture completion or bootstrap a
-replacement assignment. Plan this maintenance transition accordingly.
+New scheduled admission, reconciliation and remote completion transports still
+need their own reviewed evidence paths. Existing v0 admissions can be completed
+as described above; new commands must not manufacture a response or reset an
+assignment to clear unknown work. Legacy fixed-width transports still reject v2.
 
-Remote assignment v1 and profile-5 require their own versioned scope transition,
-including witnesses, guards, execution plans and source acceptance. They are
-explicitly refused by this migration. Scheduled receipts are not accepted by
-legacy replica quorum/availability or pruning formats. New canonical pruning
-remains gated until that full path verifies schedule-bound retention evidence.
-No mainnet readiness gate is closed by this implementation.
+Remote assignment v1 and profile-5 require a versioned scope transition covering
+witnesses, guards, execution plans and source acceptance. They remain refused by
+this migration. New canonical pruning remains gated until its own durable effect
+path consumes scheduled quorum evidence and rechecks retention at the final
+storage mutation. Inspection alone does not authorize that mutation. No mainnet
+readiness gate is closed by this implementation.
 
 ## Canonical reference values
 
@@ -159,3 +277,6 @@ fix these IDs. They are format references, not live network identities.
 | Version 2 migration entry | `600d67ae84ee481323e5f07d409a5ff6eb0b97bef120df6ed1d5bf2034ed1732` |
 | Schedule proof | `439e603f95f1d9ecff0372ef0a4150c3848e0a8a366901b85582c85451cdc290` |
 | Scheduled receipt | `0e1a776acaf1e74056c05024bfbdcc04272ad003751237308523d7e0b76be31d` |
+| Version 2 reviewed completion entry | `a2140ed64a446e75bc486a57bd795f1897bd66aacf6fbc615e8571fa91bc6f9b` |
+| Version 1 scheduled terminal | `ab32d8670864c297614117b67a7f2ee749b1d231abfc96939833d26c301461fa` |
+| Scheduled availability bundle | `a6d73873151636c75628811875244828d0d523aa818797378d3ed7294135e33e` |
