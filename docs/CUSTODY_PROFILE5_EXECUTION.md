@@ -120,6 +120,10 @@ committed response is replayed byte for byte without redoing the effect.
   append another source entry or mint a later proof time.
 - Completed results survive process death. Result-command production and exact
   reply recovery do not require recreating the volatile private session.
+- In a guarded deployment, a complete retained session-signed core may finish
+  interrupted effect sealing through the exact original pending request. The
+  original source, admission and claim remain mandatory; the guard cannot change
+  an occupied choice. See [result sealing recovery](CUSTODY_EVIDENCE_RECOVERY.md#interrupted-result-sealing).
 - Partial/corrupt named evidence remains blocking. No force, reset, file deletion,
   automatic tip adoption or rollback-to-legacy path is added.
 

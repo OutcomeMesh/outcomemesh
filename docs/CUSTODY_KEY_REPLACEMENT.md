@@ -144,7 +144,16 @@ without a valid retained result stays held. A lost or partial original history
 cannot be replaced with a fresh journal. Already signed old results and quorums
 remain historical evidence, including responses delivered after revocation.
 An old effect cannot be re-signed into a different successor effect at an occupied
-slot. Recovery of a missing result or further rotations needs a separate protocol.
+slot. Recovery without a complete signed core, or further rotations, needs a
+separate protocol.
+
+There is one narrower recovery path for a complete retained session-signed core
+whose service seal was never chosen. The activated successor can finish that
+same core under the original pending request, original source and admission;
+see [result sealing recovery](CUSTODY_EVIDENCE_RECOVERY.md#interrupted-result-sealing).
+No session is recreated. An occupied old effect slot still rejects a different
+successor effect, and missing or damaged core evidence remains held. Publication
+does not itself close Serve or admission accounting.
 
 The original guard key and monotone history must remain outside subject backups
 and control domains. This feature does not protect a copied guard key/store, add

@@ -159,8 +159,12 @@ not recall previously signed artifacts or prove that an underlying action never
 ran. In the real profile-5 test, execution consumes the session and records source
 evidence, then the revoked service cannot obtain its result seal. The job remains
 spent=2, pending=2 across restart; no result is fabricated, source record changed,
-execution repeated or allowance refunded. [Replacement](CUSTODY_KEY_REPLACEMENT.md) does not settle this outcome or restore
-the lost session. Operator settlement remains a separate protocol.
+execution repeated or allowance refunded. [Replacement](CUSTODY_KEY_REPLACEMENT.md)
+does not restore a lost session. A complete retained session-signed core can now
+finish through the original request and an authorized successor only if the
+original effect slot is still free; see [result sealing recovery](CUSTODY_EVIDENCE_RECOVERY.md#interrupted-result-sealing).
+Missing signed cores and conflicting choices remain held. Closing accounting
+still requires the original quorum and acceptance flow.
 
 The revocation request is 200 bytes; its separate HTTP endpoint is
 `/outcomemesh/custody-guard/revoke/1`, with a 340-byte signed receipt. Both require

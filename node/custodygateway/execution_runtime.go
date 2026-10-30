@@ -164,6 +164,12 @@ func (o *Owner) preflightProtected(ctx context.Context, p v2.ProtectedCommand) e
 		} else if !errors.Is(e, os.ErrNotExist) {
 			return e
 		}
+		if _, e = o.jobRead(sid, "core-result", v2.MaximumResultBytes); e == nil {
+			_, e = o.readRetainedExecutionCore(p, c, sid)
+			return e
+		} else if !errors.Is(e, os.ErrNotExist) {
+			return e
+		}
 		if _, e = o.jobRead(sid, "consumed", custodyfence.MaximumCertificateBytes); e == nil {
 			return v2.ErrConsumed
 		} else if !errors.Is(e, os.ErrNotExist) {
@@ -271,6 +277,11 @@ func (o *Owner) executeJob(ctx context.Context, p v2.ProtectedCommand, c v2.Cont
 	} else if !errors.Is(e, os.ErrNotExist) {
 		return nil, e
 	}
+	if _, e := o.jobRead(sid, "core-result", v2.MaximumResultBytes); e == nil {
+		return o.recoverExecutionCore(ctx, p, c, sid)
+	} else if !errors.Is(e, os.ErrNotExist) {
+		return nil, e
+	}
 	claim, e := custodyfence.DecodeCertificate(p.Data)
 	if e != nil {
 		return nil, e
@@ -328,9 +339,19 @@ func (o *Owner) executeJob(ctx context.Context, p v2.ProtectedCommand, c v2.Cont
 	if e = o.jobWrite(sid, "core-result", raw); e != nil {
 		return nil, e
 	}
+	if o.executionHook != nil {
+		if e = o.executionHook("core-result-before-seal"); e != nil {
+			return nil, e
+		}
+	}
+	return o.publishExecutionResult(ctx, p, c, sid, claim, result)
+}
+
+func (o *Owner) publishExecutionResult(ctx context.Context, p v2.ProtectedCommand, c v2.Context, sid types.Hash, claim custodyfence.Certificate, result v2.Result) ([]byte, error) {
+	entry := result.Entry
 	id, _ := result.CoreID()
 	head, _ := entry.ID()
-	effect, e := o.executionEffect(ctx, c, p.Admission, wire.EffectExecute, id, head, entry.Sequence, record.Proof.RespondedAt)
+	effect, e := o.executionEffect(ctx, c, p.Admission, wire.EffectExecute, id, head, entry.Sequence, entry.Record.Proof.RespondedAt)
 	if e != nil {
 		return nil, e
 	}
@@ -339,9 +360,36 @@ func (o *Owner) executeJob(ctx context.Context, p v2.ProtectedCommand, c v2.Cont
 	if e = result.Verify(c, claim); e != nil {
 		return nil, e
 	}
-	raw, e = result.CanonicalBytes()
+	raw, e := result.CanonicalBytes()
 	if e != nil {
 		return nil, e
+	}
+	if e = ctx.Err(); e != nil {
+		return nil, e
+	}
+	if e = o.check(); e != nil {
+		return nil, e
+	}
+	if o.executionHook != nil {
+		if e = o.executionHook("sealed-result-before-publish"); e != nil {
+			return nil, e
+		}
+	}
+	if e = ctx.Err(); e != nil {
+		return nil, e
+	}
+	if e = o.check(); e != nil {
+		return nil, e
+	}
+	if o.execution.deployment.Guard != ([32]byte{}) {
+		retained, err := o.readRetainedExecutionCore(p, c, sid)
+		if err != nil {
+			return nil, err
+		}
+		rid, err := retained.CoreID()
+		if err != nil || rid != id {
+			return nil, ErrExecution
+		}
 	}
 	if e = o.jobWrite(sid, "result", raw); e != nil {
 		return nil, e

@@ -38,6 +38,11 @@ func retainedFixture(t testing.TB) (*protectedFixture, v2.Bundle, v2.RetainedAcc
 }
 func TestProtectedRetainedAcceptanceConsentAndClosure(t *testing.T) {
 	x, b, a, at := retainedFixture(t)
+	assertRetainedAcceptanceClosure(t, x, b, a, at)
+}
+
+func assertRetainedAcceptanceClosure(t *testing.T, x *protectedFixture, b v2.Bundle, a v2.RetainedAcceptance, at uint64) {
+	t.Helper()
 	assertUnavailableEvidence(t, x)
 	raw, _ := b.CanonicalBytes()
 	before, _ := x.a.Position()

@@ -23,6 +23,7 @@ test-race:
 	GO="$(GO)" python3 scripts/ci.py all
 
 test-fuzz-smoke:
+	$(GO) test ./node/custodyv2 -run '^$$' -fuzz '^FuzzGuardedRetainedResultCore$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyauthority/store -run '^$$' -fuzz '^FuzzPruneScheduledOutcome$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyauthority/store -run '^$$' -fuzz '^FuzzPruneMigratedObservation$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyauthority/store -run '^$$' -fuzz '^FuzzPruneMigratedOutcome$$' -fuzztime=$(FUZZTIME)
@@ -152,6 +153,7 @@ test-fuzz-smoke:
 	$(GO) test ./sim/workgraphmodel -run '^$$' -fuzz '^FuzzRunSelfishStrategiesNeverBreakAccounting$$' -fuzztime=$(FUZZTIME)
 
 test-process:
+	$(GO) test -tags=integration ./node/custodygateway -run '^TestProcessGuardedRetainedCoreRecovery$$' -count=1 -timeout=3m
 	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestProcessPruneMigrated(Recovery|Observation)$$' -count=1 -timeout=3m
 	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestProcess(ScheduledPruneOperatorRecovery|PruneScheduledOutcomes)$$' -count=1 -timeout=3m
 	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestProcessCustodySchedule(Recovery|CompletionRecovery)$$' -count=1 -timeout=3m

@@ -6,6 +6,7 @@ import (
 
 	"github.com/outcomemesh/outcomemesh/core/codec"
 	"github.com/outcomemesh/outcomemesh/core/types"
+	"github.com/outcomemesh/outcomemesh/node/custodyfence"
 	gateway "github.com/outcomemesh/outcomemesh/node/custodygateway/gatewaywire"
 )
 
@@ -104,6 +105,21 @@ func decodeProtectedResult(raw []byte) (Result, error) {
 	r.Version = ProtectedVersion
 	r.Protection = effect
 	return r, nil
+}
+
+// VerifyRetainedResultCore checks a previously signed session result for recovery
+// inside the original guarded service. It is not protected result verification:
+// Result.Verify still requires the complete independently sealed service effect.
+// This neither authorizes execution nor creates a missing session signature.
+func (r Result) VerifyRetainedResultCore(c Context, claim custodyfence.Certificate) error {
+	if !ProtectedContext(c) || r.Version != Version2 || r.Protection != nil {
+		return ErrProtocol
+	}
+	scope, err := c.Scope()
+	if err != nil || scope.Guard == ([32]byte{}) {
+		return ErrProtocol
+	}
+	return r.verifySessionResult(c, claim)
 }
 
 // SignResultSession signs the exact completed core record with its volatile

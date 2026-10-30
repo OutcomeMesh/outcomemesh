@@ -10,6 +10,29 @@ Full planned production readiness is approximately **44/100**, using the weighte
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
 
+## 2026-10-30: recovery of interrupted guarded result sealing
+
+A guarded profile-5 target can now finish a complete retained session-signed core
+after its service effect or response publication is interrupted. Recovery uses
+the exact original pending request and verifies the original admission, candidate,
+consumed claim quorum, source entry and current source head. It obtains the same
+independent effect choice and rechecks retained evidence before publication.
+The original signature, response time, source and obligations remain unchanged.
+
+An authorized replacement signer can continue only when that logical effect slot
+is still free. An occupied old effect cannot become a new successor effect. A
+revoked signer, incomplete core or conflicting choice cannot complete recovery.
+The bare core remains invalid for protected result acceptance. The original
+result quorum, delayed acceptance consent, Serve A/B receipts and admission
+closure remain required.
+
+Coverage includes cold recovery, lost guard replies, cancellation, concurrent
+exact requests, evidence substitution, key replacement and three process-kill
+boundaries. The [operator procedure](CUSTODY_EVIDENCE_RECOVERY.md#interrupted-result-sealing)
+uses existing commands and artifact formats. Missing-core settlement, Prune
+fencing, independent deployment and launch gates remain open. Readiness remains
+**44/100**.
+
 ## 2026-10-30: terminal outcomes for new scheduled Prune tasks
 
 Tasks admitted on the migrated schedule now support explicit cancellation before

@@ -159,6 +159,11 @@ Next required work remains ordered:
    result remain held. [Evidence recovery](CUSTODY_EVIDENCE_RECOVERY.md) now returns
    original completed result, acceptance and Serve receipts through the protected
    service, including after closure, without changing execution obligations.
+   Guarded targets can now finish an interrupted service seal from their complete
+   retained session-signed core through the exact original request. The current
+   source, admission, claim and independent effect choice remain binding. No
+   execution repeats or proof time changes; missing cores and conflicting choices
+   stay held. An authorized successor can finish only an unoccupied effect slot.
    Next deploy outside all participant backup/control domains
    with independent operators and protected monotone/key storage, finish unknown-outcome settlement and
    further key generations without resetting prior obligations,

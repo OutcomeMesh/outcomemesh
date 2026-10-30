@@ -284,6 +284,10 @@ func (r Result) Verify(c Context, claim custodyfence.Certificate) error {
 		return ErrProtocol
 	}
 
+	return r.verifySessionResult(c, claim)
+}
+
+func (r Result) verifySessionResult(c Context, claim custodyfence.Certificate) error {
 	if e := (Candidate{Version: Version2, SessionPublicKey: r.SessionPublicKey, Claim: claim.Command}).Verify(c); e != nil {
 		return e
 	}
