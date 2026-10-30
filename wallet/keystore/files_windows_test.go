@@ -88,7 +88,7 @@ func TestWindowsPrivateFileRejectsReparsePoint(t *testing.T) {
 }
 
 func TestWindowsPrivatePathsRejectDevicesAndStreams(t *testing.T) {
-	for _, path := range []string{`\\server\share\key`, `\\?\C:\key`, `\\.\pipe\key`, `C:\key:secret`, `C:\NUL`, `C:\CON.txt`, `C:\COM1`, `C:\LPT9.txt`, `C:\key.`, `C:\key `} {
+	for _, path := range []string{`\\server\share\key`, `\\?\C:\key`, `\\.\pipe\key`, `C:\key:secret`, `C:\NUL`, `C:\CON.txt`, `C:\COM1`, `C:\LPT9.txt`, `C:\key.`, `C:\key `, `C:\key.\child`, `C:\key \child`, `relative.`, `relative `, ""} {
 		if _, err := privatePath(path); err == nil {
 			t.Fatalf("accepted %q", path)
 		}

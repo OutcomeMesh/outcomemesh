@@ -160,7 +160,8 @@ def build(version, destination, *, cache=None, ci=False):
         entries = dependency_notices(platform_env)
         executable = 'omd.exe' if system == 'windows' else 'omd'
         invocation = r'.\omd.exe' if system == 'windows' else './omd'
-        entries.update({executable: (data, 0o755), 'LICENSE': ((ROOT / 'LICENSE').read_bytes(), 0o644), 'BUILDINFO.json': (json_bytes(info), 0o644), 'README.md': (f'# OutcomeMesh Core {version}\n\nPre-alpha software for development networks. Not ready to secure real value.\n\nPlatform: {system}/{arch}. Built with Go {toolchain}.\n\nRun `{invocation} version --json` to identify this binary.\nSource and documentation: https://github.com/OutcomeMesh/outcomemesh/tree/{commit}\n'.encode(), 0o644)})
+        platform_note = f'Protected custody owner services require Linux. Windows coverage: https://github.com/OutcomeMesh/outcomemesh/blob/{commit}/docs/WINDOWS.md\n\n' if system == 'windows' else ''
+        entries.update({executable: (data, 0o755), 'LICENSE': ((ROOT / 'LICENSE').read_bytes(), 0o644), 'BUILDINFO.json': (json_bytes(info), 0o644), 'README.md': (f'# OutcomeMesh Core {version}\n\nPre-alpha software for development networks. Not ready to secure real value.\n\nPlatform: {system}/{arch}. Built with Go {toolchain}.\n\nRun `{invocation} version --json` to identify this binary.\n\n{platform_note}Source and documentation: https://github.com/OutcomeMesh/outcomemesh/tree/{commit}\n'.encode(), 0o644)})
         require_source(commit, manifest)
         archive(destination / (name + ('.zip' if system == 'windows' else '.tar.gz')), name, entries, epoch)
         binary.unlink()

@@ -33,7 +33,8 @@ executable does not establish support for those procedures.
 `keygen` writes an encrypted wallet by default and requires a private passphrase
 file. Its encoding and encryption are the same on all platforms. Windows key
 files are created atomically with a protected ACL granting access only to the
-current user and SYSTEM. File data is flushed before creation reports success;
+current user and SYSTEM. The opened file and volume must enforce that ACL before any secret is written.
+File data is flushed before creation reports success;
 this is not a claim of directory durability across sudden power loss.
 
 A passphrase file must likewise be owned by the current user, with explicit
