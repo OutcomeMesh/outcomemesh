@@ -11,6 +11,7 @@ import (
 	"github.com/outcomemesh/outcomemesh/core/types"
 	"github.com/outcomemesh/outcomemesh/core/workgraph"
 	"github.com/outcomemesh/outcomemesh/node/custodyauthority"
+	"github.com/outcomemesh/outcomemesh/node/prunefence"
 	"github.com/outcomemesh/outcomemesh/node/workarchive"
 	"github.com/outcomemesh/outcomemesh/node/workchain"
 )
@@ -79,7 +80,7 @@ func TestCustodyScheduledPruneAfterRadixActivation(t *testing.T) {
 	}
 }
 
-func newScheduledPruneFixture(t testing.TB) *scheduledPruneFixture {
+func newScheduledPruneFixture(t testing.TB, fence ...prunefence.Policy) *scheduledPruneFixture {
 	t.Helper()
 	p, original, cp := scheduledQuorumFixture(t)
 	f := &scheduledPruneFixture{archive: p, path: filepath.Join(t.TempDir(), "scheduled.inventory")}
@@ -102,6 +103,10 @@ func newScheduledPruneFixture(t testing.TB) *scheduledPruneFixture {
 		retain = min(retain, r.Original.RetainUntil)
 	}
 	v.Request = PruneRequest{AssignmentID: original[0].AssignmentID, ScheduleID: original[0].Schedule.ExpectedID, ConsumerPublicKey: testPublic(4), StorageID: p.f.request.StorageID, Boundary: workchain.CanonicalFloor{Pruned: true, RadixActivationHeight: cp.Statement.RadixActivationHeight, BaseID: cp.Statement.BaseID, Anchor: cp.Statement.Anchor, AncestryNodes: cp.Statement.AncestryNodes, AncestryRoot: cp.Statement.AncestryRoot, StatementID: sid, ManifestID: cp.Statement.ArchiveManifestID, AvailabilityID: bid, VerifiedAt: now, RetainUntil: retain}}
+	if len(fence) == 1 {
+		v.FencePolicy = &fence[0]
+		v.Request.FencePolicyID, _ = fence[0].ID()
+	}
 	rid, _ := v.Request.ID()
 	f.executor, err = CreatePinnedPruneExecutor(filepath.Join(t.TempDir(), "executor"), filepath.Join(t.TempDir(), "executor-pins"), original[0].Assignment, v.Request, rid)
 	if err != nil {

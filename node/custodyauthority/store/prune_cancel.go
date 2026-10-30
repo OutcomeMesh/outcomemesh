@@ -126,6 +126,9 @@ func (executor *PruneExecutor) cancelBeforeStartLocked(ctx context.Context, coor
 
 // cancellationCheck requires the executor mutex, but no authority ownership.
 func (executor *PruneExecutor) cancellationCheck(ctx context.Context) error {
+	if !executor.request.FencePolicyID.IsZero() {
+		return ErrPruneOutcome
+	}
 	if err := executor.operationCheck(); err != nil {
 		return err
 	}

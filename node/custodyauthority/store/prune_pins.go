@@ -34,7 +34,7 @@ type PruneProtection struct {
 }
 
 func advancePruneExecution(assignment custodyauthority.Assignment, current PruneExecution, encoded []byte) (PruneExecution, error) {
-	if len(encoded) > workchain.MaximumCanonicalPruneEffectBytes {
+	if len(encoded) > pruneRecordLimit(current.Request) {
 		return PruneExecution{}, ErrPruneStage
 	}
 	next := current
@@ -54,6 +54,9 @@ func advancePruneExecution(assignment custodyauthority.Assignment, current Prune
 			return PruneExecution{}, ErrPruneStage
 		}
 		if bytes.HasPrefix(encoded, pruneCancellationMagic) {
+			if !current.Request.FencePolicyID.IsZero() {
+				return PruneExecution{}, ErrPruneStage
+			}
 			cancellation, err := DecodePruneCancellation(encoded)
 			if err != nil || !cancellationMatches(current, cancellation) {
 				return PruneExecution{}, ErrPruneStage
@@ -65,7 +68,14 @@ func advancePruneExecution(assignment custodyauthority.Assignment, current Prune
 		if err != nil {
 			return PruneExecution{}, ErrPruneStage
 		}
-		next.ArchiveInventoryID, err = decodePruneInventoryStart(encoded, current.RequestID, ticket)
+		if !current.Request.FencePolicyID.IsZero() {
+			next.FenceClaim, err = decodePruneFenceStart(current, encoded)
+			if err == nil {
+				next.ArchiveInventoryID = next.FenceClaim.Candidate.Binding.InventoryID
+			}
+		} else {
+			next.ArchiveInventoryID, err = decodePruneInventoryStart(encoded, current.RequestID, ticket)
+		}
 		if err != nil {
 			return PruneExecution{}, err
 		}
@@ -73,7 +83,13 @@ func advancePruneExecution(assignment custodyauthority.Assignment, current Prune
 		if current.Admission == nil {
 			return PruneExecution{}, ErrPruneStage
 		}
-		effect, err := workchain.DecodeCanonicalPruneEffect(encoded)
+		var effect workchain.CanonicalPruneEffect
+		var err error
+		if !current.Request.FencePolicyID.IsZero() {
+			effect, next.FenceResult, err = decodePruneFenceResult(current, encoded)
+		} else {
+			effect, err = workchain.DecodeCanonicalPruneEffect(encoded)
+		}
 		if err != nil || !pruneEffectMatches(current.Request, *current.Admission, effect) {
 			return PruneExecution{}, errors.Join(ErrPruneOutcome, err)
 		}
@@ -246,7 +262,7 @@ func (pins *prunePinJournal) verifyExecutor(executor *PruneExecutor) error {
 		} else {
 			expected = pins.pending
 		}
-		actual, err := readRegular(filepath.Join(executor.path, pruneRecordsName, pruneRecordName(index, executor.stage)), workchain.MaximumCanonicalPruneEffectBytes)
+		actual, err := readRegular(filepath.Join(executor.path, pruneRecordsName, pruneRecordName(index, executor.stage)), pruneRecordLimit(executor.request))
 		if err != nil || !bytes.Equal(expected, actual) {
 			return errors.Join(ErrPrunePin, err)
 		}

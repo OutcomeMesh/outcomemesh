@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	legacyblock "github.com/outcomemesh/outcomemesh/core/block"
 	"github.com/outcomemesh/outcomemesh/core/genesis"
@@ -37,7 +38,7 @@ func runScheduledPruneCLI(args []string) error {
 	defer stop()
 	return runScheduledPrune(ctx, args, os.Stdout)
 }
-func runScheduledPrune(ctx context.Context, args []string, out io.Writer) error {
+func runScheduledPrune(ctx context.Context, args []string, out io.Writer) (returnErr error) {
 	if ctx == nil || out == nil {
 		return store.ErrScheduledPrune
 	}
@@ -54,6 +55,10 @@ func runScheduledPrune(ctx context.Context, args []string, out io.Writer) error 
 	chain := f.String("chain", "", "existing migrated protected chain")
 	chainPins := f.String("chain-pins", "", "existing independent storage position pins")
 	migrationID := f.String("storage-migration-id", "", "independently retained storage migration review ID")
+	fenceNetwork := f.String("fence-network", "", "execute fenced request: original witness endpoints JSON")
+	fenceOwner := f.String("fence-owner-key", "", "execute fenced request: private owner seed")
+	fenceTransport := f.String("fence-transport-key", "", "execute fenced request: separate private transport seed")
+	fenceTimeout := f.Duration("fence-timeout", 5*time.Second, "bounded time per independent witness")
 	custody := addArchiveCustodyPolicyFlags(f)
 	journal := addArchiveCustodyJournalLimitFlags(f)
 	defaults := workchain.DefaultPolicy()
@@ -101,6 +106,23 @@ func runScheduledPrune(ctx context.Context, args []string, out io.Writer) error 
 	v, err := store.LoadScheduledPruneInventory(*inventory, config.InventoryID)
 	if err != nil {
 		return err
+	}
+	fenceFlags := false
+	f.Visit(func(flag *flag.Flag) {
+		if flag.Name == "fence-network" || flag.Name == "fence-owner-key" || flag.Name == "fence-transport-key" || flag.Name == "fence-timeout" {
+			fenceFlags = true
+		}
+	})
+	if fenceFlags && (*mode != "execute" || v.FencePolicy == nil) {
+		return store.ErrScheduledPrune
+	}
+	if *mode == "execute" && v.FencePolicy != nil {
+		collect, closeClient, err := openPruneFenceCollector(ctx, v, *fenceNetwork, *fenceOwner, *fenceTransport, *fenceTimeout)
+		if err != nil {
+			return err
+		}
+		defer func() { returnErr = errors.Join(returnErr, closeClient()) }()
+		config.CollectPruneClaim = collect
 	}
 	raw, err := readRegularArtifact(*roots, maximumPruneEffectRootsBytes)
 	if err != nil {

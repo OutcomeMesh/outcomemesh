@@ -977,3 +977,66 @@ Offline verification checks content and context against independent pins. These
 unsigned observations authenticate no source, establish no journal inclusion or
 freshness, and do not fence copies. A storage commit ID is an opaque position token.
 No terminal or execution adapter accepts the observation ID as an outcome or grant.
+
+### Independent scheduled Prune claims
+
+This node-side experimental adapter is opt-in before admission and changes no
+consensus rule. Request `OMCPREQS` v3 extends v2 with a nonzero 32-byte policy ID
+after the schedule ID and before the length-prefixed floor. Its ID domain is
+`OMESH/custody-prune/request/id/v3`. Plan `OMCSPPLN` and inventory `OMCSPINV` v1
+extend their v0 layouts with a length-prefixed canonical policy immediately after
+the request. Their ID domains end in `scheduled-plan/id/v1` and
+`scheduled-inventory/id/v1`, respectively, under `OMESH/custody-prune/`.
+Policy presence, request version and policy ID must agree. Older encodings retain
+their original domains; changing only a version byte is invalid.
+
+All new artifact headers below are eight-byte magic followed by big-endian u16
+version zero. Length fields use the existing canonical bounded `BytesField`.
+
+| Artifact | Fields after header, in order | Bound |
+| --- | --- | --- |
+| `OMPRFP00` policy | owner, controller, guard (three 32-byte keys); u8 threshold; u8 witness count; sorted unique 32-byte witnesses | 640 bytes |
+| `OMPRFC00` candidate | policy bytes; six 32-byte binding hashes; 32-byte session public key | 1,024 bytes |
+| `OMPRFQ00` claim | candidate bytes; existing custody-fence certificate bytes | candidate maximum + certificate maximum + 32 bytes |
+| `OMPRFR00` result | claim bytes; 32-byte effect ID; 64-byte Ed25519 signature | claim maximum + 128 bytes |
+
+Candidate binding hashes are request, primary assignment, storage operation,
+inventory, executor binding and storage pair IDs. All are nonzero. The session
+key differs from every policy role. Policy shape and threshold obey custody-fence
+v1; participant roles must not overlap independent witness/guard roles. The
+policy ID domain is `OMESH/prune-fence/policy/id/v0` over its canonical bytes.
+
+The existing v1 witness scope has AssignmentID equal to the primary assignment,
+IntentID equal to request ID, PlanID equal to policy ID and BeginID equal to
+`DomainHash("OMESH/prune-fence/slot/v0", requestID)`. Its policy roles are copied
+exactly. Initial Claim has sequence zero, expected head equal to scope ID and
+EvidenceID equal to `DomainHash("OMESH/prune-fence/session/id/v0", candidateBytes)`.
+The owner signs it and the original witness quorum must certify that exact
+command. Inventory or executor changes do not derive another witness scope.
+
+The storage operation ID uses `OMESH/prune-fence/operation/id/v0` over assignment,
+original ticket, storage ID, schedule ID and canonical floor bytes, in that order.
+The result signature covers `DomainHash("OMESH/prune-fence/result/sign/v0",
+candidateBytes, claimCommandID, effectID)`. It certifies the exact original effect;
+it is not current execution permission or a separate storage receipt.
+
+Executor start `OMCPSTRT` v2 contains the canonical claim directly after the u16.
+The result record `OMCPFR00` v0 contains length-prefixed original effect bytes
+and length-prefixed signed result bytes. Start/result candidate, operation,
+inventory and original executor/storage bindings must match. The original
+storage effect and position-journal formats do not change.
+
+A candidate is persisted before witness calls. Start and its independent local
+pin confirmation precede consuming a live, nonserializable permit under the
+storage lock. A lost session cannot be reconstructed from signatures or disk.
+Cold candidates, minority quorums and starts without complete signed results
+retain every obligation. Only an already complete retained signed transition may
+resume original pin confirmation. Local cancellation and bare-effect recovery
+are unavailable for request v3. Independent closure of an unclaimed slot and
+missing-result settlement remain unimplemented.
+
+The full operating procedure and trust boundary are in [PRUNE_FENCE.md](PRUNE_FENCE.md).
+Reference hashes are fixed in `node/prunefence/fence_test.go` and
+`node/custodyauthority/store/prune_fence_vector_test.go`. No software-only local
+capability protects against malicious raw storage access, cloned process memory
+or rollback of a witness quorum under shared administrative control.

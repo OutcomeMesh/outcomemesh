@@ -10,10 +10,13 @@ import (
 
 	"github.com/outcomemesh/outcomemesh/core/types"
 	"github.com/outcomemesh/outcomemesh/node/custodyauthority"
+	"github.com/outcomemesh/outcomemesh/node/prunefence"
 	"github.com/outcomemesh/outcomemesh/node/workchain"
 )
 
 type PruneStage uint8
+
+const maximumPruneRecordBytes = prunefence.MaximumResultBytes + workchain.MaximumCanonicalPruneEffectBytes + 128
 
 const (
 	PrunePrepared PruneStage = 1 + iota
@@ -36,13 +39,16 @@ var pruneRecordNames = [...]string{"01-admission.omcae", "02-started.omcps", "03
 // current availability assertion. A Started operation may have no effect, a
 // committed effect, or an outcome that cannot yet be resolved.
 type PruneExecution struct {
-	RequestID    types.Hash
-	Request      PruneRequest
-	Stage        PruneStage
-	Admission    *custodyauthority.Entry
-	Effect       *workchain.CanonicalPruneEffect
-	Cancellation *PruneCancellation
-	// ArchiveInventoryID is nonzero only after a version-1 archive-bound start.
+	FenceCandidate *prunefence.Candidate
+	FenceClaim     *prunefence.Claim
+	FenceResult    *prunefence.Result
+	RequestID      types.Hash
+	Request        PruneRequest
+	Stage          PruneStage
+	Admission      *custodyauthority.Entry
+	Effect         *workchain.CanonicalPruneEffect
+	Cancellation   *PruneCancellation
+	// ArchiveInventoryID is nonzero after an inventory-bound v1 or fenced v2 start.
 	// Started is still an unresolved attempt, not proof of a committed effect.
 	ArchiveInventoryID types.Hash
 	// Protection is nil for raw version-0 journals. With independent pins, Stage
@@ -57,6 +63,9 @@ type PruneExecution struct {
 // requests. Neither mode provides physical identity, shared-rollback protection
 // or networking.
 type PruneExecutor struct {
+	fenceCandidate     *prunefence.Candidate
+	fenceClaim         *prunefence.Claim
+	fenceResult        *prunefence.Result
 	mu                 sync.Mutex
 	path               string
 	lock               *os.File
@@ -131,6 +140,11 @@ func createPruneExecutorBound(path string, assignment custodyauthority.Assignmen
 			return nil, err
 		}
 	}
+	if !request.FencePolicyID.IsZero() {
+		if err := os.Mkdir(filepath.Join(path, "fence"), 0700); err != nil {
+			return nil, err
+		}
+	}
 	a, _ := assignment.CanonicalBytes()
 	r, _ := request.CanonicalBytes()
 	for _, file := range []struct {
@@ -193,9 +207,15 @@ func openPruneExecutorBound(path string, assignment custodyauthority.Assignment,
 }
 
 func pruneLayout(path string, lock *os.File) (map[string]os.FileInfo, error) {
-	return inspectNamedLayout(path, lock, pruneLockName, map[string]bool{
+	kinds := map[string]bool{
 		"": true, pruneLockName: false, assignmentName: false, pruneRequestName: false, pruneReadyName: false, pruneRecordsName: true, pendingName: true,
-	})
+	}
+	if _, err := os.Lstat(filepath.Join(path, "fence")); err == nil {
+		kinds["fence"] = true
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	return inspectNamedLayout(path, lock, pruneLockName, kinds)
 }
 
 func loadPruneExecutor(path string, lock *os.File, assignment custodyauthority.Assignment, expectedID, binding types.Hash, hooks storeHooks) (*PruneExecutor, error) {
@@ -232,7 +252,7 @@ func loadPruneExecutor(path string, lock *os.File, assignment custodyauthority.A
 	if err != nil || !bytes.Equal(ready, expectedReady) {
 		return nil, errors.Join(ErrPruneRequest, err)
 	}
-	if _, err := inspectSizedPending(path, workchain.MaximumCanonicalPruneEffectBytes); err != nil {
+	if _, err := inspectSizedPending(path, pruneRecordLimit(request)); err != nil {
 		return nil, err
 	}
 	names, err := boundedNames(filepath.Join(path, pruneRecordsName), len(pruneRecordNames))
@@ -242,7 +262,7 @@ func loadPruneExecutor(path string, lock *os.File, assignment custodyauthority.A
 	executor := &PruneExecutor{path: path, lock: lock, identity: identity, assignment: assignment, request: request, id: expectedID, stage: PrunePrepared, hooks: hooks}
 	for index, name := range names {
 		key := filepath.Join(pruneRecordsName, name)
-		encoded, err := readRegular(filepath.Join(path, key), workchain.MaximumCanonicalPruneEffectBytes)
+		encoded, err := readRegular(filepath.Join(path, key), pruneRecordLimit(request))
 		if err != nil {
 			return nil, err
 		}
@@ -272,6 +292,9 @@ func loadPruneExecutor(path string, lock *os.File, assignment custodyauthority.A
 		}
 	}
 	if err := syncDirectory(filepath.Dir(path)); err != nil {
+		return nil, err
+	}
+	if err := executor.loadFenceCandidate(binding); err != nil {
 		return nil, err
 	}
 	if err := executor.check(); err != nil {
@@ -311,7 +334,7 @@ func (executor *PruneExecutor) check() error {
 			return executor.poison(err)
 		}
 	}
-	return nil
+	return executor.checkFenceCandidate()
 }
 
 func (executor *PruneExecutor) operationCheck() error {
@@ -327,13 +350,14 @@ func (executor *PruneExecutor) operationCheck() error {
 // execution is an internal view, only used while the executor is locked.
 func (executor *PruneExecutor) execution() PruneExecution {
 	return PruneExecution{RequestID: executor.id, Request: executor.request, Stage: executor.stage, Admission: executor.admission, Effect: executor.effect, Cancellation: executor.cancellation,
-		ArchiveInventoryID: executor.archiveInventoryID}
+		ArchiveInventoryID: executor.archiveInventoryID, FenceClaim: executor.fenceClaim, FenceResult: executor.fenceResult}
 }
 
 func (executor *PruneExecutor) installExecution(next PruneExecution) {
 	executor.stage, executor.admission, executor.effect = next.Stage, next.Admission, next.Effect
 	executor.cancellation = next.Cancellation
 	executor.archiveInventoryID = next.ArchiveInventoryID
+	executor.fenceClaim, executor.fenceResult = next.FenceClaim, next.FenceResult
 }
 func (executor *PruneExecutor) poison(err error) error {
 	executor.failed = true
@@ -357,6 +381,21 @@ func (executor *PruneExecutor) snapshot() PruneExecution {
 	r, _ := executor.request.CanonicalBytes()
 	request, _ := DecodePruneRequest(r)
 	result := PruneExecution{RequestID: executor.id, Request: request, Stage: executor.stage, ArchiveInventoryID: executor.archiveInventoryID}
+	if executor.fenceCandidate != nil {
+		raw, _ := executor.fenceCandidate.CanonicalBytes()
+		c, _ := prunefence.DecodeCandidate(raw)
+		result.FenceCandidate = &c
+	}
+	if executor.fenceClaim != nil {
+		raw, _ := executor.fenceClaim.CanonicalBytes()
+		c, _ := prunefence.DecodeClaim(raw)
+		result.FenceClaim = &c
+	}
+	if executor.fenceResult != nil {
+		raw, _ := executor.fenceResult.CanonicalBytes()
+		r, _ := prunefence.DecodeResult(raw)
+		result.FenceResult = &r
+	}
 	if executor.admission != nil {
 		entry := *executor.admission
 		result.Admission = &entry
@@ -504,6 +543,9 @@ func (executor *PruneExecutor) executeGuarded(ctx context.Context, chain *workch
 // path. The existing two-root intent/record/confirmation protocol retains the ID
 // before any effect. No recovery path supplies or retrofits an inventory ID.
 func (executor *PruneExecutor) executeGuardedInventory(ctx context.Context, chain *workchain.Store, binding OperationBinding, authorize func() (uint64, error), inventoryID types.Hash) (workchain.CanonicalPruneCommit, error) {
+	if !executor.request.FencePolicyID.IsZero() {
+		return workchain.CanonicalPruneCommit{}, prunefence.ErrFence
+	}
 	if err := executor.publish(ctx, 1, pruneInventoryStartedBytes(executor.id, binding.TicketID, inventoryID), "prune-start"); err != nil {
 		return workchain.CanonicalPruneCommit{}, err
 	}
@@ -569,6 +611,10 @@ func (executor *PruneExecutor) Recover(ctx context.Context, chain *workchain.Sto
 	if executor.stage != PruneStarted {
 		return workchain.CanonicalPruneCommit{}, ErrPruneStage
 	}
+	// A bare storage effect cannot recreate the lost volatile session signature.
+	if !executor.request.FencePolicyID.IsZero() {
+		return workchain.CanonicalPruneCommit{}, ErrPruneOutcome
+	}
 	if err := chain.VerifyContext(executor.assignment.NetworkID, executor.assignment.ActivationHeight, executor.assignment.BaseID); err != nil {
 		return workchain.CanonicalPruneCommit{}, err
 	}
@@ -587,6 +633,9 @@ func (executor *PruneExecutor) Recover(ctx context.Context, chain *workchain.Sto
 }
 
 func (executor *PruneExecutor) saveResult(ctx context.Context, effect workchain.CanonicalPruneEffect) error {
+	if !executor.request.FencePolicyID.IsZero() {
+		return prunefence.ErrFence
+	}
 	if !pruneEffectMatches(executor.request, *executor.admission, effect) {
 		return ErrPruneOutcome
 	}
@@ -629,7 +678,7 @@ func (executor *PruneExecutor) publish(ctx context.Context, index int, encoded [
 }
 
 func (executor *PruneExecutor) publishRecord(ctx context.Context, index int, encoded []byte, prefix string) error {
-	if pruneRecordCount(executor.stage) != index || len(encoded) > workchain.MaximumCanonicalPruneEffectBytes {
+	if pruneRecordCount(executor.stage) != index || len(encoded) > pruneRecordLimit(executor.request) {
 		return ErrPruneStage
 	}
 	next, err := advancePruneExecution(executor.assignment, executor.execution(), encoded)
@@ -643,7 +692,17 @@ func (executor *PruneExecutor) publishRecord(ctx context.Context, index int, enc
 	if err := checkPruneExecutionBinding(next, binding); err != nil {
 		return err
 	}
-	count, err := inspectSizedPending(executor.path, workchain.MaximumCanonicalPruneEffectBytes)
+	if next.FenceClaim != nil {
+		if executor.fenceCandidate == nil {
+			return prunefence.ErrFence
+		}
+		have, _ := executor.fenceCandidate.CanonicalBytes()
+		want, _ := next.FenceClaim.Candidate.CanonicalBytes()
+		if !bytes.Equal(have, want) {
+			return prunefence.ErrFence
+		}
+	}
+	count, err := inspectSizedPending(executor.path, pruneRecordLimit(executor.request))
 	if err != nil {
 		return executor.poison(err)
 	}

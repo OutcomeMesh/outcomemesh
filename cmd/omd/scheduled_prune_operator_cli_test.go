@@ -55,7 +55,10 @@ func TestScheduledPruneOperatorCLIEntireLifecyclePreservesAccounting(t *testing.
 func TestPruneScheduledOutcomeCLICancellationLifecycle(t *testing.T) {
 	scheduledPruneCLILifecycle(t, true)
 }
-func scheduledPruneCLILifecycle(t *testing.T, cancelBeforeStart bool) {
+func TestPruneFenceOperatorCLIEntireLifecycle(t *testing.T) {
+	scheduledPruneCLILifecycle(t, false, true)
+}
+func scheduledPruneCLILifecycle(t *testing.T, cancelBeforeStart bool, fenced ...bool) {
 	f, cp, cpPath, sources := prepareCustodyScheduleQuorumCLI(t)
 	policy := f.inventory.Policy
 	chain, err := workchain.OpenPositionPinnedWithPolicy(f.config.ChainPath, f.config.ChainPinsPath, f.config.Base, f.config.Parameters, f.config.StoragePolicy, f.inventory.Request.StorageID)
@@ -88,6 +91,10 @@ func scheduledPruneCLILifecycle(t *testing.T, cancelBeforeStart bool) {
 	}
 	cpID, _ := cp.Statement.ID()
 	planArgs := []string{scheduledPlanCommand, "--sources", sourcePath, "--checkpoint", cpPath, "--checkpoint-id", cpID.String(), "--attestors", keys(policy.CheckpointPolicy.TrustedAttestors), "--replicas", keys(policy.ReplicaPolicy.TrustedReplicas), "--max-receipt-age-seconds", "1000", "--min-remaining-term-seconds", "100", "--max-challenge-lifetime-seconds", "60", "--max-proof-age-seconds", "100", "--max-renewal-term-seconds", "20000", "--primary-assignment-id", sources[0].AssignmentID, "--storage-id", protection.StorageID.String(), "--storage-pair-id", protection.PairID.String(), "--consumer-public-key", hex.EncodeToString(f.inventory.Request.ConsumerPublicKey[:]), "--verified-at", strconv.FormatUint(f.inventory.Request.Boundary.VerifiedAt, 10)}
+	if len(fenced) != 0 && fenced[0] {
+		path, id := preparePruneFenceCLIPolicy(t)
+		planArgs = append(planArgs, "--fence-policy", path, "--fence-policy-id", id.String())
+	}
 	var prepared struct {
 		PlanID, RequestID types.Hash
 		Plan              store.ScheduledPrunePlan
@@ -168,6 +175,10 @@ func scheduledPruneCLILifecycle(t *testing.T, cancelBeforeStart bool) {
 	raw, _ = json.Marshal(executionSources)
 	writePruneCLIFile(t, paths, raw)
 	executeArgs := []string{"--inventory", inventoryPath, "--inventory-id", packaged.InventoryID.String(), "--data", f.data, "--sources", paths, "--executor", executor, "--executor-pins", pins, "--chain", f.config.ChainPath, "--chain-pins", f.config.ChainPinsPath, "--storage-migration-id", migration.ID().String(), "--canonical-retention", strconv.FormatUint(f.config.StoragePolicy.CanonicalRetention, 10), "--max-history-bytes", strconv.FormatUint(f.config.StoragePolicy.MaxHistoryBytes, 10), "--max-challenge-lifetime-seconds", "60", "--max-proof-age-seconds", "100", "--max-renewal-term-seconds", "20000"}
+	var fenceArgs []string
+	if len(fenced) != 0 && fenced[0] {
+		fenceArgs = preparePruneFenceCLINetwork(t, planPath, prepared.PlanID)
+	}
 	outcomeArgs := append(append([]string{scheduledOutcomeCommand}, common(sources[0])...), "--inventory", inventoryPath, "--inventory-id", packaged.InventoryID.String())
 	var outcomeReview store.ScheduledPruneCommandResult
 	if cancelBeforeStart {
@@ -201,7 +212,13 @@ func scheduledPruneCLILifecycle(t *testing.T, cancelBeforeStart bool) {
 		if err := json.Unmarshal(out.Bytes(), &executeReview); err != nil {
 			t.Fatal(err)
 		}
-		if err := runScheduledPrune(t.Context(), append(executeArgs, "--mode", "execute", "--expected-review-id", executeReview.Review.ReviewID.String()), io.Discard); err != nil {
+		executionArgs := append(append([]string(nil), executeArgs...), "--mode", "execute", "--expected-review-id", executeReview.Review.ReviewID.String())
+		if len(fenceArgs) != 0 {
+			if err := runScheduledPrune(t.Context(), executionArgs, io.Discard); err == nil {
+				t.Fatal("fenced execution accepted missing witness configuration")
+			}
+		}
+		if err := runScheduledPrune(t.Context(), append(executionArgs, fenceArgs...), io.Discard); err != nil {
 			t.Fatal(err)
 		}
 		// Preserve the existing effect-only command and its output bytes.

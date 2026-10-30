@@ -72,6 +72,25 @@ func RetainedScheduledPruneOutcome(v ScheduledPruneInventory, s PruneExecution) 
 		return ScheduledPruneOutcome{}, err
 	}
 	o := ScheduledPruneOutcome{Effect: s.Effect, Cancellation: s.Cancellation}
+	if !v.Request.FencePolicyID.IsZero() {
+		if s.FenceClaim == nil || s.FenceResult == nil || s.Effect == nil || s.Stage != PruneSucceeded {
+			return ScheduledPruneOutcome{}, ErrPruneOutcome
+		}
+		raw, err := encodePruneFenceResult(*s.Effect, *s.FenceResult)
+		if err != nil {
+			return ScheduledPruneOutcome{}, err
+		}
+		if err := verifyPruneFenceCandidate(s, s.FenceClaim.Candidate); err != nil {
+			return ScheduledPruneOutcome{}, err
+		}
+		b := s.FenceClaim.Candidate.Binding
+		if b.InventoryID != id || b.ExecutorBindingID != v.ExecutorBindingID || b.StoragePairID != v.StoragePairID {
+			return ScheduledPruneOutcome{}, ErrPruneOutcome
+		}
+		if _, _, err := decodePruneFenceResult(s, raw); err != nil {
+			return ScheduledPruneOutcome{}, err
+		}
+	}
 	if (s.Stage == PruneSucceeded && s.ArchiveInventoryID == id && o.Effect != nil && o.Cancellation == nil) || (s.Stage == PruneCancelled && s.ArchiveInventoryID.IsZero() && o.Effect == nil && o.Cancellation != nil) {
 		if _, err := o.EvidenceID(v); err != nil {
 			return ScheduledPruneOutcome{}, err

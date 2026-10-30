@@ -9,11 +9,13 @@ import (
 	"github.com/outcomemesh/outcomemesh/core/types"
 	"github.com/outcomemesh/outcomemesh/core/workblock"
 	"github.com/outcomemesh/outcomemesh/node/custodyauthority"
+	"github.com/outcomemesh/outcomemesh/node/prunefence"
 	"github.com/outcomemesh/outcomemesh/node/workarchive"
 	"github.com/outcomemesh/outcomemesh/node/workchain"
 )
 
 type ScheduledPruneRuntimeConfig struct {
+	CollectPruneClaim                                        PruneClaimCollector `json:"-"`
 	InventoryPath                                            string
 	InventoryID, StorageMigrationID                          types.Hash
 	ExecutorPath, ExecutorPinsPath, ChainPath, ChainPinsPath string
@@ -33,8 +35,9 @@ type ScheduledPruneReview struct {
 	Journals                       []workarchive.CustodyJournalState
 }
 type ScheduledPruneRuntimeResult struct {
-	Review ScheduledPruneReview
-	Commit *workchain.CanonicalPruneCommit
+	FenceResult *prunefence.Result
+	Review      ScheduledPruneReview
+	Commit      *workchain.CanonicalPruneCommit
 }
 
 // RunScheduledPrune owns all original roots for one explicitly selected action.
@@ -213,7 +216,17 @@ func runScheduledPrune(ctx context.Context, config ScheduledPruneRuntimeConfig, 
 		}
 		e.Fixed(id[:])
 	}
-	result.Review.ReviewID = types.DomainHash("OMESH/custody-prune/scheduled-runtime/review/v0", e.Bytes())
+	reviewDomain := "OMESH/custody-prune/scheduled-runtime/review/v0"
+	if !v.Request.FencePolicyID.IsZero() {
+		reviewDomain = "OMESH/custody-prune/scheduled-runtime/review/v1"
+		e.Fixed(v.Request.FencePolicyID[:])
+		var candidate []byte
+		if result.Review.Executor.FenceCandidate != nil {
+			candidate, _ = result.Review.Executor.FenceCandidate.CanonicalBytes()
+		}
+		e.BytesField(candidate)
+	}
+	result.Review.ReviewID = types.DomainHash(reviewDomain, e.Bytes())
 	if mode == "review" {
 		return result, ctx.Err()
 	}
@@ -222,7 +235,14 @@ func runScheduledPrune(ctx context.Context, config ScheduledPruneRuntimeConfig, 
 	}
 	var commit workchain.CanonicalPruneCommit
 	if mode == "execute" {
-		commit, err = executor.ExecuteScheduledArchive(ctx, chain, config.InventoryPath, config.InventoryID, operations, config.Sources, config.Base, config.Parameters, config.Limits)
+		if !v.Request.FencePolicyID.IsZero() {
+			commit, err = executor.ExecuteScheduledArchiveFenced(ctx, chain, config.InventoryPath, config.InventoryID, operations, config.Sources, config.Base, config.Parameters, config.Limits, config.CollectPruneClaim)
+		} else {
+			if config.CollectPruneClaim != nil {
+				return result, prunefence.ErrFence
+			}
+			commit, err = executor.ExecuteScheduledArchive(ctx, chain, config.InventoryPath, config.InventoryID, operations, config.Sources, config.Base, config.Parameters, config.Limits)
+		}
 	} else {
 		commit, err = executor.Recover(ctx, chain)
 	}
@@ -230,5 +250,6 @@ func runScheduledPrune(ctx context.Context, config ScheduledPruneRuntimeConfig, 
 		return result, err
 	}
 	result.Commit = &commit
+	result.FenceResult = executor.snapshot().FenceResult
 	return result, nil
 }

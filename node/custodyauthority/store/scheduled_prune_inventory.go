@@ -8,6 +8,7 @@ import (
 	"github.com/outcomemesh/outcomemesh/core/codec"
 	"github.com/outcomemesh/outcomemesh/core/types"
 	"github.com/outcomemesh/outcomemesh/node/custodyauthority"
+	"github.com/outcomemesh/outcomemesh/node/prunefence"
 	"github.com/outcomemesh/outcomemesh/node/workarchive"
 	"github.com/outcomemesh/outcomemesh/node/workchain"
 )
@@ -27,6 +28,7 @@ type ScheduledPruneReplica struct {
 // original assignments and admissions, target schedule, trust policy and both
 // storage pair identities. Full live journal lineages are required at execution.
 type ScheduledPruneInventory struct {
+	FencePolicy                      *prunefence.Policy
 	Request                          PruneRequest
 	ExecutorBindingID, StoragePairID types.Hash
 	Checkpoint                       workarchive.Checkpoint
@@ -56,6 +58,9 @@ func (v ScheduledPruneInventory) Bundle() (workarchive.ScheduledAvailabilityBund
 func (v ScheduledPruneInventory) validate() error { return v.validateMode(false) }
 
 func (v ScheduledPruneInventory) validateMode(plan bool) error {
+	if err := v.validateFencePolicy(); err != nil {
+		return err
+	}
 	if v.Request.ScheduleID.IsZero() || v.Request.StorageID.IsZero() || (!plan && v.ExecutorBindingID.IsZero()) || (plan && !v.ExecutorBindingID.IsZero()) || v.StoragePairID.IsZero() || v.OriginalPolicy.Binding.RadixActivationHeight != 0 {
 		return ErrScheduledPrune
 	}
@@ -170,9 +175,17 @@ func (v ScheduledPruneInventory) canonicalMode(plan bool) ([]byte, error) {
 		magic = "OMCSPPLN"
 	}
 	e.Fixed([]byte(magic))
-	e.U16(0)
+	version := uint16(0)
+	if v.FencePolicy != nil {
+		version = 1
+	}
+	e.U16(version)
 	request, _ := v.Request.CanonicalBytes()
 	e.BytesField(request)
+	if v.FencePolicy != nil {
+		p, _ := v.FencePolicy.CanonicalBytes()
+		e.BytesField(p)
+	}
 	e.Fixed(v.ExecutorBindingID[:])
 	e.Fixed(v.StoragePairID[:])
 	cp, _ := v.Checkpoint.CanonicalBytes()
@@ -209,7 +222,7 @@ func (v ScheduledPruneInventory) ID() (types.Hash, error) {
 	if err != nil {
 		return types.Hash{}, err
 	}
-	return types.DomainHash("OMESH/custody-prune/scheduled-inventory/id/v0", raw), nil
+	return scheduledPruneArtifactID(raw, false), nil
 }
 
 func DecodeScheduledPruneInventory(raw []byte) (ScheduledPruneInventory, error) {
@@ -231,7 +244,7 @@ func decodeScheduledPruneMode(raw []byte, plan bool) (ScheduledPruneInventory, e
 		return v, ErrScheduledPrune
 	}
 	version, err := d.U16()
-	if err != nil || version != 0 {
+	if err != nil || version > 1 {
 		return v, ErrScheduledPrune
 	}
 	r, err := d.BytesField(MaximumPruneRequestBytes)
@@ -241,6 +254,20 @@ func decodeScheduledPruneMode(raw []byte, plan bool) (ScheduledPruneInventory, e
 	v.Request, err = DecodePruneRequest(r)
 	if err != nil {
 		return v, err
+	}
+	if version == 1 {
+		raw, err := d.BytesField(prunefence.MaximumPolicyBytes)
+		if err != nil {
+			return v, err
+		}
+		p, err := prunefence.DecodePolicy(raw)
+		if err != nil {
+			return v, err
+		}
+		v.FencePolicy = &p
+	}
+	if (version == 1) != !v.Request.FencePolicyID.IsZero() {
+		return v, ErrScheduledPrune
 	}
 	for _, id := range []*types.Hash{&v.ExecutorBindingID, &v.StoragePairID} {
 		b, err := d.Fixed(types.HashSize)
@@ -355,7 +382,7 @@ func LoadScheduledPruneInventory(path string, expected types.Hash) (ScheduledPru
 	if err != nil {
 		return ScheduledPruneInventory{}, err
 	}
-	if expected.IsZero() || types.DomainHash("OMESH/custody-prune/scheduled-inventory/id/v0", raw) != expected {
+	if expected.IsZero() || scheduledPruneArtifactID(raw, false) != expected {
 		return ScheduledPruneInventory{}, ErrScheduledPrune
 	}
 	return DecodeScheduledPruneInventory(raw)

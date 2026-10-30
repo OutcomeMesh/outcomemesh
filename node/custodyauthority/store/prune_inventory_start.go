@@ -34,6 +34,9 @@ func decodePruneInventoryStart(encoded []byte, requestID, ticketID types.Hash) (
 }
 
 func checkPruneExecutionBinding(next PruneExecution, binding types.Hash) error {
+	if next.FenceClaim != nil && next.FenceClaim.Candidate.Binding.ExecutorBindingID != binding {
+		return ErrPruneInventory
+	}
 	if !next.ArchiveInventoryID.IsZero() && (binding.IsZero() || next.Request.StorageID.IsZero() ||
 		(next.Stage != PruneStarted && next.Stage != PruneSucceeded)) {
 		return ErrPruneInventory

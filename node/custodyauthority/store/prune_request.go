@@ -23,6 +23,7 @@ var (
 // StorageID optionally binds a local database incarnation. It is not a physical
 // database identity or rollback pin, and must be selected before admission.
 type PruneRequest struct {
+	FencePolicyID     types.Hash
 	ScheduleID        types.Hash
 	AssignmentID      types.Hash
 	ConsumerPublicKey [32]byte
@@ -31,6 +32,9 @@ type PruneRequest struct {
 }
 
 func (request PruneRequest) CanonicalBytes() ([]byte, error) {
+	if !request.FencePolicyID.IsZero() && request.ScheduleID.IsZero() {
+		return nil, ErrPruneRequest
+	}
 	if request.ScheduleID.IsZero() != (request.Boundary.RadixActivationHeight == 0) || (!request.ScheduleID.IsZero() && request.StorageID.IsZero()) || request.AssignmentID.IsZero() || request.ConsumerPublicKey == [32]byte{} || !request.Boundary.PruneTicketID.IsZero() {
 		return nil, ErrPruneRequest
 	}
@@ -47,14 +51,20 @@ func (request PruneRequest) CanonicalBytes() ([]byte, error) {
 	if !request.ScheduleID.IsZero() {
 		version = 2
 	}
+	if !request.FencePolicyID.IsZero() {
+		version = 3
+	}
 	e.U16(version)
 	e.Fixed(request.AssignmentID[:])
 	e.Fixed(request.ConsumerPublicKey[:])
 	if version >= 1 {
 		e.Fixed(request.StorageID[:])
 	}
-	if version == 2 {
+	if version >= 2 {
 		e.Fixed(request.ScheduleID[:])
+	}
+	if version == 3 {
+		e.Fixed(request.FencePolicyID[:])
 	}
 	e.BytesField(floor)
 	if e.Len() > MaximumPruneRequestBytes {
@@ -75,6 +85,9 @@ func (request PruneRequest) ID() (types.Hash, error) {
 	if !request.ScheduleID.IsZero() {
 		domain = "OMESH/custody-prune/request/id/v2"
 	}
+	if !request.FencePolicyID.IsZero() {
+		domain = "OMESH/custody-prune/request/id/v3"
+	}
 	return types.DomainHash(domain, encoded), nil
 }
 
@@ -88,7 +101,7 @@ func DecodePruneRequest(input []byte) (PruneRequest, error) {
 		return PruneRequest{}, ErrPruneRequest
 	}
 	version, err := d.U16()
-	if err != nil || version > 2 {
+	if err != nil || version > 3 {
 		return PruneRequest{}, ErrPruneRequest
 	}
 	var request PruneRequest
@@ -109,13 +122,23 @@ func DecodePruneRequest(input []byte) (PruneRequest, error) {
 			return PruneRequest{}, ErrPruneRequest
 		}
 	}
-	if version == 2 {
+	if version >= 2 {
 		value, err := d.Fixed(types.HashSize)
 		if err != nil {
 			return PruneRequest{}, ErrPruneRequest
 		}
 		copy(request.ScheduleID[:], value)
 		if request.ScheduleID.IsZero() {
+			return PruneRequest{}, ErrPruneRequest
+		}
+	}
+	if version == 3 {
+		value, err := d.Fixed(types.HashSize)
+		if err != nil {
+			return PruneRequest{}, ErrPruneRequest
+		}
+		copy(request.FencePolicyID[:], value)
+		if request.FencePolicyID.IsZero() {
 			return PruneRequest{}, ErrPruneRequest
 		}
 	}

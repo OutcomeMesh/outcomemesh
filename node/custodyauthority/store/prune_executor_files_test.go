@@ -95,6 +95,11 @@ func FuzzDecodePruneRequest(f *testing.F) {
 		f.Fatal(err)
 	}
 	f.Add(bound)
+	fenced, err := fixedFencedPrunePlan(f).Request.CanonicalBytes()
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Add(fenced)
 	f.Add([]byte{})
 	f.Fuzz(func(t *testing.T, input []byte) {
 		request, err := DecodePruneRequest(input)

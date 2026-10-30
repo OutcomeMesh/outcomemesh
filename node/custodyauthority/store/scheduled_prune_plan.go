@@ -25,7 +25,7 @@ func (p ScheduledPrunePlan) ID() (types.Hash, error) {
 	if err != nil {
 		return types.Hash{}, err
 	}
-	return types.DomainHash("OMESH/custody-prune/scheduled-plan/id/v0", raw), nil
+	return scheduledPruneArtifactID(raw, true), nil
 }
 func DecodeScheduledPrunePlan(raw []byte) (ScheduledPrunePlan, error) {
 	v, err := decodeScheduledPruneMode(raw, true)
@@ -36,7 +36,7 @@ func LoadScheduledPrunePlan(path string, expected types.Hash) (ScheduledPrunePla
 	if err != nil {
 		return ScheduledPrunePlan{}, err
 	}
-	if expected.IsZero() || types.DomainHash("OMESH/custody-prune/scheduled-plan/id/v0", raw) != expected {
+	if expected.IsZero() || scheduledPruneArtifactID(raw, true) != expected {
 		return ScheduledPrunePlan{}, ErrScheduledPrune
 	}
 	return DecodeScheduledPrunePlan(raw)

@@ -15,6 +15,7 @@ import (
 
 	"github.com/outcomemesh/outcomemesh/core/types"
 	store "github.com/outcomemesh/outcomemesh/node/custodyauthority/store"
+	"github.com/outcomemesh/outcomemesh/node/prunefence"
 	"github.com/outcomemesh/outcomemesh/node/workarchive"
 )
 
@@ -40,6 +41,8 @@ func runScheduledPruneOperator(ctx context.Context, args []string, out io.Writer
 		return err
 	}
 	switch args[0] {
+	case pruneFencePolicyCommand, pruneFenceScopeCommand:
+		return runPruneFenceArtifactCLI(ctx, args, out)
 	case scheduledPlanCommand:
 		return runScheduledPrunePlanCLI(ctx, args[1:], out)
 	case scheduledSignCommand, scheduledCosignCommand:
@@ -86,6 +89,7 @@ func scheduledOperatorOutput(path string, inputs, roots []string) error {
 
 func runScheduledPrunePlanCLI(ctx context.Context, args []string, out io.Writer) error {
 	var mode, primary, storage, pair, consumer, at, expected, destination, requestOut *string
+	var fencePath, fenceID *string
 	var flags *flag.FlagSet
 	input, err := loadCustodyScheduleQuorumInputs(ctx, args, func(f *flag.FlagSet) {
 		flags = f
@@ -98,6 +102,8 @@ func runScheduledPrunePlanCLI(ctx context.Context, args []string, out io.Writer)
 		expected = f.String("expected-plan-id", "", "publish: previously reviewed plan ID")
 		destination = f.String("out", "", "publish: immutable canonical plan")
 		requestOut = f.String("request-out", "", "publish: immutable canonical request for executor preparation")
+		fencePath = f.String("fence-policy", "", "optional independently selected policy, before admission")
+		fenceID = f.String("fence-policy-id", "", "independently reviewed policy ID")
 	})
 	if err != nil {
 		return err
@@ -126,6 +132,28 @@ func runScheduledPrunePlanCLI(ctx context.Context, args []string, out io.Writer)
 	if err != nil {
 		return err
 	}
+	if (*fencePath == "") != (*fenceID == "") {
+		return prunefence.ErrFence
+	}
+	if *fencePath != "" {
+		raw, err := readRegularArtifact(*fencePath, prunefence.MaximumPolicyBytes)
+		if err != nil {
+			return err
+		}
+		policy, err := prunefence.DecodePolicy(raw)
+		if err != nil {
+			return err
+		}
+		id, _ := policy.ID()
+		want, err := pruneExternalID("fence-policy-id", *fenceID)
+		if err != nil || want != id {
+			return prunefence.ErrFence
+		}
+		p, err = p.WithFence(policy)
+		if err != nil {
+			return err
+		}
+	}
 	id, err := p.ID()
 	if err != nil {
 		return err
@@ -136,7 +164,7 @@ func runScheduledPrunePlanCLI(ctx context.Context, args []string, out io.Writer)
 		if err != nil || reviewed != id {
 			return errors.Join(store.ErrPruneArchiveEffectReview, err)
 		}
-		inputs := []string{input.SourcePath, input.CheckpointPath}
+		inputs := []string{input.SourcePath, input.CheckpointPath, *fencePath}
 		var roots []string
 		for _, s := range input.Input {
 			inputs = append(inputs, s.Assignment, s.Proof, s.Receipt)

@@ -168,6 +168,11 @@ func TestScheduledPrunePlanAndSignaturesCanonicalVectors(t *testing.T) {
 	}
 }
 func FuzzDecodeScheduledPrunePlan(f *testing.F) {
+	fenced, err := fixedFencedPrunePlan(f).CanonicalBytes()
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Add(fenced)
 	v := fixedScheduledPrunePlan(f)
 	f.Add(v.Plan)
 	f.Add([]byte("OMCSPPLN"))

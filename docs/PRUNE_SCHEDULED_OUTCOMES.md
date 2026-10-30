@@ -1,5 +1,10 @@
 # Outcomes of scheduled Prune work
 
+Request v3 tasks use [independent pre-deletion claims](PRUNE_FENCE.md).
+Their missing-result and pre-start cancellation rules are stricter than the
+legacy local workflow described below: a cold candidate stays held, and a bare
+effect cannot recreate its session signature.
+
 Status: local pre-alpha operator workflow for tasks admitted on the migrated
 schedule. Use [the scheduled cleanup procedure](CUSTODY_RADIX_SCHEDULE.md) to
 prepare, sign, admit and package a task. Pre-migration tasks use

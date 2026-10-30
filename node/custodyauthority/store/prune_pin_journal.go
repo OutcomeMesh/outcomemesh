@@ -9,7 +9,6 @@ import (
 
 	"github.com/outcomemesh/outcomemesh/core/types"
 	"github.com/outcomemesh/outcomemesh/node/custodyauthority"
-	"github.com/outcomemesh/outcomemesh/node/workchain"
 )
 
 const (
@@ -159,7 +158,7 @@ func loadPrunePinJournal(path string, lock *os.File, assignment custodyauthority
 	if binding.IsZero() || !bytes.Equal(ready, prunePinReadyBytes(id, binding)) {
 		return nil, ErrPrunePin
 	}
-	if _, err := inspectSizedPending(path, workchain.MaximumCanonicalPruneEffectBytes); err != nil {
+	if _, err := inspectSizedPending(path, pruneRecordLimit(request)); err != nil {
 		return nil, err
 	}
 	intents, err := boundedNames(filepath.Join(path, intentsName), 3)
@@ -232,7 +231,7 @@ func loadPrunePinJournal(path string, lock *os.File, assignment custodyauthority
 }
 
 func (pins *prunePinJournal) readRetained(key string) ([]byte, error) {
-	encoded, err := readRegular(filepath.Join(pins.path, key), workchain.MaximumCanonicalPruneEffectBytes)
+	encoded, err := readRegular(filepath.Join(pins.path, key), pruneRecordLimit(pins.state.Request))
 	if err != nil {
 		return nil, err
 	}
@@ -296,7 +295,7 @@ func (pins *prunePinJournal) publish(ctx context.Context, directory, name string
 	if err := pins.check(); err != nil {
 		return err
 	}
-	count, err := inspectSizedPending(pins.path, workchain.MaximumCanonicalPruneEffectBytes)
+	count, err := inspectSizedPending(pins.path, pruneRecordLimit(pins.state.Request))
 	if err != nil {
 		return pins.poison(err)
 	}

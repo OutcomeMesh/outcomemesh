@@ -8,6 +8,7 @@ import (
 	"github.com/cockroachdb/pebble/v2"
 	"github.com/outcomemesh/outcomemesh/core/codec"
 	"github.com/outcomemesh/outcomemesh/core/types"
+	"github.com/outcomemesh/outcomemesh/node/prunefence"
 	"github.com/outcomemesh/outcomemesh/storage"
 )
 
@@ -83,6 +84,20 @@ type CanonicalPruneCommit struct {
 func (store *Store) PruneCanonicalPrefixOnce(
 	operation CanonicalPruneOperation, authorize func() (uint64, error),
 ) (CanonicalPruneCommit, error) {
+	return store.pruneCanonicalPrefixOnce(operation, authorize, nil)
+}
+
+// PruneCanonicalPrefixFenced consumes a live, quorum-bound capability inside the
+// original storage lock. Serialized claims alone are never accepted here. The
+// legacy primitive remains a trusted local API, not a network permission path.
+func (store *Store) PruneCanonicalPrefixFenced(operation CanonicalPruneOperation, authorize func() (uint64, error), permit *prunefence.Permit) (CanonicalPruneCommit, error) {
+	if permit == nil {
+		return CanonicalPruneCommit{}, prunefence.ErrFence
+	}
+	return store.pruneCanonicalPrefixOnce(operation, authorize, permit)
+}
+
+func (store *Store) pruneCanonicalPrefixOnce(operation CanonicalPruneOperation, authorize func() (uint64, error), permit *prunefence.Permit) (CanonicalPruneCommit, error) {
 	if store == nil || authorize == nil || operation.validate() != nil {
 		return CanonicalPruneCommit{}, ErrCanonicalPrune
 	}
@@ -97,6 +112,19 @@ func (store *Store) PruneCanonicalPrefixOnce(
 	}
 	if operation.StorageID != store.persistence.storageID {
 		return CanonicalPruneCommit{}, ErrStorageBinding
+	}
+	if permit != nil {
+		protection, err := store.storageProtectionLocked()
+		if err != nil || protection.Pending != nil || protection.Database != protection.Confirmed {
+			return CanonicalPruneCommit{}, prunefence.ErrFence
+		}
+		id, err := operation.FenceOperationID()
+		if err != nil {
+			return CanonicalPruneCommit{}, err
+		}
+		if err := permit.Consume(id, protection.PairID); err != nil {
+			return CanonicalPruneCommit{}, err
+		}
 	}
 	existing, found, err := store.persistence.pruneEffect(operation.TicketID)
 	if err != nil {
@@ -118,6 +146,16 @@ func (store *Store) PruneCanonicalPrefixOnce(
 		return CanonicalPruneCommit{}, err
 	}
 	return CanonicalPruneCommit{Applied: true, Effect: effect}, nil
+}
+
+// FenceOperationID binds all original deletion inputs without changing the
+// historical effect encoding or resetting any retained storage position.
+func (operation CanonicalPruneOperation) FenceOperationID() (types.Hash, error) {
+	if operation.validate() != nil || operation.ScheduleID.IsZero() {
+		return types.Hash{}, ErrCanonicalPrune
+	}
+	b, _ := operation.Boundary.CanonicalBytes()
+	return types.DomainHash("OMESH/prune-fence/operation/id/v0", operation.AssignmentID[:], operation.TicketID[:], operation.StorageID[:], operation.ScheduleID[:], b), nil
 }
 
 // CanonicalPruneEffect is a read-only result lookup under the chain lock. It does

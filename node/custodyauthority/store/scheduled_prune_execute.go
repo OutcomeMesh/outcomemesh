@@ -27,6 +27,19 @@ type ScheduledPruneSource struct {
 // of an effect never authorizes another attempt. No obligation completes here.
 func (executor *PruneExecutor) ExecuteScheduledArchive(ctx context.Context, chain *workchain.Store, inventoryPath string, inventoryID types.Hash,
 	operations []RequiredOperation, sources []ScheduledPruneSource, base workchain.Base, parameters workblock.Parameters, limits workarchive.Limits) (workchain.CanonicalPruneCommit, error) {
+	return executor.executeScheduledArchive(ctx, chain, inventoryPath, inventoryID, operations, sources, base, parameters, limits, nil)
+}
+
+func (executor *PruneExecutor) ExecuteScheduledArchiveFenced(ctx context.Context, chain *workchain.Store, inventoryPath string, inventoryID types.Hash,
+	operations []RequiredOperation, sources []ScheduledPruneSource, base workchain.Base, parameters workblock.Parameters, limits workarchive.Limits, collect PruneClaimCollector) (workchain.CanonicalPruneCommit, error) {
+	if collect == nil {
+		return workchain.CanonicalPruneCommit{}, ErrScheduledPrune
+	}
+	return executor.executeScheduledArchive(ctx, chain, inventoryPath, inventoryID, operations, sources, base, parameters, limits, collect)
+}
+
+func (executor *PruneExecutor) executeScheduledArchive(ctx context.Context, chain *workchain.Store, inventoryPath string, inventoryID types.Hash,
+	operations []RequiredOperation, sources []ScheduledPruneSource, base workchain.Base, parameters workblock.Parameters, limits workarchive.Limits, collect PruneClaimCollector) (workchain.CanonicalPruneCommit, error) {
 	if executor == nil || chain == nil {
 		return workchain.CanonicalPruneCommit{}, ErrClosed
 	}
@@ -44,6 +57,9 @@ func (executor *PruneExecutor) ExecuteScheduledArchive(ctx context.Context, chai
 	inventory, err := LoadScheduledPruneInventory(inventoryPath, inventoryID)
 	if err != nil {
 		return workchain.CanonicalPruneCommit{}, err
+	}
+	if (collect == nil) != executor.request.FencePolicyID.IsZero() {
+		return workchain.CanonicalPruneCommit{}, ErrScheduledPrune
 	}
 	requestID, _ := inventory.Request.ID()
 	if executor.pins == nil || executor.request.ScheduleID.IsZero() || requestID != executor.id || inventory.ExecutorBindingID != executor.pins.binding || len(operations) != len(inventory.Replicas) || len(sources) != len(inventory.Replicas) {
@@ -225,7 +241,11 @@ func (executor *PruneExecutor) ExecuteScheduledArchive(ctx context.Context, chai
 		if _, err := authorize(); err != nil {
 			return err
 		}
-		result, err = executor.executeGuardedInventory(ctx, chain, primary, authorize, inventoryID)
+		if collect != nil {
+			result, err = executor.executeFencedInventory(ctx, chain, inventory, inventoryID, authorize, collect)
+		} else {
+			result, err = executor.executeGuardedInventory(ctx, chain, primary, authorize, inventoryID)
+		}
 		return err
 	})
 	if err != nil {
