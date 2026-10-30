@@ -63,8 +63,12 @@ Remaining work, in order:
    can cancel under its migrated original owner; retained starts cannot. An old
    committed effect can resolve a Started executor through the original migrated
    storage pair without repeating deletion. See [migrated Prune outcomes](PRUNE_MIGRATED_OUTCOMES.md).
-   Next: evidence for unresolved starts that have no matching retained effect,
-   then remote v1/profile-5 witness and execution transitions. Unprepared/raw
+   A separate bounded observation and CLI now retain the exact confirmed start,
+   original open ticket and protected storage position. They distinguish a missing
+   record from a matching retained effect without resolving the executor. Offline
+   verification checks content/context only and grants no completion or retry.
+   Next: independently enforced resolution of starts with no matching retained
+   effect, then remote v1/profile-5 witness and execution transitions. Unprepared/raw
    legacy paths remain gated; legacy prune transports remain unchanged.
 2. Define the independently approved network activation policy and transition
    checkpoint; local operator profiles alone do not authorize public activation.

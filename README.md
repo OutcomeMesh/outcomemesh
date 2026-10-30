@@ -67,8 +67,9 @@ preparation, separate signatures, admission, execution and per-replica completio
 Original obligations and spent operation IDs remain in their existing journals.
 [Original Prune outcomes](docs/PRUNE_MIGRATED_OUTCOMES.md) can be resolved after
 migration using their retained results or an explicit cancellation before start.
-Remote execution still
-requires its own schedule integration. The [custody migration guide](docs/CUSTODY_RADIX_SCHEDULE.md)
+Unresolved starts have a separate CLI inspection report; missing records leave
+their obligations open. Remote execution still requires its own schedule
+integration. The [custody migration guide](docs/CUSTODY_RADIX_SCHEDULE.md)
 describes the supported path and its limits.
 
 ## Build

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -135,7 +136,7 @@ func TestProcessPruneMigratedHelper(t *testing.T) {
 		c.Storage.Base, _, _ = pruneChainConfig()
 	}
 	r := migratedPruneReview(t, c)
-	_, err = runMigratedPrune(t.Context(), c, os.Getenv("OM_MIGRATED_PRUNE_MODE"), r.Review.ReviewID, storeHooks{at: func(stage string) error {
+	hooks := storeHooks{at: func(stage string) error {
 		if stage == os.Getenv("OM_MIGRATED_PRUNE_STAGE") {
 			if err := os.WriteFile(os.Getenv("OM_MIGRATED_PRUNE_MARKER"), []byte(stage), 0600); err != nil {
 				return err
@@ -143,9 +144,79 @@ func TestProcessPruneMigratedHelper(t *testing.T) {
 			select {}
 		}
 		return nil
-	}})
+	}}
+	if os.Getenv("OM_MIGRATED_PRUNE_MODE") == "observe" {
+		_, err = runMigratedPruneOwned(t.Context(), c, "review", types.Hash{}, hooks, true)
+	} else {
+		_, err = runMigratedPrune(t.Context(), c, os.Getenv("OM_MIGRATED_PRUNE_MODE"), r.Review.ReviewID, hooks)
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Fatal("escaped process boundary")
+}
+
+func TestProcessPruneMigratedObservation(t *testing.T) {
+	for _, outcome := range []string{"prune-before-effect", "prune-after-effect"} {
+		for _, boundary := range []string{"prune-observation-before-read", "prune-observation-after-read"} {
+			t.Run(outcome+"/"+boundary, func(t *testing.T) {
+				_, configs := migratedPruneFixture(t, outcome)
+				c := configs[0]
+				before := migratedPruneReview(t, c)
+				disk := c
+				s := *c.Storage
+				s.Base = workchain.Base{}
+				disk.Storage = &s
+				raw, err := json.Marshal(disk)
+				if err != nil {
+					t.Fatal(err)
+				}
+				path, marker := filepath.Join(t.TempDir(), "config"), filepath.Join(t.TempDir(), "reached")
+				writeTestFile(t, path, raw)
+				child := exec.Command(os.Args[0], "-test.run=^TestProcessPruneMigratedHelper$", "-test.count=1")
+				child.Env = append(os.Environ(), "OM_MIGRATED_PRUNE_CONFIG="+path, "OM_MIGRATED_PRUNE_MODE=observe", "OM_MIGRATED_PRUNE_STAGE="+boundary, "OM_MIGRATED_PRUNE_MARKER="+marker)
+				var output bytes.Buffer
+				child.Stdout, child.Stderr = &output, &output
+				if err := child.Start(); err != nil {
+					t.Fatal(err)
+				}
+				done := make(chan error, 1)
+				go func() { done <- child.Wait() }()
+				t.Cleanup(func() { _ = child.Process.Kill() })
+				deadline := time.NewTimer(20 * time.Second)
+				defer deadline.Stop()
+				tick := time.NewTicker(10 * time.Millisecond)
+				defer tick.Stop()
+			wait:
+				for {
+					if _, err := os.Stat(marker); err == nil {
+						break wait
+					}
+					select {
+					case err := <-done:
+						t.Fatal("child stopped early", err, output.String())
+					case <-deadline.C:
+						t.Fatal("child missed inspection boundary")
+					case <-tick.C:
+					}
+				}
+				if _, err := InspectMigratedPrune(t.Context(), c); err == nil {
+					t.Fatal("second process acquired original owners")
+				}
+				if err := child.Process.Kill(); err != nil {
+					t.Fatal(err)
+				}
+				if err := <-done; err == nil {
+					t.Fatal("child survived SIGKILL")
+				}
+				if after := migratedPruneReview(t, c); !reflect.DeepEqual(before, after) {
+					t.Fatal("inspection kill changed obligations or storage")
+				}
+				observed, err := InspectMigratedPrune(t.Context(), c)
+				if err != nil || observed.Observation == nil || observed.Executor.Stage != PruneStarted || (observed.Observation.Effect != nil) != (outcome == "prune-after-effect") {
+					t.Fatal("cold inspection failed", err)
+				}
+			})
+		}
+	}
 }

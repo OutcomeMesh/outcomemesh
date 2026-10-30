@@ -937,3 +937,43 @@ storage pair. Recovery never invokes deletion. Missing effects and copied or
 mismatched storage do not provide no-effect evidence. The local reviewed workflow
 is specified in [Prune outcomes after migration](PRUNE_MIGRATED_OUTCOMES.md);
 remote scope transitions and full-copy fencing remain outside this adapter.
+
+### Historical observations of migrated Prune starts
+
+`OMCPMOBS` v0 is a local unsigned observation artifact, bounded to 2,048 bytes.
+It changes no consensus, journal or terminal format. The canonical field order is:
+
+1. eight-byte magic `OMCPMOBS`, then a big-endian u16 version equal to zero;
+2. thirteen 32-byte nonzero hashes: inventory ID, policy ID, schedule proof ID,
+   primary assignment ID, request ID, original primary ticket ID, executor binding
+   ID, confirmed executor start head, storage ID, storage pair ID, storage migration
+   review ID, confirmed authority head, confirmed storage commit ID;
+3. big-endian u64 authority sequence, u8 authority phase, big-endian u64 storage
+   sequence and big-endian u64 radix activation height;
+4. a canonical length-prefixed effect field: empty for record absence, otherwise
+   the unchanged original canonical effect bytes (at most 1,024 bytes).
+
+The ID domain is `OMESH/custody-prune/migrated-observation/id/v0`. Unknown versions,
+trailing bytes, overlong lengths and invalid or context-mismatched fields are
+rejected. Phase is Accepting or Stopping; authority sequence follows the original
+admission and migration. Storage sequence is nonzero and at most 65,536. The start
+head is independently derived from the original request, admission and version-1
+inventory-bound start record. Any included effect must match the original request.
+Reference encodings are in `testdata/migrated_prune_observation_v0.json` under
+`node/custodyauthority/store`.
+
+Capture requires original exclusively owned handles, a confirmed Started executor,
+no retained executor or authority attempt, an actually open primary ticket and a
+healthy original migrated storage pair. Reading the confirmed position and effect
+uses one chain read lock. Neither inspection nor publication mutates the executor,
+releases obligations or repeats deletion. Missing or unreadable storage and pending
+confirmations cannot yield an absence observation.
+
+The local review domain is `OMESH/local/migrated-prune-observation-review/v0`.
+Its payload is the migrated-outcome review payload followed by the observation
+ID, so a normal outcome review cannot authorize report publication. Publication
+compares a fresh inspection with that exact review and preserves immutable output.
+Offline verification checks content and context against independent pins. These
+unsigned observations authenticate no source, establish no journal inclusion or
+freshness, and do not fence copies. A storage commit ID is an opaque position token.
+No terminal or execution adapter accepts the observation ID as an outcome or grant.

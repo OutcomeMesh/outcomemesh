@@ -182,6 +182,10 @@ func (store *Store) StorageProtection() (StorageProtection, error) {
 	}
 	store.mu.RLock()
 	defer store.mu.RUnlock()
+	return store.storageProtectionLocked()
+}
+
+func (store *Store) storageProtectionLocked() (StorageProtection, error) {
 	if err := store.positionErrorLocked(); err != nil {
 		return StorageProtection{}, err
 	}

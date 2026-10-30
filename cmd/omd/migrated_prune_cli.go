@@ -16,10 +16,11 @@ import (
 )
 
 const (
-	migratedPruneOutcomeCommand = "work-prune-migrated-outcome"
-	migratedPruneSignCommand    = "work-prune-migrated-command-sign"
-	migratedPruneCosignCommand  = "work-prune-migrated-command-cosign"
-	migratedPruneApplyCommand   = "work-prune-migrated-command"
+	migratedPruneOutcomeCommand     = "work-prune-migrated-outcome"
+	migratedPruneSignCommand        = "work-prune-migrated-command-sign"
+	migratedPruneCosignCommand      = "work-prune-migrated-command-cosign"
+	migratedPruneApplyCommand       = "work-prune-migrated-command"
+	migratedPruneObservationCommand = "work-prune-migrated-observation"
 )
 
 func runMigratedPruneCLI(args []string) error {
@@ -36,7 +37,8 @@ func runMigratedPruneCLIContext(ctx context.Context, args []string, out io.Write
 	}
 	signing := args[0] == migratedPruneSignCommand || args[0] == migratedPruneCosignCommand
 	cosign := args[0] == migratedPruneCosignCommand
-	capture := args[0] == migratedPruneOutcomeCommand
+	observing := args[0] == migratedPruneObservationCommand
+	capture := args[0] == migratedPruneOutcomeCommand || observing
 	if !signing && !capture && args[0] != migratedPruneApplyCommand {
 		return store.ErrMigratedPrune
 	}
@@ -68,6 +70,8 @@ func runMigratedPruneCLIContext(ctx context.Context, args []string, out io.Write
 	f.StringVar(&c.ExecutorPinsPath, "executor-pins", "", "original executor pins")
 	f.StringVar(&c.EntryPath, "entry", "", "exact co-signed completion")
 	entryID := f.String("entry-id", "", "independently retained completion entry ID")
+	observationPath := f.String("observation", "", "historical observation file, offline verify only")
+	observationID := f.String("observation-id", "", "independently retained observation ID")
 	data := f.String("data", "", "existing separate activation base, recovery only")
 	chain := f.String("chain", "", "existing migrated protected chain")
 	chainPins := f.String("chain-pins", "", "original storage position pins")
@@ -81,6 +85,7 @@ func runMigratedPruneCLIContext(ctx context.Context, args []string, out io.Write
 	if err := parsePruneFlags(f, args[1:]); err != nil {
 		return err
 	}
+	offlineObservation := observing && *mode == "verify"
 	accepted := map[string]bool{"mode": true, "inventory": true, "inventory-id": true, "policy-id": true, "schedule-proof": true, "schedule-id": true}
 	allow := func(names ...string) {
 		for _, name := range names {
@@ -98,16 +103,21 @@ func runMigratedPruneCLIContext(ctx context.Context, args []string, out io.Write
 		if *mode == "sign" {
 			allow(keyName, "out", "expected-review-id")
 		}
+	} else if offlineObservation {
+		allow("observation", "observation-id", "storage-migration-id")
 	} else {
 		allow("authority", "authority-pins", "executor", "executor-pins")
 		if capture {
+			if observing && *mode != "review" && *mode != "publish" {
+				return store.ErrPruneObservation
+			}
 			if *mode != "review" && *mode != "publish" && *mode != "resume-executor" && *mode != "recover-effect" && *mode != "cancel-before-start" {
 				return store.ErrMigratedPrune
 			}
 			if *mode == "publish" {
 				allow("out")
 			}
-			if *mode == "review" || *mode == "recover-effect" {
+			if *mode == "review" || *mode == "recover-effect" || observing {
 				allow("data", "chain", "chain-pins", "storage-migration-id", "max-history-bytes", "fork-retention", "checkpoint-every", "checkpoint-keep", "canonical-retention")
 			}
 		} else {
@@ -141,7 +151,7 @@ func runMigratedPruneCLIContext(ctx context.Context, args []string, out io.Write
 	}
 	var reviewID types.Hash
 	var err error
-	if *mode != "review" {
+	if *mode != "review" && !offlineObservation {
 		reviewID, err = pruneExternalID("expected-review-id", *expected)
 		if err != nil {
 			return err
@@ -150,6 +160,21 @@ func runMigratedPruneCLIContext(ctx context.Context, args []string, out io.Write
 	v, err := store.LoadMigratedPruneContext(c)
 	if err != nil {
 		return err
+	}
+	if offlineObservation {
+		id, err := pruneExternalID("observation-id", *observationID)
+		if err != nil {
+			return err
+		}
+		mid, err := pruneExternalID("storage-migration-id", *migration)
+		if err != nil {
+			return err
+		}
+		o, err := store.LoadMigratedPruneObservation(*observationPath, id, v, mid)
+		if err != nil {
+			return err
+		}
+		return reportMigratedPruneObservation(ctx, out, o, "", false)
 	}
 	if signing || !capture {
 		c.OutcomeID, err = pruneExternalID("outcome-id", *outcomeID)
@@ -300,9 +325,39 @@ func runMigratedPruneCLIContext(ctx context.Context, args []string, out io.Write
 		actualMode = "review"
 		actualReview = types.Hash{}
 	}
-	result, err := store.RunMigratedPrune(ctx, c, actualMode, actualReview)
+	var result store.MigratedPruneResult
+	if observing {
+		result, err = store.InspectMigratedPrune(ctx, c)
+	} else {
+		result, err = store.RunMigratedPrune(ctx, c, actualMode, actualReview)
+	}
 	if err != nil {
 		return err
+	}
+	if observing {
+		if result.Observation == nil {
+			return store.ErrPruneObservation
+		}
+		if *mode == "publish" {
+			if reviewID != result.Review.ReviewID {
+				return store.ErrPruneRecoveryReview
+			}
+			roots := []string{c.AuthorityPath, c.AuthorityPinsPath, c.ExecutorPath, c.ExecutorPinsPath, *data, *chain, *chainPins}
+			if err := scheduledOperatorOutput(*dest, inputs, roots); err != nil {
+				return err
+			}
+			raw, err := result.Observation.CanonicalBytes()
+			if err != nil {
+				return err
+			}
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if err := publishImmutableArtifact(*dest, raw); err != nil {
+				return err
+			}
+		}
+		return reportMigratedPruneObservation(ctx, out, *result.Observation, result.Review.ReviewID.String(), *mode == "publish")
 	}
 	var evidenceID, kind string
 	if id, e := result.Review.Outcome.EvidenceID(v); e == nil {
@@ -342,4 +397,23 @@ func runMigratedPruneCLIContext(ctx context.Context, args []string, out io.Write
 		Kind      string                    `json:"outcome_kind,omitempty"`
 		Published bool                      `json:"published"`
 	}{result, result.Review.ReviewID.String(), result.Review.Authority.Confirmed.HeadID.String(), result.Review.Authority.Confirmed.Sequence, evidenceID, kind, *mode == "publish"})
+}
+
+func reportMigratedPruneObservation(ctx context.Context, out io.Writer, o store.MigratedPruneObservation, review string, published bool) error {
+	id, err := o.ID()
+	if err != nil {
+		return err
+	}
+	status := "record-absent"
+	if o.Effect != nil {
+		status = "matching-effect-retained"
+	}
+	return scheduledOperatorReport(ctx, out, struct {
+		ObservationID string                         `json:"observation_id"`
+		ReviewID      string                         `json:"review_id,omitempty"`
+		RecordStatus  string                         `json:"record_status"`
+		Meaning       string                         `json:"meaning"`
+		Published     bool                           `json:"published"`
+		Observation   store.MigratedPruneObservation `json:"observation"`
+	}{id.String(), review, status, "Historical local observation; no terminal outcome or permission to release work.", published, o})
 }

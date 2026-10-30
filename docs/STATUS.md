@@ -10,6 +10,29 @@ Full planned production readiness is approximately **44/100**, using the weighte
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
 
+## 2026-10-30: retained observations of unresolved Prune starts
+
+The original migrated Prune workflow now has a separate read-only inspection and
+immutable report. It holds the primary coordinator, confirmed Started executor
+and original migrated storage pair. The storage position and ticket lookup share
+one chain lock. A matching effect is reported without recovering the executor;
+an absent record leaves the outcome unknown. Pending confirmations, inaccessible
+owners, corrupt results and mismatched identities return errors, not absence.
+
+The CLI reviews, publishes and verifies reports. Publication compares a distinct
+review ID; exact output retry preserves the report. Offline verification needs
+the independently pinned inventory, primary schedule and migration ID, with no
+live owner access. The unsigned artifact has a bounded versioned encoding and
+cannot be decoded as a terminal effect or cancellation. It is not a remote
+certificate, state commitment or proof of no effect.
+
+Coverage includes concurrent storage commits, unknown and retained-effect cases,
+pending and terminal rejection, context substitution, lost output, source/output
+separation, fixed codec vectors, fuzzing and process interruption around the read.
+The [operator procedure](PRUNE_MIGRATED_OUTCOMES.md) records the trust boundary.
+Independent fencing and resolution of missing-result starts, remote schedule
+integration and launch gates remain open. Readiness remains **44/100**.
+
 ## 2026-10-30: original Prune outcomes after migration
 
 Original inventory-bound Prune work now has a reviewed CLI resolution path after

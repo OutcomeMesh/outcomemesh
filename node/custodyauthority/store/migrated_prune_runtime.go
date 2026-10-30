@@ -36,10 +36,11 @@ type MigratedPruneReview struct {
 	AlreadyApplied bool
 }
 type MigratedPruneResult struct {
-	Review    MigratedPruneReview
-	Commit    *Commit
-	Executor  PruneExecution
-	Recovered *workchain.CanonicalPruneCommit
+	Review      MigratedPruneReview
+	Commit      *Commit
+	Executor    PruneExecution
+	Recovered   *workchain.CanonicalPruneCommit
+	Observation *MigratedPruneObservation `json:",omitempty"`
 }
 
 func LoadMigratedPruneContext(c MigratedPruneConfig) (MigratedPruneContext, error) {
@@ -69,7 +70,21 @@ func RunMigratedPrune(ctx context.Context, c MigratedPruneConfig, mode string, e
 	return runMigratedPrune(ctx, c, mode, expected, storeHooks{})
 }
 func runMigratedPrune(ctx context.Context, c MigratedPruneConfig, mode string, expected types.Hash, hooks storeHooks) (_ MigratedPruneResult, returnErr error) {
+	return runMigratedPruneOwned(ctx, c, mode, expected, hooks, false)
+}
+
+// InspectMigratedPrune captures a historical observation while holding the
+// original primary owner, confirmed Started executor and migrated storage pair.
+// It never resolves the executor, even when a matching committed effect is found.
+func InspectMigratedPrune(ctx context.Context, c MigratedPruneConfig) (MigratedPruneResult, error) {
+	return runMigratedPruneOwned(ctx, c, "review", types.Hash{}, storeHooks{}, true)
+}
+
+func runMigratedPruneOwned(ctx context.Context, c MigratedPruneConfig, mode string, expected types.Hash, hooks storeHooks, inspect bool) (_ MigratedPruneResult, returnErr error) {
 	var result MigratedPruneResult
+	if inspect && (mode != "review" || c.Storage == nil || c.EntryPath != "" || c.OutcomePath != "") {
+		return result, ErrPruneObservation
+	}
 	if ctx == nil || (mode != "review" && mode != "apply" && mode != "resume" && mode != "resume-executor" && mode != "recover-effect" && mode != "cancel-before-start") || (mode == "review") != expected.IsZero() {
 		return result, ErrMigratedPrune
 	}
@@ -231,6 +246,30 @@ func runMigratedPrune(ctx context.Context, c MigratedPruneConfig, mode string, e
 		}
 		protection = &state
 	}
+	if inspect {
+		if err := hooks.reach("prune-observation-before-read"); err != nil {
+			return result, err
+		}
+		observation, err := inspectMigratedPruneOwned(ctx, v, c.Storage.MigrationID, e, owner, chain)
+		if err != nil {
+			return result, err
+		}
+		if err := hooks.reach("prune-observation-after-read"); err != nil {
+			return result, err
+		}
+		// Recheck original identities and confirmed positions after the read. No
+		// handle escapes this call, and all three process locks remain held.
+		check, err := inspectMigratedPruneOwned(ctx, v, c.Storage.MigrationID, e, owner, chain)
+		if err != nil {
+			return result, err
+		}
+		id, _ := observation.ID()
+		cid, _ := check.ID()
+		if id != cid {
+			return result, ErrPruneObservation
+		}
+		result.Observation = &observation
+	}
 	review := MigratedPruneReview{Authority: authority, Executor: snapshot, Storage: protection, AlreadyApplied: already}
 	if outcomeErr == nil {
 		review.Outcome = outcome
@@ -280,7 +319,13 @@ func runMigratedPrune(ctx context.Context, c MigratedPruneConfig, mode string, e
 	} else {
 		enc.U16(0)
 	}
-	review.ReviewID = types.DomainHash("OMESH/local/migrated-prune-review/v0", enc.Bytes())
+	if inspect {
+		id, _ := result.Observation.ID()
+		enc.Fixed(id[:])
+		review.ReviewID = types.DomainHash("OMESH/local/migrated-prune-observation-review/v0", enc.Bytes())
+	} else {
+		review.ReviewID = types.DomainHash("OMESH/local/migrated-prune-review/v0", enc.Bytes())
+	}
 	result.Review, result.Executor = review, snapshot
 	if mode == "review" {
 		return result, ctx.Err()

@@ -118,6 +118,69 @@ An exact retained authority attempt requires a new review and explicit
 review; it does not append a second completion. A different completion of an
 already completed ticket is refused. Output failure does not undo durable work.
 
+## Inspect an unresolved start
+
+`work-prune-migrated-observation` captures a historical report for a confirmed
+Started executor under its original primary owner. The original ticket must still
+be open. The executor, coordinator and migrated storage pair must have no pending
+confirmation. Inspection holds all three owners and reads the storage position
+and ticket result under the same chain lock. It changes no business state.
+
+| Report status | Meaning and next action |
+| --- | --- |
+| `record-absent` | This opened database had no record for the ticket at the reported position. Keep the obligation held; the report proves neither no effect nor permission to retry. |
+| `matching-effect-retained` | The database retained the exact original effect. Use the separate reviewed `recover-effect` procedure, then complete each ticket separately. Inspection itself leaves the executor Started. |
+| Command returns an error | No observation is published. Resolve missing access, identity mismatch, corruption or pending confirmations through their existing procedures. An error is never reported as absence. |
+
+Review with the same original inputs used for recovery:
+
+```sh
+omd work-prune-migrated-observation \
+  --inventory /operator/original.inventory \
+  --inventory-id <original-inventory-id> --policy-id <original-policy-id> \
+  --schedule-proof /operator/primary.schedule --schedule-id <schedule-id> \
+  --authority /authority/original-primary --authority-pins /pins/original-primary \
+  --executor /executor/original-prune --executor-pins /pins/original-prune \
+  --data /operator/activation-source \
+  --chain /storage/original-chain --chain-pins /pins/original-chain \
+  --storage-migration-id <original-migration-review-id>
+```
+
+Supply the original storage policy when it differs from the defaults. The report
+contains an `observation_id` and a separate `review_id`. Repeat the exact inputs
+with `--mode publish --expected-review-id <review-id> --out <observation-file>`.
+Publication reopens and inspects the originals, compares the review and writes an
+immutable artifact. Its destination must be separate from every owner, the
+activation source and input artifacts. It cannot overwrite a different report.
+After lost output, an unchanged observation can be published again. If a reviewed
+position changes, inspect again and select a new destination for the new report.
+
+Retain the observation ID independently. Offline verification needs only the
+original inventory, primary schedule proof and their independent IDs:
+
+```sh
+omd work-prune-migrated-observation --mode verify \
+  --inventory /operator/original.inventory \
+  --inventory-id <original-inventory-id> --policy-id <original-policy-id> \
+  --schedule-proof /operator/primary.schedule --schedule-id <schedule-id> \
+  --storage-migration-id <original-migration-review-id> \
+  --observation /operator/held.observation --observation-id <observation-id>
+```
+
+Verification checks canonical bytes, the independent content pin, original ticket,
+inventory-bound start head, migration context and any retained effect. It opens
+no owner or chain and supplies no live review ID. The report is unsigned: this is
+content/context verification, not authentication of the operator or proof that a
+remote machine inspected its storage. Its storage commit ID is an opaque local
+position token, not a state commitment or non-inclusion proof. A valid old report
+remains historical after later recovery and cannot establish the current outcome.
+
+The bounded `OMCPMOBS` v0 format has a separate decoder and ID domain. It contains
+no paths, keys or wall-clock claims. Neither existing terminal decoder accepts
+the report. There is no completion, cancellation or retry operation that consumes
+its ID. A retained effect can only become terminal evidence through the original
+executor's explicit recovery and confirmation.
+
 ## Compatibility and remaining work
 
 No request, inventory, effect, cancellation or signature format changes. The
