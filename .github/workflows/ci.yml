@@ -49,6 +49,7 @@ jobs:
           git diff --exit-code -- go.mod go.sum
           go mod verify
           go vet ./...
+          python3 scripts/version.py check
           python3 -m unittest discover -s scripts -p 'test_release*.py'
           make test-remote-support
       - name: Prune fence process recovery and decoder fuzzing
@@ -91,6 +92,29 @@ jobs:
       - run: CGO_ENABLED=0 go build -mod=readonly -trimpath -o "$RUNNER_TEMP/omd" ./cmd/omd
       - run: '"$RUNNER_TEMP/omd" version --json'
 
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: .go-version
+          cache: true
+      - name: Native core, storage and private-key boundaries
+        run: go test ./core/... ./storage/... ./wallet/... ./node/chain/... -count=1 -timeout=20m
+      - name: Native wallet, CLI lifecycle and unsupported server boundaries
+        run: go test ./cmd/omd -run '^(TestWalletEncryptedGenerationAndMigration|TestWindows)' -count=1 -timeout=10m
+      - name: Build and identify the native executable
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          go build -mod=readonly -trimpath -o "$env:RUNNER_TEMP/omd.exe" ./cmd/omd
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & "$env:RUNNER_TEMP/omd.exe" version --json
+
   archives:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -102,12 +126,12 @@ jobs:
         with:
           go-version-file: .go-version
           cache: true
-      - run: python3 scripts/release.py --version v0.0.0-ci --out "$RUNNER_TEMP/outcomemesh-archives"
+      - run: python3 scripts/release.py --ci --out "$RUNNER_TEMP/outcomemesh-archives"
       - run: cd "$RUNNER_TEMP/outcomemesh-archives" && sha256sum --check SHA256SUMS
 
   required:
     if: ${{ !cancelled() }}
-    needs: [prepare, hygiene, race, macos, archives]
+    needs: [prepare, hygiene, race, macos, windows, archives]
     runs-on: ubuntu-24.04
     steps:
       - name: Require every gate

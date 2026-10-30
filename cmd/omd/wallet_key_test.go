@@ -13,7 +13,7 @@ func TestWalletEncryptedGenerationAndMigration(t *testing.T) {
 	d := t.TempDir()
 	key := filepath.Join(d, "wallet")
 	pass := filepath.Join(d, "password")
-	if e := os.WriteFile(pass, []byte("exact secret password\n"), 0600); e != nil {
+	if e := keystore.WriteNew(pass, []byte("exact secret password\n")); e != nil {
 		t.Fatal(e)
 	}
 	if e := runKeygen([]string{"--out", key}); e == nil {
@@ -37,7 +37,7 @@ func TestWalletEncryptedGenerationAndMigration(t *testing.T) {
 	}
 	raw := filepath.Join(d, "legacy")
 	seed := bytes.Repeat([]byte{4}, 32)
-	if e = os.WriteFile(raw, seed, 0600); e != nil {
+	if e = keystore.WriteNew(raw, seed); e != nil {
 		t.Fatal(e)
 	}
 	migrated := filepath.Join(d, "migrated")

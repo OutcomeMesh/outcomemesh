@@ -14,6 +14,11 @@ value. Estimated readiness for the planned production launch is **44/100**.
 The [readiness assessment](docs/PRODUCTION_READINESS.md) records the remaining
 launch requirements; the score is an engineering estimate.
 
+Official development releases target **Windows, Linux and macOS**, with x64 and
+ARM64 archives. Windows downloads contain `omd.exe`; Linux/macOS contain `omd`.
+See [release versions and downloads](docs/RELEASES.md) and
+[Windows command coverage](docs/WINDOWS.md). The current release line is `0.2.x`.
+
 ## Protocol
 
 Resources have an identity, owner, asset, amount and version. A signed transaction

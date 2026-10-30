@@ -10,6 +10,36 @@ With Go's automatic toolchain selection enabled, the module requests the require
 version. `make` also selects the repository pin. No compatibility build tag is
 needed for the storage dependency.
 
+## Version policy
+
+`VERSION` is the single release-version source. It contains `0.2.0`; the matching
+Git tag and release title use `v0.2.0`. The compiler version in `.go-version`
+serves a different purpose and does not determine the application version.
+
+| Change | Example |
+| --- | --- |
+| Corrections without a new feature set | `0.2.0` to `0.2.1` |
+| A new feature set or a breaking change during development | `0.2.1` to `0.3.0` |
+| First production release after the launch gates close | `1.0.0` |
+| Breaking supported interfaces after 1.0 | Next major version |
+
+A commit does not automatically create a release or increase a counter. Choose
+the version for a coherent release, update `VERSION` and add its notes together.
+Run `python3 scripts/version.py check` before committing. CI verifies this pair;
+packaging and the release gate reject any tag that differs from `VERSION`.
+The release gate also refuses a version below an existing version tag.
+
+The historical `v0.1.0-alpha.1` and `v0.1.0-alpha.2` tags remain unchanged. They
+were numbered prereleases, not separate stable versions. New releases use the
+numeric policy above. Until production acceptance, GitHub still marks them as
+prereleases; a numeric version does not assert production readiness. Protocol
+versions and activation schedules remain independent and require their own
+compatibility review.
+
+CI archives append `-dev` to the recorded version. They cannot pass the official
+release gate. Source builds report `dev`; official binaries carry the version,
+source commit and commit timestamp supplied by the packaging script.
+
 ## Local build
 
 ```sh
@@ -21,14 +51,22 @@ A source build reports `dev` unless release metadata is supplied. Official
 archives are built from a clean Git checkout:
 
 ```sh
-make release VERSION=v0.1.0-alpha.1 OUT=dist/v0.1.0-alpha.1
+make release VERSION=v0.2.0 OUT=dist/v0.2.0
 ```
 
 The output directory must not already exist. Packaging fixes Go 1.27.3, disables
 CGO, trims machine-specific paths and records the exact commit. Archive times
 come from that commit; file ownership, modes and ordering are normalized.
-No existing archive is overwritten. Outputs cover Linux/amd64, Linux/arm64,
-macOS/amd64 and macOS/arm64. Windows binaries are not currently distributed.
+No existing archive is overwritten. Outputs cover Linux, macOS and Windows,
+each for amd64 (x64) and arm64. Linux/macOS use `.tar.gz` containing `omd`;
+Windows uses `.zip` containing `omd.exe`. Both archive formats normalize entry
+order and timestamps. Windows ZIP files use the commit time in UTC (rounded to
+the two-second ZIP timestamp resolution).
+
+Windows amd64 has a native CI gate for core, ledger storage, wallet permissions
+and the CLI node lifecycle. Windows arm64 is cross-compiled; native ARM64
+execution is not yet a release qualification. See [Windows operation](WINDOWS.md)
+for command coverage and the protected server backend limitation.
 
 Each archive includes the executable, `BUILDINFO.json`, project license,
 dependency metadata and third-party notices. The release also includes a source
@@ -44,7 +82,7 @@ GitHub provenance attestations, which bind artifacts to this repository and its
 release workflow:
 
 ```sh
-gh attestation verify outcomemesh-v0.1.0-alpha.1-linux-amd64.tar.gz --repo OutcomeMesh/outcomemesh
+gh attestation verify outcomemesh-v0.2.0-linux-amd64.tar.gz --repo OutcomeMesh/outcomemesh
 ```
 
 ## GitHub release workflow
@@ -53,7 +91,7 @@ gh attestation verify outcomemesh-v0.1.0-alpha.1-linux-amd64.tar.gz --repo Outco
    successfully for that exact commit, along with Go, Python and Actions CodeQL.
 2. Add the release notes at `docs/releases/<tag>.md` before tagging. State concrete
    changes and compatibility requirements; keep execution logs out of the notes.
-3. Create and push an annotated version tag, for example `v0.1.0-alpha.1`.
+3. Create and push an annotated version tag, for example `v0.2.0`.
 4. The Release workflow requires an annotated tag, its ancestry on `main` and
    the latest successful CI and CodeQL runs for that exact commit. It checks every
    required job in the current run attempt; an older success cannot hide a newer
@@ -113,8 +151,8 @@ not granted repository administration access.
 For a local reproducibility check from clean committed source:
 
 ```sh
-python3 scripts/release.py --version v0.1.0-alpha.2 \
-  --out dist/v0.1.0-alpha.2 --verify-reproducible
+python3 scripts/release.py --version v0.2.0 \
+  --out dist/v0.2.0 --verify-reproducible
 ```
 
 Two matching builds establish determinism on that builder. Independent builder

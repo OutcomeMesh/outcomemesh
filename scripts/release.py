@@ -12,10 +12,12 @@ import re
 import subprocess
 import tarfile
 import tempfile
+import zipfile
+
+from version import numbers, require_version, source_version
 
 ROOT = Path(__file__).resolve().parent.parent
-PLATFORMS = (('linux', 'amd64'), ('linux', 'arm64'), ('darwin', 'amd64'), ('darwin', 'arm64'))
-VERSION = re.compile(r'v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?')
+PLATFORMS = (('linux', 'amd64'), ('linux', 'arm64'), ('darwin', 'amd64'), ('darwin', 'arm64'), ('windows', 'amd64'), ('windows', 'arm64'))
 PREFIX = 'github.com/outcomemesh/outcomemesh/internal/buildinfo.'
 
 
@@ -24,8 +26,9 @@ def run(*args, env=None):
 
 
 def validate_version(version):
-    if not VERSION.fullmatch(version):
-        raise ValueError('version must be a tag such as v0.1.0-alpha.1')
+    if not version.startswith('v'):
+        raise ValueError('version tag must start with v')
+    numbers(version[1:])
     return version
 
 
@@ -38,17 +41,28 @@ def sha(data):
 
 
 def archive(path, name, entries, epoch):
-    # File times/owners, gzip header and ordering are independent of the builder.
+    # Normalize metadata before opening output; reject paths on both platforms.
+    for relative in [name, *entries]:
+        member = PurePosixPath(relative)
+        if not relative or member.is_absolute() or '..' in member.parts or str(member) != relative or "\\" in relative or ':' in relative:
+            raise ValueError('noncanonical archive member')
     with path.open('xb') as output:
-        with gzip.GzipFile(fileobj=output, filename='', mode='wb', mtime=epoch, compresslevel=9) as compressed:
-            with tarfile.open(fileobj=compressed, mode='w', format=tarfile.PAX_FORMAT) as tar:
+        if path.suffix == '.zip':
+            date = datetime.datetime.fromtimestamp(max(epoch, 315532800), datetime.timezone.utc)
+            with zipfile.ZipFile(output, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=9) as zipped:
                 for relative, (data, mode) in sorted(entries.items()):
-                    member = PurePosixPath(relative)
-                    if member.is_absolute() or '..' in member.parts or str(member) != relative:
-                        raise ValueError('noncanonical archive member')
-                    info = tarfile.TarInfo(name + '/' + relative)
-                    info.size, info.mode, info.mtime = len(data), mode, epoch
-                    tar.addfile(info, io.BytesIO(data))
+                    info = zipfile.ZipInfo(name + '/' + relative, date.timetuple()[:6])
+                    info.create_system = 3
+                    info.external_attr = (0o100000 | mode) << 16
+                    info.compress_type = zipfile.ZIP_DEFLATED
+                    zipped.writestr(info, data, compresslevel=9)
+        else:
+            with gzip.GzipFile(fileobj=output, filename='', mode='wb', mtime=epoch, compresslevel=9) as compressed:
+                with tarfile.open(fileobj=compressed, mode='w', format=tarfile.PAX_FORMAT) as tar:
+                    for relative, (data, mode) in sorted(entries.items()):
+                        info = tarfile.TarInfo(name + '/' + relative)
+                        info.size, info.mode, info.mtime = len(data), mode, epoch
+                        tar.addfile(info, io.BytesIO(data))
 
 
 def json_stream(text):
@@ -106,8 +120,11 @@ def compare_archives(first, second):
         raise ValueError('independent builds produced different release bytes')
 
 
-def build(version, destination, *, cache=None):
+def build(version, destination, *, cache=None, ci=False):
     validate_version(version)
+    require_version(ROOT, version)
+    if ci:
+        version += "-dev"
     toolchain = (ROOT / '.go-version').read_text().strip()
     if not re.fullmatch(r'1\.[0-9]+\.[0-9]+', toolchain):
         raise ValueError('invalid pinned Go version')
@@ -141,9 +158,11 @@ def build(version, destination, *, cache=None):
         info = {k: v for k, v in metadata.items() if k != 'platforms'}
         info.update(os=system, arch=arch, binary_sha256=sha(data))
         entries = dependency_notices(platform_env)
-        entries.update({'omd': (data, 0o755), 'LICENSE': ((ROOT / 'LICENSE').read_bytes(), 0o644), 'BUILDINFO.json': (json_bytes(info), 0o644), 'README.md': (f'# OutcomeMesh Core {version}\n\nPre-alpha software for development networks. Not ready to secure real value.\n\nPlatform: {system}/{arch}. Built with Go {toolchain}.\n\nRun `./omd version --json` to identify this binary.\nSource and documentation: https://github.com/OutcomeMesh/outcomemesh/tree/{commit}\n'.encode(), 0o644)})
+        executable = 'omd.exe' if system == 'windows' else 'omd'
+        invocation = r'.\omd.exe' if system == 'windows' else './omd'
+        entries.update({executable: (data, 0o755), 'LICENSE': ((ROOT / 'LICENSE').read_bytes(), 0o644), 'BUILDINFO.json': (json_bytes(info), 0o644), 'README.md': (f'# OutcomeMesh Core {version}\n\nPre-alpha software for development networks. Not ready to secure real value.\n\nPlatform: {system}/{arch}. Built with Go {toolchain}.\n\nRun `{invocation} version --json` to identify this binary.\nSource and documentation: https://github.com/OutcomeMesh/outcomemesh/tree/{commit}\n'.encode(), 0o644)})
         require_source(commit, manifest)
-        archive(destination / (name + '.tar.gz'), name, entries, epoch)
+        archive(destination / (name + ('.zip' if system == 'windows' else '.tar.gz')), name, entries, epoch)
         binary.unlink()
         metadata['platforms'].append(info)
         print('Built ' + name, flush=True)
@@ -156,7 +175,8 @@ def build(version, destination, *, cache=None):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--version', required=True)
+    parser.add_argument('--version', default='v' + source_version(ROOT))
+    parser.add_argument('--ci', action='store_true', help='mark unsigned development archives with -dev; never used for releases')
     parser.add_argument('--out', required=True)
     parser.add_argument('--verify-reproducible', action='store_true', help='build twice with separate caches and compare every output byte')
     args = parser.parse_args()
@@ -165,9 +185,9 @@ if __name__ == '__main__':
     if args.verify_reproducible:
         with tempfile.TemporaryDirectory(prefix='outcomemesh-repro-') as temporary:
             base = Path(temporary)
-            build(args.version, args.out, cache=base / 'cache-a')
-            build(args.version, base / 'repeat', cache=base / 'cache-b')
+            build(args.version, args.out, cache=base / 'cache-a', ci=args.ci)
+            build(args.version, base / 'repeat', cache=base / 'cache-b', ci=args.ci)
             compare_archives(args.out, base / 'repeat')
             print('Both builds produced identical archives and metadata.', flush=True)
     else:
-        build(args.version, args.out)
+        build(args.version, args.out, ci=args.ci)

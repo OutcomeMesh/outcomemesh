@@ -73,26 +73,27 @@ class ReleaseGate(unittest.TestCase):
             git('init', '-q')
             git('config', 'user.name', 'Fixture')
             git('config', 'user.email', 'fixture@example.invalid')
-            notes = root / 'docs/releases/v0.1.0-alpha.2.md'
+            notes = root / 'docs/releases/v0.2.0.md'
             notes.parent.mkdir(parents=True)
             notes.write_text('Release notes\n')
+            (root / 'VERSION').write_text('0.2.0\n')
             git('add', '.')
             git('commit', '-qm', 'source')
             sha = git('rev-parse', 'HEAD')
             git('update-ref', 'refs/remotes/origin/main', sha)
-            git('tag', '-a', 'v0.1.0-alpha.2', '-m', 'pre-alpha')
-            git('tag', 'v0.1.0-alpha.3')
+            git('tag', '-a', 'v0.2.0', '-m', 'pre-alpha')
+            git('tag', 'v0.1.9')
             with patch.object(gate, 'ROOT', root), patch.object(gate, 'run', side_effect=lambda command, *args: git(*args)):
-                self.assertEqual(gate.verify_tag('v0.1.0-alpha.2'), sha)
+                self.assertEqual(gate.verify_tag('v0.2.0'), sha)
                 with self.assertRaisesRegex(ValueError, 'annotated'):
-                    gate.verify_tag('v0.1.0-alpha.3')
+                    gate.verify_tag('v0.1.9')
                 notes.write_text('uncommitted change')
                 with self.assertRaisesRegex(ValueError, 'clean checkout'):
-                    gate.verify_tag('v0.1.0-alpha.2')
+                    gate.verify_tag('v0.2.0')
                 git('add', '.')
                 git('commit', '-qm', 'next')
                 with self.assertRaisesRegex(ValueError, 'does not match'):
-                    gate.verify_tag('v0.1.0-alpha.2')
+                    gate.verify_tag('v0.2.0')
 
     def test_reproducibility_compares_full_file_sets_and_metadata(self):
         with tempfile.TemporaryDirectory() as temporary:

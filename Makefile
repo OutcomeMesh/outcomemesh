@@ -228,4 +228,4 @@ test-calibration:
 test-all: fmt vet test-race
 
 release:
-	python3 scripts/release.py --version "$(VERSION)" --out "$(OUT)"
+	python3 scripts/release.py $(if $(VERSION),--version "$(VERSION)") --out "$(OUT)"

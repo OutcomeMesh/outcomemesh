@@ -10,6 +10,20 @@ Full planned production readiness is approximately **44/100**, using the weighte
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
 
+## 2026-10-31: Windows distribution and release version policy
+
+Release packaging now targets Windows, Linux and macOS on amd64 and arm64.
+Windows ZIP archives include the native executable and the same licenses,
+source identity, checksums and provenance as the existing tar archives. The
+Windows CI gate exercises core and ledger storage, encrypted keys, restrictive
+file ACLs and node reopen/replay. Unix custody owner services remain explicitly
+unsupported on Windows and refuse before accessing operator state.
+
+`VERSION` records `0.2.0`. Tags, packaging and release notes must agree with it;
+release numbers follow the patch/minor/major policy in [RELEASES.md](RELEASES.md).
+Historical alpha tags remain intact. Platform coverage does not close an
+external production acceptance gate. Readiness remains **44/100**.
+
 ## 2026-10-31: independent claim before scheduled Prune
 
 New scheduled Prune requests can bind an independent witness policy before

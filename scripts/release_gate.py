@@ -9,9 +9,10 @@ import subprocess
 from urllib.parse import urlencode
 
 from ci import GROUPS
+from version import require_version, require_progression
 from release import ROOT, run, validate_version
 
-CI_JOBS = {'prepare', 'hygiene', 'macos', 'archives', 'required',
+CI_JOBS = {'prepare', 'hygiene', 'macos', 'windows', 'archives', 'required',
            *('race (' + group + ')' for group in GROUPS)}
 CODEQL_JOBS = {'Analyze (go)', 'Analyze (python)', 'Analyze (actions)'}
 WORKFLOWS = {
@@ -90,6 +91,8 @@ def verify_tag(tag):
         raise ValueError('release notes must be committed with the tagged source')
     if run('git', 'status', '--porcelain', '--untracked-files=normal'):
         raise ValueError('release gate requires a clean checkout')
+    require_version(ROOT, tag)
+    require_progression(tag, run("git", "tag", "--list", "v*").splitlines())
     return sha
 
 
