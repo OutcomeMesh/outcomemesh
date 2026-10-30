@@ -54,10 +54,13 @@ Remaining work, in order:
    replays full archives, checks retention at storage commit and records the exact
    effect without completing tickets. Its owned CLI supports review, execution
    and effect recovery from an independently pinned inventory.
-   Next: reviewed CLI preparation/signing/admission and per-replica completion of
-   scheduled pruning, explicit resolution of retained start/result uncertainty,
-   then remote v1/profile-5 witness and execution transitions. Library preparation
-   and completion are available; legacy prune transports remain unchanged.
+   Reviewed CLI plan publication, two-party signing, original-owner admission,
+   inventory packaging, effect export and per-replica completion now cover this
+   local workflow. Explicit continuation confirms retained start/result records
+   without repeating deletion or releasing unknown work.
+   Next: evidence-based resolution of unknown starts and pre-migration Prune
+   obligations, then remote v1/profile-5 witness and execution transitions. Legacy
+   prune transports remain unchanged.
 2. Define the independently approved network activation policy and transition
    checkpoint; local operator profiles alone do not authorize public activation.
 3. Extend migration beyond the initial bounded history, with resumable streaming

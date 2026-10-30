@@ -293,13 +293,11 @@ same request ID under its own original assignment and schedule. Duplicate keys,
 locations, assignments, directories and overlapping owner roots are refused.
 The package commits the independently retained executor and storage pair IDs.
 
-Preparation currently uses `BuildScheduledPruneAdmission`, original coordinator
-application, `CreatePinnedPruneExecutor`/`Admit` and `SaveScheduledPruneInventory`.
-Create a separate executor pair for the new operation. Preserve every old
-executor, original authority pair, pending ticket and journal. The legacy offline
-executor preparation command can retain a v2 request, but legacy prune signing
-and fixed-width delivery commands do not accept scheduled commands. A complete
-reviewed CLI preparation/signing/application workflow is still a separate gate.
+Preparation, signing, admission and per-replica completion are available through
+the reviewed CLI workflow below. Create a separate executor pair for the new
+operation. Preserve every old executor, original authority pair, pending ticket
+and journal. The existing offline executor preparation command can retain a v2
+request; legacy prune signing and fixed-width delivery remain unchanged.
 
 The owned execution CLI consumes an already prepared, independently pinned
 inventory and existing original roots:
@@ -364,8 +362,9 @@ consumer-signed, authority-co-signed v2 Complete for each original replica after
 the exact effect is durably retained. It verifies the actual admitted operation,
 resynchronizes the immutable inventory and holds the original owner through
 acceptance. Exact retries retain the same evidence; all other pending and spent
-work remains unchanged. Reviewed CLI preparation for these completions remains
-open.
+work remains unchanged. The CLI builds these completions from the exact exported
+effect and immutable inventory, then rechecks the retained executor result at
+application.
 
 These are trusted local owner APIs. Keep owner roots, pins and immutable archive
 copies under exclusive administration during each operation. A location ID does
@@ -373,12 +372,127 @@ not prove physical independence, and copied keys plus all owner/pin roots are
 not fenced by this local workflow. The implementation does not establish an
 independently operated remote quorum.
 
+## Reviewed cleanup workflow
+
+All commands default to `--mode review`. Sign and publish modes only create
+immutable artifacts. `apply`, `resume` and `resume-executor` require the exact
+preceding local `ReviewID`; changed positions require another review. No command
+creates a replacement authority or renews a receipt. Public IDs must be retained
+independently of the files they identify. Reports include copyable hexadecimal
+`plan_id`, `request_id`, `review_id`, `entry_id`, `inventory_id` or `effect_id`
+fields where applicable. Owner inspection also includes `confirmed_sequence`
+and `confirmed_head`; these describe the reviewed position before the action.
+
+1. Prepare the plan from the same strict source JSON and trust flags used by
+   `work-custody-schedule-quorum`. Supply the selected primary assignment,
+   protected storage ID, database/pins pair ID, consumer key and fixed request
+   time. `--verified-at` is a positive Unix timestamp, not an override for live
+   retention checks. Review and publication both inspect original owners and
+   complete original receipt lineages.
+
+   ```sh
+   omd work-prune-scheduled-plan \
+     --sources /operator/scheduled-sources.json \
+     --checkpoint /operator/target.checkpoint --checkpoint-id <statement-id> \
+     --attestors <key-a>,<key-b> --replicas <replica-a>,<replica-b> \
+     --attestor-quorum 2 --replica-quorum 2 \
+     --max-receipt-age-seconds <age> --min-remaining-term-seconds <term> \
+     --max-challenge-lifetime-seconds <lifetime> \
+     --max-proof-age-seconds <proof-age> --max-renewal-term-seconds <renewal> \
+     --primary-assignment-id <original-assignment-id> \
+     --storage-id <storage-id> --storage-pair-id <pair-id> \
+     --consumer-public-key <consumer-key> --verified-at <unix-time>
+   ```
+
+   Repeat with `--mode publish --expected-plan-id <PlanID>` and
+   `--out /operator/prune.plan --request-out /operator/prune.request`.
+   Partial publication preserves any already retained artifact. Exact retries
+   finish publication; conflicting files are never overwritten.
+
+2. Use `work-prune-executor-prepare --mode create` with the original primary
+   `--assignment`, `--assignment-id`, published `--request`, `--request-id` and
+   new disjoint `--executor`/`--executor-pins` paths. This creates one new operation
+   journal. It does not create or reset an authority assignment.
+
+3. For each original assignment, inspect the current position with
+   `work-prune-scheduled-command --plan <file> --plan-id <PlanID>
+   --assignment-id <original-id> --authority <root> --authority-pins <pins>
+   --executor <root> --executor-pins <pins>`. Omit `--entry` during inspection.
+   Record `Authority.Confirmed.Sequence` and `HeadID` from the returned review.
+
+4. Review `work-prune-scheduled-command-sign` with `--plan`, `--plan-id`,
+   `--assignment-id`, `--kind admit`, `--expected-sequence` and `--expected-head`.
+   Repeat with `--mode sign --expected-review-id <ReviewID>
+   --consumer-key <seed-file> --out <command-file>`. Then review
+   `work-prune-scheduled-command-cosign` with the same draft inputs and
+   `--command <command-file>`. Sign with its own review ID, `--authority-key` and
+   `--out <entry-file>`. Review mode refuses key and output flags, including empty
+   values. Neither signer opens an authority or replaces the supplied position.
+
+5. Add `--entry <file> --entry-id <EntryID>` and the original `--journal` plus
+   original custody policy flags to the owner inspection from step 3. Review,
+   then repeat with `--mode apply --expected-review-id <ReviewID>`. Admission
+   holds the original journal while accepting the exact new operation. A
+   retained pending attempt requires a new review and explicit `--mode resume`.
+   Exact historical retries use the original accepted command; they do not
+   refresh receipts or consume another slot.
+
+6. Package all accepted admissions with `work-prune-scheduled-inventory
+   --plan <file> --plan-id <PlanID> --executor <root> --executor-pins <pins>
+   --sources <admissions.json>`. The strict JSON array contains one object per
+   selected replica:
+
+   ```json
+   [{
+     "assignment_id": "<original-assignment-id>",
+     "authority": "/authority/original-a",
+     "authority_pins": "/pins/original-a",
+     "entry": "/operator/a-prune.entry",
+     "entry_id": "<entry-id>"
+   }]
+   ```
+
+   Supply the complete set, at least two distinct replicas. A signed but
+   unapplied entry is insufficient. Publication holds all original operation
+   guards. Repeat with `--mode publish --expected-inventory-id <InventoryID>
+   --out <inventory-file>`. Then use `work-archive-prune-scheduled` as described
+   above to verify full target archives and execute the reviewed cleanup.
+
+7. After the executor has a confirmed successful result, review
+   `work-prune-scheduled-effect` with the owner inputs from step 3 and
+   `--inventory <file> --inventory-id <InventoryID>`. Publish with
+   `--mode publish --expected-review-id <ReviewID> --out <effect-file>`.
+   This only exports the exact retained effect. An unconfirmed result or an
+   unknown start cannot produce completion evidence.
+
+8. For each original replica, inspect its current position again. Use the two
+   signing commands with `--kind complete`, the explicit sequence/head, and
+   `--inventory`, `--inventory-id`, `--effect`, `--effect-id`. Apply the co-signed
+   entry through `work-prune-scheduled-command`, with the inventory and without
+   a journal argument. Only that replica's new prune ticket completes. All old
+   pending operations and all spent operation IDs remain in the original ledger.
+
+If executor pins retain an unconfirmed start or result, inspect the primary owner
+with `work-prune-scheduled-command`, the plan and inventory, without `--entry`.
+Use `--mode resume-executor --expected-review-id <ReviewID>` to confirm only the
+exact retained transition. This command never opens the chain or executes deletion.
+A resumed start remains `Started`; only a matching committed storage effect can
+resolve it. A resumed result preserves its already observed effect. Independent
+storage confirmation still uses the existing protected-storage recovery procedure.
+
+The plan has magic `OMCSPPLN`, version 0 and domain
+`OMESH/custody-prune/scheduled-plan/id/v0`. Its field framing matches `OMCSPINV`
+v0, but the executor binding is 32 zero bytes and each admission is an empty
+length-prefixed field. The limit is 64 MiB. The formats reject one another; a plan
+cannot authorize execution. Inventory construction must project back to exactly
+the reviewed plan. Version 2 command/entry signature domains are unchanged.
+
 ## Remaining gates
 
-Scheduled pruning preparation/signing/admission and per-replica completion need
-an end-to-end reviewed CLI workflow. Reconciliation and unknown-start resolution
-need their own evidence paths; they must not clear outstanding work or manufacture
-a response. Legacy fixed-width transports still reject v2.
+Unknown starts without a committed effect still need their own evidence path;
+confirming a retained start does not establish a no-effect outcome. Existing
+pre-migration Prune obligations remain held until their own exact evidence can
+be verified. Legacy fixed-width transports still reject v2.
 
 Remote assignment v1 and profile-5 require a versioned scope transition covering
 witnesses, guards, execution plans and source acceptance. They remain refused by
@@ -408,3 +522,10 @@ The frozen scheduled-pruning fixture uses disposable test keys and is stored in
 | Scheduled prune inventory v0 | `0d2a41131debe84ee9c8555fa03fbd0ebca9fc6f8a9299702668998e8ee5c49e` |
 | Scheduled prune request v2 | `4f783c20cdf453dfbcd8b954963f3d39b05ca585f2cb80797d6eb6bc3f75e5e3` |
 | Scheduled prune effect v2 | `5d6ec18c4926f6268593539b560a24534d44918385aa20bd75c98b2f61297351` |
+
+The plan and reviewed signatures are frozen separately in
+`node/custodyauthority/store/testdata/scheduled_prune_plan_v0.json`. Plan ID:
+`bc6c9214a399ae6646c56deee13761bef3c99e953c754c2ef2f57b0b6a57de06`.
+The fixture also pins both admission and completion signature messages and the
+exact co-signed completion bytes. Existing inventory/request/effect vectors remain
+unchanged.

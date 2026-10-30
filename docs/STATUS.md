@@ -10,6 +10,32 @@ Full planned production readiness is approximately **44/100**, using the weighte
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
 
+## 2026-10-30: reviewed cleanup preparation and completion
+
+The scheduled cleanup workflow now runs through the CLI from an immutable plan
+to per-replica completion. Preparation inspects original owners and receipt
+lineages. Separate consumer and authority signing commands bind the exact plan,
+request, schedule and explicit journal position. Inventory publication requires
+accepted pending admissions from every selected original owner.
+
+Effect export requires a confirmed matching executor result. Completion checks
+that result again and releases only the selected new ticket. Old pending work,
+assignment budgets and spent operation IDs remain unchanged. Lost command output
+can be recovered through a fresh review and an exact retry.
+
+Explicit continuation supports retained authority attempts and inventory-bound
+executor start/result records. Confirming a start does not execute cleanup or
+resolve an unknown outcome. Unknown starts without a matching storage effect,
+pre-migration Prune resolution, remote v1/profile-5 scope transitions and
+independent deployment remain open. The plan and operator procedure are in
+[CUSTODY_RADIX_SCHEDULE.md](CUSTODY_RADIX_SCHEDULE.md).
+
+Coverage includes the complete CLI lifecycle, partial artifact publication, lost
+output, wrong-role signatures, substituted evidence, original-root replacement,
+publication-boundary failures, cold process recovery, fixed format/signature
+vectors and decoder fuzzing. This completes a local operator slice, not a mainnet
+launch gate. Readiness remains **44/100**.
+
 ## 2026-10-30: scheduled admissions and canonical cleanup
 
 New local Audit/Serve tickets bind the migrated schedule, current original
@@ -28,7 +54,8 @@ The `work-archive-prune-scheduled` CLI opens existing original roots for review,
 execution with an exact review ID, or effect-only recovery. Lost output cannot
 undo the effect or authorize another execution. A retained start without a proven
 effect remains held. Library preparation and explicit per-replica completion are
-available; their reviewed CLI signing/application flow is the next operator slice.
+available; the reviewed CLI signing/application flow is recorded in the later
+operator slice above.
 Remote v1/profile-5 migration and independent deployment remain open.
 
 Verification includes a second managed exchange, old-operation replay refusal,

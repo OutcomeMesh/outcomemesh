@@ -900,4 +900,18 @@ may retain only the exact committed effect. Per-replica completion is a separate
 co-signed action and preserves every other pending and spent operation. These
 rules apply to the bounded local same-prefix migration, not remote assignment v1
 or profile-5 execution. See the custody migration guide for owner assumptions,
-format bounds and the remaining operator CLI preparation work.
+format bounds and the reviewed operator workflow.
+
+Preparation uses a distinct `OMCSPPLN` v0 plan. It shares inventory field framing,
+but requires a zero executor binding and an empty admission field for every
+replica. Its ID domain is `OMESH/custody-prune/scheduled-plan/id/v0`; the maximum
+size is 64 MiB. A packaged inventory must project back to this exact plan and
+prove all signed admissions remain pending under the original owners. Plans and
+signatures confer no live storage permission. The CLI signs version 2 messages
+only after matching a reviewed draft and never chooses a newer authority head.
+
+Original-owner admission and completion require separate reviewed actions. Exact
+pending-command continuation preserves retained bytes. Executor continuation
+confirms only an already retained inventory-bound start or result; it never opens
+the chain, repeats deletion or infers success from an absent effect. Historical
+retries preserve both old obligations and permanently spent operation IDs.

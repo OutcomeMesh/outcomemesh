@@ -53,8 +53,10 @@ func (v ScheduledPruneInventory) Bundle() (workarchive.ScheduledAvailabilityBund
 	return b, nil
 }
 
-func (v ScheduledPruneInventory) validate() error {
-	if v.Request.ScheduleID.IsZero() || v.Request.StorageID.IsZero() || v.ExecutorBindingID.IsZero() || v.StoragePairID.IsZero() || v.OriginalPolicy.Binding.RadixActivationHeight != 0 {
+func (v ScheduledPruneInventory) validate() error { return v.validateMode(false) }
+
+func (v ScheduledPruneInventory) validateMode(plan bool) error {
+	if v.Request.ScheduleID.IsZero() || v.Request.StorageID.IsZero() || (!plan && v.ExecutorBindingID.IsZero()) || (plan && !v.ExecutorBindingID.IsZero()) || v.StoragePairID.IsZero() || v.OriginalPolicy.Binding.RadixActivationHeight != 0 {
 		return ErrScheduledPrune
 	}
 	rid, err := v.Request.ID()
@@ -119,16 +121,22 @@ func (v ScheduledPruneInventory) validate() error {
 			return err
 		}
 		retain = min(retain, s.Receipt.Original.RetainUntil)
-		if _, err := s.Admission.ID(); err != nil {
-			return err
-		}
-		c := s.Admission.Command
-		if c.Version != custodyauthority.ScheduleVersion2 || c.ScheduleID != sid || c.Kind != custodyauthority.Admit || c.Purpose != custodyauthority.Prune || c.OperationID != rid || c.AssignmentID != aid || c.ActorPublicKey != v.Request.ConsumerPublicKey || s.Admission.AuthorityPublicKey != s.Assignment.AuthorityPublicKey {
-			return ErrScheduledPrune
+		if plan {
+			if s.Admission != (custodyauthority.Entry{}) {
+				return ErrScheduledPrune
+			}
+		} else {
+			if _, err := s.Admission.ID(); err != nil {
+				return err
+			}
+			c := s.Admission.Command
+			if c.Version != custodyauthority.ScheduleVersion2 || c.ScheduleID != sid || c.Kind != custodyauthority.Admit || c.Purpose != custodyauthority.Prune || c.OperationID != rid || c.AssignmentID != aid || c.ActorPublicKey != v.Request.ConsumerPublicKey || s.Admission.AuthorityPublicKey != s.Assignment.AuthorityPublicKey {
+				return ErrScheduledPrune
+			}
 		}
 		allowed := false
 		for _, member := range s.Assignment.Consumers {
-			allowed = allowed || (member.PublicKey == c.ActorPublicKey && member.Purposes&custodyauthority.Prune != 0)
+			allowed = allowed || (member.PublicKey == v.Request.ConsumerPublicKey && member.Purposes&custodyauthority.Prune != 0)
 		}
 		if !allowed {
 			return ErrScheduledPrune
@@ -150,12 +158,18 @@ func (v ScheduledPruneInventory) validate() error {
 	return nil
 }
 
-func (v ScheduledPruneInventory) CanonicalBytes() ([]byte, error) {
-	if err := v.validate(); err != nil {
+func (v ScheduledPruneInventory) CanonicalBytes() ([]byte, error) { return v.canonicalMode(false) }
+
+func (v ScheduledPruneInventory) canonicalMode(plan bool) ([]byte, error) {
+	if err := v.validateMode(plan); err != nil {
 		return nil, err
 	}
 	e := codec.NewEncoder(4096)
-	e.Fixed([]byte("OMCSPINV"))
+	magic := "OMCSPINV"
+	if plan {
+		magic = "OMCSPPLN"
+	}
+	e.Fixed([]byte(magic))
 	e.U16(0)
 	request, _ := v.Request.CanonicalBytes()
 	e.BytesField(request)
@@ -174,7 +188,10 @@ func (v ScheduledPruneInventory) CanonicalBytes() ([]byte, error) {
 		a, _ := s.Assignment.CanonicalBytes()
 		p, _ := s.Proof.CanonicalBytes()
 		r, _ := s.Receipt.CanonicalBytes()
-		entry, _ := s.Admission.CanonicalBytes()
+		var entry []byte
+		if !plan {
+			entry, _ = s.Admission.CanonicalBytes()
+		}
 		for _, raw := range [][]byte{a, p, r, entry} {
 			if e.Len()+len(raw)+10 > MaximumScheduledPruneInventoryBytes {
 				return nil, ErrScheduledPrune
@@ -196,13 +213,21 @@ func (v ScheduledPruneInventory) ID() (types.Hash, error) {
 }
 
 func DecodeScheduledPruneInventory(raw []byte) (ScheduledPruneInventory, error) {
+	return decodeScheduledPruneMode(raw, false)
+}
+
+func decodeScheduledPruneMode(raw []byte, plan bool) (ScheduledPruneInventory, error) {
 	var v ScheduledPruneInventory
 	if len(raw) == 0 || len(raw) > MaximumScheduledPruneInventoryBytes {
 		return v, ErrScheduledPrune
 	}
 	d := codec.NewDecoder(raw)
 	magic, err := d.Fixed(8)
-	if err != nil || !bytes.Equal(magic, []byte("OMCSPINV")) {
+	wantMagic := "OMCSPINV"
+	if plan {
+		wantMagic = "OMCSPPLN"
+	}
+	if err != nil || !bytes.Equal(magic, []byte(wantMagic)) {
 		return v, ErrScheduledPrune
 	}
 	version, err := d.U16()
@@ -293,7 +318,13 @@ func DecodeScheduledPruneInventory(raw []byte) (ScheduledPruneInventory, error) 
 		if err != nil {
 			return v, err
 		}
-		s.Admission, err = custodyauthority.DecodeEntry(entry)
+		if plan {
+			if len(entry) != 0 {
+				return v, ErrScheduledPrune
+			}
+		} else {
+			s.Admission, err = custodyauthority.DecodeEntry(entry)
+		}
 		if err != nil {
 			return v, err
 		}
@@ -301,7 +332,7 @@ func DecodeScheduledPruneInventory(raw []byte) (ScheduledPruneInventory, error) 
 	if d.Finish() != nil {
 		return v, ErrScheduledPrune
 	}
-	encoded, err := v.CanonicalBytes()
+	encoded, err := v.canonicalMode(plan)
 	if err != nil || !bytes.Equal(raw, encoded) {
 		return v, errors.Join(ErrScheduledPrune, err)
 	}

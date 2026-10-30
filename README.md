@@ -62,7 +62,10 @@ archive formats support a scheduled WorkGraph v3 chain. Local custody owners
 can migrate active Audit/Serve tickets while preserving original receipt history.
 New Audit/Serve admissions and reviewed completion preserve that same accounting.
 Scheduled pruning verifies the live storage quorum and complete archives before
-removing old history, with retained effects for recovery. Remote execution still
+removing old history, with retained effects for recovery. Its CLI covers plan
+preparation, separate signatures, admission, execution and per-replica completion.
+Original obligations and spent operation IDs remain in their existing journals.
+Remote execution still
 requires its own schedule integration. The [custody migration guide](docs/CUSTODY_RADIX_SCHEDULE.md)
 describes the supported path and its limits.
 

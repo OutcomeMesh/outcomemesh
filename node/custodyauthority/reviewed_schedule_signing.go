@@ -66,11 +66,13 @@ func CosignReviewedScheduledCustodyCommand(assignment Assignment, command Comman
 }
 
 func validateReviewedScheduledCustodyCommand(assignment Assignment, command Command, purpose Purpose) error {
-	// Local Audit/Serve admissions and completions retain the original budget.
-	if assignment.Version != Version0 || command.Version != ScheduleVersion2 {
+	if purpose != Audit && purpose != Serve {
 		return ErrCustodyReview
 	}
-	if purpose != Audit && purpose != Serve {
+	return validateReviewedScheduledCommand(assignment, command, purpose)
+}
+func validateReviewedScheduledCommand(assignment Assignment, command Command, purpose Purpose) error {
+	if assignment.Version != Version0 || command.Version != ScheduleVersion2 {
 		return ErrCustodyReview
 	}
 	id, err := assignment.ID()
