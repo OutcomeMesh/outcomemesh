@@ -200,9 +200,22 @@ func TestStoreBoundsPendingFilesAndHistoryBeforeReplay(t *testing.T) {
 	}
 	store, path = newTestStore(t)
 	_ = store.Close()
-	for index := uint64(1); index <= 2*uint64(testAssignment().MaximumOperations)+3; index++ {
+	// V0 keeps one extra control slot for the schedule transition. Fill one
+	// record beyond that reserve; operation and pending budgets stay unchanged.
+	maximumHistory := 2*uint64(testAssignment().MaximumOperations) + 3
+	for index := uint64(1); index <= maximumHistory; index++ {
 		writeTestFile(t, filepath.Join(path, entriesName, entryName(index)), nil)
 	}
+	// At the exact bound, the independently pinned empty head still refuses
+	// this invented history. The scan must not confuse the reserved slot with
+	// excess history or parse its invalid bodies before checking the pin.
+	if opened, err := Open(path, testAssignment(), testAssignmentID(t), initialPosition(t)); !errors.Is(err, custodyauthority.ErrHead) {
+		if opened != nil {
+			_ = opened.Close()
+		}
+		t.Fatalf("bounded history skipped the independent head check: %v", err)
+	}
+	writeTestFile(t, filepath.Join(path, entriesName, entryName(maximumHistory+1)), nil)
 	if opened, err := Open(path, testAssignment(), testAssignmentID(t), initialPosition(t)); !errors.Is(err, custodyauthority.ErrLimit) {
 		if opened != nil {
 			_ = opened.Close()
