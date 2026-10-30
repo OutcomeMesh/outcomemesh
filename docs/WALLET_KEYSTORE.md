@@ -1,8 +1,11 @@
 # Encrypted local wallet keys
 
 `omd keygen` now creates an encrypted wallet. It requires `--passphrase-file`:
-a regular file with mode 0600 or stricter containing 12–1024 exact bytes. Newlines
-are significant. There is no passphrase argument or environment-variable fallback.
+a regular private file containing 12–1024 exact bytes. Linux/macOS require mode
+0600 or stricter. Windows requires the current user as owner and a protected ACL
+with explicit allow entries only for that user and SYSTEM; see
+[Windows operation](WINDOWS.md#private-keys). Newlines are significant. There is
+no passphrase argument or environment-variable fallback.
 Keep this file outside the wallet's backup and access domain; storing both together
 would defeat protection against a stolen wallet backup. The current interface is
 an operator CLI; a no-echo interactive unlock and a reviewed user wallet remain
@@ -18,9 +21,11 @@ omd key-encrypt --in old-alice.seed --out encrypted-alice.key \
 
 Migration preserves the raw source. Confirm access and backup of the encrypted
 copy before deciding how to retire the old seed. Existing backups containing a
-raw seed remain sensitive. Creation never overwrites any path; writes synchronize
-the file and parent directory. Partial files after an error are retained for
-inspection, not silently replaced. Reads reject symlinks, non-regular files,
+raw seed remain sensitive. Creation never overwrites any path. Linux/macOS writes
+synchronize the file and parent directory. Windows validates the opened file and
+volume ACL support before writing, uses write-through creation and flushes file
+data. Windows directory durability across sudden power loss is not claimed.
+Partial files after an error are retained for inspection, not silently replaced. Reads reject symlinks, non-regular files,
 public permissions and oversized inputs. Parent directories must remain trusted.
 
 Version 1 has exactly 116 bytes:

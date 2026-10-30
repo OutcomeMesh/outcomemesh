@@ -91,13 +91,14 @@ make build
 ./bin/omd version --json
 ```
 
-Official binary targets are Linux and macOS on amd64 and arm64. Packaging,
+Official binary targets are Windows, Linux and macOS on amd64 and arm64. Packaging,
 checksums and provenance are described in [RELEASES.md](docs/RELEASES.md).
 
 ## Run a local chain
 
-Create a private passphrase file containing 12 to 1024 bytes with permissions
-`0600`. Keep it outside the repository and node data directory. The wallet uses
+Create a private passphrase file containing 12 to 1024 bytes. On Linux/macOS,
+use permissions `0600`; on Windows, follow the [private ACL requirements](docs/WINDOWS.md#private-keys).
+Keep it outside the repository and node data directory. The wallet uses
 the exact file contents, including any final newline.
 
 ```sh
