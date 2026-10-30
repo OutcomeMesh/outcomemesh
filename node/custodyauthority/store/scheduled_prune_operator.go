@@ -10,6 +10,7 @@ import (
 	"github.com/outcomemesh/outcomemesh/core/types"
 	"github.com/outcomemesh/outcomemesh/node/custodyauthority"
 	"github.com/outcomemesh/outcomemesh/node/workarchive"
+	"github.com/outcomemesh/outcomemesh/node/workchain"
 )
 
 type ScheduledPruneCommandConfig struct {
@@ -23,6 +24,7 @@ type ScheduledPruneCommandConfig struct {
 	JournalPath                                                      string
 	CustodyPolicy                                                    workarchive.CustodyPolicy
 	JournalLimits                                                    workarchive.CustodyJournalLimits
+	Storage                                                          *PruneRecoveryStorage
 }
 type ScheduledPruneCommandReview struct {
 	ReviewID, PlanID, EntryID types.Hash
@@ -31,11 +33,13 @@ type ScheduledPruneCommandReview struct {
 	JournalSequence           uint64
 	JournalHeadID, ReceiptID  types.Hash
 	AlreadyApplied            bool
+	Storage                   *workchain.StorageProtection `json:",omitempty"`
 }
 type ScheduledPruneCommandResult struct {
-	Review   ScheduledPruneCommandReview
-	Commit   *Commit
-	Executor PruneExecution
+	Review    ScheduledPruneCommandReview
+	Commit    *Commit
+	Executor  PruneExecution
+	Recovered *workchain.CanonicalPruneCommit `json:",omitempty"`
 }
 
 func scheduledPrunePlacement(roots, files []string, out string) error {
@@ -67,18 +71,42 @@ func scheduledPrunePlacement(roots, files []string, out string) error {
 // RunScheduledPruneCommand opens original owners for one reviewed action. It
 // never signs, creates owners, executes deletion or infers a missing result.
 // Resume applies only the supplied exact pending command; resume-executor only
-// confirms the existing inventory-bound start/result and cannot execute it.
+// confirms an existing start, result or cancellation and cannot execute work.
 func RunScheduledPruneCommand(ctx context.Context, c ScheduledPruneCommandConfig, mode string, expected types.Hash) (ScheduledPruneCommandResult, error) {
 	return runScheduledPruneCommand(ctx, c, mode, expected, storeHooks{})
 }
 func runScheduledPruneCommand(ctx context.Context, c ScheduledPruneCommandConfig, mode string, expected types.Hash, hooks storeHooks) (_ ScheduledPruneCommandResult, returnErr error) {
 	var result ScheduledPruneCommandResult
-	if ctx == nil || (mode != "review" && mode != "apply" && mode != "resume" && mode != "resume-executor") || (mode == "review") != expected.IsZero() {
+	if ctx == nil || (mode != "review" && mode != "apply" && mode != "resume" && mode != "resume-executor" && mode != "cancel-before-start" && mode != "recover-effect") || (mode == "review") != expected.IsZero() {
 		return result, ErrScheduledPrune
 	}
 	if err := ctx.Err(); err != nil {
 		return result, err
 	}
+	if c.Storage != nil {
+		if mode != "review" && mode != "recover-effect" {
+			return result, ErrScheduledPrune
+		}
+		if c.EntryPath != "" || c.JournalPath != "" || c.InventoryPath == "" {
+			return result, ErrScheduledPrune
+		}
+		s := *c.Storage
+		c.Storage = &s
+		for _, p := range []*string{&s.ChainPath, &s.ChainPinsPath} {
+			if *p == "" {
+				return result, ErrScheduledPrune
+			}
+			path, err := storePath(*p)
+			if err != nil {
+				return result, err
+			}
+			*p = path
+		}
+	}
+	if mode == "recover-effect" && c.Storage == nil {
+		return result, ErrScheduledPrune
+	}
+
 	for _, p := range []*string{&c.PlanPath, &c.AuthorityPath, &c.AuthorityPinsPath, &c.ExecutorPath, &c.ExecutorPinsPath, &c.EntryPath, &c.InventoryPath, &c.JournalPath} {
 		if *p != "" {
 			path, err := storePath(*p)
@@ -125,6 +153,9 @@ func runScheduledPruneCommand(ctx context.Context, c ScheduledPruneCommandConfig
 	if c.JournalPath != "" {
 		roots = append(roots, c.JournalPath)
 	}
+	if c.Storage != nil {
+		roots = append(roots, c.Storage.ChainPath, c.Storage.ChainPinsPath)
+	}
 	files := []string{c.PlanPath, c.EntryPath, c.InventoryPath}
 	if err := scheduledPrunePlacement(roots, files, ""); err != nil {
 		return result, err
@@ -163,8 +194,26 @@ func runScheduledPruneCommand(ctx context.Context, c ScheduledPruneCommandConfig
 		if err := plan.BindInventory(inventory); err != nil {
 			return result, err
 		}
-		if inventory.ExecutorBindingID != snapshot.Protection.BindingID {
-			return result, ErrScheduledPrune
+		if err := scheduledPruneExecutorBinding(inventory, snapshot); err != nil {
+			return result, err
+		}
+		for _, replica := range inventory.Replicas {
+			id, _ := replica.Assignment.ID()
+			if id == c.AssignmentID {
+				if err := retainedCustodyCommand(owner, replica.Admission, false); err != nil {
+					return result, err
+				}
+				ticket, _ := replica.Admission.ID()
+				found := false
+				for _, op := range authority.Authority.Operations {
+					if op.TicketID == ticket && op.OperationID == rid && op.Purpose == custodyauthority.Prune && op.ConsumerPublicKey == inventory.Request.ConsumerPublicKey {
+						found = true
+					}
+				}
+				if !found {
+					return result, custodyauthority.ErrOperation
+				}
+			}
 		}
 	} else if !c.InventoryID.IsZero() {
 		return result, ErrScheduledPrune
@@ -181,10 +230,14 @@ func runScheduledPruneCommand(ctx context.Context, c ScheduledPruneCommandConfig
 			}
 			draft, err = BuildScheduledPruneAdmission(selected.Assignment, selected.Proof, plan.OriginalPolicy, plan.Request, pos)
 		case custodyauthority.Complete:
-			if c.InventoryPath == "" || snapshot.Stage != PruneSucceeded || snapshot.Effect == nil || snapshot.ArchiveInventoryID != c.InventoryID || snapshot.Protection.Pending != nil || c.JournalPath != "" {
+			if c.InventoryPath == "" || c.JournalPath != "" {
 				return result, ErrPruneOutcome
 			}
-			draft, err = BuildScheduledPruneCompletion(plan, inventory, *snapshot.Effect, c.AssignmentID, pos)
+			outcome, outcomeErr := RetainedScheduledPruneOutcome(inventory, snapshot)
+			if outcomeErr != nil {
+				return result, outcomeErr
+			}
+			draft, err = BuildScheduledPruneOutcomeCompletion(plan, inventory, outcome, c.AssignmentID, pos)
 		default:
 			return result, ErrScheduledPrune
 		}
@@ -236,7 +289,28 @@ func runScheduledPruneCommand(ctx context.Context, c ScheduledPruneCommandConfig
 			return result, err
 		}
 	}
-	review := ScheduledPruneCommandReview{PlanID: c.PlanID, EntryID: c.EntryID, Authority: authority, Executor: snapshot, JournalSequence: journal.Sequence, JournalHeadID: journal.HeadEntryID, AlreadyApplied: already}
+	var chain *workchain.Store
+	var protection *workchain.StorageProtection
+	if c.Storage != nil {
+		s := c.Storage
+		if c.AssignmentID != plan.Request.AssignmentID || s.Base.State == nil || s.MigrationID.IsZero() || s.Parameters.RadixActivationHeight != inventory.Checkpoint.Statement.RadixActivationHeight {
+			return result, ErrScheduledPrune
+		}
+		chain, err = workchain.OpenRadixMigratedPositionPinnedWithPolicy(s.ChainPath, s.ChainPinsPath, s.Base, s.Parameters, s.Policy, inventory.Request.StorageID, s.MigrationID)
+		if err != nil {
+			return result, err
+		}
+		defer func() { returnErr = errors.Join(returnErr, chain.Close()) }()
+		state, err := chain.StorageProtection()
+		if err != nil {
+			return result, err
+		}
+		if state.PairID != inventory.StoragePairID || state.Pending != nil || state.Database != state.Confirmed {
+			return result, ErrPruneOutcome
+		}
+		protection = &state
+	}
+	review := ScheduledPruneCommandReview{Storage: protection, PlanID: c.PlanID, EntryID: c.EntryID, Authority: authority, Executor: snapshot, JournalSequence: journal.Sequence, JournalHeadID: journal.HeadEntryID, AlreadyApplied: already}
 	if freshAdmission {
 		review.ReceiptID, _ = journal.CurrentReceipt.ID()
 	}
@@ -262,6 +336,20 @@ func runScheduledPruneCommand(ctx context.Context, c ScheduledPruneCommandConfig
 		e.BytesField([]byte(path))
 	}
 	review.ReviewID = types.DomainHash("OMESH/local/scheduled-prune-command-review/v0", e.Bytes())
+	if protection != nil {
+		// Keep existing review bytes unchanged when recovery storage is absent.
+		e.Fixed(c.Storage.MigrationID[:])
+		e.Fixed(protection.PairID[:])
+		e.Fixed(protection.Confirmed.CommitID[:])
+		e.U64(protection.Confirmed.Sequence)
+		p := c.Storage.Policy
+		for _, n := range []uint64{p.MaxHistoryBytes, p.ForkRetention, p.CheckpointEvery, uint64(p.CheckpointKeep), p.CanonicalRetention} {
+			e.U64(n)
+		}
+		e.BytesField([]byte(c.Storage.ChainPath))
+		e.BytesField([]byte(c.Storage.ChainPinsPath))
+		review.ReviewID = types.DomainHash("OMESH/local/scheduled-prune-recovery-review/v0", e.Bytes())
+	}
 	result.Review = review
 	result.Executor = snapshot
 	if mode == "review" {
@@ -275,8 +363,18 @@ func runScheduledPruneCommand(ctx context.Context, c ScheduledPruneCommandConfig
 			return result, ErrPrunePinPending
 		}
 		next := executor.pins.next
-		if (next.Stage != PruneStarted && next.Stage != PruneSucceeded) || next.ArchiveInventoryID != c.InventoryID || next.Admission == nil {
+		if (next.Stage != PruneStarted && next.Stage != PruneSucceeded && next.Stage != PruneCancelled) || next.Admission == nil {
 			return result, ErrPrunePinPending
+		}
+		if next.Stage == PruneStarted {
+			if next.ArchiveInventoryID != c.InventoryID {
+				return result, ErrScheduledPrune
+			}
+		} else {
+			next.Protection = &PruneProtection{BindingID: snapshot.Protection.BindingID}
+			if _, err := RetainedScheduledPruneOutcome(inventory, next); err != nil {
+				return result, err
+			}
 		}
 		found := false
 		for _, s := range inventory.Replicas {
@@ -293,6 +391,36 @@ func runScheduledPruneCommand(ctx context.Context, c ScheduledPruneCommandConfig
 		}
 		if err := executor.ResumePinnedTransition(ctx); err != nil {
 			return result, err
+		}
+		result.Executor, err = executor.Snapshot()
+		return result, err
+	}
+	if mode == "cancel-before-start" || mode == "recover-effect" {
+		if c.EntryPath != "" || c.JournalPath != "" || c.InventoryPath == "" || c.AssignmentID != plan.Request.AssignmentID || authority.Pending != nil || snapshot.Protection.Pending != nil {
+			return result, ErrPruneOutcome
+		}
+		if err := SaveScheduledPruneInventory(ctx, c.InventoryPath, inventory, c.InventoryID); err != nil {
+			return result, err
+		}
+		if mode == "cancel-before-start" {
+			if _, err := executor.CancelBeforeStart(ctx, owner); err != nil {
+				return result, err
+			}
+		} else {
+			if snapshot.ArchiveInventoryID != c.InventoryID || (snapshot.Stage != PruneStarted && snapshot.Stage != PruneSucceeded) {
+				return result, ErrPruneOutcome
+			}
+			if err := hooks.reach("scheduled-prune-before-recovery"); err != nil {
+				return result, err
+			}
+			if _, err := owner.Snapshot(); err != nil {
+				return result, err
+			}
+			commit, err := executor.Recover(ctx, chain)
+			if err != nil {
+				return result, err
+			}
+			result.Recovered = &commit
 		}
 		result.Executor, err = executor.Snapshot()
 		return result, err

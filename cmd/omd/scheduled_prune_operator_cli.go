@@ -46,6 +46,8 @@ func runScheduledPruneOperator(ctx context.Context, args []string, out io.Writer
 		return runScheduledPruneSigningCLI(ctx, args, out)
 	case scheduledApplyCommand, scheduledEffectCommand:
 		return runScheduledPruneCommandCLI(ctx, args, out)
+	case scheduledOutcomeCommand:
+		return runScheduledPruneOutcomeCLI(ctx, args[1:], out)
 	case scheduledInventoryCommand:
 		return runScheduledPruneInventoryCLI(ctx, args[1:], out)
 	}
@@ -191,6 +193,9 @@ func runScheduledPruneCommandCLI(ctx context.Context, args []string, out io.Writ
 		return err
 	}
 	presence := custodyCommandPresence(f)
+	if !effect && *mode != "review" && *mode != "apply" && *mode != "resume" && *mode != "resume-executor" {
+		return store.ErrScheduledPrune
+	}
 	if !effect && presence["out"] {
 		return store.ErrScheduledPrune
 	}

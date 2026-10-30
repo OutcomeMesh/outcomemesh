@@ -235,7 +235,7 @@ func (executor *PruneExecutor) ExecuteScheduledArchive(ctx context.Context, chai
 }
 
 // CompleteScheduledArchiveReplica drains one original ticket only after the
-// executor has retained the matching storage effect under this exact inventory.
+// executor has retained the matching effect or cancellation for this inventory.
 // It cannot turn an unconfirmed or missing storage outcome into completion.
 func (executor *PruneExecutor) CompleteScheduledArchiveReplica(ctx context.Context, owner *Coordinator, path string, id types.Hash, entry custodyauthority.Entry) (Commit, error) {
 	if executor == nil || owner == nil {
@@ -253,14 +253,15 @@ func (executor *PruneExecutor) CompleteScheduledArchiveReplica(ctx context.Conte
 	if err != nil {
 		return Commit{}, err
 	}
-	if executor.stage != PruneSucceeded || executor.effect == nil || executor.archiveInventoryID != id || executor.pins == nil || executor.pins.binding != v.ExecutorBindingID {
-		return Commit{}, ErrPruneOutcome
+	outcome, err := RetainedScheduledPruneOutcome(v, executor.snapshot())
+	if err != nil {
+		return Commit{}, err
 	}
 	rid, _ := v.Request.ID()
-	if rid != executor.id || !pruneEffectMatches(executor.request, *executor.admission, *executor.effect) {
-		return Commit{}, ErrScheduledPrune
+	evidence, err := outcome.EvidenceID(v)
+	if err != nil {
+		return Commit{}, err
 	}
-	evidence, _ := executor.effect.ID()
 	if _, err := entry.ID(); err != nil {
 		return Commit{}, err
 	}

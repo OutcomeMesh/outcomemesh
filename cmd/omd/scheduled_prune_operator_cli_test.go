@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strconv"
@@ -49,6 +50,12 @@ func scheduledCLISign(t testing.TB, args []string) (string, types.Hash) {
 }
 
 func TestScheduledPruneOperatorCLIEntireLifecyclePreservesAccounting(t *testing.T) {
+	scheduledPruneCLILifecycle(t, false)
+}
+func TestPruneScheduledOutcomeCLICancellationLifecycle(t *testing.T) {
+	scheduledPruneCLILifecycle(t, true)
+}
+func scheduledPruneCLILifecycle(t *testing.T, cancelBeforeStart bool) {
 	f, cp, cpPath, sources := prepareCustodyScheduleQuorumCLI(t)
 	policy := f.inventory.Policy
 	chain, err := workchain.OpenPositionPinnedWithPolicy(f.config.ChainPath, f.config.ChainPinsPath, f.config.Base, f.config.Parameters, f.config.StoragePolicy, f.inventory.Request.StorageID)
@@ -161,32 +168,99 @@ func TestScheduledPruneOperatorCLIEntireLifecyclePreservesAccounting(t *testing.
 	raw, _ = json.Marshal(executionSources)
 	writePruneCLIFile(t, paths, raw)
 	executeArgs := []string{"--inventory", inventoryPath, "--inventory-id", packaged.InventoryID.String(), "--data", f.data, "--sources", paths, "--executor", executor, "--executor-pins", pins, "--chain", f.config.ChainPath, "--chain-pins", f.config.ChainPinsPath, "--storage-migration-id", migration.ID().String(), "--canonical-retention", strconv.FormatUint(f.config.StoragePolicy.CanonicalRetention, 10), "--max-history-bytes", strconv.FormatUint(f.config.StoragePolicy.MaxHistoryBytes, 10), "--max-challenge-lifetime-seconds", "60", "--max-proof-age-seconds", "100", "--max-renewal-term-seconds", "20000"}
-	var out bytes.Buffer
-	if err := runScheduledPrune(t.Context(), executeArgs, &out); err != nil {
+	outcomeArgs := append(append([]string{scheduledOutcomeCommand}, common(sources[0])...), "--inventory", inventoryPath, "--inventory-id", packaged.InventoryID.String())
+	var outcomeReview store.ScheduledPruneCommandResult
+	if cancelBeforeStart {
+		scheduledCLIRun(t, outcomeArgs, &outcomeReview)
+		// A lost response must retain exactly one cancellation and all tickets.
+		fail := pruneEffectTestWriter(func([]byte) (int, error) { return 0, io.ErrClosedPipe })
+		if err := runScheduledPruneOperator(t.Context(), append(outcomeArgs, "--mode", "cancel-before-start", "--expected-review-id", outcomeReview.Review.ReviewID.String()), fail); !errors.Is(err, io.ErrClosedPipe) {
+			t.Fatal("cancel lost output", err)
+		}
+		scheduledCLIRun(t, outcomeArgs, &outcomeReview)
+		if outcomeReview.Executor.Stage != store.PruneCancelled || outcomeReview.Review.Authority.Authority.Pending != 2 {
+			t.Fatal("cancellation cleared tickets")
+		}
+		var cancelledReview bytes.Buffer
+		if err := runScheduledPrune(t.Context(), executeArgs, &cancelledReview); err != nil {
+			t.Fatal(err)
+		}
+		var reviewed store.ScheduledPruneRuntimeResult
+		if err := json.Unmarshal(cancelledReview.Bytes(), &reviewed); err != nil {
+			t.Fatal(err)
+		}
+		if err := runScheduledPrune(t.Context(), append(executeArgs, "--mode", "execute", "--expected-review-id", reviewed.Review.ReviewID.String()), io.Discard); err == nil {
+			t.Fatal("cancelled task could be executed")
+		}
+	} else {
+		var out bytes.Buffer
+		if err := runScheduledPrune(t.Context(), executeArgs, &out); err != nil {
+			t.Fatal(err)
+		}
+		var executeReview store.ScheduledPruneRuntimeResult
+		if err := json.Unmarshal(out.Bytes(), &executeReview); err != nil {
+			t.Fatal(err)
+		}
+		if err := runScheduledPrune(t.Context(), append(executeArgs, "--mode", "execute", "--expected-review-id", executeReview.Review.ReviewID.String()), io.Discard); err != nil {
+			t.Fatal(err)
+		}
+		// Preserve the existing effect-only command and its output bytes.
+		legacy := append([]string{scheduledEffectCommand}, outcomeArgs[1:]...)
+		scheduledCLIRun(t, legacy, &outcomeReview)
+	}
+	for _, source := range executionSources {
+		for _, path := range []string{source.Directory, source.Journal} {
+			if err := os.Rename(path, path+".offline"); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if !cancelBeforeStart {
+		recovery := append(append([]string(nil), outcomeArgs...), "--data", f.data, "--chain", f.config.ChainPath, "--chain-pins", f.config.ChainPinsPath, "--storage-migration-id", migration.ID().String(), "--canonical-retention", strconv.FormatUint(f.config.StoragePolicy.CanonicalRetention, 10), "--max-history-bytes", strconv.FormatUint(f.config.StoragePolicy.MaxHistoryBytes, 10))
+		scheduledCLIRun(t, recovery, &outcomeReview)
+		var recovered store.ScheduledPruneCommandResult
+		scheduledCLIRun(t, append(recovery, "--mode", "recover-effect", "--expected-review-id", outcomeReview.Review.ReviewID.String()), &recovered)
+		if recovered.Recovered == nil || recovered.Recovered.Applied {
+			t.Fatal("recovery repeated deletion")
+		}
+	}
+	scheduledCLIRun(t, outcomeArgs, &outcomeReview)
+	outcome, err := store.RetainedScheduledPruneOutcome(packaged.Inventory, outcomeReview.Executor)
+	if err != nil {
 		t.Fatal(err)
 	}
-	var executeReview store.ScheduledPruneRuntimeResult
-	if err := json.Unmarshal(out.Bytes(), &executeReview); err != nil {
-		t.Fatal(err)
-	}
-	if err := runScheduledPrune(t.Context(), append(executeArgs, "--mode", "execute", "--expected-review-id", executeReview.Review.ReviewID.String()), io.Discard); err != nil {
-		t.Fatal(err)
-	}
-	effectArgs := append(append([]string{scheduledEffectCommand}, common(sources[0])...), "--inventory", inventoryPath, "--inventory-id", packaged.InventoryID.String())
-	var effectReview store.ScheduledPruneCommandResult
-	scheduledCLIRun(t, effectArgs, &effectReview)
-	effectPath := filepath.Join(operatorRoot, "effect")
-	effectID, _ := effectReview.Executor.Effect.ID()
-	publishEffect := append(effectArgs, "--mode", "publish", "--expected-review-id", effectReview.Review.ReviewID.String(), "--out", effectPath)
+	effectID, _ := outcome.EvidenceID(packaged.Inventory)
+	effectPath := filepath.Join(operatorRoot, "outcome")
+	publishEffect := append(append([]string(nil), outcomeArgs...), "--mode", "publish", "--expected-review-id", outcomeReview.Review.ReviewID.String(), "--out", effectPath)
 	failedOutput := pruneEffectTestWriter(func([]byte) (int, error) { return 0, io.ErrClosedPipe })
 	if err := runScheduledPruneOperator(t.Context(), publishEffect, failedOutput); !errors.Is(err, io.ErrClosedPipe) {
-		t.Fatal("effect lost output", err)
+		t.Fatal("outcome lost output", err)
 	}
 	scheduledCLIRun(t, publishEffect, nil)
+	evidenceFlag, idFlag := "--effect", "--effect-id"
+	if cancelBeforeStart {
+		evidenceFlag, idFlag = "--cancellation", "--cancellation-id"
+	}
+	for _, extra := range [][]string{
+		{"--mode", "review", "--out", filepath.Join(t.TempDir(), "ignored")},
+		{"--mode", "publish", "--expected-review-id", pruneCLIHash(240).String(), "--out", filepath.Join(t.TempDir(), "wrong-review")},
+		{"--mode", "publish", "--expected-review-id", outcomeReview.Review.ReviewID.String(), "--out", inventoryPath},
+		{"--mode", "publish", "--expected-review-id", outcomeReview.Review.ReviewID.String(), "--out", filepath.Join(executor, "overlap")},
+		{"--max-history-bytes", "1"},
+		{"--mode", "recover-effect", "--expected-review-id", outcomeReview.Review.ReviewID.String()},
+	} {
+		if err := runScheduledPruneOperator(t.Context(), append(append([]string(nil), outcomeArgs...), extra...), io.Discard); err == nil {
+			t.Fatal("accepted invalid outcome flags", extra)
+		}
+	}
+	wrongCommand := append([]string{scheduledApplyCommand}, outcomeArgs[1:]...)
+	if err := runScheduledPruneOperator(t.Context(), append(wrongCommand, "--mode", "cancel-before-start", "--expected-review-id", outcomeReview.Review.ReviewID.String()), io.Discard); err == nil {
+		t.Fatal("command acceptance silently selected an outcome action")
+	}
 	for _, s := range sources {
 		args := append(common(s), "--inventory", inventoryPath, "--inventory-id", packaged.InventoryID.String())
 		before := inspect(args)
-		entry, eid := scheduledCLISign(t, []string{"--plan", planPath, "--plan-id", prepared.PlanID.String(), "--assignment-id", s.AssignmentID, "--kind", "complete", "--expected-sequence", strconv.FormatUint(before.Review.Authority.Confirmed.Sequence, 10), "--expected-head", before.Review.Authority.Confirmed.HeadID.String(), "--inventory", inventoryPath, "--inventory-id", packaged.InventoryID.String(), "--effect", effectPath, "--effect-id", effectID.String()})
+		entry, eid := scheduledCLISign(t, []string{"--plan", planPath, "--plan-id", prepared.PlanID.String(), "--assignment-id", s.AssignmentID, "--kind", "complete", "--expected-sequence", strconv.FormatUint(before.Review.Authority.Confirmed.Sequence, 10), "--expected-head", before.Review.Authority.Confirmed.HeadID.String(), "--inventory", inventoryPath, "--inventory-id", packaged.InventoryID.String(), evidenceFlag, effectPath, idFlag, effectID.String()})
 		args = append(args, "--entry", entry, "--entry-id", eid.String())
 		review := inspect(args)
 		appliedArgs := append(append([]string{scheduledApplyCommand}, args...), "--mode", "apply", "--expected-review-id", review.Review.ReviewID.String())

@@ -10,7 +10,6 @@ import (
 	"github.com/outcomemesh/outcomemesh/core/types"
 	"github.com/outcomemesh/outcomemesh/node/custodyauthority"
 	store "github.com/outcomemesh/outcomemesh/node/custodyauthority/store"
-	"github.com/outcomemesh/outcomemesh/node/workchain"
 )
 
 // This boundary reads pinned artifacts and an explicit position. It never opens
@@ -30,6 +29,8 @@ func runScheduledPruneSigningCLI(ctx context.Context, args []string, out io.Writ
 	inventoryText := f.String("inventory-id", "", "Complete only: independently retained inventory ID")
 	effectPath := f.String("effect", "", "Complete only: exported canonical effect")
 	effectText := f.String("effect-id", "", "Complete only: independently retained effect ID")
+	cancellationPath := f.String("cancellation", "", "Complete only: exported pre-start cancellation")
+	cancellationText := f.String("cancellation-id", "", "Complete only: independently retained cancellation ID")
 	expected := f.String("expected-review-id", "", "sign mode: exact signature review ID")
 	destination := f.String("out", "", "sign mode: immutable output artifact")
 	keyName := "consumer-key"
@@ -85,7 +86,7 @@ func runScheduledPruneSigningCLI(ctx context.Context, args []string, out io.Writ
 	inputs := []string{*planPath, commandPath, *keyPath}
 	switch *kind {
 	case "admit":
-		if err := custodyCommandForbid(present, "inventory", "inventory-id", "effect", "effect-id"); err != nil {
+		if err := custodyCommandForbid(present, "inventory", "inventory-id", "effect", "effect-id", "cancellation", "cancellation-id"); err != nil {
 			return err
 		}
 		draft, err = store.BuildScheduledPruneAdmission(s.Assignment, s.Proof, p.OriginalPolicy, p.Request, position)
@@ -98,24 +99,23 @@ func runScheduledPruneSigningCLI(ctx context.Context, args []string, out io.Writ
 		if e != nil {
 			return e
 		}
-		eid, e := pruneExternalID("effect-id", *effectText)
+		path, idText, label, outcomeKind := *effectPath, *effectText, "effect-id", "effect"
+		if present["cancellation"] || present["cancellation-id"] {
+			if err := custodyCommandForbid(present, "effect", "effect-id"); err != nil {
+				return err
+			}
+			path, idText, label, outcomeKind = *cancellationPath, *cancellationText, "cancellation-id", "cancellation"
+		}
+		eid, e := pruneExternalID(label, idText)
 		if e != nil {
 			return e
 		}
-		raw, e := readRegularArtifact(*effectPath, workchain.MaximumCanonicalPruneEffectBytes)
+		outcome, e := store.LoadScheduledPruneOutcome(path, outcomeKind, eid)
 		if e != nil {
 			return e
 		}
-		effect, e := workchain.DecodeCanonicalPruneEffect(raw)
-		if e != nil {
-			return e
-		}
-		actual, e := effect.ID()
-		if e != nil || actual != eid {
-			return errors.Join(store.ErrPruneCompletion, e)
-		}
-		draft, err = store.BuildScheduledPruneCompletion(p, inventory, effect, aid, position)
-		inputs = append(inputs, *inventoryPath, *effectPath)
+		draft, err = store.BuildScheduledPruneOutcomeCompletion(p, inventory, outcome, aid, position)
+		inputs = append(inputs, *inventoryPath, path)
 	default:
 		return store.ErrScheduledPrune
 	}

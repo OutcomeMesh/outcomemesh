@@ -10,6 +10,27 @@ Full planned production readiness is approximately **44/100**, using the weighte
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
 
+## 2026-10-30: terminal outcomes for new scheduled Prune tasks
+
+Tasks admitted on the migrated schedule now support explicit cancellation before
+start, continuation of interrupted cancellation records and recovery of committed
+results without archive bodies or source journals. The original accepted
+admission, executor binding and protected storage pair remain required. Recovery
+reads a historical effect; it cannot repeat deletion or settle a missing result.
+
+The CLI exports either original effect or cancellation bytes. Offline consumer
+and authority signing produce separate v2 completions for each original replica.
+Application rechecks the retained terminal executor state and actual accepted
+operation. Static evidence alone cannot release a ticket. Other pending work and
+spent IDs remain in the original journals.
+
+Coverage includes interruptions of cancellation and result confirmation, process
+kills, completion recovery, source outages, stale reviews, substituted identities,
+fabricated cancellation, lost output and fixed cancellation completion signatures.
+The [operator procedure](PRUNE_SCHEDULED_OUTCOMES.md) describes these local paths.
+Independent fencing, missing-result resolution and remote schedule integration
+remain open. No weighted launch gate closes; readiness remains **44/100**.
+
 ## 2026-10-30: retained observations of unresolved Prune starts
 
 The original migrated Prune workflow now has a separate read-only inspection and

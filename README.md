@@ -64,6 +64,8 @@ New Audit/Serve admissions and reviewed completion preserve that same accounting
 Scheduled pruning verifies the live storage quorum and complete archives before
 removing old history, with retained effects for recovery. Its CLI covers plan
 preparation, separate signatures, admission, execution and per-replica completion.
+[Scheduled outcomes](docs/PRUNE_SCHEDULED_OUTCOMES.md) support explicit cancellation
+before start and recovery of committed results while archive sources are offline.
 Original obligations and spent operation IDs remain in their existing journals.
 [Original Prune outcomes](docs/PRUNE_MIGRATED_OUTCOMES.md) can be resolved after
 migration using their retained results or an explicit cancellation before start.

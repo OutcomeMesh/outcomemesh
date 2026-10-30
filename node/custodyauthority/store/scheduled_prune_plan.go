@@ -121,6 +121,10 @@ func (p ScheduledPrunePlan) BindInventory(v ScheduledPruneInventory) error {
 }
 
 func BuildScheduledPruneCompletion(p ScheduledPrunePlan, v ScheduledPruneInventory, effect workchain.CanonicalPruneEffect, assignmentID types.Hash, position custodyauthority.Position) (custodyauthority.Command, error) {
+	return BuildScheduledPruneOutcomeCompletion(p, v, ScheduledPruneOutcome{Effect: &effect}, assignmentID, position)
+}
+
+func BuildScheduledPruneOutcomeCompletion(p ScheduledPrunePlan, v ScheduledPruneInventory, outcome ScheduledPruneOutcome, assignmentID types.Hash, position custodyauthority.Position) (custodyauthority.Command, error) {
 	if err := p.BindInventory(v); err != nil {
 		return custodyauthority.Command{}, err
 	}
@@ -136,11 +140,11 @@ func BuildScheduledPruneCompletion(p ScheduledPrunePlan, v ScheduledPruneInvento
 			assignment = s.Assignment
 		}
 	}
-	if primary == (custodyauthority.Entry{}) || selected == (custodyauthority.Entry{}) || !pruneEffectMatches(v.Request, primary, effect) {
+	if primary == (custodyauthority.Entry{}) || selected == (custodyauthority.Entry{}) {
 		return custodyauthority.Command{}, ErrPruneCompletion
 	}
 	ticket, _ := selected.ID()
-	eid, err := effect.ID()
+	eid, err := outcome.EvidenceID(v)
 	if err != nil {
 		return custodyauthority.Command{}, err
 	}

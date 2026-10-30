@@ -114,6 +114,9 @@ func TestProcessScheduledPruneOperatorHelper(t *testing.T) {
 	if err := json.Unmarshal(raw, &c); err != nil {
 		t.Fatal(err)
 	}
+	if c.Storage != nil {
+		c.Storage.Base, _, _ = pruneChainConfig()
+	}
 	r := scheduledOperatorReview(t, c)
 	hooks := storeHooks{at: func(stage string) error {
 		if stage == os.Getenv("OM_PRUNE_OPERATOR_STAGE") {
@@ -124,7 +127,11 @@ func TestProcessScheduledPruneOperatorHelper(t *testing.T) {
 		}
 		return nil
 	}}
-	if _, err := runScheduledPruneCommand(t.Context(), c, "apply", r.Review.ReviewID, hooks); err != nil {
+	mode := os.Getenv("OM_PRUNE_OPERATOR_MODE")
+	if mode == "" {
+		mode = "apply"
+	}
+	if _, err := runScheduledPruneCommand(t.Context(), c, mode, r.Review.ReviewID, hooks); err != nil {
 		t.Fatal(err)
 	}
 	t.Fatal("escaped crash boundary")

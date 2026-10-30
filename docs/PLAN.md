@@ -58,6 +58,9 @@ Remaining work, in order:
    inventory packaging, effect export and per-replica completion now cover this
    local workflow. Explicit continuation confirms retained start/result records
    without repeating deletion or releasing unknown work.
+   New scheduled tasks now also support explicit pre-start cancellation, exact
+   result recovery with archive sources offline and per-replica completion with
+   either retained outcome; see [scheduled outcomes](PRUNE_SCHEDULED_OUTCOMES.md).
    Original archive-bound Prune tickets can now complete after migration using
    their unchanged retained effect or cancellation. Confirmed never-started work
    can cancel under its migrated original owner; retained starts cannot. An old

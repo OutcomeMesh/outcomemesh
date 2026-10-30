@@ -1,10 +1,10 @@
 # Production readiness baseline
 
-Assessment date: 2026-10-29. **Approximately 44/100 toward the full planned launch.**
+Assessment date: 2026-10-30. **Approximately 44/100 toward the full planned launch.**
 Status remains research/pre-alpha: do not secure real value with this code.
 
 The requested target is **mainnet with real value on 2026-11-01**, recorded on
-2026-10-26. On this reassessment date, three calendar days remain; that does not satisfy the current launch plan.
+2026-10-26. On this reassessment date, two calendar days remain; that does not satisfy the current launch plan.
 In particular, the six-month adversarial public-testnet stability gate has no
 completed qualifying evidence, and independent verification/external audits
 remain open. No release date is certified or gate waived by this target.
@@ -607,3 +607,10 @@ advances the copy-fencing implementation but does not close its independent
 operator, non-exportable key/monotone storage and review acceptance boundary.
 No hardware/root-of-trust clone protection or new WAN campaign is claimed.
 The weighted launch estimate remains **44/100**.
+
+2026-10-30 scheduled-outcome follow-up: new post-migration Prune tasks now have
+reviewed pre-start cancellation, retained-record continuation, exact effect
+recovery with archive sources offline and separate replica completions. These
+local paths preserve original obligations and cannot resolve a started operation
+with no matching result. They do not close independent fencing, remote schedule
+integration or public-testnet gates. The weighted baseline remains 44/100.

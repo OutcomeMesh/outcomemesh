@@ -359,11 +359,11 @@ repair. Lost stdout does not roll back a retained effect.
 
 Cleanup completes no tickets. `CompleteScheduledArchiveReplica` accepts a separate
 consumer-signed, authority-co-signed v2 Complete for each original replica after
-the exact effect is durably retained. It verifies the actual admitted operation,
+the exact effect or pre-start cancellation is durably retained. It verifies the actual admitted operation,
 resynchronizes the immutable inventory and holds the original owner through
 acceptance. Exact retries retain the same evidence; all other pending and spent
 work remains unchanged. The CLI builds these completions from the exact exported
-effect and immutable inventory, then rechecks the retained executor result at
+outcome and immutable inventory, then rechecks the retained executor result at
 application.
 
 These are trusted local owner APIs. Keep owner roots, pins and immutable archive
@@ -472,12 +472,12 @@ and `confirmed_head`; these describe the reviewed position before the action.
    a journal argument. Only that replica's new prune ticket completes. All old
    pending operations and all spent operation IDs remain in the original ledger.
 
-If executor pins retain an unconfirmed start or result, inspect the primary owner
+If executor pins retain an unconfirmed start, result or cancellation, inspect the primary owner
 with `work-prune-scheduled-command`, the plan and inventory, without `--entry`.
 Use `--mode resume-executor --expected-review-id <ReviewID>` to confirm only the
 exact retained transition. This command never opens the chain or executes deletion.
 A resumed start remains `Started`; only a matching committed storage effect can
-resolve it. A resumed result preserves its already observed effect. Independent
+resolve it. A resumed result or cancellation preserves its original outcome. Independent
 storage confirmation still uses the existing protected-storage recovery procedure.
 
 The plan has magic `OMCSPPLN`, version 0 and domain
@@ -486,6 +486,10 @@ v0, but the executor binding is 32 zero bytes and each admission is an empty
 length-prefixed field. The limit is 64 MiB. The formats reject one another; a plan
 cannot authorize execution. Inventory construction must project back to exactly
 the reviewed plan. Version 2 command/entry signature domains are unchanged.
+
+The [scheduled outcome procedure](PRUNE_SCHEDULED_OUTCOMES.md) adds explicit
+pre-start cancellation, result recovery with source archives offline, terminal
+export and per-replica completion with the original effect or cancellation.
 
 ## Remaining gates
 

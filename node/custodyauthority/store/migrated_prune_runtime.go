@@ -12,13 +12,17 @@ import (
 	"github.com/outcomemesh/outcomemesh/node/workchain"
 )
 
-type MigratedPruneStorage struct {
+// PruneRecoveryStorage identifies the existing migrated, position-pinned store.
+// Recovery only reads an already committed result; it cannot repeat deletion.
+type PruneRecoveryStorage struct {
 	ChainPath, ChainPinsPath string
 	MigrationID              types.Hash
 	Base                     workchain.Base
 	Parameters               workblock.Parameters
 	Policy                   workchain.Policy
 }
+type MigratedPruneStorage = PruneRecoveryStorage
+
 type MigratedPruneConfig struct {
 	InventoryPath, ProofPath                                         string
 	InventoryID, PolicyID, ScheduleID                                types.Hash

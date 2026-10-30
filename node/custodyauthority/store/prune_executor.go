@@ -349,6 +349,11 @@ func (executor *PruneExecutor) Snapshot() (PruneExecution, error) {
 	if err := executor.check(); err != nil {
 		return PruneExecution{}, err
 	}
+	return executor.snapshot(), nil
+}
+
+// snapshot requires the executor mutex and a successful owner check.
+func (executor *PruneExecutor) snapshot() PruneExecution {
 	r, _ := executor.request.CanonicalBytes()
 	request, _ := DecodePruneRequest(r)
 	result := PruneExecution{RequestID: executor.id, Request: request, Stage: executor.stage, ArchiveInventoryID: executor.archiveInventoryID}
@@ -369,7 +374,7 @@ func (executor *PruneExecutor) Snapshot() (PruneExecution, error) {
 		protection := executor.pins.protection()
 		result.Protection = &protection
 	}
-	return result, nil
+	return result
 }
 
 // BindAdmission retains only a matching, currently pending local admission.
