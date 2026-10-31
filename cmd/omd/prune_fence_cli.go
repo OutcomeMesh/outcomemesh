@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"flag"
 	"io"
 	"sort"
@@ -156,69 +157,95 @@ type pruneFenceNetworkJSON struct {
 }
 
 func openPruneFenceCollector(ctx context.Context, v store.ScheduledPruneInventory, path, ownerPath, transportPath string, timeout time.Duration) (store.PruneClaimCollector, func() error, error) {
-	if v.FencePolicy == nil || path == "" || ownerPath == "" || transportPath == "" {
+	if v.FencePolicy == nil {
 		return nil, nil, prunefence.ErrFence
 	}
-	raw, err := readRegularArtifact(path, 64<<10)
+	rid, err := v.Request.ID()
 	if err != nil {
 		return nil, nil, err
 	}
-	var config pruneFenceNetworkJSON
-	if err := cutoverJSON(raw, &config); err != nil {
-		return nil, nil, err
-	}
-	local, err := pruneExternalID("client_transport", config.ClientTransport)
-	if err != nil {
-		return nil, nil, err
-	}
-	var endpoints []prunenet.Endpoint
-	if len(config.Witnesses) > custodyfence.MaximumWitnesses {
-		return nil, nil, prunefence.ErrFence
-	}
-	for _, e := range config.Witnesses {
-		w, err := pruneExternalID("witness", e.Witness)
-		if err != nil {
-			return nil, nil, err
-		}
-		p, err := pruneExternalID("transport", e.Transport)
-		if err != nil {
-			return nil, nil, err
-		}
-		endpoints = append(endpoints, prunenet.Endpoint{Witness: [32]byte(w), Transport: [32]byte(p), Address: e.Address})
-	}
-	rid, _ := v.Request.ID()
 	scope, err := v.FencePolicy.Scope(v.Request.AssignmentID, rid)
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := prunenet.Validate(scope, [32]byte(local), endpoints, timeout); err != nil {
-		return nil, nil, err
-	}
-	owner, err := witnessKey(ownerPath, v.FencePolicy.Owner)
+	client, err := openPruneFenceNetwork(ctx, scope, v.FencePolicy.Owner, path, ownerPath, transportPath, timeout)
 	if err != nil {
 		return nil, nil, err
+	}
+	return client.collect, client.close, nil
+}
+
+type pruneFenceNetworkClient struct {
+	scope     custodyfence.Scope
+	host      *libp2ptransport.Host
+	key       ed25519.PrivateKey
+	local     [32]byte
+	endpoints []prunenet.Endpoint
+	timeout   time.Duration
+}
+
+func (c *pruneFenceNetworkClient) close() error { defer clear(c.key); return c.host.Close() }
+func (c *pruneFenceNetworkClient) collect(ctx context.Context, scope custodyfence.Scope, draft custodyfence.Command) (custodyfence.Certificate, error) {
+	id, err := scope.ID()
+	want, _ := c.scope.ID()
+	if err != nil || id != want {
+		return custodyfence.Certificate{}, prunefence.ErrFence
+	}
+	return prunenet.Collect(ctx, c.host, c.key, c.local, c.endpoints, c.timeout, scope, draft)
+}
+func openPruneFenceNetwork(ctx context.Context, scope custodyfence.Scope, signer [32]byte, path, signerPath, transportPath string, timeout time.Duration) (*pruneFenceNetworkClient, error) {
+	if ctx == nil || path == "" || signerPath == "" || transportPath == "" {
+		return nil, prunefence.ErrFence
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	raw, err := readRegularArtifact(path, 64<<10)
+	if err != nil {
+		return nil, err
+	}
+	var config pruneFenceNetworkJSON
+	if err := cutoverJSON(raw, &config); err != nil {
+		return nil, err
+	}
+	local, err := pruneExternalID("client_transport", config.ClientTransport)
+	if err != nil {
+		return nil, err
+	}
+	var endpoints []prunenet.Endpoint
+	if len(config.Witnesses) > custodyfence.MaximumWitnesses {
+		return nil, prunefence.ErrFence
+	}
+	for _, e := range config.Witnesses {
+		w, err := pruneExternalID("witness", e.Witness)
+		if err != nil {
+			return nil, err
+		}
+		p, err := pruneExternalID("transport", e.Transport)
+		if err != nil {
+			return nil, err
+		}
+		endpoints = append(endpoints, prunenet.Endpoint{Witness: [32]byte(w), Transport: [32]byte(p), Address: e.Address})
+	}
+	if err := prunenet.Validate(scope, [32]byte(local), endpoints, timeout); err != nil {
+		return nil, err
+	}
+	signingKey, err := witnessKey(signerPath, signer)
+	if err != nil {
+		return nil, err
 	}
 	key, err := witnessKey(transportPath, [32]byte(local))
 	if err != nil {
-		clear(owner)
-		return nil, nil, err
+		clear(signingKey)
+		return nil, err
 	}
 	c := libp2ptransport.DefaultConfig()
 	c.Listen = []string{"/ip4/0.0.0.0/udp/0/quic-v1"}
 	host, err := libp2ptransport.New(ctx, key, c, nil)
 	clear(key)
 	if err != nil {
-		clear(owner)
-		return nil, nil, err
+		clear(signingKey)
+		return nil, err
 	}
-	closeClient := func() error { defer clear(owner); return host.Close() }
-	collect := func(ctx context.Context, s custodyfence.Scope, d custodyfence.Command) (custodyfence.Certificate, error) {
-		id, _ := s.ID()
-		want, _ := scope.ID()
-		if id != want {
-			return custodyfence.Certificate{}, prunefence.ErrFence
-		}
-		return prunenet.Collect(ctx, host, owner, [32]byte(local), endpoints, timeout, s, d)
-	}
-	return collect, closeClient, nil
+	return &pruneFenceNetworkClient{scope: scope, host: host, key: signingKey, local: [32]byte(local), endpoints: endpoints, timeout: timeout}, nil
 }

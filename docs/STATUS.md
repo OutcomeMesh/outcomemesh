@@ -10,6 +10,28 @@ Full planned production readiness is approximately **44/100**, using the weighte
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
 
+## 2026-10-31: certified closure of unclaimed Prune slots
+
+A new typed certificate binds an original scheduled request and its witness
+policy to a controller-signed CloseUnclaimed quorum at the initial scope. It
+shares the execution slot with claims, so changing local candidates, inventory
+or session keys cannot create a second decision. Witness histories and pending
+votes are retained across partitions and restarts.
+
+The CLI reviews the intent without private keys or network access, collects the
+original quorum only after an explicit intent pin, and verifies exported evidence
+against a separately pinned plan. A published matching artifact is an offline
+exact retry, including after lost output. The closure does not alter executor,
+authority, storage or retention records and is not accepted as local cancellation
+or successful execution. Applying it to original-owner cancellation and completion
+remains the next step; started tasks without signed results remain held.
+
+Coverage includes real four-witness services, competing claims and closures,
+minority locks, outages, cold recovery, wrong roles and context substitution,
+immutable CLI output, unchanged owner/storage files, fixed encoding vectors and
+decoder fuzzing. Independent deployment and production acceptance remain open.
+Readiness remains **44/100**.
+
 ## 2026-10-31: Windows distribution and release version policy
 
 Release packaging now targets Windows, Linux and macOS on amd64 and arm64.

@@ -12,9 +12,11 @@ needed for the storage dependency.
 
 ## Version policy
 
-`VERSION` is the single release-version source. It contains `0.2.0`; the matching
-Git tag and release title use `v0.2.0`. The compiler version in `.go-version`
-serves a different purpose and does not determine the application version.
+`VERSION` is the single source for the next planned release version. After the
+`v0.2.0` tag, development has advanced to `0.3.0`; its future tag and release title
+will use `v0.3.0`. Advancing this file does not create or publish a release.
+The compiler version in `.go-version` serves a different purpose and does not
+determine the application version.
 
 | Change | Example |
 | --- | --- |
@@ -51,7 +53,7 @@ A source build reports `dev` unless release metadata is supplied. Official
 archives are built from a clean Git checkout:
 
 ```sh
-make release VERSION=v0.2.0 OUT=dist/v0.2.0
+make release VERSION="v$(cat VERSION)" OUT="dist/v$(cat VERSION)"
 ```
 
 The output directory must not already exist. Packaging fixes Go 1.27.3, disables
@@ -151,8 +153,7 @@ not granted repository administration access.
 For a local reproducibility check from clean committed source:
 
 ```sh
-python3 scripts/release.py --version v0.2.0 \
-  --out dist/v0.2.0 --verify-reproducible
+python3 scripts/release.py --out "dist/v$(cat VERSION)" --verify-reproducible
 ```
 
 Two matching builds establish determinism on that builder. Independent builder

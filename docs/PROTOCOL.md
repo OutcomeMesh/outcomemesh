@@ -999,6 +999,8 @@ version zero. Length fields use the existing canonical bounded `BytesField`.
 | `OMPRFC00` candidate | policy bytes; six 32-byte binding hashes; 32-byte session public key | 1,024 bytes |
 | `OMPRFQ00` claim | candidate bytes; existing custody-fence certificate bytes | candidate maximum + certificate maximum + 32 bytes |
 | `OMPRFR00` result | claim bytes; 32-byte effect ID; 64-byte Ed25519 signature | claim maximum + 128 bytes |
+| `OMPRFI00` closure intent | policy bytes; 32-byte primary assignment ID; 32-byte request ID | 720 bytes |
+| `OMPRFU00` closure certificate | closure intent bytes; existing custody-fence certificate bytes | intent maximum + certificate maximum + 32 bytes |
 
 Candidate binding hashes are request, primary assignment, storage operation,
 inventory, executor binding and storage pair IDs. All are nonzero. The session
@@ -1032,11 +1034,39 @@ storage lock. A lost session cannot be reconstructed from signatures or disk.
 Cold candidates, minority quorums and starts without complete signed results
 retain every obligation. Only an already complete retained signed transition may
 resume original pin confirmation. Local cancellation and bare-effect recovery
-are unavailable for request v3. Independent closure of an unclaimed slot and
+are unavailable for request v3. Applying independently certified closure and
 missing-result settlement remain unimplemented.
 
 The full operating procedure and trust boundary are in [PRUNE_FENCE.md](PRUNE_FENCE.md).
-Reference hashes are fixed in `node/prunefence/fence_test.go` and
+Reference hashes are fixed in `node/prunefence/fence_test.go`,
+`node/prunefence/closure_test.go` and
 `node/custodyauthority/store/prune_fence_vector_test.go`. No software-only local
 capability protects against malicious raw storage access, cloned process memory
 or rollback of a witness quorum under shared administrative control.
+
+A closure intent uses ID domain `OMESH/prune-fence/close-intent/id/v0` over its
+canonical bytes. Both IDs must be nonzero. The policy derives exactly the same
+scope as a claim for this request. The controller signs a v1 CloseUnclaimed
+command with sequence zero, expected head equal to the scope ID, zero ClaimID
+and EvidenceID equal to the closure-intent ID. A different kind, position,
+controller, request or policy is invalid even with otherwise valid signatures.
+The original scope threshold, sorted distinct witness votes and any mandatory
+guard seals must verify. The certificate ID domain is
+`OMESH/prune-fence/close-certificate/id/v0` over the complete canonical artifact.
+
+A closure quorum and a claim quorum intersect in honest witnesses under the
+original witness assumption. Durable pending votes already prevent a witness
+from choosing both commands at sequence zero; collection does not reset those
+votes or advance a pin from a remote reply. Partial quorums are not certificates.
+A split vote may prevent either outcome and must remain held. Reopening a witness
+uses its original retained pin and the exact attempted command under the existing
+recovery rules. No new witness wire or journal format is introduced.
+
+A certificate proves closure of the independent execution slot, not physical
+absence of deletion or completion of an authority obligation. It cannot decode
+as a claim, result or local PruneCancellation. The CLI compares its intent with
+the original plan before reporting it verified. A retained matching output is
+reused byte for byte without key access or witness calls. A different valid vote
+subset may yield another certificate ID, but cannot replace an existing output.
+There is no executor or authority accounting transition in this slice. Existing
+retention floors, pending tickets and spent IDs remain unchanged.

@@ -101,16 +101,18 @@ outputs. Paths and keys are operator inputs, not values supplied by remote peers
 | Retained state | Permitted continuation |
 | --- | --- |
 | No candidate and no start | Review and execute against the original enrollment. |
-| Candidate without quorum/start | Retain the candidate and all tickets. Do not create a new session or cancel locally. |
+| Candidate without quorum/start | Retain the candidate and all tickets. Collect a closure certificate against the original scope if available; do not create a new session or cancel locally. |
 | Confirmed start without signed result | Hold the outcome, even if the local storage effect exists. Do not repeat deletion or reconstruct a signature. |
 | Complete signed result with pending pin confirmation | Continue the exact original retained transition through the existing pin recovery path. |
 | Confirmed signed result | Read historical evidence and complete each original ticket separately. |
 
 Local pre-start cancellation is deliberately unavailable for this request version.
 A minority vote, lost response, timeout or process death does not prove that the
-slot is unclaimed. Independent CloseUnclaimed settlement and resolution without
-a retained session-signed result are later work. No new adapter changes old
-request or cancellation semantics.
+slot is unclaimed. The closure procedure below can certify the independent slot.
+Applying that certificate through original executor/authority cancellation and
+completion is still required before any obligation can be released. Resolution
+without a retained session-signed result is also later work. No new adapter
+changes old request or cancellation semantics.
 
 The witness quorum prevents conflicting claims; it does not execute storage or
 attest that an administrator physically deleted data. The storage API and process
@@ -119,6 +121,61 @@ APIs, and a copied live memory image can copy secrets. Witness keys and historie
 must remain outside participant backups and rollback authority. Two hosts under
 one administrator do not meet the independent deployment requirement. Hardware
 isolation, independent operators and external review remain launch gates.
+
+## Certify an unclaimed slot
+
+Use `work-prune-fence-close` with the original, independently pinned scheduled
+plan. Review reads public artifacts only:
+
+```sh
+omd work-prune-fence-close --plan plan.bin --plan-id PLAN_ID
+```
+
+Check the returned plan, scope and intent IDs. The intent commits the complete
+policy and original request. It does not depend on a current executor directory,
+local candidate, inventory or session key. To collect the closure quorum:
+
+```sh
+omd work-prune-fence-close --mode collect \
+  --plan plan.bin --plan-id PLAN_ID --expected-intent-id INTENT_ID \
+  --fence-network witnesses.json --controller-key authority.seed \
+  --fence-transport-key client-transport.seed --fence-timeout 5s \
+  --out closure.bin
+```
+
+The key must belong to the policy controller (the primary authority), not the
+consumer. Original witness and transport pins remain mandatory. Each witness
+receives the exact deterministic CloseUnclaimed command at sequence zero with
+the original scope ID as expected head. Its EvidenceID is `INTENT_ID`. The
+collector makes one bounded attempt per member; no timeout, minority or missing
+local effect becomes proof of closure. A witness already locked to a conflicting
+claim refuses the close vote. With four members and threshold three, one prior
+claim vote still permits three close votes; two claim votes may leave both paths
+held. No journal is reset to resolve a split vote.
+
+Verify the exported certificate without keys or network access:
+
+```sh
+omd work-prune-fence-close --mode verify \
+  --plan plan.bin --plan-id PLAN_ID \
+  --closure closure.bin --closure-id CLOSURE_ID
+```
+
+Keep the reported closure ID separately. A matching existing output makes
+`collect` an offline exact retry; it preserves the original certificate even if
+another witness subset later becomes available. Lost report output after file
+publication is recovered this way. If publication never completed, repeat the
+same reviewed command against the original enrollment. Cold witness recovery
+still requires the operator's independently retained original pin and exact
+attempted command through the existing witness recovery procedure. Partial or
+conflicting output files are never replaced automatically.
+
+This command changes witness votes only. It does not open executor, authority
+or storage owners, remove pending work, refund spent operations or relax retained
+archive deadlines. `closure_verified` reports artifact verification against the
+pinned plan; the JSON report is not a signed accounting statement. A start with
+no complete signed result remains held. Original-owner application of closure
+is the next stage of the plan.
 
 ## Compatibility and verification
 

@@ -74,8 +74,12 @@ Remaining work, in order:
    session-bound quorum and consume a one-use permit at the actual storage lock.
    The CLI preserves original accounting and retains signed results. Cold
    candidates and unsigned outcomes stay held; see [independent Prune](PRUNE_FENCE.md).
-   Next: independently certified closure of unclaimed slots and resolution of
-   starts with no matching signed result, then remote v1/profile-5 witness and
+   Typed closure certificates now bind the original request and policy to a
+   controller-signed CloseUnclaimed quorum. CLI review, collection, offline
+   verification and exact output retry preserve the original witness enrollment
+   and all executor/authority accounting. Next apply these certificates through
+   reviewed original-owner cancellation and completion, then resolve starts with
+   no matching signed result and implement remote v1/profile-5 witness and
    execution transitions. Unprepared/raw
    legacy paths remain gated; legacy prune transports remain unchanged.
 2. Define the independently approved network activation policy and transition

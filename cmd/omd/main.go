@@ -106,7 +106,7 @@ func run(arguments []string) error {
 		return runAutoSyncQUIC(arguments[1:])
 	case migratedPruneOutcomeCommand, migratedPruneSignCommand, migratedPruneCosignCommand, migratedPruneApplyCommand, migratedPruneObservationCommand:
 		return runMigratedPruneCLI(arguments)
-	case scheduledPlanCommand, scheduledSignCommand, scheduledCosignCommand, scheduledApplyCommand, scheduledInventoryCommand, scheduledEffectCommand, scheduledOutcomeCommand, pruneFencePolicyCommand, pruneFenceScopeCommand:
+	case scheduledPlanCommand, scheduledSignCommand, scheduledCosignCommand, scheduledApplyCommand, scheduledInventoryCommand, scheduledEffectCommand, scheduledOutcomeCommand, pruneFencePolicyCommand, pruneFenceScopeCommand, pruneFenceCloseCommand:
 		return runScheduledPruneOperatorCLI(arguments)
 	case scheduledPruneCommand:
 		return runScheduledPruneCLI(arguments[1:])
@@ -1651,6 +1651,7 @@ func printUsage() {
 	fmt.Printf("scheduled prune preparation: omd %s|%s|%s|%s|%s|%s [flags]\n", scheduledPlanCommand, scheduledSignCommand, scheduledCosignCommand, scheduledApplyCommand, scheduledInventoryCommand, scheduledEffectCommand)
 	fmt.Printf("scheduled prune outcomes: omd %s [flags]; review, cancel, recover or export original outcomes\n", scheduledOutcomeCommand)
 	fmt.Printf("scheduled archive cleanup: omd %s [flags]; review by default\n", scheduledPruneCommand)
+	fmt.Printf("independent prune closure: omd %s --mode review|collect|verify [flags]\n", pruneFenceCloseCommand)
 	fmt.Printf("independent prune policy and scope: omd %s|%s --mode review|publish [flags]\n", pruneFencePolicyCommand, pruneFenceScopeCommand)
 	fmt.Printf("scheduled custody quorum: omd %s [flags]; inspect original owners and journals\n", custodyScheduleQuorumCommand)
 	fmt.Printf("experimental independent witnesses: omd <%s|%s|%s|%s> [flags]; review by default\n", witnessServerCommand, witnessClientCommand, witnessRequestCommand, witnessQuorumCommand)

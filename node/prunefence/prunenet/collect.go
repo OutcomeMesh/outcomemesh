@@ -65,8 +65,39 @@ func Validate(scope custodyfence.Scope, local [32]byte, endpoints []Endpoint, ti
 // witness. A lost response leaves the witness's durable vote intact. Only a full
 // valid quorum is returned; a minority or timeout never means "not executed".
 func Collect(ctx context.Context, host *libp2ptransport.Host, key ed25519.PrivateKey, local [32]byte, endpoints []Endpoint, timeout time.Duration, scope custodyfence.Scope, draft custodyfence.Command) (custodyfence.Certificate, error) {
+	return collect(ctx, host, key, local, endpoints, timeout, scope, draft, custodyfence.Claim, scope.Owner)
+}
+
+// CollectClosure uses the original controller and initial scope pin. Partial
+// votes remain durable and cannot be reset or treated as a closure certificate.
+func CollectClosure(ctx context.Context, host *libp2ptransport.Host, key ed25519.PrivateKey, local [32]byte, endpoints []Endpoint, timeout time.Duration, intent prunefence.ClosureIntent) (prunefence.Closure, error) {
+	// Detach the policy from the caller before any network wait.
+	raw, err := intent.CanonicalBytes()
+	if err != nil {
+		return prunefence.Closure{}, err
+	}
+	intent, err = prunefence.DecodeClosureIntent(raw)
+	if err != nil {
+		return prunefence.Closure{}, err
+	}
+	scope, draft, err := intent.Draft()
+	if err != nil {
+		return prunefence.Closure{}, err
+	}
+	q, err := collect(ctx, host, key, local, endpoints, timeout, scope, draft, custodyfence.CloseUnclaimed, scope.Controller)
+	if err != nil {
+		return prunefence.Closure{}, err
+	}
+	closure := prunefence.Closure{Intent: intent, Certificate: q}
+	if err := closure.Verify(); err != nil {
+		return prunefence.Closure{}, err
+	}
+	return closure, nil
+}
+
+func collect(ctx context.Context, host *libp2ptransport.Host, key ed25519.PrivateKey, local [32]byte, endpoints []Endpoint, timeout time.Duration, scope custodyfence.Scope, draft custodyfence.Command, kind custodyfence.Kind, signer [32]byte) (custodyfence.Certificate, error) {
 	var empty custodyfence.Certificate
-	if ctx == nil || host == nil || len(key) != 64 || !bytes.Equal(key, ed25519.NewKeyFromSeed(key[:32])) || !bytes.Equal(key[32:], scope.Owner[:]) {
+	if ctx == nil || host == nil || len(key) != 64 || !bytes.Equal(key, ed25519.NewKeyFromSeed(key[:32])) || !bytes.Equal(key[32:], signer[:]) {
 		return empty, prunefence.ErrFence
 	}
 	if err := Validate(scope, local, endpoints, timeout); err != nil {
@@ -77,7 +108,7 @@ func Collect(ctx context.Context, host *libp2ptransport.Host, key ed25519.Privat
 		return empty, prunefence.ErrFence
 	}
 	sid, _ := scope.ID()
-	if draft.Version != 1 || draft.Kind != custodyfence.Claim || draft.ScopeID != sid || draft.ExpectedSequence != 0 || draft.ExpectedHead != sid || draft.Signature != ([64]byte{}) {
+	if draft.Version != 1 || draft.Kind != kind || draft.ScopeID != sid || draft.ExpectedSequence != 0 || draft.ExpectedHead != sid || draft.Signature != ([64]byte{}) {
 		return empty, prunefence.ErrFence
 	}
 	command, err := draft.Sign(key)

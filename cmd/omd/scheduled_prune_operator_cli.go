@@ -41,6 +41,8 @@ func runScheduledPruneOperator(ctx context.Context, args []string, out io.Writer
 		return err
 	}
 	switch args[0] {
+	case pruneFenceCloseCommand:
+		return runPruneFenceCloseCLI(ctx, args[1:], out)
 	case pruneFencePolicyCommand, pruneFenceScopeCommand:
 		return runPruneFenceArtifactCLI(ctx, args, out)
 	case scheduledPlanCommand:

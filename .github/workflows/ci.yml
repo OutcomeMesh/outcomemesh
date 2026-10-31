@@ -56,6 +56,7 @@ jobs:
         run: |
           go test -tags=integration ./node/custodyauthority/store -run '^TestPruneFenceProcessDeathKeepsObligations$' -count=1 -timeout=3m
           go test ./node/prunefence -run '^$' -fuzz '^FuzzPruneFenceArtifacts$' -fuzztime=10s
+          go test ./node/prunefence -run '^$' -fuzz '^FuzzPruneFenceClosure$' -fuzztime=10s
 
   race:
     needs: prepare

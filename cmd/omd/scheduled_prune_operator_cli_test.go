@@ -58,6 +58,10 @@ func TestPruneScheduledOutcomeCLICancellationLifecycle(t *testing.T) {
 func TestPruneFenceOperatorCLIEntireLifecycle(t *testing.T) {
 	scheduledPruneCLILifecycle(t, false, true)
 }
+func TestPruneFenceClosureCLIOriginalAccounting(t *testing.T) {
+	scheduledPruneCLILifecycle(t, false, true, true)
+}
+
 func scheduledPruneCLILifecycle(t *testing.T, cancelBeforeStart bool, fenced ...bool) {
 	f, cp, cpPath, sources := prepareCustodyScheduleQuorumCLI(t)
 	policy := f.inventory.Policy
@@ -180,6 +184,23 @@ func scheduledPruneCLILifecycle(t *testing.T, cancelBeforeStart bool, fenced ...
 		fenceArgs = preparePruneFenceCLINetwork(t, planPath, prepared.PlanID)
 	}
 	outcomeArgs := append(append([]string{scheduledOutcomeCommand}, common(sources[0])...), "--inventory", inventoryPath, "--inventory-id", packaged.InventoryID.String())
+	if len(fenced) > 1 && fenced[1] {
+		roots := []string{executor, pins, f.config.ChainPath, f.config.ChainPinsPath}
+		for _, source := range sources {
+			roots = append(roots, source.Authority, source.Pins, source.Journal)
+		}
+		before := make([]map[string]string, len(roots))
+		for i, root := range roots {
+			before[i] = prunePrepareTree(t, root)
+		}
+		testPruneFenceClosureCLI(t, planPath, prepared.PlanID, fenceArgs)
+		for i, root := range roots {
+			if !reflect.DeepEqual(before[i], prunePrepareTree(t, root)) {
+				t.Fatal("closure modified owner/storage files", root)
+			}
+		}
+		return
+	}
 	var outcomeReview store.ScheduledPruneCommandResult
 	if cancelBeforeStart {
 		scheduledCLIRun(t, outcomeArgs, &outcomeReview)
