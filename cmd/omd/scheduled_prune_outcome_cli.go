@@ -102,7 +102,10 @@ func runScheduledPruneOutcomeCLI(ctx context.Context, args []string, out io.Writ
 		return err
 	}
 	roots := []string{c.AuthorityPath, c.AuthorityPinsPath, c.ExecutorPath, c.ExecutorPinsPath}
-	inputs := []string{c.PlanPath, c.InventoryPath, c.ClosurePath}
+	inputs := []string{c.PlanPath, c.InventoryPath}
+	if c.ClosurePath != "" {
+		inputs = append(inputs, c.ClosurePath)
+	}
 	storageFlags := []string{"data", "chain", "chain-pins", "storage-migration-id", "max-history-bytes", "fork-retention", "checkpoint-every", "checkpoint-keep", "canonical-retention"}
 	hasStorage := false
 	for _, name := range storageFlags {
