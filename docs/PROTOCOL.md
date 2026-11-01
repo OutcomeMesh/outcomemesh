@@ -1111,6 +1111,40 @@ selected pending ticket closes; spent IDs and other obligations remain. Older
 binaries reject v1 journal records; no silent journal migration or rollback is
 supported. This does not resolve a Started task without its signed result.
 
+### Scheduled Prune command delivery v0
+
+`/outcomemesh/scheduled-prune-command/0` is an explicit authenticated transport
+adapter, separate from legacy admission/completion. It accepts only co-signed
+ScheduleVersion2 Prune Admit or Complete entries. It changes no consensus rule.
+
+`OMCPSINT` u16 version 0 is exactly 648 bytes: seven 32-byte hashes in order
+(client peer, server peer, plan, request, executor binding, inventory, local review)
+followed by the canonical 414-byte scheduled entry. All hashes except inventory
+must be nonzero and the two peers must differ. Admit requires zero inventory,
+Prune purpose and an operation ID equal to the request. Complete requires a
+nonzero inventory and canonical completion fields. Other versions and commands
+are rejected. The ID domain is `OMESH/custody-scheduled-prune/intent/id/v0` over
+the complete intent bytes.
+
+`OMCPSREQ` u16 version 0 contains a nonzero 32-byte exchange nonce and the complete
+intent, totaling 690 bytes. `OMCPSACK` u16 version 0 contains that nonce and the
+intent ID, totaling 74 bytes. Both frames require write-side EOF and a bounded
+deadline. The receiver compares the whole intent to its independently retained
+configuration before opening original owners. A fresh command must match its
+local review; a historical reply requires confirmed exact authority history and,
+for primary admission, the original executor admission binding. Completion checks
+the full retained terminal evidence, including the settlement artifact ID.
+Unconfirmed attempts remain held for explicit local recovery.
+
+The separate outbox contains `assignment.omcaa`, `intent.omcsi`, `ready.omcso`,
+`scheduled-prune.lock`, `pending/` and `received/ack.omcsr`. The ready marker is
+`OMCSINIT` u16 version 0 plus the intent ID. The 148-byte receipt is `OMCSDONE`
+u16 version 0, intent ID, complete acknowledgement and a 32-byte checksum using
+`OMESH/custody-scheduled-prune/receipt/v0` over preceding receipt bytes.
+These are local historical records, not signed portable proofs or current grants.
+Old readers cannot open the new outbox; old authority/executor formats are unchanged.
+See [the delivery boundary and recovery rules](PRUNE_SCHEDULED_DELIVERY.md).
+
 ### Observed-effect Prune settlement v0
 
 This explicit local disposition applies only to request-v3 Started executors
