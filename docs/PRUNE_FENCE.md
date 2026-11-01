@@ -101,18 +101,18 @@ outputs. Paths and keys are operator inputs, not values supplied by remote peers
 | Retained state | Permitted continuation |
 | --- | --- |
 | No candidate and no start | Review and execute against the original enrollment. |
-| Candidate without quorum/start | Retain the candidate and all tickets. Collect a closure certificate against the original scope if available; do not create a new session or cancel locally. |
+| Candidate without quorum/start | Retain the candidate. Collect and apply an original-scope closure certificate if a quorum is available; do not create a new session. Tickets remain open until separately completed. |
 | Confirmed start without signed result | Hold the outcome, even if the local storage effect exists. Do not repeat deletion or reconstruct a signature. |
 | Complete signed result with pending pin confirmation | Continue the exact original retained transition through the existing pin recovery path. |
 | Confirmed signed result | Read historical evidence and complete each original ticket separately. |
 
-Local pre-start cancellation is deliberately unavailable for this request version.
+Uncertified local cancellation is unavailable for this request version.
 A minority vote, lost response, timeout or process death does not prove that the
 slot is unclaimed. The closure procedure below can certify the independent slot.
-Applying that certificate through original executor/authority cancellation and
-completion is still required before any obligation can be released. Resolution
-without a retained session-signed result is also later work. No new adapter
-changes old request or cancellation semantics.
+Apply that certificate through the reviewed original-owner procedure below, then
+complete each replica separately. A Started outcome without a retained
+session-signed result remains later work. Old request and cancellation semantics
+remain unchanged.
 
 The witness quorum prevents conflicting claims; it does not execute storage or
 attest that an administrator physically deleted data. The storage API and process
@@ -174,13 +174,56 @@ This command changes witness votes only. It does not open executor, authority
 or storage owners, remove pending work, refund spent operations or relax retained
 archive deadlines. `closure_verified` reports artifact verification against the
 pinned plan; the JSON report is not a signed accounting statement. A start with
-no complete signed result remains held. Original-owner application of closure
-is the next stage of the plan.
+no complete signed result remains held.
+
+## Apply closure through the original executor
+
+Use the original primary authority, executor and independent pin roots. Supply
+the previously accepted plan and inventory and the separately retained closure
+ID. Review first:
+
+```sh
+omd work-prune-scheduled-outcome \
+  --plan plan.bin --plan-id PLAN_ID \
+  --inventory inventory.bin --inventory-id INVENTORY_ID \
+  --assignment-id PRIMARY_ASSIGNMENT_ID \
+  --authority /srv/om-authority --authority-pins /srv/om-authority-pins \
+  --executor /srv/om-prune --executor-pins /srv/om-prune-pins \
+  --closure closure.bin --closure-id CLOSURE_ID
+```
+
+Check the displayed original bindings, owner positions and `ClosureID`. Repeat
+these inputs with `--mode cancel-with-closure --expected-review-id REVIEW_ID`.
+This review uses a separate domain and cannot be substituted with a review that
+omits the certificate. No signing key, witness connection, archive body or chain
+handle is needed to apply already collected evidence.
+
+Only a confirmed admission with no start or pending transition can cancel. The
+executor retains `OMCPCNCL` v1, containing its original four bindings and the full
+closure certificate, through the original independent intent and confirmation.
+Any abandoned candidate remains immutable. Cancellation does not change the
+authority head, pending count, spent operation set or storage position.
+
+If interrupted, review without `--closure` or `--closure-id` and use the existing
+`resume-executor` mode to confirm only the exact retained cancellation. Its full
+certificate is already in the pin intent, so recovery does not replace witnesses
+or require the external file. An unconfirmed cancellation cannot complete a
+ticket. A confirmed retry with a supplied certificate must match the original
+certificate bytes, including its vote subset.
+
+After confirmation, review without closure flags, publish the cancellation and
+follow [per-replica completion](PRUNE_SCHEDULED_OUTCOMES.md#export-and-complete-each-replica-separately).
+The consumer and each authority sign the existing scheduled Complete command
+against their separately reviewed original positions. Applying each command
+checks the retained executor cancellation under its original pins. Other replica
+tickets, unrelated work, lifetime spending and archive deadlines remain intact.
 
 ## Compatibility and verification
 
 Request v3, plan/inventory v1 and start v2 are explicit opt-in formats. Old request,
-plan, inventory, effect and cancellation encodings retain their existing rules.
+plan, inventory, effect and v0 cancellation encodings retain their existing rules.
+Cancellation v1 is accepted only for a matching fenced request and cannot be
+downgraded to v0. Older binaries cannot reopen journals containing v1 records.
 The executor's new `fence/candidate` file is immutable. No chain database, storage
 position journal or authority history is replaced. Codecs and signature domains
 are specified in [PROTOCOL.md](PROTOCOL.md#independent-scheduled-prune-claims).
@@ -188,5 +231,6 @@ are specified in [PROTOCOL.md](PROTOCOL.md#independent-scheduled-prune-claims).
 Coverage includes four real witness services, one/two-member outages, competing
 participant copies, concurrent permit consumption, crossed storage identities,
 full CLI completion, malformed and downgraded artifacts, fault injection and
-five process-kill boundaries. Fixed vectors and decoder fuzz targets accompany
+process termination during execution, certified cancellation and separate
+accounting completion. Fixed vectors and decoder fuzz targets accompany
 the new formats. These checks establish local behavior, not deployment readiness.

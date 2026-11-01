@@ -94,7 +94,7 @@ func (o MigratedPruneOutcome) EvidenceID(c MigratedPruneContext) (types.Hash, er
 	}
 	v := *o.Cancellation
 	primaryTicket, _ := b.primaryEntry.ID()
-	if v.AssignmentID != c.Inventory.Request.AssignmentID || v.RequestID != c.Inventory.Policy.RequestID || v.TicketID != primaryTicket || v.BindingID != c.Inventory.Policy.ExecutorBindingID {
+	if v.Closure != nil || v.AssignmentID != c.Inventory.Request.AssignmentID || v.RequestID != c.Inventory.Policy.RequestID || v.TicketID != primaryTicket || v.BindingID != c.Inventory.Policy.ExecutorBindingID {
 		return types.Hash{}, ErrPruneOutcome
 	}
 	return v.ID()
@@ -113,7 +113,11 @@ func LoadMigratedPruneOutcome(path, kind string, id types.Hash) (MigratedPruneOu
 	if id.IsZero() {
 		return o, ErrPruneOutcome
 	}
-	raw, err := readRegular(path, workchain.MaximumCanonicalPruneEffectBytes)
+	limit := workchain.MaximumCanonicalPruneEffectBytes
+	if kind == "cancellation" {
+		limit = MaximumCertifiedPruneCancellationBytes
+	}
+	raw, err := readRegular(path, limit)
 	if err != nil {
 		return o, err
 	}

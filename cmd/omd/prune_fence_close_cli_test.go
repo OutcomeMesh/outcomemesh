@@ -15,7 +15,7 @@ import (
 	"github.com/outcomemesh/outcomemesh/node/prunefence"
 )
 
-func testPruneFenceClosureCLI(t *testing.T, plan string, planID types.Hash, networkArgs []string) {
+func testPruneFenceClosureCLI(t *testing.T, plan string, planID types.Hash, networkArgs []string) (string, types.Hash) {
 	t.Helper()
 	args := []string{pruneFenceCloseCommand, "--plan", plan, "--plan-id", planID.String()}
 	var review pruneFenceCloseReport
@@ -127,4 +127,5 @@ func testPruneFenceClosureCLI(t *testing.T, plan string, planID types.Hash, netw
 	if string(got) != "retained invalid artifact" {
 		t.Fatal("output changed")
 	}
+	return dest, cid
 }

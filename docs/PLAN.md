@@ -77,9 +77,11 @@ Remaining work, in order:
    Typed closure certificates now bind the original request and policy to a
    controller-signed CloseUnclaimed quorum. CLI review, collection, offline
    verification and exact output retry preserve the original witness enrollment
-   and all executor/authority accounting. Next apply these certificates through
-   reviewed original-owner cancellation and completion, then resolve starts with
-   no matching signed result and implement remote v1/profile-5 witness and
+   and all executor/authority accounting. Reviewed original-owner application now
+   retains a v1 cancellation with the full certificate in the executor and its
+   independent pin history. Separate co-signed completion drains each original
+   replica ticket without restoring spent budget or changing other work. Next
+   resolve starts with no matching signed result and implement remote v1/profile-5 witness and
    execution transitions. Unprepared/raw
    legacy paths remain gated; legacy prune transports remain unchanged.
 2. Define the independently approved network activation policy and transition

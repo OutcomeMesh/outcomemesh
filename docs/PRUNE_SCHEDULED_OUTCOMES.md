@@ -2,8 +2,10 @@
 
 Request v3 tasks use [independent pre-deletion claims](PRUNE_FENCE.md).
 Their missing-result and pre-start cancellation rules are stricter than the
-legacy local workflow described below: a cold candidate stays held, and a bare
-effect cannot recreate its session signature.
+legacy local workflow described below: a cold candidate needs an original
+CloseUnclaimed quorum before cancellation, and a bare effect cannot recreate
+its session signature. Use the [certified cancellation procedure](PRUNE_FENCE.md#apply-closure-through-the-original-executor)
+for request v3, then the same per-replica export/sign/apply steps below.
 
 Status: local pre-alpha operator workflow for tasks admitted on the migrated
 schedule. Use [the scheduled cleanup procedure](CUSTODY_RADIX_SCHEDULE.md) to
@@ -36,7 +38,7 @@ positions. A confirmed terminal result also has `outcome_kind` and `outcome_id`.
 Review rejects output and action-only flags. Independently check the displayed
 identities and positions before supplying that review ID to an action.
 
-## Cancel before execution
+## Cancel an unfenced task before execution
 
 Repeat the reviewed command with
 `--mode cancel-before-start --expected-review-id <review-id>`. Only the primary

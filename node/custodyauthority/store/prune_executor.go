@@ -406,7 +406,7 @@ func (executor *PruneExecutor) snapshot() PruneExecution {
 		result.Effect = &effect
 	}
 	if executor.cancellation != nil {
-		cancellation := *executor.cancellation
+		cancellation := clonePruneCancellation(*executor.cancellation)
 		result.Cancellation = &cancellation
 	}
 	if executor.pins != nil {

@@ -9,6 +9,7 @@ import (
 	"github.com/outcomemesh/outcomemesh/core/codec"
 	"github.com/outcomemesh/outcomemesh/core/types"
 	"github.com/outcomemesh/outcomemesh/node/custodyauthority"
+	"github.com/outcomemesh/outcomemesh/node/prunefence"
 	"github.com/outcomemesh/outcomemesh/node/workarchive"
 	"github.com/outcomemesh/outcomemesh/node/workchain"
 )
@@ -21,6 +22,8 @@ type ScheduledPruneCommandConfig struct {
 	EntryID                                                          types.Hash
 	InventoryPath                                                    string
 	InventoryID                                                      types.Hash
+	ClosurePath                                                      string
+	ClosureID                                                        types.Hash
 	JournalPath                                                      string
 	CustodyPolicy                                                    workarchive.CustodyPolicy
 	JournalLimits                                                    workarchive.CustodyJournalLimits
@@ -33,6 +36,7 @@ type ScheduledPruneCommandReview struct {
 	JournalSequence           uint64
 	JournalHeadID, ReceiptID  types.Hash
 	AlreadyApplied            bool
+	ClosureID                 types.Hash                   `json:",omitempty"`
 	Storage                   *workchain.StorageProtection `json:",omitempty"`
 }
 type ScheduledPruneCommandResult struct {
@@ -77,11 +81,16 @@ func RunScheduledPruneCommand(ctx context.Context, c ScheduledPruneCommandConfig
 }
 func runScheduledPruneCommand(ctx context.Context, c ScheduledPruneCommandConfig, mode string, expected types.Hash, hooks storeHooks) (_ ScheduledPruneCommandResult, returnErr error) {
 	var result ScheduledPruneCommandResult
-	if ctx == nil || (mode != "review" && mode != "apply" && mode != "resume" && mode != "resume-executor" && mode != "cancel-before-start" && mode != "recover-effect") || (mode == "review") != expected.IsZero() {
+	if ctx == nil || (mode != "review" && mode != "apply" && mode != "resume" && mode != "resume-executor" && mode != "cancel-before-start" && mode != "cancel-with-closure" && mode != "recover-effect") || (mode == "review") != expected.IsZero() {
 		return result, ErrScheduledPrune
 	}
 	if err := ctx.Err(); err != nil {
 		return result, err
+	}
+	if (c.ClosurePath == "") != c.ClosureID.IsZero() ||
+		(mode == "cancel-with-closure" && c.ClosurePath == "") ||
+		(c.ClosurePath != "" && ((mode != "review" && mode != "cancel-with-closure") || c.EntryPath != "" || c.JournalPath != "" || c.Storage != nil || c.InventoryPath == "")) {
+		return result, ErrScheduledPrune
 	}
 	if c.Storage != nil {
 		if mode != "review" && mode != "recover-effect" {
@@ -107,7 +116,7 @@ func runScheduledPruneCommand(ctx context.Context, c ScheduledPruneCommandConfig
 		return result, ErrScheduledPrune
 	}
 
-	for _, p := range []*string{&c.PlanPath, &c.AuthorityPath, &c.AuthorityPinsPath, &c.ExecutorPath, &c.ExecutorPinsPath, &c.EntryPath, &c.InventoryPath, &c.JournalPath} {
+	for _, p := range []*string{&c.PlanPath, &c.AuthorityPath, &c.AuthorityPinsPath, &c.ExecutorPath, &c.ExecutorPinsPath, &c.EntryPath, &c.InventoryPath, &c.JournalPath, &c.ClosurePath} {
 		if *p != "" {
 			path, err := storePath(*p)
 			if err != nil {
@@ -129,6 +138,26 @@ func runScheduledPruneCommand(ctx context.Context, c ScheduledPruneCommandConfig
 		return result, err
 	}
 	rid, _ := plan.Request.ID()
+	var closure prunefence.Closure
+	if c.ClosurePath != "" {
+		if plan.FencePolicy == nil || c.AssignmentID != plan.Request.AssignmentID {
+			return result, ErrPruneOutcome
+		}
+		raw, err := readRegular(c.ClosurePath, prunefence.MaximumClosureBytes)
+		if err != nil {
+			return result, err
+		}
+		closure, err = prunefence.DecodeClosure(raw)
+		if err != nil {
+			return result, err
+		}
+		cid, _ := closure.ID()
+		iid, _ := closure.Intent.ID()
+		want, err := (prunefence.ClosureIntent{Policy: *plan.FencePolicy, AssignmentID: plan.Request.AssignmentID, RequestID: rid}).ID()
+		if err != nil || cid != c.ClosureID || iid != want {
+			return result, ErrPruneOutcome
+		}
+	}
 	var entry custodyauthority.Entry
 	if c.EntryPath != "" {
 		raw, err := readRegular(c.EntryPath, custodyauthority.MaximumEntryBytes)
@@ -156,7 +185,7 @@ func runScheduledPruneCommand(ctx context.Context, c ScheduledPruneCommandConfig
 	if c.Storage != nil {
 		roots = append(roots, c.Storage.ChainPath, c.Storage.ChainPinsPath)
 	}
-	files := []string{c.PlanPath, c.EntryPath, c.InventoryPath}
+	files := []string{c.PlanPath, c.EntryPath, c.InventoryPath, c.ClosurePath}
 	if err := scheduledPrunePlacement(roots, files, ""); err != nil {
 		return result, err
 	}
@@ -336,6 +365,15 @@ func runScheduledPruneCommand(ctx context.Context, c ScheduledPruneCommandConfig
 		e.BytesField([]byte(path))
 	}
 	review.ReviewID = types.DomainHash("OMESH/local/scheduled-prune-command-review/v0", e.Bytes())
+	if c.ClosurePath != "" {
+		if err := verifyPruneClosure(snapshot, closure); err != nil {
+			return result, err
+		}
+		e.Fixed(c.ClosureID[:])
+		e.BytesField([]byte(c.ClosurePath))
+		review.ClosureID = c.ClosureID
+		review.ReviewID = types.DomainHash("OMESH/local/scheduled-prune-closure-review/v0", e.Bytes())
+	}
 	if protection != nil {
 		// Keep existing review bytes unchanged when recovery storage is absent.
 		e.Fixed(c.Storage.MigrationID[:])
@@ -395,14 +433,18 @@ func runScheduledPruneCommand(ctx context.Context, c ScheduledPruneCommandConfig
 		result.Executor, err = executor.Snapshot()
 		return result, err
 	}
-	if mode == "cancel-before-start" || mode == "recover-effect" {
+	if mode == "cancel-before-start" || mode == "cancel-with-closure" || mode == "recover-effect" {
 		if c.EntryPath != "" || c.JournalPath != "" || c.InventoryPath == "" || c.AssignmentID != plan.Request.AssignmentID || authority.Pending != nil || snapshot.Protection.Pending != nil {
 			return result, ErrPruneOutcome
 		}
 		if err := SaveScheduledPruneInventory(ctx, c.InventoryPath, inventory, c.InventoryID); err != nil {
 			return result, err
 		}
-		if mode == "cancel-before-start" {
+		if mode == "cancel-with-closure" {
+			if _, err := executor.CancelWithClosure(ctx, owner, closure); err != nil {
+				return result, err
+			}
+		} else if mode == "cancel-before-start" {
 			if _, err := executor.CancelBeforeStart(ctx, owner); err != nil {
 				return result, err
 			}

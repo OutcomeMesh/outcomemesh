@@ -15,12 +15,14 @@ const scheduledOutcomeCommand = "work-prune-scheduled-outcome"
 func runScheduledPruneOutcomeCLI(ctx context.Context, args []string, out io.Writer) error {
 	f := flag.NewFlagSet(scheduledOutcomeCommand, flag.ContinueOnError)
 	f.SetOutput(io.Discard)
-	mode := f.String("mode", "review", "review, publish, cancel-before-start, resume-executor or recover-effect")
+	mode := f.String("mode", "review", "review, publish, cancel-before-start, cancel-with-closure, resume-executor or recover-effect")
 	c := store.ScheduledPruneCommandConfig{}
 	f.StringVar(&c.PlanPath, "plan", "", "canonical scheduled plan")
 	planID := f.String("plan-id", "", "independently retained plan ID")
 	f.StringVar(&c.InventoryPath, "inventory", "", "original accepted scheduled inventory")
 	inventoryID := f.String("inventory-id", "", "independently retained inventory ID")
+	f.StringVar(&c.ClosurePath, "closure", "", "certified cancellation: original witness closure")
+	closureID := f.String("closure-id", "", "independently retained closure ID")
 	assignmentID := f.String("assignment-id", "", "selected original assignment; cancel, resume and recovery require the primary")
 	f.StringVar(&c.AuthorityPath, "authority", "", "original selected authority")
 	f.StringVar(&c.AuthorityPinsPath, "authority-pins", "", "original authority pins")
@@ -47,11 +49,25 @@ func runScheduledPruneOutcomeCLI(ctx context.Context, args []string, out io.Writ
 		if err := custodyCommandForbid(present, "expected-review-id", "out"); err != nil {
 			return err
 		}
-	case "publish", "cancel-before-start", "resume-executor", "recover-effect":
+	case "publish", "cancel-before-start", "cancel-with-closure", "resume-executor", "recover-effect":
 	default:
 		return store.ErrScheduledPrune
 	}
 	if *mode != "publish" && present["out"] {
+		return store.ErrScheduledPrune
+	}
+	hasClosure := present["closure"] || present["closure-id"]
+	if hasClosure {
+		if (*mode != "review" && *mode != "cancel-with-closure") || c.ClosurePath == "" {
+			return store.ErrScheduledPrune
+		}
+		id, err := pruneExternalID("closure-id", *closureID)
+		if err != nil {
+			return err
+		}
+		c.ClosureID = id
+	}
+	if *mode == "cancel-with-closure" && !hasClosure {
 		return store.ErrScheduledPrune
 	}
 	for _, v := range []struct {
@@ -86,14 +102,14 @@ func runScheduledPruneOutcomeCLI(ctx context.Context, args []string, out io.Writ
 		return err
 	}
 	roots := []string{c.AuthorityPath, c.AuthorityPinsPath, c.ExecutorPath, c.ExecutorPinsPath}
-	inputs := []string{c.PlanPath, c.InventoryPath}
+	inputs := []string{c.PlanPath, c.InventoryPath, c.ClosurePath}
 	storageFlags := []string{"data", "chain", "chain-pins", "storage-migration-id", "max-history-bytes", "fork-retention", "checkpoint-every", "checkpoint-keep", "canonical-retention"}
 	hasStorage := false
 	for _, name := range storageFlags {
 		hasStorage = hasStorage || present[name]
 	}
 	if hasStorage {
-		if (*mode != "review" && *mode != "recover-effect") || uint64(*keep) > uint64(^uint32(0)) {
+		if hasClosure || (*mode != "review" && *mode != "recover-effect") || uint64(*keep) > uint64(^uint32(0)) {
 			return store.ErrScheduledPrune
 		}
 		mid, err := pruneExternalID("storage-migration-id", *migration)
