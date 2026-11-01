@@ -128,6 +128,19 @@ func BuildScheduledPruneOutcomeCompletion(p ScheduledPrunePlan, v ScheduledPrune
 	if err := p.BindInventory(v); err != nil {
 		return custodyauthority.Command{}, err
 	}
+	evidence, err := outcome.EvidenceID(v)
+	if err != nil {
+		return custodyauthority.Command{}, err
+	}
+	return buildScheduledPruneCompletion(v, assignmentID, position, evidence)
+}
+
+// The caller must have checked the complete plan/inventory and terminal outcome
+// in this call. Reuse the resulting evidence ID; do not re-verify the same proof.
+func buildScheduledPruneCompletion(v ScheduledPruneInventory, assignmentID types.Hash, position custodyauthority.Position, evidence types.Hash) (custodyauthority.Command, error) {
+	if evidence.IsZero() {
+		return custodyauthority.Command{}, ErrPruneOutcome
+	}
 	var primary, selected custodyauthority.Entry
 	var assignment custodyauthority.Assignment
 	for _, s := range v.Replicas {
@@ -144,14 +157,10 @@ func BuildScheduledPruneOutcomeCompletion(p ScheduledPrunePlan, v ScheduledPrune
 		return custodyauthority.Command{}, ErrPruneCompletion
 	}
 	ticket, _ := selected.ID()
-	eid, err := outcome.EvidenceID(v)
-	if err != nil {
-		return custodyauthority.Command{}, err
-	}
 	if position.Sequence <= selected.Command.ExpectedSequence || (position.Sequence == selected.Command.ExpectedSequence+1) != (position.HeadID == ticket) {
 		return custodyauthority.Command{}, custodyauthority.ErrHead
 	}
-	draft := custodyauthority.Command{Version: custodyauthority.ScheduleVersion2, AssignmentID: assignmentID, ScheduleID: selected.Command.ScheduleID, ExpectedSequence: position.Sequence, ExpectedHead: position.HeadID, Kind: custodyauthority.Complete, TicketID: ticket, EvidenceID: eid, ActorPublicKey: v.Request.ConsumerPublicKey}
+	draft := custodyauthority.Command{Version: custodyauthority.ScheduleVersion2, AssignmentID: assignmentID, ScheduleID: selected.Command.ScheduleID, ExpectedSequence: position.Sequence, ExpectedHead: position.HeadID, Kind: custodyauthority.Complete, TicketID: ticket, EvidenceID: evidence, ActorPublicKey: v.Request.ConsumerPublicKey}
 	if _, err := custodyauthority.ScheduledPruneCommandReviewID(assignment, draft); err != nil {
 		return custodyauthority.Command{}, err
 	}

@@ -269,19 +269,24 @@ func (executor *PruneExecutor) CompleteScheduledArchiveReplica(ctx context.Conte
 	if ctx == nil {
 		return Commit{}, ErrScheduledPrune
 	}
-	v, err := LoadScheduledPruneInventory(path, id)
+	v, encoded, err := loadScheduledPruneInventoryBytes(path, id)
 	if err != nil {
 		return Commit{}, err
 	}
-	outcome, err := RetainedScheduledPruneOutcome(v, executor.snapshot())
+	if executor.pins == nil {
+		return Commit{}, ErrPrunePin
+	}
+	// Validation stays under the executor mutex. A detached public snapshot
+	// would encode and verify the same certificate again just to copy it.
+	currentExecution := executor.execution()
+	protection := executor.pins.protection()
+	currentExecution.Protection = &protection
+	terminal, err := retainedScheduledPruneTerminalAt(v, currentExecution, id)
 	if err != nil {
 		return Commit{}, err
 	}
 	rid, _ := v.Request.ID()
-	evidence, err := outcome.EvidenceID(v)
-	if err != nil {
-		return Commit{}, err
-	}
+	evidence := terminal.EvidenceID
 	if _, err := entry.ID(); err != nil {
 		return Commit{}, err
 	}
@@ -331,10 +336,6 @@ func (executor *PruneExecutor) CompleteScheduledArchiveReplica(ctx context.Conte
 				return Commit{}, err
 			}
 		}
-	}
-	encoded, err := v.CanonicalBytes()
-	if err != nil {
-		return Commit{}, err
 	}
 	if err := publishCustodyArtifactBytes(ctx, path, encoded); err != nil {
 		return Commit{}, err

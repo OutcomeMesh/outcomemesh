@@ -34,6 +34,7 @@ const (
 	ArchiveCustodyProtocol       protocol.ID = "/outcomemesh/workarchive-custody/1"
 	PruneCompletionProtocol      protocol.ID = "/outcomemesh/prune-completion/0"
 	PruneAdmissionProtocol       protocol.ID = "/outcomemesh/prune-admission/0"
+	ScheduledPruneProtocol       protocol.ID = "/outcomemesh/scheduled-prune-command/0"
 	RemoteCustodyControlProtocol protocol.ID = "/outcomemesh/custody-remote-control/0"
 	maxListenAddresses                       = 8
 	maxAddressBytes                          = 256
@@ -71,6 +72,10 @@ const (
 	MaxPruneAdmissionStreamsPerPeerLimit               = 1
 	MaxPruneAdmissionStreamsPerMinuteLimit             = 60
 	MaxPruneAdmissionStreamsGlobalPerMinuteLimit       = 256
+	MaxScheduledPruneStreamsLimit                      = 8
+	MaxScheduledPruneStreamsPerPeerLimit               = 1
+	MaxScheduledPruneStreamsPerMinuteLimit             = 60
+	MaxScheduledPruneStreamsGlobalPerMinuteLimit       = 256
 	MaxRemoteCustodyControlStreamsLimit                = 8
 	MaxRemoteCustodyControlStreamsPerPeerLimit         = 2
 	MaxRemoteCustodyControlStreamsPerMinuteLimit       = 60
@@ -119,6 +124,10 @@ type Config struct {
 	MaxPruneAdmissionStreamsPerPeer               int
 	MaxPruneAdmissionStreamsPerMinute             int
 	MaxPruneAdmissionStreamsGlobalPerMinute       int
+	MaxScheduledPruneStreams                      int
+	MaxScheduledPruneStreamsPerPeer               int
+	MaxScheduledPruneStreamsPerMinute             int
+	MaxScheduledPruneStreamsGlobalPerMinute       int
 	MaxRemoteCustodyControlStreams                int
 	MaxRemoteCustodyControlStreamsPerPeer         int
 	MaxRemoteCustodyControlStreamsPerMinute       int
@@ -162,6 +171,10 @@ func DefaultConfig() Config {
 		MaxPruneAdmissionStreamsPerPeer:               1,
 		MaxPruneAdmissionStreamsPerMinute:             8,
 		MaxPruneAdmissionStreamsGlobalPerMinute:       32,
+		MaxScheduledPruneStreams:                      2,
+		MaxScheduledPruneStreamsPerPeer:               1,
+		MaxScheduledPruneStreamsPerMinute:             8,
+		MaxScheduledPruneStreamsGlobalPerMinute:       32,
 		MaxRemoteCustodyControlStreams:                2,
 		MaxRemoteCustodyControlStreamsPerPeer:         2,
 		MaxRemoteCustodyControlStreamsPerMinute:       8,
@@ -222,6 +235,12 @@ type Host struct {
 	pruneAdmissionPeerCounts                      map[types.Hash]int
 	maxPruneAdmissionStreamsPerMinute             int
 	maxGlobalPruneAdmissionStreamsPerMinute       int
+	scheduledPruneMu                              sync.Mutex
+	scheduledPruneWindowStart                     time.Time
+	scheduledPruneGlobalCount                     int
+	scheduledPrunePeerCounts                      map[types.Hash]int
+	maxScheduledPruneStreamsPerMinute             int
+	maxGlobalScheduledPruneStreamsPerMinute       int
 	remoteCustodyControlMu                        sync.Mutex
 	remoteCustodyControlWindowStart               time.Time
 	remoteCustodyControlGlobalCount               int
@@ -296,6 +315,9 @@ func New(ctx context.Context, privateKey ed25519.PrivateKey, config Config, hand
 		pruneAdmissionPeerCounts:                      make(map[types.Hash]int),
 		maxPruneAdmissionStreamsPerMinute:             config.MaxPruneAdmissionStreamsPerMinute,
 		maxGlobalPruneAdmissionStreamsPerMinute:       config.MaxPruneAdmissionStreamsGlobalPerMinute,
+		scheduledPrunePeerCounts:                      make(map[types.Hash]int),
+		maxScheduledPruneStreamsPerMinute:             config.MaxScheduledPruneStreamsPerMinute,
+		maxGlobalScheduledPruneStreamsPerMinute:       config.MaxScheduledPruneStreamsGlobalPerMinute,
 		remoteCustodyControlPeerCounts:                make(map[types.Hash]int),
 		maxRemoteCustodyControlStreamsPerMinute:       config.MaxRemoteCustodyControlStreamsPerMinute,
 		maxGlobalRemoteCustodyControlStreamsPerMinute: config.MaxRemoteCustodyControlStreamsGlobalPerMinute,
@@ -814,6 +836,12 @@ func validateConfig(ctx context.Context, privateKey ed25519.PrivateKey, config C
 		config.MaxPruneAdmissionStreamsPerMinute <= 0 || config.MaxPruneAdmissionStreamsPerMinute > MaxPruneAdmissionStreamsPerMinuteLimit ||
 		config.MaxPruneAdmissionStreamsGlobalPerMinute < config.MaxPruneAdmissionStreamsPerMinute ||
 		config.MaxPruneAdmissionStreamsGlobalPerMinute > MaxPruneAdmissionStreamsGlobalPerMinuteLimit ||
+		config.MaxScheduledPruneStreams <= 0 || config.MaxScheduledPruneStreams > MaxScheduledPruneStreamsLimit ||
+		config.MaxScheduledPruneStreamsPerPeer <= 0 || config.MaxScheduledPruneStreamsPerPeer > MaxScheduledPruneStreamsPerPeerLimit ||
+		config.MaxScheduledPruneStreams < config.MaxScheduledPruneStreamsPerPeer ||
+		config.MaxScheduledPruneStreamsPerMinute <= 0 || config.MaxScheduledPruneStreamsPerMinute > MaxScheduledPruneStreamsPerMinuteLimit ||
+		config.MaxScheduledPruneStreamsGlobalPerMinute < config.MaxScheduledPruneStreamsPerMinute ||
+		config.MaxScheduledPruneStreamsGlobalPerMinute > MaxScheduledPruneStreamsGlobalPerMinuteLimit ||
 		config.MaxRemoteCustodyControlStreams <= 0 || config.MaxRemoteCustodyControlStreams > MaxRemoteCustodyControlStreamsLimit ||
 		config.MaxRemoteCustodyControlStreamsPerPeer <= 0 || config.MaxRemoteCustodyControlStreamsPerPeer > MaxRemoteCustodyControlStreamsPerPeerLimit ||
 		config.MaxRemoteCustodyControlStreams < config.MaxRemoteCustodyControlStreamsPerPeer ||
@@ -845,12 +873,12 @@ func newResourceManager(config Config) (network.ResourceManager, error) {
 	peerStreams := config.MaxStreamsPerPeer + config.MaxWorkStreamsPerPeer +
 		2*config.MaxVersionedChainStreamsPerPeer + config.MaxTiePairStreamsPerPeer +
 		config.MaxArchiveObjectStreamsPerPeer + config.MaxArchiveCustodyStreamsPerPeer +
-		config.MaxPruneCompletionStreamsPerPeer + config.MaxPruneAdmissionStreamsPerPeer +
+		config.MaxPruneCompletionStreamsPerPeer + config.MaxPruneAdmissionStreamsPerPeer + config.MaxScheduledPruneStreamsPerPeer +
 		config.MaxRemoteCustodyControlStreamsPerPeer +
 		internalStreamsPerPeer
 	totalStreams := config.MaxConnections*(config.MaxStreamsPerPeer+config.MaxWorkStreamsPerPeer+internalStreamsPerPeer) +
 		2*config.MaxVersionedChainStreams + config.MaxTiePairStreams +
-		config.MaxArchiveObjectStreams + config.MaxArchiveCustodyStreams + config.MaxPruneCompletionStreams + config.MaxPruneAdmissionStreams +
+		config.MaxArchiveObjectStreams + config.MaxArchiveCustodyStreams + config.MaxPruneCompletionStreams + config.MaxPruneAdmissionStreams + config.MaxScheduledPruneStreams +
 		config.MaxRemoteCustodyControlStreams
 	system := rcmgr.ResourceLimits{
 		Streams:         rcmgr.LimitVal(totalStreams),
@@ -920,6 +948,12 @@ func newResourceManager(config Config) (network.ResourceManager, error) {
 		StreamsOutbound: rcmgr.LimitVal(config.MaxPruneAdmissionStreamsPerPeer),
 		Memory:          64 << 10,
 	}
+	scheduledPrunePerPeer := rcmgr.ResourceLimits{
+		Streams:         rcmgr.LimitVal(config.MaxScheduledPruneStreamsPerPeer),
+		StreamsInbound:  rcmgr.LimitVal(config.MaxScheduledPruneStreamsPerPeer),
+		StreamsOutbound: rcmgr.LimitVal(config.MaxScheduledPruneStreamsPerPeer),
+		Memory:          64 << 10,
+	}
 	remoteCustodyControlPerPeer := rcmgr.ResourceLimits{
 		Streams:         rcmgr.LimitVal(config.MaxRemoteCustodyControlStreamsPerPeer),
 		StreamsInbound:  rcmgr.LimitVal(config.MaxRemoteCustodyControlStreamsPerPeer),
@@ -985,6 +1019,12 @@ func newResourceManager(config Config) (network.ResourceManager, error) {
 				StreamsOutbound: rcmgr.LimitVal(config.MaxPruneAdmissionStreams),
 				Memory:          512 << 10,
 			},
+			ScheduledPruneProtocol: {
+				Streams:         rcmgr.LimitVal(config.MaxScheduledPruneStreams),
+				StreamsInbound:  rcmgr.LimitVal(config.MaxScheduledPruneStreams),
+				StreamsOutbound: rcmgr.LimitVal(config.MaxScheduledPruneStreams),
+				Memory:          512 << 10,
+			},
 			RemoteCustodyControlProtocol: {
 				Streams:         rcmgr.LimitVal(config.MaxRemoteCustodyControlStreams),
 				StreamsInbound:  rcmgr.LimitVal(config.MaxRemoteCustodyControlStreams),
@@ -1002,6 +1042,7 @@ func newResourceManager(config Config) (network.ResourceManager, error) {
 			ArchiveCustodyProtocol:       archiveCustodyPerPeer,
 			PruneCompletionProtocol:      pruneCompletionPerPeer,
 			PruneAdmissionProtocol:       pruneAdmissionPerPeer,
+			ScheduledPruneProtocol:       scheduledPrunePerPeer,
 			RemoteCustodyControlProtocol: remoteCustodyControlPerPeer,
 		},
 		Conn: rcmgr.ResourceLimits{

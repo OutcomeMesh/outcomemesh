@@ -151,6 +151,8 @@ test-fuzz-smoke:
 	$(GO) test ./node/custodyauthority/completionwire -run '^$$' -fuzz '^FuzzCompletionFrames$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyauthority/store -run '^$$' -fuzz '^FuzzCompletionOutboxRecords$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyauthority/admissionwire -run '^$$' -fuzz '^FuzzAdmissionFrames$$' -fuzztime=$(FUZZTIME)
+	$(GO) test ./node/custodyauthority/scheduledwire -run '^$$' -fuzz '^FuzzPruneScheduledFrames$$' -fuzztime=$(FUZZTIME)
+	$(GO) test ./node/custodyauthority/store -run '^$$' -fuzz '^FuzzPruneScheduledDeliveryReceipt$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyauthority/store -run '^$$' -fuzz '^FuzzAdmissionOutboxRecords$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/workarchive -run '^$$' -fuzz '^FuzzReadCustodySessionFrameNeverPanics$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./sim/workgraphmodel -run '^$$' -fuzz '^FuzzRunSelfishStrategiesNeverBreakAccounting$$' -fuzztime=$(FUZZTIME)
@@ -158,6 +160,7 @@ test-fuzz-smoke:
 test-process:
 	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestPruneFenceProcessDeathKeepsObligations$$' -count=1 -timeout=3m
 	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestProcessPruneScheduledOutcomes$$' -count=1 -timeout=3m
+	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestProcessPruneScheduledDelivery' -count=1 -timeout=3m
 	$(GO) test -tags=integration ./node/custodygateway -run '^TestProcessGuardedRetainedCoreRecovery$$' -count=1 -timeout=3m
 	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestProcessPruneMigrated(Recovery|Observation)$$' -count=1 -timeout=3m
 	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestProcess(ScheduledPruneOperatorRecovery|PruneScheduledOutcomes)$$' -count=1 -timeout=3m

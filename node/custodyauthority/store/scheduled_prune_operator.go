@@ -9,6 +9,7 @@ import (
 	"github.com/outcomemesh/outcomemesh/core/codec"
 	"github.com/outcomemesh/outcomemesh/core/types"
 	"github.com/outcomemesh/outcomemesh/node/custodyauthority"
+	"github.com/outcomemesh/outcomemesh/node/custodyauthority/scheduledwire"
 	"github.com/outcomemesh/outcomemesh/node/prunefence"
 	"github.com/outcomemesh/outcomemesh/node/workarchive"
 	"github.com/outcomemesh/outcomemesh/node/workchain"
@@ -85,12 +86,27 @@ func RunScheduledPruneCommand(ctx context.Context, c ScheduledPruneCommandConfig
 	return runScheduledPruneCommand(ctx, c, mode, expected, storeHooks{})
 }
 func runScheduledPruneCommand(ctx context.Context, c ScheduledPruneCommandConfig, mode string, expected types.Hash, hooks storeHooks) (_ ScheduledPruneCommandResult, returnErr error) {
+	return runScheduledPruneCommandBound(ctx, c, mode, expected, hooks, nil)
+}
+
+func runScheduledPruneCommandBound(ctx context.Context, c ScheduledPruneCommandConfig, mode string, expected types.Hash, hooks storeHooks, delivery *scheduledwire.Intent) (_ ScheduledPruneCommandResult, returnErr error) {
 	var result ScheduledPruneCommandResult
 	if ctx == nil || (mode != "review" && mode != "apply" && mode != "resume" && mode != "resume-executor" && mode != "cancel-before-start" && mode != "cancel-with-closure" && mode != "recover-effect" && mode != "prepare-settlement" && mode != "settle-effect") || (mode == "review") != expected.IsZero() {
 		return result, ErrScheduledPrune
 	}
 	if err := ctx.Err(); err != nil {
 		return result, err
+	}
+	if delivery != nil {
+		if mode != "apply" || c.Storage != nil || c.PrepareSettlement || c.SettlementPath != "" || !c.SettlementID.IsZero() || c.ClosurePath != "" || !c.ClosureID.IsZero() {
+			return result, ErrScheduledPrune
+		}
+		if _, err := delivery.ID(); err != nil {
+			return result, err
+		}
+		if c.PlanID != delivery.PlanID || c.InventoryID != delivery.InventoryID || c.AssignmentID != delivery.Entry.Command.AssignmentID || expected != delivery.ReviewID {
+			return result, ErrScheduledPrune
+		}
 	}
 	if (c.ClosurePath == "") != c.ClosureID.IsZero() ||
 		(mode == "cancel-with-closure" && c.ClosurePath == "") ||
@@ -244,6 +260,9 @@ func runScheduledPruneCommand(ctx context.Context, c ScheduledPruneCommandConfig
 	if err != nil {
 		return result, err
 	}
+	if delivery != nil && (rid != delivery.RequestID || snapshot.Protection == nil || snapshot.Protection.BindingID != delivery.ExecutorBindingID || entry != delivery.Entry) {
+		return result, ErrScheduledPrune
+	}
 	var inventory ScheduledPruneInventory
 	if c.InventoryPath != "" {
 		inventory, err = LoadScheduledPruneInventory(c.InventoryPath, c.InventoryID)
@@ -292,11 +311,11 @@ func runScheduledPruneCommand(ctx context.Context, c ScheduledPruneCommandConfig
 			if c.InventoryPath == "" || c.JournalPath != "" {
 				return result, ErrPruneOutcome
 			}
-			outcome, outcomeErr := RetainedScheduledPruneOutcome(inventory, snapshot)
+			terminal, outcomeErr := retainedScheduledPruneTerminalAt(inventory, snapshot, c.InventoryID)
 			if outcomeErr != nil {
 				return result, outcomeErr
 			}
-			draft, err = BuildScheduledPruneOutcomeCompletion(plan, inventory, outcome, c.AssignmentID, pos)
+			draft, err = buildScheduledPruneCompletion(inventory, c.AssignmentID, pos, terminal.EvidenceID)
 		default:
 			return result, ErrScheduledPrune
 		}
@@ -461,6 +480,21 @@ func runScheduledPruneCommand(ctx context.Context, c ScheduledPruneCommandConfig
 	result.Executor = snapshot
 	if mode == "review" {
 		return result, ctx.Err()
+	}
+	if delivery != nil {
+		// Unknown writes require the explicit local resume path, never a fresh
+		// review or an implicit continuation initiated by a network retry.
+		if authority.Pending != nil || snapshot.Protection.Pending != nil {
+			return result, ErrPendingAttempt
+		}
+		if already {
+			// Authority confirmation alone is insufficient for a primary Admit.
+			// Completion has already checked its full retained typed outcome above.
+			if entry.Command.Kind == custodyauthority.Admit && c.AssignmentID == plan.Request.AssignmentID && (snapshot.Admission == nil || *snapshot.Admission != entry) {
+				return result, ErrPruneOutcome
+			}
+			return result, ctx.Err()
+		}
 	}
 	if expected != review.ReviewID {
 		return result, ErrPruneArchiveEffectReview

@@ -10,6 +10,21 @@ Full planned production readiness is approximately **44/100**, using the weighte
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
 
+## 2026-11-01: pinned delivery of scheduled Prune commands
+
+A separate bounded network protocol now carries exact reviewed scheduled Admit
+and Complete commands. Its intent binds both transport identities, the original
+plan/request, executor binding, inventory and local review. The receiver uses
+the original local owners and full retained outcome checks. Confirmed exact
+retries preserve accounting; pending writes require explicit local recovery.
+
+The sender retains intent before dialing and publishes a checked receipt before
+reporting delivery. Coverage includes incompatible protocols, substituted pins,
+settlement downgrade rejection, lost replies, failed durable writes, cold reopen
+and process termination on both sides. The default daemon has no new endpoint.
+CLI deployment and profile-5 remote deletion remain open. See
+[scheduled delivery](PRUNE_SCHEDULED_DELIVERY.md). Readiness remains **44/100**.
+
 ## 2026-11-01: observed-effect settlement for started Prune
 
 A confirmed request-v3 start with no session signature can now settle from its

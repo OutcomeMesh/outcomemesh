@@ -16,9 +16,16 @@ type ScheduledPruneOutcome struct {
 }
 
 func (o ScheduledPruneOutcome) EvidenceID(v ScheduledPruneInventory) (types.Hash, error) {
-	if err := v.validate(); err != nil {
+	id, err := v.ID()
+	if err != nil {
 		return types.Hash{}, err
 	}
+	return o.evidenceID(v, id)
+}
+
+// inventoryID must be calculated from this already validated immutable value in
+// the same call. This helper never accepts a caller's claimed inventory hash.
+func (o ScheduledPruneOutcome) evidenceID(v ScheduledPruneInventory, inventoryID types.Hash) (types.Hash, error) {
 	if o.count() != 1 {
 		return types.Hash{}, ErrPruneOutcome
 	}
@@ -33,9 +40,8 @@ func (o ScheduledPruneOutcome) EvidenceID(v ScheduledPruneInventory) (types.Hash
 		if err := verifyPruneSettlement(state, *o.Settlement); err != nil {
 			return types.Hash{}, err
 		}
-		iid, _ := v.ID()
 		b := claim.Candidate.Binding
-		if b.InventoryID != iid || b.ExecutorBindingID != v.ExecutorBindingID || b.StoragePairID != v.StoragePairID {
+		if b.InventoryID != inventoryID || b.ExecutorBindingID != v.ExecutorBindingID || b.StoragePairID != v.StoragePairID {
 			return types.Hash{}, ErrPruneOutcome
 		}
 		return o.Settlement.ID()
@@ -115,65 +121,87 @@ func scheduledPrunePrimary(v ScheduledPruneInventory) (custodyauthority.Entry, e
 // RetainedScheduledPruneOutcome checks a detached snapshot. Callers publishing
 // or applying it must first acquire the original owners and independent pins.
 func RetainedScheduledPruneOutcome(v ScheduledPruneInventory, s PruneExecution) (ScheduledPruneOutcome, error) {
-	if err := scheduledPruneExecutorBinding(v, s); err != nil {
-		return ScheduledPruneOutcome{}, err
-	}
-	if s.Protection.Pending != nil {
-		return ScheduledPruneOutcome{}, ErrPrunePinPending
-	}
+	terminal, err := retainedScheduledPruneTerminal(v, s)
+	return terminal.Outcome, err
+}
+
+// scoped to one verified snapshot; never persisted or accepted as caller input.
+type scheduledPruneTerminal struct {
+	Outcome    ScheduledPruneOutcome
+	EvidenceID types.Hash
+}
+
+func retainedScheduledPruneTerminal(v ScheduledPruneInventory, s PruneExecution) (scheduledPruneTerminal, error) {
 	id, err := v.ID()
 	if err != nil {
-		return ScheduledPruneOutcome{}, err
+		return scheduledPruneTerminal{}, err
+	}
+	return retainedScheduledPruneTerminalAt(v, s, id)
+}
+
+// id belongs to a fully decoded/validated inventory in this call. Only internal
+// owner paths may reuse it; public snapshot verification computes it afresh.
+func retainedScheduledPruneTerminalAt(v ScheduledPruneInventory, s PruneExecution, id types.Hash) (scheduledPruneTerminal, error) {
+	if id.IsZero() {
+		return scheduledPruneTerminal{}, ErrScheduledPrune
+	}
+	if err := scheduledPruneExecutorBinding(v, s); err != nil {
+		return scheduledPruneTerminal{}, err
+	}
+	if s.Protection.Pending != nil {
+		return scheduledPruneTerminal{}, ErrPrunePinPending
 	}
 	o := ScheduledPruneOutcome{Effect: s.Effect, Cancellation: s.Cancellation}
 	if s.FenceSettlement != nil {
 		if s.Stage != PruneSucceeded || s.Effect == nil || s.Cancellation != nil || s.FenceResult != nil || s.ArchiveInventoryID != id {
-			return ScheduledPruneOutcome{}, ErrPruneOutcome
+			return scheduledPruneTerminal{}, ErrPruneOutcome
 		}
 		if err := verifyPruneSettlement(s, *s.FenceSettlement); err != nil {
-			return ScheduledPruneOutcome{}, err
+			return scheduledPruneTerminal{}, err
 		}
 		effect, err := s.Effect.ID()
 		settled, se := s.FenceSettlement.Effect.ID()
 		if err != nil || se != nil || effect != settled {
-			return ScheduledPruneOutcome{}, ErrPruneOutcome
+			return scheduledPruneTerminal{}, ErrPruneOutcome
 		}
 		o = ScheduledPruneOutcome{Settlement: s.FenceSettlement}
-		if _, err := o.EvidenceID(v); err != nil {
-			return ScheduledPruneOutcome{}, err
+		evidence, err := o.evidenceID(v, id)
+		if err != nil {
+			return scheduledPruneTerminal{}, err
 		}
-		return o, nil
+		return scheduledPruneTerminal{Outcome: o, EvidenceID: evidence}, nil
 	}
 	if !v.Request.FencePolicyID.IsZero() && s.Stage == PruneCancelled {
 		if s.Cancellation == nil || s.Cancellation.Closure == nil || s.FenceClaim != nil || s.FenceResult != nil {
-			return ScheduledPruneOutcome{}, ErrPruneOutcome
+			return scheduledPruneTerminal{}, ErrPruneOutcome
 		}
 	} else if !v.Request.FencePolicyID.IsZero() {
 		if s.FenceClaim == nil || s.FenceResult == nil || s.Effect == nil || s.Stage != PruneSucceeded {
-			return ScheduledPruneOutcome{}, ErrPruneOutcome
+			return scheduledPruneTerminal{}, ErrPruneOutcome
 		}
 		raw, err := encodePruneFenceResult(*s.Effect, *s.FenceResult)
 		if err != nil {
-			return ScheduledPruneOutcome{}, err
+			return scheduledPruneTerminal{}, err
 		}
 		if err := verifyPruneFenceCandidate(s, s.FenceClaim.Candidate); err != nil {
-			return ScheduledPruneOutcome{}, err
+			return scheduledPruneTerminal{}, err
 		}
 		b := s.FenceClaim.Candidate.Binding
 		if b.InventoryID != id || b.ExecutorBindingID != v.ExecutorBindingID || b.StoragePairID != v.StoragePairID {
-			return ScheduledPruneOutcome{}, ErrPruneOutcome
+			return scheduledPruneTerminal{}, ErrPruneOutcome
 		}
 		if _, _, err := decodePruneFenceResult(s, raw); err != nil {
-			return ScheduledPruneOutcome{}, err
+			return scheduledPruneTerminal{}, err
 		}
 	}
 	if (s.Stage == PruneSucceeded && s.ArchiveInventoryID == id && o.Effect != nil && o.Cancellation == nil) || (s.Stage == PruneCancelled && s.ArchiveInventoryID.IsZero() && o.Effect == nil && o.Cancellation != nil) {
-		if _, err := o.EvidenceID(v); err != nil {
-			return ScheduledPruneOutcome{}, err
+		evidence, err := o.evidenceID(v, id)
+		if err != nil {
+			return scheduledPruneTerminal{}, err
 		}
-		return o, nil
+		return scheduledPruneTerminal{Outcome: o, EvidenceID: evidence}, nil
 	}
-	return ScheduledPruneOutcome{}, ErrPruneOutcome
+	return scheduledPruneTerminal{}, ErrPruneOutcome
 }
 
 func scheduledPruneExecutorBinding(v ScheduledPruneInventory, s PruneExecution) error {

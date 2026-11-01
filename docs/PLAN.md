@@ -85,6 +85,11 @@ Remaining work, in order:
    signatures and a separate original-witness decision. Reviewed application
    retains a distinct settlement artifact; per-replica completion binds its full
    ID. Missing effects still remain held. See [observed-effect settlement](PRUNE_SETTLEMENT.md).
+   A distinct scheduled command transport now delivers reviewed admissions and
+   completions to the original local owners. It preserves full settlement IDs,
+   durable client intent/receipts and explicit recovery for unconfirmed writes;
+   see [scheduled delivery](PRUNE_SCHEDULED_DELIVERY.md). CLI service deployment
+   and independently protected remote execution remain open.
    Next implement remote v1/profile-5 witness and execution transitions, including
    this disposition and retained pins across independently operated failures.
    Unprepared/raw
