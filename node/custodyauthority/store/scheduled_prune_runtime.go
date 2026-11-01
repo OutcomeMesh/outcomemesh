@@ -35,9 +35,10 @@ type ScheduledPruneReview struct {
 	Journals                       []workarchive.CustodyJournalState
 }
 type ScheduledPruneRuntimeResult struct {
-	FenceResult *prunefence.Result
-	Review      ScheduledPruneReview
-	Commit      *workchain.CanonicalPruneCommit
+	FenceResult     *prunefence.Result
+	FenceSettlement *PruneSettlement
+	Review          ScheduledPruneReview
+	Commit          *workchain.CanonicalPruneCommit
 }
 
 // RunScheduledPrune owns all original roots for one explicitly selected action.
@@ -250,6 +251,7 @@ func runScheduledPrune(ctx context.Context, config ScheduledPruneRuntimeConfig, 
 		return result, err
 	}
 	result.Commit = &commit
-	result.FenceResult = executor.snapshot().FenceResult
+	snapshot := executor.snapshot()
+	result.FenceResult, result.FenceSettlement = snapshot.FenceResult, snapshot.FenceSettlement
 	return result, nil
 }

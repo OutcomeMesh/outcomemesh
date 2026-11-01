@@ -102,17 +102,18 @@ outputs. Paths and keys are operator inputs, not values supplied by remote peers
 | --- | --- |
 | No candidate and no start | Review and execute against the original enrollment. |
 | Candidate without quorum/start | Retain the candidate. Collect and apply an original-scope closure certificate if a quorum is available; do not create a new session. Tickets remain open until separately completed. |
-| Confirmed start without signed result | Hold the outcome, even if the local storage effect exists. Do not repeat deletion or reconstruct a signature. |
+| Confirmed start without signed result | Keep obligations held. An exact retained effect permits the separate observed-effect settlement procedure; absence does not. Never repeat deletion or reconstruct a signature. |
 | Complete signed result with pending pin confirmation | Continue the exact original retained transition through the existing pin recovery path. |
-| Confirmed signed result | Read historical evidence and complete each original ticket separately. |
+| Confirmed signed result or observed-effect settlement | Export the exact retained artifact and complete each original ticket separately. |
 
 Uncertified local cancellation is unavailable for this request version.
 A minority vote, lost response, timeout or process death does not prove that the
 slot is unclaimed. The closure procedure below can certify the independent slot.
 Apply that certificate through the reviewed original-owner procedure below, then
-complete each replica separately. A Started outcome without a retained
-session-signed result remains later work. Old request and cancellation semantics
-remain unchanged.
+complete each replica separately. For Started work with a retained actual storage
+effect, use the separate
+[observed-effect settlement procedure](PRUNE_SETTLEMENT.md). Missing effects
+remain held. Old request and cancellation semantics remain unchanged.
 
 The witness quorum prevents conflicting claims; it does not execute storage or
 attest that an administrator physically deleted data. The storage API and process
@@ -173,8 +174,9 @@ conflicting output files are never replaced automatically.
 This command changes witness votes only. It does not open executor, authority
 or storage owners, remove pending work, refund spent operations or relax retained
 archive deadlines. `closure_verified` reports artifact verification against the
-pinned plan; the JSON report is not a signed accounting statement. A start with
-no complete signed result remains held.
+pinned plan; the JSON report is not a signed accounting statement. This closure
+path cannot resolve a start. Started work requires a signed result
+or the separate observed-effect settlement procedure.
 
 ## Apply closure through the original executor
 

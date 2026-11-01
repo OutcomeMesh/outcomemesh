@@ -150,3 +150,29 @@ func collect(ctx context.Context, host *libp2ptransport.Host, key ed25519.Privat
 	}
 	return q, nil
 }
+
+// CollectSettlement selects one fully co-signed observed-effect proposal in its
+// separate request-wide slot. It cannot attest storage or close accounting.
+func CollectSettlement(ctx context.Context, host *libp2ptransport.Host, key ed25519.PrivateKey, local [32]byte, endpoints []Endpoint, timeout time.Duration, proposal prunefence.SettlementProposal) (prunefence.Settlement, error) {
+	raw, err := proposal.CanonicalBytes()
+	if err != nil {
+		return prunefence.Settlement{}, err
+	}
+	proposal, err = prunefence.DecodeSettlementProposal(raw)
+	if err != nil {
+		return prunefence.Settlement{}, err
+	}
+	scope, draft, err := proposal.Draft()
+	if err != nil {
+		return prunefence.Settlement{}, err
+	}
+	q, err := collect(ctx, host, key, local, endpoints, timeout, scope, draft, custodyfence.CloseUnclaimed, scope.Controller)
+	if err != nil {
+		return prunefence.Settlement{}, err
+	}
+	s := prunefence.Settlement{Proposal: proposal, Certificate: q}
+	if err := s.Verify(); err != nil {
+		return prunefence.Settlement{}, err
+	}
+	return s, nil
+}

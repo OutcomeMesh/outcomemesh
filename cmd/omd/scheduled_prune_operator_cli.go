@@ -41,9 +41,11 @@ func runScheduledPruneOperator(ctx context.Context, args []string, out io.Writer
 		return err
 	}
 	switch args[0] {
+	case pruneSettlementCommand:
+		return runPruneSettlementCLI(ctx, args[1:], out)
 	case pruneFenceCloseCommand:
 		return runPruneFenceCloseCLI(ctx, args[1:], out)
-	case pruneFencePolicyCommand, pruneFenceScopeCommand:
+	case pruneFencePolicyCommand, pruneFenceScopeCommand, pruneSettlementScopeCommand:
 		return runPruneFenceArtifactCLI(ctx, args, out)
 	case scheduledPlanCommand:
 		return runScheduledPrunePlanCLI(ctx, args[1:], out)
@@ -301,7 +303,7 @@ func runScheduledPruneCommandCLI(ctx context.Context, args []string, out io.Writ
 	}
 	if effect {
 		e := result.Executor
-		if e.Stage != store.PruneSucceeded || e.Effect == nil || e.Protection.Pending != nil || c.InventoryID.IsZero() || e.ArchiveInventoryID != c.InventoryID {
+		if e.Stage != store.PruneSucceeded || e.FenceSettlement != nil || e.Effect == nil || e.Protection.Pending != nil || c.InventoryID.IsZero() || e.ArchiveInventoryID != c.InventoryID {
 			return store.ErrPruneOutcome
 		}
 		if *mode == "publish" {

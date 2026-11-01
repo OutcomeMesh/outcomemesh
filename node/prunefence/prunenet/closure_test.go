@@ -29,12 +29,18 @@ type closureNetwork struct {
 	paths     []string
 }
 
-func newClosureNetwork(t *testing.T, claims int) *closureNetwork {
+func newClosureNetwork(t *testing.T, claims int, settlement ...bool) *closureNetwork {
 	t.Helper()
 	intent := prunefence.ClosureIntent{Policy: prunefence.Policy{Owner: f.Public(1), Controller: f.Public(2), Threshold: 3, Witnesses: f.Scope().Witnesses}, AssignmentID: f.Hash("closure-assignment"), RequestID: f.Hash("closure-request")}
 	scope, _, err := intent.Draft()
 	if err != nil {
 		t.Fatal(err)
+	}
+	if len(settlement) != 0 && settlement[0] {
+		scope, err = intent.Policy.SettlementScope(intent.AssignmentID, intent.RequestID)
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 	sid, _ := scope.ID()
 	client, err := libp2ptransport.New(t.Context(), f.Key(99), libp2ptransport.DefaultConfig(), nil)

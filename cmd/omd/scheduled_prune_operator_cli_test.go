@@ -66,6 +66,7 @@ func TestPruneFenceCertifiedCancellationCLICompletion(t *testing.T) {
 }
 
 func scheduledPruneCLILifecycle(t *testing.T, cancelBeforeStart bool, fenced ...bool) {
+	observed := len(fenced) > 2 && fenced[2]
 	f, cp, cpPath, sources := prepareCustodyScheduleQuorumCLI(t)
 	policy := f.inventory.Policy
 	chain, err := workchain.OpenPositionPinnedWithPolicy(f.config.ChainPath, f.config.ChainPinsPath, f.config.Base, f.config.Parameters, f.config.StoragePolicy, f.inventory.Request.StorageID)
@@ -234,6 +235,10 @@ func scheduledPruneCLILifecycle(t *testing.T, cancelBeforeStart bool, fenced ...
 		if err := runScheduledPrune(t.Context(), append(executeArgs, "--mode", "execute", "--expected-review-id", reviewed.Review.ReviewID.String()), io.Discard); err == nil {
 			t.Fatal("cancelled task could be executed")
 		}
+	} else if observed {
+		retainScheduledCLIObservedEffect(t, f, packaged.Inventory, executor, pins, migration.ID(), fenceArgs)
+		storageArgs := []string{"--data", f.data, "--chain", f.config.ChainPath, "--chain-pins", f.config.ChainPinsPath, "--storage-migration-id", migration.ID().String(), "--canonical-retention", strconv.FormatUint(f.config.StoragePolicy.CanonicalRetention, 10), "--max-history-bytes", strconv.FormatUint(f.config.StoragePolicy.MaxHistoryBytes, 10)}
+		settlePruneCLI(t, outcomeArgs, storageArgs, planPath, prepared.PlanID, inventoryPath, packaged.InventoryID)
 	} else {
 		var out bytes.Buffer
 		if err := runScheduledPrune(t.Context(), executeArgs, &out); err != nil {
@@ -277,6 +282,15 @@ func scheduledPruneCLILifecycle(t *testing.T, cancelBeforeStart bool, fenced ...
 	if err != nil {
 		t.Fatal(err)
 	}
+	if observed {
+		if outcome.Settlement == nil || outcome.Effect != nil {
+			t.Fatal("CLI exported ambiguous settlement")
+		}
+		legacy := append([]string{scheduledEffectCommand}, outcomeArgs[1:]...)
+		if err := runScheduledPruneOperator(t.Context(), legacy, io.Discard); err == nil {
+			t.Fatal("legacy effect export stripped settlement")
+		}
+	}
 	effectID, _ := outcome.EvidenceID(packaged.Inventory)
 	effectPath := filepath.Join(operatorRoot, "outcome")
 	publishEffect := append(append([]string(nil), outcomeArgs...), "--mode", "publish", "--expected-review-id", outcomeReview.Review.ReviewID.String(), "--out", effectPath)
@@ -286,6 +300,9 @@ func scheduledPruneCLILifecycle(t *testing.T, cancelBeforeStart bool, fenced ...
 	}
 	scheduledCLIRun(t, publishEffect, nil)
 	evidenceFlag, idFlag := "--effect", "--effect-id"
+	if observed {
+		evidenceFlag, idFlag = "--settlement", "--settlement-id"
+	}
 	if cancelBeforeStart {
 		evidenceFlag, idFlag = "--cancellation", "--cancellation-id"
 	}

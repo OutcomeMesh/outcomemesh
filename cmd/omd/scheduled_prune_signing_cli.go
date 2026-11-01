@@ -31,6 +31,8 @@ func runScheduledPruneSigningCLI(ctx context.Context, args []string, out io.Writ
 	effectText := f.String("effect-id", "", "Complete only: independently retained effect ID")
 	cancellationPath := f.String("cancellation", "", "Complete only: exported pre-start cancellation")
 	cancellationText := f.String("cancellation-id", "", "Complete only: independently retained cancellation ID")
+	settlementPath := f.String("settlement", "", "Complete only: exported observed-effect settlement")
+	settlementText := f.String("settlement-id", "", "independently retained settlement ID")
 	expected := f.String("expected-review-id", "", "sign mode: exact signature review ID")
 	destination := f.String("out", "", "sign mode: immutable output artifact")
 	keyName := "consumer-key"
@@ -86,7 +88,7 @@ func runScheduledPruneSigningCLI(ctx context.Context, args []string, out io.Writ
 	inputs := []string{*planPath, commandPath, *keyPath}
 	switch *kind {
 	case "admit":
-		if err := custodyCommandForbid(present, "inventory", "inventory-id", "effect", "effect-id", "cancellation", "cancellation-id"); err != nil {
+		if err := custodyCommandForbid(present, "inventory", "inventory-id", "effect", "effect-id", "cancellation", "cancellation-id", "settlement", "settlement-id"); err != nil {
 			return err
 		}
 		draft, err = store.BuildScheduledPruneAdmission(s.Assignment, s.Proof, p.OriginalPolicy, p.Request, position)
@@ -105,6 +107,12 @@ func runScheduledPruneSigningCLI(ctx context.Context, args []string, out io.Writ
 				return err
 			}
 			path, idText, label, outcomeKind = *cancellationPath, *cancellationText, "cancellation-id", "cancellation"
+		}
+		if present["settlement"] || present["settlement-id"] {
+			if err := custodyCommandForbid(present, "effect", "effect-id", "cancellation", "cancellation-id"); err != nil {
+				return err
+			}
+			path, idText, label, outcomeKind = *settlementPath, *settlementText, "settlement-id", "settlement"
 		}
 		eid, e := pruneExternalID(label, idText)
 		if e != nil {

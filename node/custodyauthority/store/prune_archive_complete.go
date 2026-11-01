@@ -124,6 +124,9 @@ func (executor *PruneExecutor) archiveSecondaryCompletion(inventory ArchivePrune
 	if executor.pins == nil {
 		return OperationBinding{}, ErrPrunePin
 	}
+	if executor.fenceSettlement != nil {
+		return OperationBinding{}, ErrPruneOutcome
+	}
 	if executor.request.StorageID.IsZero() || executor.admission == nil ||
 		inventory.Policy.RequestID != executor.id || inventory.Policy.ExecutorBindingID != executor.pins.binding {
 		return OperationBinding{}, ErrPruneInventory

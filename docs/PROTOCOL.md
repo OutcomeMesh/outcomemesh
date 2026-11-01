@@ -1031,11 +1031,11 @@ storage effect and position-journal formats do not change.
 A candidate is persisted before witness calls. Start and its independent local
 pin confirmation precede consuming a live, nonserializable permit under the
 storage lock. A lost session cannot be reconstructed from signatures or disk.
-Cold candidates, minority quorums and starts without complete signed results
-retain every obligation. Only an already complete retained signed transition may
-resume original pin confirmation. Local cancellation and bare-effect recovery
-are unavailable for request v3. Applying independently certified closure and
-missing-result settlement remain unimplemented.
+Cold candidates, minority quorums and unresolved starts retain every obligation.
+Original pin confirmation resumes only the exact retained transition. Uncertified
+local cancellation and bare-effect recovery are unavailable for request v3.
+The explicit certified cancellation and observed-effect settlement below provide
+separate typed dispositions without reconstructing a session signature.
 
 The full operating procedure and trust boundary are in [PRUNE_FENCE.md](PRUNE_FENCE.md).
 Reference hashes are fixed in `node/prunefence/fence_test.go`,
@@ -1110,3 +1110,69 @@ position, and application verifies the retained executor outcome. Only its
 selected pending ticket closes; spent IDs and other obligations remain. Older
 binaries reject v1 journal records; no silent journal migration or rollback is
 supported. This does not resolve a Started task without its signed result.
+
+### Observed-effect Prune settlement v0
+
+This explicit local disposition applies only to request-v3 Started executors
+with their exact original claim and a matching retained canonical storage effect.
+It is not a session-signed result, a no-effect assertion or an execution permit.
+Missing effects and unconfirmed original owners remain held.
+
+`OMPRSP00` u16 version 0 encodes a bounded length-prefixed original Claim,
+32-byte effect ID, 64-byte owner signature and 64-byte controller signature.
+The signature body is the same prefix and claim/effect fields without either
+signature. Role signatures cover `DomainHash("OMESH/prune-fence/settlement/"
++ role + "/sign/v0", body)` for `owner` and `controller`. Draft artifacts may
+contain missing signatures; every present signature must verify. Decision
+collection requires both. Proposal ID is
+`DomainHash("OMESH/prune-fence/settlement-proposal/id/v0", completeBytes)`.
+Signature review uses the corresponding `/review/v0` domain over the exact
+current proposal, including any prior signature.
+
+Derive the settlement scope from the original execution scope, preserving its
+version, guard, policy, roles and witness roster. Replace BeginID with
+`DomainHash("OMESH/prune-fence/settlement-slot/v0", executionScopeID)`.
+No candidate, inventory, effect or local storage position changes this slot.
+The original witnesses must explicitly enroll it with separate original pins.
+Execution witness history is never reset or reused as decision history.
+
+The decision command is controller-signed CloseUnclaimed at sequence zero and
+head equal to the settlement scope ID. EvidenceID is the fully signed proposal
+ID; ClaimID is zero. Closing this separate decision slot does not assert that
+the execution slot was unclaimed. Existing witness vote locking and quorum
+intersection select at most one proposal under the original trust assumptions.
+Witness votes commit an ID and do not attest physical storage. Typed collectors
+and application verify the complete proposal; a controller cannot apply an
+opaque arbitrary decision without both signatures and the actual effect.
+
+`OMPRSC00` u16 version 0 contains bounded length-prefixed proposal and decision
+certificate. Its ID domain is `OMESH/prune-fence/settlement-certificate/id/v0`.
+`OMCPSE00` u16 version 0 contains bounded length-prefixed CanonicalPruneEffect
+and settlement certificate, with ID domain
+`OMESH/custody-prune/settlement/id/v0`. The effect ID and fence operation ID must
+match the proposal. Proposal, decision and terminal bounds are exported as
+`MaximumSettlementProposalBytes`, `MaximumSettlementBytes` and
+`MaximumPruneSettlementBytes`; decoders reject trailing, noncanonical, unknown
+version and oversized inputs. Fixed layouts and digests are in
+`node/prunefence/settlement_test.go` and
+`node/custodyauthority/store/prune_settlement_vector_test.go`.
+
+Application holds the original executor and primary operation guard. It verifies
+the exact retained claim, request, primary admission, inventory, executor binding
+and protected storage pair, then reads the actual immutable effect at a confirmed
+storage position. The new terminal record uses the existing result index and
+Succeeded stage, with `FenceSettlement` present and `FenceResult` absent.
+Publication retains its full bytes through original intent, executor record and
+independent confirmation. Recovery replays those exact bytes without executing
+storage or requiring the external certificate. Confirmed retries reject a
+different certificate, including a different valid vote subset.
+
+Original per-replica Complete entries commit the terminal settlement ID, not the
+bare effect ID. Settlement changes no authority head, pending count, lifetime
+spending or archive deadline. Every replica still requires its own original
+co-signed Complete and owner validation. New local review domain is
+`OMESH/local/scheduled-prune-settlement-review/v0`, including the prior owner,
+inventory and storage review fields plus proposal/certificate IDs and certificate
+path. Existing encodings and reviews without this disposition remain unchanged.
+Older readers cannot reopen executors containing this terminal record. No
+consensus activation, witness transport upgrade or hardware isolation is implied.

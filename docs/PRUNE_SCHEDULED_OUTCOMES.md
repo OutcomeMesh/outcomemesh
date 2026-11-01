@@ -97,12 +97,14 @@ a retained result. Review again before retrying.
 
 ## Export and complete each replica separately
 
-For a confirmed effect or cancellation, review without storage arguments and
+For a confirmed effect, cancellation or settlement, review without storage arguments and
 repeat with `--mode publish --expected-review-id <review-id> --out <outcome-file>`.
 The immutable file contains the original terminal bytes, not a new certificate.
 An exact publication retry preserves those bytes. Output cannot overlap input
 artifacts or the owner roots. The existing `work-prune-scheduled-effect` command
-continues to export successful effects only.
+continues to export successful effects without a settlement certificate. Use
+`work-prune-scheduled-outcome` for a settlement; the legacy effect export refuses
+to strip its certificate.
 
 Use `work-prune-scheduled-command-sign` and
 `work-prune-scheduled-command-cosign` with `--kind complete`, the selected replica,
@@ -113,6 +115,7 @@ one evidence pair:
 | --- | --- |
 | Committed effect | `--effect <file> --effect-id <independent-id>` |
 | Pre-start cancellation | `--cancellation <file> --cancellation-id <independent-id>` |
+| Observed-effect settlement | `--settlement <file> --settlement-id <independent-id>` |
 
 Each role reviews separately, then signs with its own key and exact review ID.
 Apply the co-signed entry with `work-prune-scheduled-command`, the inventory and
@@ -125,3 +128,13 @@ spent operation IDs and evidence remain intact. Interrupted acceptance requires
 an explicit exact `resume`; a confirmed retry does not spend or complete twice.
 Remote schedule transitions and independently enforced resolution of unknown
 starts remain open. This local procedure does not authorize mainnet launch.
+
+## Fenced starts without a signed result
+
+For request-v3 work that committed its actual effect before losing the volatile
+signature, use [observed-effect settlement](PRUNE_SETTLEMENT.md). It requires the
+original confirmed storage record, both original role signatures and a separate
+original-witness decision. Ordinary `recover-effect` still cannot fabricate a
+session signature. Missing effects remain held. Exported settlements use
+`--settlement` and `--settlement-id` in the separate per-replica signing workflow;
+the bare effect ID cannot complete settled work.

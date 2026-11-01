@@ -80,9 +80,14 @@ Remaining work, in order:
    and all executor/authority accounting. Reviewed original-owner application now
    retains a v1 cancellation with the full certificate in the executor and its
    independent pin history. Separate co-signed completion drains each original
-   replica ticket without restoring spent budget or changing other work. Next
-   resolve starts with no matching signed result and implement remote v1/profile-5 witness and
-   execution transitions. Unprepared/raw
+   replica ticket without restoring spent budget or changing other work. Started
+   work with an exact retained storage effect can now use explicit two-party
+   signatures and a separate original-witness decision. Reviewed application
+   retains a distinct settlement artifact; per-replica completion binds its full
+   ID. Missing effects still remain held. See [observed-effect settlement](PRUNE_SETTLEMENT.md).
+   Next implement remote v1/profile-5 witness and execution transitions, including
+   this disposition and retained pins across independently operated failures.
+   Unprepared/raw
    legacy paths remain gated; legacy prune transports remain unchanged.
 2. Define the independently approved network activation policy and transition
    checkpoint; local operator profiles alone do not authorize public activation.

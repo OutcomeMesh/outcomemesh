@@ -26,7 +26,13 @@ func scheduledOutcomeFixture(t testing.TB, stage string, fence ...prunefence.Pol
 			}
 			return nil
 		}
-		_, err := f.execute(t.Context())
+		var err error
+		if len(fence) != 0 {
+			witnesses := newPruneWitnessFixture(t, f.inventory)
+			_, err = f.executeFenced(t.Context(), witnesses.collect)
+		} else {
+			_, err = f.execute(t.Context())
+		}
 		if stage == "success" {
 			if err != nil {
 				t.Fatal(err)

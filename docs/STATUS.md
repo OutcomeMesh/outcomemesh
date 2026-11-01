@@ -10,6 +10,32 @@ Full planned production readiness is approximately **44/100**, using the weighte
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
 
+## 2026-11-01: observed-effect settlement for started Prune
+
+A confirmed request-v3 start with no session signature can now settle from its
+exact retained effect in the original protected storage pair. The proposal binds
+the original claim and effect ID and requires the original consumer and primary
+authority signatures. The original witness policy selects one proposal in a
+separate request-wide scope with its own retained pins. Generic witness votes
+select the proposal; they do not attest physical storage.
+
+Reviewed application reopens the original owners, checks the actual effect and
+retains a distinct terminal artifact through intent, record and confirmation.
+No deletion or authority completion occurs. Separate replica completion binds
+the full settlement ID and preserves other obligations and spent capacity.
+Pending recovery uses the embedded certificate; exact retry cannot replace its
+vote subset. Absent effects, conflicting proposals and unconfirmed histories
+remain held.
+
+The CLI covers preparation, offline two-party signing, scope publication, quorum
+collection, verification, owned application, outcome export and per-replica
+completion. Coverage includes conflicting real witness services, minority/lost
+replies and cold retry, full CLI completion, canonical vectors, decoder fuzzing,
+rejected bare-effect downgrade, and process kills around execution, settlement
+and separate completion writes. Compatibility and operating instructions are in
+[PRUNE_SETTLEMENT.md](PRUNE_SETTLEMENT.md). Independent deployment, remote
+profile-5 integration and public activation remain open. Readiness is **44/100**.
+
 ## 2026-11-01: original-owner application of certified Prune closure
 
 Request v3 executors now accept an original CloseUnclaimed certificate through
