@@ -37,6 +37,12 @@ the full plan and, for completion, the original inventory and retained terminal
 outcome. A settlement completion must name the full settlement artifact; a bare
 effect ID cannot substitute for it.
 
+Within that owned call, completion reuses the already validated inventory bytes
+and terminal evidence ID. Public validation still checks every supplied value,
+and each new request checks the original owners again. Verification results are
+not cached across requests. Internal validation reads executor state only while
+holding its mutex; public snapshots remain detached.
+
 A fresh command requires the configured local review. A confirmed exact
 historical command can be acknowledged without adopting a newer review or
 appending another entry. Primary admission additionally requires its confirmed

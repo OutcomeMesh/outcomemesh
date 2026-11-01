@@ -378,14 +378,25 @@ func SaveScheduledPruneInventory(ctx context.Context, path string, v ScheduledPr
 	return publishCustodyArtifactBytes(ctx, path, raw)
 }
 func LoadScheduledPruneInventory(path string, expected types.Hash) (ScheduledPruneInventory, error) {
+	v, _, err := loadScheduledPruneInventoryBytes(path, expected)
+	return v, err
+}
+
+// Keep the exact decoded bytes for publication under the same original owners.
+// The returned value is not mutated before those bytes are retained.
+func loadScheduledPruneInventoryBytes(path string, expected types.Hash) (ScheduledPruneInventory, []byte, error) {
 	raw, err := readRegular(path, MaximumScheduledPruneInventoryBytes)
 	if err != nil {
-		return ScheduledPruneInventory{}, err
+		return ScheduledPruneInventory{}, nil, err
 	}
 	if expected.IsZero() || scheduledPruneArtifactID(raw, false) != expected {
-		return ScheduledPruneInventory{}, ErrScheduledPrune
+		return ScheduledPruneInventory{}, nil, ErrScheduledPrune
 	}
-	return DecodeScheduledPruneInventory(raw)
+	v, err := DecodeScheduledPruneInventory(raw)
+	if err != nil {
+		return ScheduledPruneInventory{}, nil, err
+	}
+	return v, raw, nil
 }
 
 // BuildScheduledPruneAdmission is static reviewed preparation. No ticket is

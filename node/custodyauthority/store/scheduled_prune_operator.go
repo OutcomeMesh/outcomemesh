@@ -311,11 +311,11 @@ func runScheduledPruneCommandBound(ctx context.Context, c ScheduledPruneCommandC
 			if c.InventoryPath == "" || c.JournalPath != "" {
 				return result, ErrPruneOutcome
 			}
-			outcome, outcomeErr := RetainedScheduledPruneOutcome(inventory, snapshot)
+			terminal, outcomeErr := retainedScheduledPruneTerminalAt(inventory, snapshot, c.InventoryID)
 			if outcomeErr != nil {
 				return result, outcomeErr
 			}
-			draft, err = BuildScheduledPruneOutcomeCompletion(plan, inventory, outcome, c.AssignmentID, pos)
+			draft, err = buildScheduledPruneCompletion(inventory, c.AssignmentID, pos, terminal.EvidenceID)
 		default:
 			return result, ErrScheduledPrune
 		}

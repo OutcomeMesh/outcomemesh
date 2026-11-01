@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -87,8 +88,8 @@ func TestPruneScheduledDeliveryLostReplyColdRetryPreservesAccounting(t *testing.
 			if ack, err := outbox.Deliver(t.Context(), client, server.Addresses()[0], 3*time.Second); err == nil || ack != (scheduledwire.Acknowledgement{}) {
 				t.Fatal("lost reply accepted", err)
 			}
-			if err := awaitScheduledDelivery(t, results); err == nil {
-				t.Fatal("lost reply hidden")
+			if err := awaitScheduledDelivery(t, results); !errors.Is(err, io.ErrClosedPipe) {
+				t.Fatal("reply cut not reached", err)
 			}
 			state, err := outbox.Snapshot()
 			if err != nil || state.Acknowledgement != nil {
@@ -292,12 +293,13 @@ func TestPruneScheduledDeliverySettlementCompletionDoesNotDowngrade(t *testing.T
 		if !reflect.DeepEqual(before, scheduledOperatorReview(t, c)) {
 			t.Fatal("bad completion mutated owners")
 		}
-		results = installScheduledDelivery(t, c, intent, server, storeHooks{}, true)
+		started := time.Now()
+		results = installScheduledDelivery(t, c, intent, server, storeHooks{at: func(stage string) error { t.Log(stage, time.Since(started)); return nil }}, true)
 		if _, err := client.DeliverScheduledPrune(t.Context(), server.Addresses()[0], server.ID(), intent, 3*time.Second); err == nil {
 			t.Fatal("lost completion reply accepted")
 		}
-		if err := awaitScheduledDelivery(t, results); err == nil {
-			t.Fatal("lost reply hidden")
+		if err := awaitScheduledDelivery(t, results); !errors.Is(err, io.ErrClosedPipe) {
+			t.Fatal("reply cut not reached", err)
 		}
 		after := scheduledOperatorReview(t, c)
 		if after.Review.Authority.Authority.Pending+1 != before.Review.Authority.Authority.Pending || !reflect.DeepEqual(before.Executor, after.Executor) {
