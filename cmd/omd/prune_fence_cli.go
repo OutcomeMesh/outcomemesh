@@ -18,8 +18,9 @@ import (
 )
 
 const (
-	pruneFencePolicyCommand = "work-prune-fence-policy"
-	pruneFenceScopeCommand  = "work-prune-fence-scope"
+	pruneFencePolicyCommand     = "work-prune-fence-policy"
+	pruneFenceScopeCommand      = "work-prune-fence-scope"
+	pruneSettlementScopeCommand = "work-prune-settlement-scope"
 )
 
 type pruneFencePolicyJSON struct {
@@ -108,7 +109,7 @@ func runPruneFenceArtifactCLI(ctx context.Context, args []string, out io.Writer)
 		}
 		raw, _ = p.CanonicalBytes()
 		id, _ = p.ID()
-	case pruneFenceScopeCommand:
+	case pruneFenceScopeCommand, pruneSettlementScopeCommand:
 		pin, err := pruneExternalID("plan-id", *planID)
 		if err != nil {
 			return err
@@ -120,6 +121,13 @@ func runPruneFenceArtifactCLI(ctx context.Context, args []string, out io.Writer)
 		s, err := p.FenceScope()
 		if err != nil {
 			return err
+		}
+		if args[0] == pruneSettlementScopeCommand {
+			rid, _ := p.Request.ID()
+			s, err = p.FencePolicy.SettlementScope(p.Request.AssignmentID, rid)
+			if err != nil {
+				return err
+			}
 		}
 		raw, _ = s.CanonicalBytes()
 		id, _ = s.ID()

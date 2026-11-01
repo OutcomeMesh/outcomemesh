@@ -106,7 +106,7 @@ func run(arguments []string) error {
 		return runAutoSyncQUIC(arguments[1:])
 	case migratedPruneOutcomeCommand, migratedPruneSignCommand, migratedPruneCosignCommand, migratedPruneApplyCommand, migratedPruneObservationCommand:
 		return runMigratedPruneCLI(arguments)
-	case scheduledPlanCommand, scheduledSignCommand, scheduledCosignCommand, scheduledApplyCommand, scheduledInventoryCommand, scheduledEffectCommand, scheduledOutcomeCommand, pruneFencePolicyCommand, pruneFenceScopeCommand, pruneFenceCloseCommand:
+	case scheduledPlanCommand, scheduledSignCommand, scheduledCosignCommand, scheduledApplyCommand, scheduledInventoryCommand, scheduledEffectCommand, scheduledOutcomeCommand, pruneFencePolicyCommand, pruneFenceScopeCommand, pruneFenceCloseCommand, pruneSettlementCommand, pruneSettlementScopeCommand:
 		return runScheduledPruneOperatorCLI(arguments)
 	case scheduledPruneCommand:
 		return runScheduledPruneCLI(arguments[1:])
@@ -1649,8 +1649,10 @@ func printUsage() {
 	fmt.Printf("migrated prune resolution: omd %s|%s|%s|%s [flags]\n", migratedPruneOutcomeCommand, migratedPruneSignCommand, migratedPruneCosignCommand, migratedPruneApplyCommand)
 	fmt.Printf("migrated prune observation: omd %s [--mode review|publish|verify] [flags]\n", migratedPruneObservationCommand)
 	fmt.Printf("scheduled prune preparation: omd %s|%s|%s|%s|%s|%s [flags]\n", scheduledPlanCommand, scheduledSignCommand, scheduledCosignCommand, scheduledApplyCommand, scheduledInventoryCommand, scheduledEffectCommand)
-	fmt.Printf("scheduled prune outcomes: omd %s [flags]; review, cancel, recover or export original outcomes\n", scheduledOutcomeCommand)
+	fmt.Printf("scheduled prune outcomes: omd %s [flags]; review, cancel, recover, settle or export original outcomes\n", scheduledOutcomeCommand)
 	fmt.Printf("scheduled archive cleanup: omd %s [flags]; review by default\n", scheduledPruneCommand)
+	fmt.Printf("observed-effect settlement: omd %s --mode review|sign|collect|verify [flags]\n", pruneSettlementCommand)
+	fmt.Printf("settlement witness scope: omd %s --mode review|publish [flags]\n", pruneSettlementScopeCommand)
 	fmt.Printf("independent prune closure: omd %s --mode review|collect|verify [flags]\n", pruneFenceCloseCommand)
 	fmt.Printf("independent prune policy and scope: omd %s|%s --mode review|publish [flags]\n", pruneFencePolicyCommand, pruneFenceScopeCommand)
 	fmt.Printf("scheduled custody quorum: omd %s [flags]; inspect original owners and journals\n", custodyScheduleQuorumCommand)

@@ -199,6 +199,11 @@ func recoveryReviewLocked(executor *PruneExecutor, coordinator *Coordinator) (Pr
 			return PruneRecoveryReview{}, err
 		}
 	}
+	if retained.FenceSettlement != nil {
+		if review.TerminalID, err = retained.FenceSettlement.ID(); err != nil {
+			return PruneRecoveryReview{}, err
+		}
+	}
 	if retained.Cancellation != nil {
 		if review.TerminalID, err = retained.Cancellation.ID(); err != nil {
 			return PruneRecoveryReview{}, err

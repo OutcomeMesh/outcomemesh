@@ -68,7 +68,11 @@ func (executor *PruneExecutor) validateCompletion(entry custodyauthority.Entry) 
 	var err error
 	switch executor.stage {
 	case PruneSucceeded:
-		evidence, err = executor.effect.ID()
+		if executor.fenceSettlement != nil {
+			evidence, err = executor.fenceSettlement.ID()
+		} else {
+			evidence, err = executor.effect.ID()
+		}
 	case PruneCancelled:
 		evidence, err = executor.cancellation.ID()
 	case PruneStarted:

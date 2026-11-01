@@ -185,6 +185,12 @@ func maintenanceReviewLocked(executor *PruneExecutor, coordinator *Coordinator) 
 			return PruneMaintenanceReview{}, err
 		}
 	}
+	if executor.fenceSettlement != nil {
+		r.TerminalID, err = executor.fenceSettlement.ID()
+		if err != nil {
+			return PruneMaintenanceReview{}, err
+		}
+	}
 	if executor.cancellation != nil {
 		r.TerminalID, err = executor.cancellation.ID()
 		if err != nil {

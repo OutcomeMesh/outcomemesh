@@ -24,6 +24,8 @@ test-race:
 
 test-fuzz-smoke:
 	$(GO) test ./node/prunefence -run '^$$' -fuzz '^FuzzPruneFenceArtifacts$$' -fuzztime=$(FUZZTIME)
+	$(GO) test ./node/prunefence -run '^$$' -fuzz '^FuzzPruneSettlementArtifacts$$' -fuzztime=$(FUZZTIME)
+	$(GO) test ./node/custodyauthority/store -run '^$$' -fuzz '^FuzzDecodePruneSettlement$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyv2 -run '^$$' -fuzz '^FuzzGuardedRetainedResultCore$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyauthority/store -run '^$$' -fuzz '^FuzzPruneScheduledOutcome$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyauthority/store -run '^$$' -fuzz '^FuzzPruneMigratedObservation$$' -fuzztime=$(FUZZTIME)

@@ -59,6 +59,8 @@ jobs:
           go test ./node/custodyauthority/store -run '^$' -fuzz '^FuzzDecodePruneCancellation$' -fuzztime=10s
           go test ./node/prunefence -run '^$' -fuzz '^FuzzPruneFenceArtifacts$' -fuzztime=10s
           go test ./node/prunefence -run '^$' -fuzz '^FuzzPruneFenceClosure$' -fuzztime=10s
+          go test ./node/prunefence -run '^$' -fuzz '^FuzzPruneSettlementArtifacts$' -fuzztime=10s
+          go test ./node/custodyauthority/store -run '^$' -fuzz '^FuzzDecodePruneSettlement$' -fuzztime=10s
 
   race:
     needs: prepare

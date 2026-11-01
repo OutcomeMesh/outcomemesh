@@ -16,7 +16,7 @@ import (
 
 type PruneStage uint8
 
-const maximumPruneRecordBytes = prunefence.MaximumResultBytes + workchain.MaximumCanonicalPruneEffectBytes + 128
+const maximumPruneRecordBytes = MaximumPruneSettlementBytes + 128
 
 const (
 	PrunePrepared PruneStage = 1 + iota
@@ -39,15 +39,16 @@ var pruneRecordNames = [...]string{"01-admission.omcae", "02-started.omcps", "03
 // current availability assertion. A Started operation may have no effect, a
 // committed effect, or an outcome that cannot yet be resolved.
 type PruneExecution struct {
-	FenceCandidate *prunefence.Candidate
-	FenceClaim     *prunefence.Claim
-	FenceResult    *prunefence.Result
-	RequestID      types.Hash
-	Request        PruneRequest
-	Stage          PruneStage
-	Admission      *custodyauthority.Entry
-	Effect         *workchain.CanonicalPruneEffect
-	Cancellation   *PruneCancellation
+	FenceCandidate  *prunefence.Candidate
+	FenceClaim      *prunefence.Claim
+	FenceResult     *prunefence.Result
+	FenceSettlement *PruneSettlement
+	RequestID       types.Hash
+	Request         PruneRequest
+	Stage           PruneStage
+	Admission       *custodyauthority.Entry
+	Effect          *workchain.CanonicalPruneEffect
+	Cancellation    *PruneCancellation
 	// ArchiveInventoryID is nonzero after an inventory-bound v1 or fenced v2 start.
 	// Started is still an unresolved attempt, not proof of a committed effect.
 	ArchiveInventoryID types.Hash
@@ -66,6 +67,7 @@ type PruneExecutor struct {
 	fenceCandidate     *prunefence.Candidate
 	fenceClaim         *prunefence.Claim
 	fenceResult        *prunefence.Result
+	fenceSettlement    *PruneSettlement
 	mu                 sync.Mutex
 	path               string
 	lock               *os.File
@@ -350,7 +352,7 @@ func (executor *PruneExecutor) operationCheck() error {
 // execution is an internal view, only used while the executor is locked.
 func (executor *PruneExecutor) execution() PruneExecution {
 	return PruneExecution{RequestID: executor.id, Request: executor.request, Stage: executor.stage, Admission: executor.admission, Effect: executor.effect, Cancellation: executor.cancellation,
-		ArchiveInventoryID: executor.archiveInventoryID, FenceClaim: executor.fenceClaim, FenceResult: executor.fenceResult}
+		ArchiveInventoryID: executor.archiveInventoryID, FenceClaim: executor.fenceClaim, FenceResult: executor.fenceResult, FenceSettlement: executor.fenceSettlement}
 }
 
 func (executor *PruneExecutor) installExecution(next PruneExecution) {
@@ -358,6 +360,7 @@ func (executor *PruneExecutor) installExecution(next PruneExecution) {
 	executor.cancellation = next.Cancellation
 	executor.archiveInventoryID = next.ArchiveInventoryID
 	executor.fenceClaim, executor.fenceResult = next.FenceClaim, next.FenceResult
+	executor.fenceSettlement = next.FenceSettlement
 }
 func (executor *PruneExecutor) poison(err error) error {
 	executor.failed = true
@@ -395,6 +398,10 @@ func (executor *PruneExecutor) snapshot() PruneExecution {
 		raw, _ := executor.fenceResult.CanonicalBytes()
 		r, _ := prunefence.DecodeResult(raw)
 		result.FenceResult = &r
+	}
+	if executor.fenceSettlement != nil {
+		settlement := clonePruneSettlement(*executor.fenceSettlement)
+		result.FenceSettlement = &settlement
 	}
 	if executor.admission != nil {
 		entry := *executor.admission

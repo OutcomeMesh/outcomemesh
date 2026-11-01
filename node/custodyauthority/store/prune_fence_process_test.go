@@ -93,6 +93,49 @@ func TestPruneFenceProcessDeathKeepsObligations(t *testing.T) {
 					t.Fatal("missing signature reconstructed")
 				}
 			}
+			if stage == "prune-before-effect" || stage == "prune-after-effect" {
+				plan := planFromInventory(fixture.inventory)
+				pid, _ := plan.ID()
+				planPath := filepath.Join(t.TempDir(), "plan")
+				if err := SaveScheduledPrunePlan(t.Context(), planPath, plan, pid); err != nil {
+					t.Fatal(err)
+				}
+				primary := config.Authorities[0]
+				for _, owner := range config.Authorities {
+					if owner.AssignmentID == plan.Request.AssignmentID {
+						primary = owner
+					}
+				}
+				c := ScheduledPruneCommandConfig{PlanPath: planPath, PlanID: pid, InventoryPath: config.InventoryPath, InventoryID: config.InventoryID, AssignmentID: primary.AssignmentID,
+					AuthorityPath: primary.AuthorityPath, AuthorityPinsPath: primary.AuthorityPinsPath, ExecutorPath: config.ExecutorPath, ExecutorPinsPath: config.ExecutorPinsPath, PrepareSettlement: true,
+					Storage: &PruneRecoveryStorage{ChainPath: config.ChainPath, ChainPinsPath: config.ChainPinsPath, MigrationID: config.StorageMigrationID, Base: config.Base, Parameters: config.Parameters, Policy: config.StoragePolicy}}
+				prepared, err := RunScheduledPruneCommand(t.Context(), c, "review", types.Hash{})
+				if stage == "prune-before-effect" {
+					if err == nil {
+						t.Fatal("SIGKILL before effect became settlement")
+					}
+					return
+				}
+				if err != nil || prepared.Proposal == nil {
+					t.Fatal("lost signature with retained effect", err)
+				}
+				decision := certifyObservedProposal(t, *prepared.Proposal)
+				c.PrepareSettlement = false
+				c.SettlementPath = filepath.Join(t.TempDir(), "decision")
+				c.SettlementID, _ = decision.ID()
+				raw, _ := decision.CanonicalBytes()
+				writeTestFile(t, c.SettlementPath, raw)
+				owned := scheduledOperatorReview(t, c)
+				settled, err := RunScheduledPruneCommand(t.Context(), c, "settle-effect", owned.Review.ReviewID)
+				if err != nil || settled.Executor.FenceSettlement == nil || settled.Executor.FenceResult != nil || settled.Review.Authority.Authority.Pending != 2 {
+					t.Fatal("SIGKILL settlement", err)
+				}
+				complete := scheduledOutcomeCompletion(t, withoutPruneSettlement(c))
+				completed := scheduledOperatorApply(t, complete)
+				if completed.Commit == nil || completed.Commit.Snapshot.Pending != 1 || len(completed.Commit.Snapshot.Operations) != 2 {
+					t.Fatal("SIGKILL settlement reset accounting")
+				}
+			}
 		})
 	}
 }

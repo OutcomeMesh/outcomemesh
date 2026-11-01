@@ -18,6 +18,13 @@ import (
 
 func TestProcessPruneScheduledOutcomes(t *testing.T) {
 	for _, tc := range []struct{ mode, stage string }{
+		{"settle-effect", "prune-settlement-before-retain"},
+		{"settle-effect", "pins-result-intent-after-publish"},
+		{"settle-effect", "prune-result-after-publish"},
+		{"settle-effect", "pins-result-confirm-before-publish"},
+		{"apply-settled", "intent-after-publish"},
+		{"apply-settled", "authority-after-publish"},
+		{"apply-settled", "confirm-before-publish"},
 		{"cancel-before-start", "pins-cancel-intent-after-publish"},
 		{"cancel-before-start", "pins-cancel-confirm-before-publish"},
 		{"cancel-with-closure", "pins-cancel-intent-after-publish"},
@@ -35,7 +42,7 @@ func TestProcessPruneScheduledOutcomes(t *testing.T) {
 	} {
 		t.Run(tc.mode+"/"+tc.stage, func(t *testing.T) {
 			mode := tc.mode
-			if mode == "apply-certified" {
+			if mode == "apply-certified" || mode == "apply-settled" {
 				mode = "apply"
 			}
 			outcome := "admitted"
@@ -43,13 +50,15 @@ func TestProcessPruneScheduledOutcomes(t *testing.T) {
 				outcome = "prune-after-effect"
 			}
 			var configs []ScheduledPruneCommandConfig
-			if tc.mode == "cancel-with-closure" || tc.mode == "apply-certified" {
+			if tc.mode == "settle-effect" || tc.mode == "apply-settled" {
+				_, configs = observedOutcomeFixture(t)
+			} else if tc.mode == "cancel-with-closure" || tc.mode == "apply-certified" {
 				_, configs = certifiedOutcomeFixture(t)
 			} else {
 				_, configs = scheduledOutcomeFixture(t, outcome)
 			}
 			c := configs[0]
-			if tc.mode != "recover-effect" {
+			if tc.mode != "recover-effect" && tc.mode != "settle-effect" && tc.mode != "apply-settled" {
 				c.Storage = nil
 			}
 			if mode == "apply" {
@@ -57,6 +66,9 @@ func TestProcessPruneScheduledOutcomes(t *testing.T) {
 				cancelMode := "cancel-before-start"
 				if tc.mode == "apply-certified" {
 					cancelMode = "cancel-with-closure"
+				}
+				if tc.mode == "apply-settled" {
+					cancelMode = "settle-effect"
 				}
 				if _, err := RunScheduledPruneCommand(t.Context(), c, cancelMode, r.Review.ReviewID); err != nil {
 					t.Fatal(err)
@@ -112,8 +124,12 @@ func TestProcessPruneScheduledOutcomes(t *testing.T) {
 			if err := <-done; err == nil {
 				t.Fatal("child survived kill")
 			}
-			cold := scheduledOperatorReview(t, c)
-			if !reflect.DeepEqual(cold, scheduledOperatorReview(t, c)) {
+			coldConfig := c
+			if mode == "settle-effect" {
+				coldConfig = withoutPruneSettlement(c)
+			}
+			cold := scheduledOperatorReview(t, coldConfig)
+			if !reflect.DeepEqual(cold, scheduledOperatorReview(t, coldConfig)) {
 				t.Fatal("review changed pending outcome")
 			}
 			if mode == "apply" {
@@ -130,7 +146,7 @@ func TestProcessPruneScheduledOutcomes(t *testing.T) {
 				t.Fatal("outcome recovery changed obligations or storage")
 			}
 			if cold.Executor.Protection.Pending != nil {
-				resume := withoutPruneClosure(c)
+				resume := withoutPruneSettlement(withoutPruneClosure(c))
 				resume.Storage = nil
 				rr := scheduledOperatorReview(t, resume)
 				if _, err := RunScheduledPruneCommand(t.Context(), resume, "resume-executor", rr.Review.ReviewID); err != nil {
@@ -141,6 +157,9 @@ func TestProcessPruneScheduledOutcomes(t *testing.T) {
 			r, err := RunScheduledPruneCommand(t.Context(), c, mode, stable.Review.ReviewID)
 			if err != nil {
 				t.Fatal("cold outcome recovery", err)
+			}
+			if mode == "settle-effect" && (r.Executor.FenceSettlement == nil || r.Executor.FenceResult != nil || r.Executor.Stage != PruneSucceeded) {
+				t.Fatal("lost settlement or fabricated signature")
 			}
 			if tc.mode == "recover-effect" && (r.Recovered == nil || r.Recovered.Applied || r.Executor.Stage != PruneSucceeded) {
 				t.Fatal("repeated deletion")

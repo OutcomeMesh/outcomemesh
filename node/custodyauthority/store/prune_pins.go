@@ -83,7 +83,19 @@ func advancePruneExecution(assignment custodyauthority.Assignment, current Prune
 		var effect workchain.CanonicalPruneEffect
 		var err error
 		if !current.Request.FencePolicyID.IsZero() {
-			effect, next.FenceResult, err = decodePruneFenceResult(current, encoded)
+			if bytes.HasPrefix(encoded, []byte("OMCPSE00")) {
+				var settlement PruneSettlement
+				settlement, err = DecodePruneSettlement(encoded)
+				if err == nil {
+					err = verifyPruneSettlement(current, settlement)
+				}
+				if err == nil {
+					effect = settlement.Effect
+					next.FenceSettlement = &settlement
+				}
+			} else {
+				effect, next.FenceResult, err = decodePruneFenceResult(current, encoded)
+			}
 		} else {
 			effect, err = workchain.DecodeCanonicalPruneEffect(encoded)
 		}

@@ -6,23 +6,39 @@ import (
 	"github.com/outcomemesh/outcomemesh/node/workchain"
 )
 
-// ScheduledPruneOutcome reuses the original effect or pre-start cancellation
-// bytes. It does not certify a missing result or release any replica ticket.
+// ScheduledPruneOutcome exports exactly one retained terminal artifact. An
+// observed-effect settlement is distinct from an effect or pre-start cancellation.
+// Export alone releases no replica ticket.
 type ScheduledPruneOutcome struct {
 	Effect       *workchain.CanonicalPruneEffect
 	Cancellation *PruneCancellation
+	Settlement   *PruneSettlement
 }
 
 func (o ScheduledPruneOutcome) EvidenceID(v ScheduledPruneInventory) (types.Hash, error) {
 	if err := v.validate(); err != nil {
 		return types.Hash{}, err
 	}
-	if (o.Effect == nil) == (o.Cancellation == nil) {
+	if o.count() != 1 {
 		return types.Hash{}, ErrPruneOutcome
 	}
 	primary, err := scheduledPrunePrimary(v)
 	if err != nil {
 		return types.Hash{}, err
+	}
+	if o.Settlement != nil {
+		rid, _ := v.Request.ID()
+		claim := o.Settlement.Decision.Proposal.Claim
+		state := PruneExecution{Request: v.Request, RequestID: rid, Admission: &primary, FenceClaim: &claim}
+		if err := verifyPruneSettlement(state, *o.Settlement); err != nil {
+			return types.Hash{}, err
+		}
+		iid, _ := v.ID()
+		b := claim.Candidate.Binding
+		if b.InventoryID != iid || b.ExecutorBindingID != v.ExecutorBindingID || b.StoragePairID != v.StoragePairID {
+			return types.Hash{}, ErrPruneOutcome
+		}
+		return o.Settlement.ID()
 	}
 	if o.Effect != nil {
 		if !pruneEffectMatches(v.Request, primary, *o.Effect) {
@@ -40,12 +56,50 @@ func (o ScheduledPruneOutcome) EvidenceID(v ScheduledPruneInventory) (types.Hash
 }
 
 func (o ScheduledPruneOutcome) Artifact() ([]byte, error) {
-	return MigratedPruneOutcome(o).Artifact()
+	if o.count() != 1 {
+		return nil, ErrPruneOutcome
+	}
+	if o.Settlement != nil {
+		return o.Settlement.CanonicalBytes()
+	}
+	return (MigratedPruneOutcome{Effect: o.Effect, Cancellation: o.Cancellation}).Artifact()
 }
 
 func LoadScheduledPruneOutcome(path, kind string, id types.Hash) (ScheduledPruneOutcome, error) {
+	if kind == "settlement" {
+		if id.IsZero() {
+			return ScheduledPruneOutcome{}, ErrPruneOutcome
+		}
+		raw, err := readRegular(path, MaximumPruneSettlementBytes)
+		if err != nil {
+			return ScheduledPruneOutcome{}, err
+		}
+		value, err := DecodePruneSettlement(raw)
+		if err != nil {
+			return ScheduledPruneOutcome{}, err
+		}
+		actual, _ := value.ID()
+		if actual != id {
+			return ScheduledPruneOutcome{}, ErrPruneOutcome
+		}
+		return ScheduledPruneOutcome{Settlement: &value}, nil
+	}
 	o, err := LoadMigratedPruneOutcome(path, kind, id)
-	return ScheduledPruneOutcome(o), err
+	return ScheduledPruneOutcome{Effect: o.Effect, Cancellation: o.Cancellation}, err
+}
+
+func (o ScheduledPruneOutcome) count() int {
+	n := 0
+	if o.Effect != nil {
+		n++
+	}
+	if o.Cancellation != nil {
+		n++
+	}
+	if o.Settlement != nil {
+		n++
+	}
+	return n
 }
 
 func scheduledPrunePrimary(v ScheduledPruneInventory) (custodyauthority.Entry, error) {
@@ -72,6 +126,24 @@ func RetainedScheduledPruneOutcome(v ScheduledPruneInventory, s PruneExecution) 
 		return ScheduledPruneOutcome{}, err
 	}
 	o := ScheduledPruneOutcome{Effect: s.Effect, Cancellation: s.Cancellation}
+	if s.FenceSettlement != nil {
+		if s.Stage != PruneSucceeded || s.Effect == nil || s.Cancellation != nil || s.FenceResult != nil || s.ArchiveInventoryID != id {
+			return ScheduledPruneOutcome{}, ErrPruneOutcome
+		}
+		if err := verifyPruneSettlement(s, *s.FenceSettlement); err != nil {
+			return ScheduledPruneOutcome{}, err
+		}
+		effect, err := s.Effect.ID()
+		settled, se := s.FenceSettlement.Effect.ID()
+		if err != nil || se != nil || effect != settled {
+			return ScheduledPruneOutcome{}, ErrPruneOutcome
+		}
+		o = ScheduledPruneOutcome{Settlement: s.FenceSettlement}
+		if _, err := o.EvidenceID(v); err != nil {
+			return ScheduledPruneOutcome{}, err
+		}
+		return o, nil
+	}
 	if !v.Request.FencePolicyID.IsZero() && s.Stage == PruneCancelled {
 		if s.Cancellation == nil || s.Cancellation.Closure == nil || s.FenceClaim != nil || s.FenceResult != nil {
 			return ScheduledPruneOutcome{}, ErrPruneOutcome

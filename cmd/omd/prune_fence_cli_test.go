@@ -59,12 +59,16 @@ func preparePruneFenceCLIPolicy(t testing.TB) (string, types.Hash) {
 	return out, id
 }
 
-func preparePruneFenceCLINetwork(t testing.TB, plan string, planID types.Hash) []string {
+func preparePruneFenceCLINetwork(t testing.TB, plan string, planID types.Hash, purpose ...string) []string {
 	t.Helper()
 	var report struct {
 		ArtifactID string `json:"artifact_id"`
 	}
-	args := []string{pruneFenceScopeCommand, "--input", plan, "--plan-id", planID.String()}
+	command := pruneFenceScopeCommand
+	if len(purpose) != 0 {
+		command = purpose[0]
+	}
+	args := []string{command, "--input", plan, "--plan-id", planID.String()}
 	scheduledCLIRun(t, args, &report)
 	path := filepath.Join(t.TempDir(), "scope")
 	scheduledCLIRun(t, append(args, "--mode", "publish", "--expected-id", report.ArtifactID, "--out", path), nil)

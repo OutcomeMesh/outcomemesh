@@ -24,6 +24,9 @@ type ScheduledPruneCommandConfig struct {
 	InventoryID                                                      types.Hash
 	ClosurePath                                                      string
 	ClosureID                                                        types.Hash
+	PrepareSettlement                                                bool
+	SettlementPath                                                   string
+	SettlementID                                                     types.Hash
 	JournalPath                                                      string
 	CustodyPolicy                                                    workarchive.CustodyPolicy
 	JournalLimits                                                    workarchive.CustodyJournalLimits
@@ -36,6 +39,7 @@ type ScheduledPruneCommandReview struct {
 	JournalSequence           uint64
 	JournalHeadID, ReceiptID  types.Hash
 	AlreadyApplied            bool
+	ProposalID, SettlementID  types.Hash                   `json:",omitempty"`
 	ClosureID                 types.Hash                   `json:",omitempty"`
 	Storage                   *workchain.StorageProtection `json:",omitempty"`
 }
@@ -43,6 +47,7 @@ type ScheduledPruneCommandResult struct {
 	Review    ScheduledPruneCommandReview
 	Commit    *Commit
 	Executor  PruneExecution
+	Proposal  *prunefence.SettlementProposal  `json:",omitempty"`
 	Recovered *workchain.CanonicalPruneCommit `json:",omitempty"`
 }
 
@@ -81,7 +86,7 @@ func RunScheduledPruneCommand(ctx context.Context, c ScheduledPruneCommandConfig
 }
 func runScheduledPruneCommand(ctx context.Context, c ScheduledPruneCommandConfig, mode string, expected types.Hash, hooks storeHooks) (_ ScheduledPruneCommandResult, returnErr error) {
 	var result ScheduledPruneCommandResult
-	if ctx == nil || (mode != "review" && mode != "apply" && mode != "resume" && mode != "resume-executor" && mode != "cancel-before-start" && mode != "cancel-with-closure" && mode != "recover-effect") || (mode == "review") != expected.IsZero() {
+	if ctx == nil || (mode != "review" && mode != "apply" && mode != "resume" && mode != "resume-executor" && mode != "cancel-before-start" && mode != "cancel-with-closure" && mode != "recover-effect" && mode != "prepare-settlement" && mode != "settle-effect") || (mode == "review") != expected.IsZero() {
 		return result, ErrScheduledPrune
 	}
 	if err := ctx.Err(); err != nil {
@@ -92,8 +97,18 @@ func runScheduledPruneCommand(ctx context.Context, c ScheduledPruneCommandConfig
 		(c.ClosurePath != "" && ((mode != "review" && mode != "cancel-with-closure") || c.EntryPath != "" || c.JournalPath != "" || c.Storage != nil || c.InventoryPath == "")) {
 		return result, ErrScheduledPrune
 	}
+	if (c.SettlementPath == "") != c.SettlementID.IsZero() ||
+		(mode == "prepare-settlement" && !c.PrepareSettlement) || (mode == "settle-effect" && c.SettlementPath == "") ||
+		(c.PrepareSettlement && (c.SettlementPath != "" || (mode != "review" && mode != "prepare-settlement"))) ||
+		(c.SettlementPath != "" && mode != "review" && mode != "settle-effect") {
+		return result, ErrScheduledPrune
+	}
+	settlementAction := c.PrepareSettlement || c.SettlementPath != ""
+	if settlementAction && (c.Storage == nil || c.ClosurePath != "" || c.EntryPath != "" || c.JournalPath != "" || c.InventoryPath == "") {
+		return result, ErrScheduledPrune
+	}
 	if c.Storage != nil {
-		if mode != "review" && mode != "recover-effect" {
+		if mode != "review" && mode != "recover-effect" && mode != "prepare-settlement" && mode != "settle-effect" {
 			return result, ErrScheduledPrune
 		}
 		if c.EntryPath != "" || c.JournalPath != "" || c.InventoryPath == "" {
@@ -116,7 +131,7 @@ func runScheduledPruneCommand(ctx context.Context, c ScheduledPruneCommandConfig
 		return result, ErrScheduledPrune
 	}
 
-	for _, p := range []*string{&c.PlanPath, &c.AuthorityPath, &c.AuthorityPinsPath, &c.ExecutorPath, &c.ExecutorPinsPath, &c.EntryPath, &c.InventoryPath, &c.JournalPath, &c.ClosurePath} {
+	for _, p := range []*string{&c.PlanPath, &c.AuthorityPath, &c.AuthorityPinsPath, &c.ExecutorPath, &c.ExecutorPinsPath, &c.EntryPath, &c.InventoryPath, &c.JournalPath, &c.ClosurePath, &c.SettlementPath} {
 		if *p != "" {
 			path, err := storePath(*p)
 			if err != nil {
@@ -158,6 +173,21 @@ func runScheduledPruneCommand(ctx context.Context, c ScheduledPruneCommandConfig
 			return result, ErrPruneOutcome
 		}
 	}
+	var settlement prunefence.Settlement
+	if c.SettlementPath != "" {
+		raw, err := readRegular(c.SettlementPath, prunefence.MaximumSettlementBytes)
+		if err != nil {
+			return result, err
+		}
+		settlement, err = prunefence.DecodeSettlement(raw)
+		if err != nil {
+			return result, err
+		}
+		id, _ := settlement.ID()
+		if id != c.SettlementID {
+			return result, ErrPruneOutcome
+		}
+	}
 	var entry custodyauthority.Entry
 	if c.EntryPath != "" {
 		raw, err := readRegular(c.EntryPath, custodyauthority.MaximumEntryBytes)
@@ -185,7 +215,7 @@ func runScheduledPruneCommand(ctx context.Context, c ScheduledPruneCommandConfig
 	if c.Storage != nil {
 		roots = append(roots, c.Storage.ChainPath, c.Storage.ChainPinsPath)
 	}
-	files := []string{c.PlanPath, c.EntryPath, c.InventoryPath, c.ClosurePath}
+	files := []string{c.PlanPath, c.EntryPath, c.InventoryPath, c.ClosurePath, c.SettlementPath}
 	if err := scheduledPrunePlacement(roots, files, ""); err != nil {
 		return result, err
 	}
@@ -388,6 +418,45 @@ func runScheduledPruneCommand(ctx context.Context, c ScheduledPruneCommandConfig
 		e.BytesField([]byte(c.Storage.ChainPinsPath))
 		review.ReviewID = types.DomainHash("OMESH/local/scheduled-prune-recovery-review/v0", e.Bytes())
 	}
+	if settlementAction {
+		if authority.Pending != nil || snapshot.Protection.Pending != nil {
+			return result, ErrPruneOutcome
+		}
+		if snapshot.Stage == PruneSucceeded && c.SettlementPath != "" {
+			if _, err := RetainedScheduledPruneOutcome(inventory, snapshot); err != nil {
+				return result, err
+			}
+			if snapshot.FenceSettlement == nil {
+				return result, ErrPruneOutcome
+			}
+			have, _ := snapshot.FenceSettlement.Decision.CanonicalBytes()
+			want, _ := settlement.CanonicalBytes()
+			if !bytes.Equal(have, want) {
+				return result, ErrPruneOutcome
+			}
+		} else {
+			_, proposal, err := observedPruneSettlement(inventory, snapshot, chain)
+			if err != nil {
+				return result, err
+			}
+			if c.SettlementPath != "" {
+				proposal.OwnerSignature = settlement.Proposal.OwnerSignature
+				proposal.ControllerSignature = settlement.Proposal.ControllerSignature
+				have, err := proposal.CanonicalBytes()
+				want, _ := settlement.Proposal.CanonicalBytes()
+				if err != nil || !bytes.Equal(have, want) {
+					return result, ErrPruneOutcome
+				}
+			}
+			result.Proposal = &proposal
+			review.ProposalID, _ = proposal.ID()
+		}
+		review.SettlementID = c.SettlementID
+		e.Fixed(review.ProposalID[:])
+		e.Fixed(c.SettlementID[:])
+		e.BytesField([]byte(c.SettlementPath))
+		review.ReviewID = types.DomainHash("OMESH/local/scheduled-prune-settlement-review/v0", e.Bytes())
+	}
 	result.Review = review
 	result.Executor = snapshot
 	if mode == "review" {
@@ -395,6 +464,19 @@ func runScheduledPruneCommand(ctx context.Context, c ScheduledPruneCommandConfig
 	}
 	if expected != review.ReviewID {
 		return result, ErrPruneArchiveEffectReview
+	}
+	if mode == "prepare-settlement" {
+		if result.Proposal == nil {
+			return result, ErrPruneOutcome
+		}
+		return result, ctx.Err()
+	}
+	if mode == "settle-effect" {
+		if _, err := executor.SettleObservedEffect(ctx, owner, chain, inventory, settlement); err != nil {
+			return result, err
+		}
+		result.Executor, err = executor.Snapshot()
+		return result, err
 	}
 	if mode == "resume-executor" {
 		if c.EntryPath != "" || c.AssignmentID != plan.Request.AssignmentID || authority.Pending != nil || c.InventoryPath == "" || snapshot.Protection.Pending == nil {
