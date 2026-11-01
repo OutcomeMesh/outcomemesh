@@ -9,12 +9,13 @@ import (
 	"testing"
 
 	"github.com/outcomemesh/outcomemesh/core/types"
+	"github.com/outcomemesh/outcomemesh/node/prunefence"
 	"github.com/outcomemesh/outcomemesh/node/workchain"
 )
 
-func scheduledOutcomeFixture(t testing.TB, stage string) (*scheduledPruneFixture, []ScheduledPruneCommandConfig) {
+func scheduledOutcomeFixture(t testing.TB, stage string, fence ...prunefence.Policy) (*scheduledPruneFixture, []ScheduledPruneCommandConfig) {
 	t.Helper()
-	f := newScheduledPruneFixture(t)
+	f := newScheduledPruneFixture(t, fence...)
 	if stage != "admitted" {
 		fault := errors.New("stop scheduled execution")
 		hit := false

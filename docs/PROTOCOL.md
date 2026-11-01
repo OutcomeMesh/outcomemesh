@@ -1068,5 +1068,45 @@ as a claim, result or local PruneCancellation. The CLI compares its intent with
 the original plan before reporting it verified. A retained matching output is
 reused byte for byte without key access or witness calls. A different valid vote
 subset may yield another certificate ID, but cannot replace an existing output.
-There is no executor or authority accounting transition in this slice. Existing
-retention floors, pending tickets and spent IDs remain unchanged.
+Collection itself makes no executor or authority accounting transition.
+
+### Certified Prune cancellation v1
+
+An explicit `OMCPCNCL` header followed by u16 version 1 introduces a distinct
+executor cancellation record. It contains four nonzero 32-byte IDs in order:
+primary assignment, request, original primary ticket and original executor/pin
+binding. One canonical length-prefixed closure certificate follows. The bound
+is 138 + `MaximumClosureBytes` + 10 bytes. Its ID is
+`DomainHash("OMESH/custody-prune/cancellation/id/v1", canonicalBytes)`. The old
+138-byte v0 record and its v0 domain are unchanged.
+
+The embedded closure assignment/request must match the outer record. Before
+acceptance or replay, its full original witness certificate verifies; its policy
+ID equals the request's FencePolicyID, owner equals the original consumer and
+controller equals the primary admission authority. Ticket and executor binding
+must match the retained admission and independent pins. A v0 cancellation is
+invalid for fenced requests; v1 is invalid for unfenced requests. Unknown
+versions, extra bytes, overlong lengths, substituted fields and partial or
+invalid signatures are rejected. The fixed layout vector and malformed-input
+cases live in `prune_certified_cancel_test.go`; `FuzzDecodePruneCancellation`
+covers both versions.
+
+Only a confirmed Admitted executor can publish this terminal branch, under its
+original mutex, current pending-operation guard and independent pin ownership.
+Intent, executor record and confirmation retain the exact same bytes. Any
+candidate is kept. Started, Succeeded, a pending start and an uncertain result
+cannot be cancelled. An interrupted cancellation resumes its exact pin intent;
+an exact confirmed retry accepts only the retained certificate, not another
+valid vote subset. No storage handle is opened and cancellation changes no
+authority accounting or retention floor.
+
+CLI review additionally binds the exact closure ID and artifact path to the
+original scheduled-command review fields under
+`OMESH/local/scheduled-prune-closure-review/v0`. Reviews without a closure retain
+their existing domain and encoding. After independent confirmation, the existing
+scheduled Complete command may reference the v1 cancellation ID. Each replica
+requires separate consumer and authority signatures at its own original
+position, and application verifies the retained executor outcome. Only its
+selected pending ticket closes; spent IDs and other obligations remain. Older
+binaries reject v1 journal records; no silent journal migration or rollback is
+supported. This does not resolve a Started task without its signed result.

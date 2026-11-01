@@ -471,6 +471,11 @@ func TestPruneCancellationCodec(t *testing.T) {
 func FuzzDecodePruneCancellation(f *testing.F) {
 	seed, _ := (PruneCancellation{AssignmentID: testHash(1), RequestID: testHash(2), TicketID: testHash(3), BindingID: testHash(4)}).CanonicalBytes()
 	f.Add(seed)
+	certified, err := certifiedCancellationVector(f).CanonicalBytes()
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Add(certified)
 	f.Add([]byte{})
 	f.Fuzz(func(t *testing.T, input []byte) {
 		c, err := DecodePruneCancellation(input)

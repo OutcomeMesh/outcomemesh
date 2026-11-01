@@ -5,14 +5,20 @@ import (
 	"context"
 	"errors"
 
+	"github.com/outcomemesh/outcomemesh/core/codec"
 	"github.com/outcomemesh/outcomemesh/core/types"
+	"github.com/outcomemesh/outcomemesh/node/prunefence"
 )
 
-const MaximumPruneCancellationBytes = 138
+const (
+	MaximumPruneCancellationBytes          = 138 // Unchanged v0 fixed length.
+	MaximumCertifiedPruneCancellationBytes = MaximumPruneCancellationBytes + prunefence.MaximumClosureBytes + 10
+)
 
 var (
-	ErrPruneCancelled      = errors.New("prune operation was durably cancelled before start")
-	pruneCancellationMagic = []byte("OMCPCNCL\x00\x00")
+	ErrPruneCancelled               = errors.New("prune operation was durably cancelled before start")
+	pruneCancellationMagic          = []byte("OMCPCNCL\x00\x00")
+	certifiedPruneCancellationMagic = []byte("OMCPCNCL\x00\x01")
 )
 
 // PruneCancellation is retained evidence that this pinned executor chose its
@@ -24,6 +30,9 @@ type PruneCancellation struct {
 	RequestID    types.Hash
 	TicketID     types.Hash
 	BindingID    types.Hash
+	// Closure selects v1. Its complete original quorum is retained in the
+	// cancellation record and independent pin intent, never just a lookup ID.
+	Closure *prunefence.Closure
 }
 
 func (c PruneCancellation) CanonicalBytes() ([]byte, error) {
@@ -31,22 +40,52 @@ func (c PruneCancellation) CanonicalBytes() ([]byte, error) {
 		return nil, ErrPruneStage
 	}
 	encoded := append([]byte(nil), pruneCancellationMagic...)
+	if c.Closure != nil {
+		encoded = append([]byte(nil), certifiedPruneCancellationMagic...)
+	}
 	for _, id := range []types.Hash{c.AssignmentID, c.RequestID, c.TicketID, c.BindingID} {
 		encoded = append(encoded, id[:]...)
+	}
+	if c.Closure != nil {
+		raw, err := c.Closure.CanonicalBytes()
+		if err != nil || c.Closure.Intent.AssignmentID != c.AssignmentID || c.Closure.Intent.RequestID != c.RequestID {
+			return nil, ErrPruneOutcome
+		}
+		e := codec.NewEncoder(MaximumCertifiedPruneCancellationBytes)
+		e.Fixed(encoded)
+		e.BytesField(raw)
+		encoded = e.Bytes()
 	}
 	return encoded, nil
 }
 
 func DecodePruneCancellation(input []byte) (PruneCancellation, error) {
 	var c PruneCancellation
-	if len(input) != MaximumPruneCancellationBytes || !bytes.HasPrefix(input, pruneCancellationMagic) {
+	certified := bytes.HasPrefix(input, certifiedPruneCancellationMagic)
+	if certified {
+		if len(input) <= MaximumPruneCancellationBytes || len(input) > MaximumCertifiedPruneCancellationBytes {
+			return c, ErrPruneStage
+		}
+	} else if len(input) != MaximumPruneCancellationBytes || !bytes.HasPrefix(input, pruneCancellationMagic) {
 		return c, ErrPruneStage
 	}
 	for i, id := range []*types.Hash{&c.AssignmentID, &c.RequestID, &c.TicketID, &c.BindingID} {
 		copy(id[:], input[10+i*types.HashSize:10+(i+1)*types.HashSize])
 	}
-	if _, err := c.CanonicalBytes(); err != nil {
-		return PruneCancellation{}, err
+	if certified {
+		d := codec.NewDecoder(input[MaximumPruneCancellationBytes:])
+		raw, err := d.BytesField(prunefence.MaximumClosureBytes)
+		if err != nil || d.Finish() != nil {
+			return PruneCancellation{}, ErrPruneStage
+		}
+		closure, err := prunefence.DecodeClosure(raw)
+		if err != nil {
+			return PruneCancellation{}, err
+		}
+		c.Closure = &closure
+	}
+	if canonical, err := c.CanonicalBytes(); err != nil || !bytes.Equal(canonical, input) {
+		return PruneCancellation{}, ErrPruneStage
 	}
 	return c, nil
 }
@@ -56,7 +95,11 @@ func (c PruneCancellation) ID() (types.Hash, error) {
 	if err != nil {
 		return types.Hash{}, err
 	}
-	return types.DomainHash("OMESH/custody-prune/cancellation/id/v0", encoded), nil
+	domain := "OMESH/custody-prune/cancellation/id/v0"
+	if c.Closure != nil {
+		domain = "OMESH/custody-prune/cancellation/id/v1"
+	}
+	return types.DomainHash(domain, encoded), nil
 }
 
 // CancelBeforeStart irrevocably cancels an admitted but never-started operation.
@@ -129,6 +172,10 @@ func (executor *PruneExecutor) cancellationCheck(ctx context.Context) error {
 	if !executor.request.FencePolicyID.IsZero() {
 		return ErrPruneOutcome
 	}
+	return executor.preStartCancellationCheck(ctx)
+}
+
+func (executor *PruneExecutor) preStartCancellationCheck(ctx context.Context) error {
 	if err := executor.operationCheck(); err != nil {
 		return err
 	}
@@ -157,6 +204,10 @@ func pruneRecordCount(stage PruneStage) int {
 	return int(stage - PrunePrepared)
 }
 
+func isPruneCancellationRecord(encoded []byte) bool {
+	return bytes.HasPrefix(encoded, []byte("OMCPCNCL"))
+}
+
 func pruneRecordName(index int, next PruneStage) string {
 	if index == 1 && next == PruneCancelled {
 		return "02-cancelled.omcpc"
@@ -176,7 +227,13 @@ func cancellationMatches(current PruneExecution, c PruneCancellation) bool {
 		return false
 	}
 	ticket, err := current.Admission.ID()
-	return err == nil && c.TicketID == ticket
+	if err != nil || c.TicketID != ticket {
+		return false
+	}
+	if current.Request.FencePolicyID.IsZero() {
+		return c.Closure == nil
+	}
+	return c.Closure != nil && verifyPruneClosure(current, *c.Closure) == nil
 }
 
 func checkCancellationBinding(next PruneExecution, binding types.Hash) error {

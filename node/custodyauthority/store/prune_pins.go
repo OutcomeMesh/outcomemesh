@@ -53,10 +53,7 @@ func advancePruneExecution(assignment custodyauthority.Assignment, current Prune
 		if current.Admission == nil {
 			return PruneExecution{}, ErrPruneStage
 		}
-		if bytes.HasPrefix(encoded, pruneCancellationMagic) {
-			if !current.Request.FencePolicyID.IsZero() {
-				return PruneExecution{}, ErrPruneStage
-			}
+		if isPruneCancellationRecord(encoded) {
 			cancellation, err := DecodePruneCancellation(encoded)
 			if err != nil || !cancellationMatches(current, cancellation) {
 				return PruneExecution{}, ErrPruneStage
@@ -103,7 +100,7 @@ func advancePruneExecution(assignment custodyauthority.Assignment, current Prune
 
 func nextPrunePosition(previous PrunePosition, encoded []byte) PrunePosition {
 	stage := previous.Stage + 1
-	if previous.Stage == PruneAdmitted && bytes.HasPrefix(encoded, pruneCancellationMagic) {
+	if previous.Stage == PruneAdmitted && isPruneCancellationRecord(encoded) {
 		stage = PruneCancelled
 	}
 	return PrunePosition{Stage: stage, HeadID: types.DomainHash("OMESH/custody-prune/position/id/v0", previous.HeadID[:], []byte{byte(stage)}, encoded)}

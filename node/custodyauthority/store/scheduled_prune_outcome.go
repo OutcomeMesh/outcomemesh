@@ -33,7 +33,7 @@ func (o ScheduledPruneOutcome) EvidenceID(v ScheduledPruneInventory) (types.Hash
 	rid, _ := v.Request.ID()
 	ticket, _ := primary.ID()
 	c := o.Cancellation
-	if c.AssignmentID != v.Request.AssignmentID || c.RequestID != rid || c.TicketID != ticket || c.BindingID != v.ExecutorBindingID {
+	if c.AssignmentID != v.Request.AssignmentID || c.RequestID != rid || c.TicketID != ticket || c.BindingID != v.ExecutorBindingID || !cancellationMatches(PruneExecution{Request: v.Request, RequestID: rid, Admission: &primary}, *c) {
 		return types.Hash{}, ErrPruneOutcome
 	}
 	return c.ID()
@@ -72,7 +72,11 @@ func RetainedScheduledPruneOutcome(v ScheduledPruneInventory, s PruneExecution) 
 		return ScheduledPruneOutcome{}, err
 	}
 	o := ScheduledPruneOutcome{Effect: s.Effect, Cancellation: s.Cancellation}
-	if !v.Request.FencePolicyID.IsZero() {
+	if !v.Request.FencePolicyID.IsZero() && s.Stage == PruneCancelled {
+		if s.Cancellation == nil || s.Cancellation.Closure == nil || s.FenceClaim != nil || s.FenceResult != nil {
+			return ScheduledPruneOutcome{}, ErrPruneOutcome
+		}
+	} else if !v.Request.FencePolicyID.IsZero() {
 		if s.FenceClaim == nil || s.FenceResult == nil || s.Effect == nil || s.Stage != PruneSucceeded {
 			return ScheduledPruneOutcome{}, ErrPruneOutcome
 		}

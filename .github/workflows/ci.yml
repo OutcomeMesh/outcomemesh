@@ -55,6 +55,8 @@ jobs:
       - name: Prune fence process recovery and decoder fuzzing
         run: |
           go test -tags=integration ./node/custodyauthority/store -run '^TestPruneFenceProcessDeathKeepsObligations$' -count=1 -timeout=3m
+          go test -tags=integration ./node/custodyauthority/store -run '^TestProcessPruneScheduledOutcomes$' -count=1 -timeout=3m
+          go test ./node/custodyauthority/store -run '^$' -fuzz '^FuzzDecodePruneCancellation$' -fuzztime=10s
           go test ./node/prunefence -run '^$' -fuzz '^FuzzPruneFenceArtifacts$' -fuzztime=10s
           go test ./node/prunefence -run '^$' -fuzz '^FuzzPruneFenceClosure$' -fuzztime=10s
 

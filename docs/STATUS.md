@@ -1,6 +1,6 @@
 # Implementation status
 
-Updated: 2026-10-31
+Updated: 2026-11-01
 
 This file records evidence against `PLAN.md`. A milestone remains open until all
 of its exit gates pass; implementing most deliverables does not close it.
@@ -9,6 +9,29 @@ Full planned production readiness is approximately **44/100**, using the weighte
 [readiness baseline](PRODUCTION_READINESS.md). This is an engineering estimate,
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
+
+## 2026-11-01: original-owner application of certified Prune closure
+
+Request v3 executors now accept an original CloseUnclaimed certificate through
+an explicit v1 cancellation record. The record carries the complete quorum and
+the original assignment, request, ticket and executor binding. Publication uses
+the existing independent intent, executor record and confirmation sequence.
+A retained candidate is preserved. Started and unconfirmed work cannot be
+reclassified as never started.
+
+The CLI binds review to the exact certificate, plan, inventory, owner paths and
+retained positions. Cancellation changes no authority obligation. Each replica
+then completes its original ticket through the existing two-party signature and
+reviewed application workflow. Spent operations, other pending work and archive
+retention remain intact. Interrupted cancellation resumes from its embedded
+certificate even when the external artifact is offline; an exact confirmed retry
+does not choose another quorum or repeat completion.
+
+Coverage includes the full CLI workflow, substituted evidence and old records,
+concurrent execution, process termination at cancellation and completion writes,
+recovery with storage/archives offline, canonical encoding and decoder fuzzing.
+Missing signed results, independent deployment and public activation remain open.
+Readiness remains **44/100**.
 
 ## 2026-10-31: certified closure of unclaimed Prune slots
 

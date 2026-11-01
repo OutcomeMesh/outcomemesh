@@ -61,6 +61,9 @@ func TestPruneFenceOperatorCLIEntireLifecycle(t *testing.T) {
 func TestPruneFenceClosureCLIOriginalAccounting(t *testing.T) {
 	scheduledPruneCLILifecycle(t, false, true, true)
 }
+func TestPruneFenceCertifiedCancellationCLICompletion(t *testing.T) {
+	scheduledPruneCLILifecycle(t, true, true)
+}
 
 func scheduledPruneCLILifecycle(t *testing.T, cancelBeforeStart bool, fenced ...bool) {
 	f, cp, cpPath, sources := prepareCustodyScheduleQuorumCLI(t)
@@ -203,10 +206,17 @@ func scheduledPruneCLILifecycle(t *testing.T, cancelBeforeStart bool, fenced ...
 	}
 	var outcomeReview store.ScheduledPruneCommandResult
 	if cancelBeforeStart {
-		scheduledCLIRun(t, outcomeArgs, &outcomeReview)
+		cancelArgs := append([]string(nil), outcomeArgs...)
+		cancelMode := "cancel-before-start"
+		if len(fenceArgs) != 0 {
+			path, id := testPruneFenceClosureCLI(t, planPath, prepared.PlanID, fenceArgs)
+			cancelArgs = append(cancelArgs, "--closure", path, "--closure-id", id.String())
+			cancelMode = "cancel-with-closure"
+		}
+		scheduledCLIRun(t, cancelArgs, &outcomeReview)
 		// A lost response must retain exactly one cancellation and all tickets.
 		fail := pruneEffectTestWriter(func([]byte) (int, error) { return 0, io.ErrClosedPipe })
-		if err := runScheduledPruneOperator(t.Context(), append(outcomeArgs, "--mode", "cancel-before-start", "--expected-review-id", outcomeReview.Review.ReviewID.String()), fail); !errors.Is(err, io.ErrClosedPipe) {
+		if err := runScheduledPruneOperator(t.Context(), append(cancelArgs, "--mode", cancelMode, "--expected-review-id", outcomeReview.Review.ReviewID.String()), fail); !errors.Is(err, io.ErrClosedPipe) {
 			t.Fatal("cancel lost output", err)
 		}
 		scheduledCLIRun(t, outcomeArgs, &outcomeReview)
