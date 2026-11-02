@@ -255,3 +255,15 @@ test-prune-service-isolation:
 	trap 'rm -rf "$$probe_dir"' EXIT; \
 	$(GO) test -race -tags=integration -c ./cmd/omd -o "$$probe_dir/prune-service.test"; \
 	sudo "$$probe_dir/prune-service.test" -test.run='^TestProcessPruneServiceUIDIsolation$$' -test.count=1 -test.timeout=4m
+
+.PHONY: test-prune-service-publication test-prune-service-network
+test-prune-service-publication:
+	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessPruneServicePublicationRecovery$$' -count=1 -timeout=5m
+
+test-prune-service-network:
+	test "$$($(GO) env GOOS)" = linux
+	@set -eu; \
+	probe_dir=$$(mktemp -d); \
+	trap 'rm -rf "$$probe_dir"' EXIT; \
+	$(GO) test -race -tags=integration -c ./cmd/omd -o "$$probe_dir/prune-service.test"; \
+	sudo python3 scripts/remote_acceptance/prune_service.py --local-binary "$$probe_dir/prune-service.test"

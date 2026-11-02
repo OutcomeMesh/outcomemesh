@@ -36,6 +36,7 @@ const pruneProcessEnv = "OUTCOMEMESH_PRUNE_UID_"
 type pruneProcessManifest struct {
 	Root, Socket        string
 	Descriptor, Request []byte
+	Response            []byte
 	PrivatePaths        []string
 	Position            wire.Position
 	Held                bool
@@ -298,9 +299,13 @@ func TestProcessPruneServiceUIDHelper(t *testing.T) {
 	if !filepath.IsAbs(public) || !filepath.IsAbs(control) || (mode != "held" && mode != "completed") {
 		t.Fatal("invalid process coordinates")
 	}
-	ctx, cancel := context.WithTimeout(t.Context(), 80*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Minute)
 	defer cancel()
 	switch role {
+	case "network-relay", "network-replay-relay":
+		pruneNetworkRelay(t, ctx, public, control, role == "network-replay-relay")
+	case "network-client", "network-replay-client":
+		pruneNetworkClient(t, ctx, public, mode, role == "network-replay-client")
 	case "owner":
 		pruneUIDOwner(t, ctx, public, control, mode)
 	case "replay-owner":
@@ -347,6 +352,10 @@ func pruneUIDOwner(t *testing.T, ctx context.Context, public, control, mode stri
 			t.Fatal("real deletion did not complete")
 		}
 		if err = snapshot.Response.Verify(f.descriptor, f.request); err != nil {
+			t.Fatal(err)
+		}
+		m.Response, err = snapshot.Response.CanonicalBytes()
+		if err != nil {
 			t.Fatal(err)
 		}
 		pruneUIDCheckStorageEffect(t, f, snapshot.Response)

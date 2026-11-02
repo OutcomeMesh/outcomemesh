@@ -38,6 +38,7 @@ type Owner struct {
 	position          wire.Position
 	closed            bool
 	failure           error
+	hooks             ownerHooks
 }
 
 func prepare(ctx context.Context, root string, c Config, id Identity, participant uint32) (wire.Descriptor, store.ScheduledPruneInventory, error) {
@@ -212,8 +213,8 @@ func checkLayout(root string, configured bool) error {
 	return nil
 }
 
-func Open(ctx context.Context, root string, descriptorID types.Hash, expected wire.Position, attempt *wire.Request) (_ *Owner, returnErr error) {
-	if ctx == nil || ctx.Err() != nil || !expected.Valid() || descriptorID.IsZero() {
+func openConfigured(ctx context.Context, root string, descriptorID types.Hash) (_ *Owner, returnErr error) {
+	if ctx == nil || ctx.Err() != nil || descriptorID.IsZero() {
 		return nil, ErrOwner
 	}
 	o := &Owner{root: root, stamps: make(map[string]types.Hash)}
@@ -273,6 +274,36 @@ func Open(ctx context.Context, root string, descriptorID types.Hash, expected wi
 	if err = validateInventory(o.inventory, d); err != nil {
 		return nil, err
 	}
+	for _, name := range []string{"identity", "key", "transport-key", "lock", "descriptor", "config", "inventory"} {
+		if err = o.capture(name); err != nil {
+			return nil, err
+		}
+	}
+	o.key, err = readKey(filepath.Join(root, "key"))
+	if err != nil {
+		return nil, err
+	}
+	o.transportKey, err = readKey(filepath.Join(root, "transport-key"))
+	if err != nil {
+		return nil, err
+	}
+	return o, nil
+}
+
+func Open(ctx context.Context, root string, descriptorID types.Hash, expected wire.Position, attempt *wire.Request) (_ *Owner, returnErr error) {
+	if !expected.Valid() {
+		return nil, ErrPosition
+	}
+	o, err := openConfigured(ctx, root, descriptorID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if returnErr != nil {
+			returnErr = errors.Join(returnErr, o.Close())
+		}
+	}()
+	d := o.descriptor
 	if err = o.loadEvents(); err != nil {
 		return nil, err
 	}
@@ -292,11 +323,6 @@ func Open(ctx context.Context, root string, descriptorID types.Hash, expected wi
 			return nil, ErrPosition
 		}
 	}
-	for _, name := range []string{"identity", "key", "transport-key", "lock", "descriptor", "config", "inventory"} {
-		if err = o.capture(name); err != nil {
-			return nil, err
-		}
-	}
 	if o.intent != nil {
 		if err = o.capture("events/intent"); err != nil {
 			return nil, err
@@ -306,14 +332,6 @@ func Open(ctx context.Context, root string, descriptorID types.Hash, expected wi
 		if err = o.capture("events/result"); err != nil {
 			return nil, err
 		}
-	}
-	o.key, err = readKey(filepath.Join(root, "key"))
-	if err != nil {
-		return nil, err
-	}
-	o.transportKey, err = readKey(filepath.Join(root, "transport-key"))
-	if err != nil {
-		return nil, err
 	}
 	return o, nil
 }
@@ -357,7 +375,7 @@ func (o *Owner) capture(name string) error {
 	}
 	return e
 }
-func (o *Owner) check() error {
+func (o *Owner) checkFiles() error {
 	if o.closed {
 		return ErrOwner
 	}
@@ -377,6 +395,15 @@ func (o *Owner) check() error {
 			return ErrOwner
 		}
 	}
+	return nil
+}
+func (o *Owner) check() error {
+	if err := o.checkFiles(); err != nil {
+		return err
+	}
+	return o.checkEventCount()
+}
+func (o *Owner) checkEventCount() error {
 	events, err := os.ReadDir(filepath.Join(o.root, "events"))
 	if err != nil {
 		return err
@@ -459,7 +486,7 @@ func (o *Owner) socketAllowed(path string) error {
 }
 
 func (o *Owner) retain(name string, raw []byte) error {
-	if err := publish(filepath.Join(o.root, "events", name), raw); err != nil {
+	if err := publishWithHooks(filepath.Join(o.root, "events", name), raw, o.hooks, name); err != nil {
 		o.failure = errors.Join(ErrHeld, err)
 		return o.failure
 	}
@@ -552,6 +579,9 @@ func (o *Owner) Execute(ctx context.Context, q wire.Request, approve func(contex
 		if e != nil {
 			return custodyfence.Certificate{}, e
 		}
+		if e = o.hooks.reach("candidate-retained"); e != nil {
+			return custodyfence.Certificate{}, e
+		}
 		command, e := approve(ctx, challenge)
 		if e != nil {
 			return custodyfence.Certificate{}, e
@@ -599,12 +629,18 @@ func (o *Owner) Execute(ctx context.Context, q wire.Request, approve func(contex
 	}
 	o.intent = &q
 	o.position, _ = q.IntentPosition()
+	if err = o.hooks.reach("intent-confirmed"); err != nil {
+		return wire.Response{}, errors.Join(ErrHeld, err)
+	}
 	result, err := s.Execute(ctx, o.descriptor.ReviewID)
 	if err != nil {
 		return wire.Response{}, errors.Join(ErrHeld, err)
 	}
 	if result.Commit == nil || result.FenceResult == nil || result.FenceSettlement != nil {
 		return wire.Response{}, ErrHeld
+	}
+	if err = o.hooks.reach("original-result-confirmed"); err != nil {
+		return wire.Response{}, errors.Join(ErrHeld, err)
 	}
 	return o.finish(q, wire.Response{Effect: result.Commit.Effect, Result: result.FenceResult})
 }
@@ -632,6 +668,11 @@ func (o *Owner) Recover(ctx context.Context, q wire.Request) (_ wire.Response, r
 	if len(o.response) > 0 {
 		return wire.DecodeResponse(o.response)
 	}
+	return o.withRetainedResponse(ctx, q, func(r wire.Response) (wire.Response, error) { return o.finish(q, r) })
+}
+
+// Keep the original executor and pin owners until the caller's publication ends.
+func (o *Owner) withRetainedResponse(ctx context.Context, q wire.Request, use func(wire.Response) (wire.Response, error)) (_ wire.Response, returnErr error) {
 	c := o.config.Runtime
 	for _, p := range []string{c.ExecutorPath, c.ExecutorPinsPath} {
 		if err := privateTreeContext(ctx, p); err != nil {
@@ -664,5 +705,5 @@ func (o *Owner) Recover(ctx context.Context, q wire.Request) (_ wire.Response, r
 	if err = ctx.Err(); err != nil {
 		return wire.Response{}, err
 	}
-	return o.finish(q, r)
+	return use(r)
 }

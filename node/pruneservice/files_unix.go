@@ -29,20 +29,56 @@ func syncDirectory(path string) error {
 
 // A partial named artifact remains evidence. No overwrite, truncation or
 // automatic cleanup is used to turn an uncertain publication into a retry.
-func publish(path string, raw []byte) error {
+// ownerHooks are private fault seams. No option, environment variable or peer
+// input can install them in an ordinary binary.
+type ownerHooks struct {
+	at    func(string) error
+	write func(*os.File, []byte) (int, error)
+}
+
+func (h ownerHooks) reach(stage string) error {
+	if h.at != nil {
+		return h.at(stage)
+	}
+	return nil
+}
+func publish(path string, raw []byte) error { return publishWithHooks(path, raw, ownerHooks{}, "") }
+func publishWithHooks(path string, raw []byte, h ownerHooks, stage string) error {
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0600)
 	if err != nil {
 		return err
 	}
-	n, err := f.Write(raw)
+	return syncPublication(f, path, raw, h, stage)
+}
+func syncPublication(f *os.File, path string, raw []byte, h ownerHooks, stage string) (returnErr error) {
+	defer func() { returnErr = errors.Join(returnErr, f.Close()) }()
+	if err := h.reach(stage + "-created"); err != nil {
+		return err
+	}
+	write := f.Write
+	if h.write != nil {
+		write = func(b []byte) (int, error) { return h.write(f, b) }
+	}
+	n, err := write(raw)
 	if n != len(raw) {
 		err = errors.Join(err, io.ErrShortWrite)
 	}
-	err = errors.Join(err, f.Sync(), f.Close())
 	if err != nil {
 		return err
 	}
-	return syncDirectory(filepath.Dir(path))
+	if err = h.reach(stage + "-written"); err != nil {
+		return err
+	}
+	if err = f.Sync(); err != nil {
+		return err
+	}
+	if err = h.reach(stage + "-file-synced"); err != nil {
+		return err
+	}
+	if err = syncDirectory(filepath.Dir(path)); err != nil {
+		return err
+	}
+	return h.reach(stage + "-durable")
 }
 
 func privateRead(path string, limit int) ([]byte, error) {

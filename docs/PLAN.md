@@ -116,9 +116,12 @@ Remaining work, in order:
    owner collects witnesses itself while original decisions remain locked.
    Reopening an unknown attempt cannot create another session. Separate-user
    Linux campaigns on both existing hosts cover actual deletion, private-file
-   denial, held disconnection and cold replay. Next extend process cuts through
-   outer intent/result publication and complete original settlement, then add
-   the authenticated remote relay. Independently operated execution, transfer
+   denial, held disconnection and cold replay. Process cuts now cover outer
+   intent/result publication and repeated interruption of reviewed prefix
+   continuation. An authenticated, explicitly enabled relay forwards the exact
+   signed approval to the kernel-authenticated owner. Next extend the combined
+   remote campaign through interrupted original settlement and controlled
+   partition during quorum/guard decisions. Independently operated execution, transfer
    of existing owners and enrolled key continuity stay open.
    Then implement remote v1/profile-5 witness and execution transitions, including
    this disposition and retained pins across independently operated failures.

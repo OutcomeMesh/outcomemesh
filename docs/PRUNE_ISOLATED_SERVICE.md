@@ -1,7 +1,7 @@
 # Isolated Prune ownership
 
 This explicit operator workflow executes one service-bound scheduled Prune request.
-It does not enable a daemon endpoint by default or activate a network protocol.
+No daemon endpoint or network protocol is enabled by default.
 The original executor, independent pins, authorities, protected chain and custody
 journals retain their identities and obligations.
 
@@ -74,7 +74,7 @@ into the runtime export. The guard URL is explicitly configured; the enrolled
 guard signature authenticates its choice.
 
 Use `--position-out FILE` with `request-prepare` to export the initial cursor;
-`call`, `recover` and `inspect` can export the confirmed cursor using the same
+`call`, `remote-call`, `recover`, `status`, `continue` and `inspect` can export the confirmed cursor using the same
 flag. The initial position is sequence zero with a zero head. After an interrupted
 call, `serve --request` may reconcile that externally retained exact request
 against a later stored position. A different request or invented current cursor
@@ -83,7 +83,7 @@ creating a new request is not a retry.
 
 Public codecs and offline signing are portable. The Unix transport requires
 Linux kernel peer credentials. Unsupported systems refuse serving and calling
-before reading role keys. This does not change the Windows, Linux or macOS binary
+before reading role keys. The explicit authenticated remote caller is portable. This does not change the Windows, Linux or macOS binary
 release matrix.
 
 ## One bounded exchange
@@ -129,12 +129,13 @@ requires its separate completion; no balance, budget or obligation is reset.
 
 Once the outer response is retained, an exact retry returns the same bytes
 without opening archives, witnesses or guards and without reading the consumer
-seed. Partial configuration or response files block automatic repair. Copying
+seed. Partial files block automatic repair; event prefixes have the explicit
+continuation path below. Copying
 the whole host or rolling back the independent guard remains outside this local
 placement guarantee.
 
-The remote relay, independent operator campaign, safe ownership transfer for
-existing placements and replacement of an already enrolled service key remain
+The independent operator campaign, safe ownership transfer for existing
+placements and replacement of an already enrolled service key remain
 separate work. The two existing hosts share administration and cannot establish
 operator independence.
 
@@ -155,3 +156,70 @@ and source hashes. The same
 probe is required by CI with the race detector. Public codec fuzzing and local
 CLI recovery checks are separate from this process test. Full process cuts at
 outer publication and independently operated remote execution remain open.
+
+## Explicit continuation of interrupted publication
+
+Stop the owner before reviewing a partial event. Retain the complete signed
+request, descriptor and last confirmed position outside the owner root. The
+`continuation-review` action requires those artifacts, `--root` and `--out`. Its
+public CLI review opens no owners. Running the reviewed action opens the original
+owner and emits a `ReviewID` over its native placements, exact retained prefix,
+target bytes and external request. This ID grants no execution.
+
+Use `continue` with those same inputs and `--continuation-id ReviewID`, review
+that action, then run it with its own `--expected-review-id`. An existing file
+is appended in place, synchronized and never replaced or truncated. A changed
+prefix or inode invalidates the review. Another interrupted append requires a
+fresh review; preserve the longer prefix. `status` exports the exact original
+snapshot. Both `status` and `continue` accept `--position-out`.
+
+An incomplete intent can only be completed from the externally retained original
+signed request. It becomes held and cannot launch a new session. A missing intent
+is refused. An incomplete or absent response needs the confirmed full original
+result or observed-effect settlement, with the executor and pins held through
+publication. A complete valid outer response can be synchronized offline. A
+conflict, missing signature or unconfirmed original transition remains held.
+This workflow does not repair partial identity, key or configuration files.
+
+## Authenticated relay
+
+`relay-serve` runs on Linux as the descriptor's participant UID. Its required
+flags are `--descriptor`, `--descriptor-id`, `--socket`, `--transport-key`,
+`--transport-public-key`, `--client-transport-keys` and `--listen`. The last two
+accept comma-separated explicit public keys and listen multiaddresses. The relay
+has its own transport seed and no owner keys or access to original stores.
+
+`remote-call` takes `--descriptor`, `--descriptor-id`, `--request`, `--address`,
+`--transport-key`, `--transport-public-key`, `--relay-public-key`, `--key`,
+`--challenge-out`, `--approval-out` and `--out`. The consumer key stays at the
+caller. Public review precedes run for both actions. Transport keys must differ
+from each other and all enrolled custody/service roles. `--timeout` is between
+100ms and two minutes; it never extends existing guard or witness deadlines.
+
+The explicit `/outcomemesh/prune-service/0` protocol authenticates QUIC peers,
+pins the receiver identity and accepts only the configured caller keys. No
+handler is registered by the ordinary node. The relay forwards signed artifacts
+to its configured local socket, which still requires Linux peer credentials.
+It verifies the full fresh challenge, exact approval and final input EOF before
+forwarding approval. The owner independently repeats those checks. A disconnect
+never authorizes a replacement request or automatic execution retry.
+
+The caller verifies the complete service-signed response. A retained local output
+can be inspected with both private seeds absent. If the output was lost, the
+same request can retrieve the original confirmed response from a restarted
+owner, without the consumer key, archives or witnesses. Held work stays held.
+The shared administrators of the two available servers remain trusted.
+
+`make test-prune-service-publication` kills the actual publisher at thirteen
+intent, candidate, result and reply boundaries, including partial writes and
+an interrupted continuation. These are process-death tests, not physical power
+loss tests. `make test-prune-service-network` runs the owner, relay and caller
+as separate Linux processes and UIDs, including cold restart, pre-approval
+failure and loss of a response payload. For two hosts, run
+`scripts/remote_acceptance/prune_service.py --config HOSTS.json --out REPORT.json`.
+The configuration has `a`, `b`, `a_ip` and `b_ip`; each host specifies the absolute
+`binary`, its `sha256`, and a host-pinned noninteractive `ssh` argument list.
+Use the Linux integration test executable, not the production daemon. The
+runner uses fresh disposable directories and test keys, then stops its children
+and removes only those directories. It never changes firewall rules or existing
+service roots. Guards and witnesses in this fixture share the owner account.

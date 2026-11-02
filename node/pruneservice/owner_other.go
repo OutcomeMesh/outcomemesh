@@ -32,3 +32,10 @@ func (*Owner) Close() error                                               { retu
 func Serve(context.Context, *Owner, string, func(types.Hash) error) error { return ErrUnsupported }
 func SocketID(string) (types.Hash, error)                                 { return types.Hash{}, ErrUnsupported }
 func CleanupSocket(string, types.Hash) error                              { return ErrUnsupported }
+
+func ReviewContinuation(context.Context, string, types.Hash, wire.Position, wire.Request) (ContinuationReview, error) {
+	return ContinuationReview{}, ErrUnsupported
+}
+func Continue(context.Context, string, types.Hash, wire.Position, wire.Request, types.Hash) (Snapshot, error) {
+	return Snapshot{}, ErrUnsupported
+}

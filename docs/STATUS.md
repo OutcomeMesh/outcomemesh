@@ -10,6 +10,35 @@ Full planned production readiness is approximately **44/100**, using the weighte
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
 
+## 2026-11-02: Prune publication recovery and authenticated relay
+
+Thirteen process-death cuts now cover outer intent, candidate, original result,
+outer response and reply boundaries. They include partial writes, repeated death
+while appending a reviewed suffix, and refusal of stale reviews. Explicit CLI
+continuation preserves the original inode and prefix. It can only leave a
+completed intent held or publish a fully confirmed original result/settlement;
+missing signatures and conflicting bytes remain unresolved.
+
+The explicit relay uses separate pinned QUIC identities and an allowlist, then
+forwards to the original kernel-authenticated Unix owner. The consumer retains
+and signs the exact challenge on its own host. Neither relay nor remote caller
+receives owner keys or private stores. Six real two-host campaigns passed, with
+both hosts taking each role: completed execution, disconnection before approval,
+and lost response payload after execution. Each included a cold owner and relay
+restart with original sources/network offline. Completed responses retained the
+same bytes; held work remained held. Original authority snapshots and accounting
+were unchanged, actual storage effects were checked, and Linux denied relay
+access to owner files under separate UIDs. These hosts share administration;
+fixture witnesses/guard share the owner account.
+
+The acceptance runner and process publication matrix are included in CI. The
+preceding main CI failure was a GitHub macOS runner allocation failure before
+any step ran, not a compiler or test failure; its full rerun is tracked separately.
+No consensus format, default endpoint or release tag changes. Next: interrupt
+original settlement and quorum/guard decisions in the combined remote workflow,
+then service-key continuity and independent operator deployment. Readiness
+remains **44/100**. See [operation and reproduction](PRUNE_ISOLATED_SERVICE.md).
+
 ## 2026-11-02: isolated Prune owner and explicit command workflow
 
 A separate owner now creates its service and transport keys before enrollment.

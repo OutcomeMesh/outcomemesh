@@ -662,6 +662,13 @@ func FuzzWireFrames(f *testing.F) {
 	f.Add(frame.Bytes())
 	f.Add([]byte{255, 255, 255, 255, 255})
 	f.Fuzz(func(t *testing.T, raw []byte) {
+		for expected := uint8(0); expected <= ResponseFrame+1; expected++ {
+			r := bytes.NewReader(raw)
+			p, e := ReadExpectedFrame(r, expected)
+			if e == nil && (len(raw) < 5 || raw[0] != expected || len(p) == 0 || len(p) > frameLimit(expected)) {
+				t.Fatal("invalid expected frame")
+			}
+		}
 		reader := bytes.NewReader(raw)
 		kind, payload, err := ReadFrame(reader)
 		if err != nil {
