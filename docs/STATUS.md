@@ -1,6 +1,6 @@
 # Implementation status
 
-Updated: 2026-11-01
+Updated: 2026-11-02
 
 This file records evidence against `PLAN.md`. A milestone remains open until all
 of its exit gates pass; implementing most deliverables does not close it.
@@ -9,6 +9,27 @@ Full planned production readiness is approximately **44/100**, using the weighte
 [readiness baseline](PRODUCTION_READINESS.md). This is an engineering estimate,
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
+
+## 2026-11-02: scheduled Prune delivery through the CLI
+
+Operators can now review and publish a fixed delivery intent, create or inspect
+its original outbox, deliver once and serve one command through explicit CLI
+commands. Intent preparation checks the signed plan context without private keys
+or remote-head claims. Receiver preflight checks original owners and complete
+terminal evidence before loading its transport seed or opening a listener.
+Each request repeats those checks under ownership.
+
+The supervised receiver drains accepted calls on shutdown and stops on uncertain
+writes. Network retry cannot resume pending journals. Lost publication, readiness
+or delivery output preserves the original files and accounting; durable receipts
+can be read offline after checking the original client key. Coverage includes
+full cancellation and settlement completion, role and pin substitutions, private
+seed permissions, real CLI process termination/restart and active-handler drain.
+Wire formats, default daemon registration and consensus rules are unchanged.
+
+Independent deployment, profile-5 remote deletion and public activation remain
+open. See [the operator workflow](PRUNE_SCHEDULED_DELIVERY.md). Readiness remains
+**44/100**.
 
 ## 2026-11-01: pinned delivery of scheduled Prune commands
 
@@ -22,7 +43,7 @@ The sender retains intent before dialing and publishes a checked receipt before
 reporting delivery. Coverage includes incompatible protocols, substituted pins,
 settlement downgrade rejection, lost replies, failed durable writes, cold reopen
 and process termination on both sides. The default daemon has no new endpoint.
-CLI deployment and profile-5 remote deletion remain open. See
+The CLI follow-up is recorded above; profile-5 remote deletion remains open. See
 [scheduled delivery](PRUNE_SCHEDULED_DELIVERY.md). Readiness remains **44/100**.
 
 ## 2026-11-01: observed-effect settlement for started Prune

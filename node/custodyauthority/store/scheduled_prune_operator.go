@@ -90,7 +90,16 @@ func runScheduledPruneCommand(ctx context.Context, c ScheduledPruneCommandConfig
 }
 
 func runScheduledPruneCommandBound(ctx context.Context, c ScheduledPruneCommandConfig, mode string, expected types.Hash, hooks storeHooks, delivery *scheduledwire.Intent) (_ ScheduledPruneCommandResult, returnErr error) {
+	return runScheduledPruneCommandOwned(ctx, c, mode, expected, hooks, delivery, false)
+}
+
+// inspectDelivery shares the complete delivery validation and returns before
+// application. It is private: it cannot turn another local action into a review.
+func runScheduledPruneCommandOwned(ctx context.Context, c ScheduledPruneCommandConfig, mode string, expected types.Hash, hooks storeHooks, delivery *scheduledwire.Intent, inspectDelivery bool) (_ ScheduledPruneCommandResult, returnErr error) {
 	var result ScheduledPruneCommandResult
+	if inspectDelivery && delivery == nil {
+		return result, ErrScheduledPrune
+	}
 	if ctx == nil || (mode != "review" && mode != "apply" && mode != "resume" && mode != "resume-executor" && mode != "cancel-before-start" && mode != "cancel-with-closure" && mode != "recover-effect" && mode != "prepare-settlement" && mode != "settle-effect") || (mode == "review") != expected.IsZero() {
 		return result, ErrScheduledPrune
 	}
@@ -498,6 +507,9 @@ func runScheduledPruneCommandBound(ctx context.Context, c ScheduledPruneCommandC
 	}
 	if expected != review.ReviewID {
 		return result, ErrPruneArchiveEffectReview
+	}
+	if inspectDelivery {
+		return result, ctx.Err()
 	}
 	if mode == "prepare-settlement" {
 		if result.Proposal == nil {

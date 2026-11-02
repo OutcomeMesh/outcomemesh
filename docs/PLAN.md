@@ -88,8 +88,11 @@ Remaining work, in order:
    A distinct scheduled command transport now delivers reviewed admissions and
    completions to the original local owners. It preserves full settlement IDs,
    durable client intent/receipts and explicit recovery for unconfirmed writes;
-   see [scheduled delivery](PRUNE_SCHEDULED_DELIVERY.md). CLI service deployment
-   and independently protected remote execution remain open.
+   see [scheduled delivery](PRUNE_SCHEDULED_DELIVERY.md). Explicit CLI preparation,
+   immutable outbox creation, offline inspection, one-shot delivery and supervised
+   serving now cover this boundary. Receiver preflight validates original owners
+   before listening; shutdown drains accepted calls without automatic recovery.
+   Independently protected remote execution remains open.
    Next implement remote v1/profile-5 witness and execution transitions, including
    this disposition and retained pins across independently operated failures.
    Unprepared/raw

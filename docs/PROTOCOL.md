@@ -1143,6 +1143,12 @@ u16 version 0, intent ID, complete acknowledgement and a 32-byte checksum using
 `OMESH/custody-scheduled-prune/receipt/v0` over preceding receipt bytes.
 These are local historical records, not signed portable proofs or current grants.
 Old readers cannot open the new outbox; old authority/executor formats are unchanged.
+An explicit CLI supervises this adapter without changing these bytes. Receiver
+preflight checks the original-owner path before listening; each accepted call
+checks it again under ownership. Transport keys are distinct from every role in
+the full plan. Shutdown drains accepted handlers, and uncertain writes stop the
+service for explicit local recovery. Offline sender reports confer no current
+permission. The default daemon still registers no scheduled Prune endpoint.
 See [the delivery boundary and recovery rules](PRUNE_SCHEDULED_DELIVERY.md).
 
 ### Observed-effect Prune settlement v0

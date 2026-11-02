@@ -229,6 +229,11 @@ func TestPruneScheduledDeliveryPendingNeedsExplicitLocalResume(t *testing.T) {
 				t.Fatal("fault not reached", err)
 			}
 			before := scheduledOperatorReview(t, c)
+			id, _ := intent.ID()
+			if service, err := PrepareScheduledPruneCommandService(t.Context(), c, intent, id, 3*time.Second); err == nil {
+				service.Close()
+				t.Fatal("service preflight resumed incomplete command")
+			}
 			results = installScheduledDelivery(t, c, intent, server, storeHooks{}, false)
 			if _, err := client.DeliverScheduledPrune(t.Context(), server.Addresses()[0], server.ID(), intent, 3*time.Second); err == nil {
 				t.Fatal("network resumed incomplete command")
@@ -283,6 +288,11 @@ func TestPruneScheduledDeliverySettlementCompletionDoesNotDowngrade(t *testing.T
 		badConfig.EntryID, _ = bad.Entry.ID()
 		raw, _ := bad.Entry.CanonicalBytes()
 		writeTestFile(t, badConfig.EntryPath, raw)
+		badID, _ := bad.ID()
+		if service, err := PrepareScheduledPruneCommandService(t.Context(), badConfig, bad, badID, 3*time.Second); err == nil {
+			service.Close()
+			t.Fatal("service preflight accepted bare effect instead of full settlement")
+		}
 		results := installScheduledDelivery(t, badConfig, bad, server, storeHooks{}, false)
 		if _, err := client.DeliverScheduledPrune(t.Context(), server.Addresses()[0], server.ID(), bad, 3*time.Second); err == nil {
 			t.Fatal("bare effect released settlement")
