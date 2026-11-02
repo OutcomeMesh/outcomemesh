@@ -33,13 +33,26 @@ func frameLimit(kind uint8) int {
 // Each payload carries its own canonical magic/version. Callers must enforce
 // their exchange state and EOF at the final input boundary before execution.
 func ReadFrame(r io.Reader) (uint8, []byte, error) {
+	return readFrame(r, 0)
+}
+
+// ReadExpectedFrame rejects another message kind before allocating its payload.
+func ReadExpectedFrame(r io.Reader, expected uint8) ([]byte, error) {
+	if frameLimit(expected) == 0 {
+		return nil, ErrArtifact
+	}
+	_, b, err := readFrame(r, expected)
+	return b, err
+}
+
+func readFrame(r io.Reader, expected uint8) (uint8, []byte, error) {
 	var head [5]byte
 	if _, err := io.ReadFull(r, head[:]); err != nil {
 		return 0, nil, err
 	}
 	limit := frameLimit(head[0])
 	n := binary.BigEndian.Uint32(head[1:])
-	if limit == 0 || n == 0 || n > uint32(limit) {
+	if limit == 0 || n == 0 || n > uint32(limit) || (expected != 0 && head[0] != expected) {
 		return 0, nil, ErrArtifact
 	}
 	b := make([]byte, int(n))

@@ -1565,5 +1565,21 @@ recovery requires a confirmed full result or full observed-effect settlement.
 Administrators remain trusted. Native placement checks are not uncloneable
 hardware identity. Changing ownership does not revoke old file descriptors and
 is not a supported isolation handoff. Do not restore service and independent
-guard from the same rollback image. Full deployment and remote transport
-acceptance remain open; see [operating requirements](PRUNE_ISOLATED_SERVICE.md).
+guard from the same rollback image. Independently operated deployment remains
+open; see [operating requirements](PRUNE_ISOLATED_SERVICE.md).
+
+
+The explicit Prune relay is an unprivileged participant, not an original owner.
+Its separate transport key and pinned peer allowlist do not substitute for the
+issuer descriptor, consumer signature, original witness quorum or fresh guard.
+It verifies approval EOF before forwarding. No private paths or keys travel in
+its protocol; its local socket still authenticates both Linux UIDs. Response
+loss and cold restart cannot release a held intent or repeat execution.
+
+Publication continuation accepts only the exact reviewed original prefix and
+native placement. Completing an intent leaves it held. Completing a response
+requires full confirmed original evidence under the original executor locks;
+a complete already signed outer response may be synchronized offline. Empty
+files do not establish which request ran, so the externally retained signed
+request is mandatory. Partial configuration and identity files remain blocked.
+SIGKILL coverage does not establish resilience to physical write-cache loss.

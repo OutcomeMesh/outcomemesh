@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"strings"
 	"syscall"
+	"time"
 	"unicode/utf8"
 
 	"github.com/outcomemesh/outcomemesh/core/types"
@@ -36,6 +37,9 @@ type pruneServiceCLIFlags struct {
 	Action, Mode, Root, Input, Output, Key, Identity, Plan, PlanID          string
 	Descriptor, DescriptorID, Request, Response, Position, Socket, SocketID string
 	Issuer, Guard, Nonce, Expected, ChallengeOut, ApprovalOut, PositionOut  string
+	ContinuationID                                                          string
+	TransportKey, TransportPublic, RelayPublic, Clients, Address, Listen    string
+	Timeout                                                                 time.Duration
 	ParticipantUID                                                          uint
 }
 
@@ -53,7 +57,7 @@ func runPruneServiceCLIContext(ctx context.Context, args []string, out io.Writer
 		p                 *string
 		name, value, help string
 	}{
-		{&a.Action, "action", "", "identity-create, identity-public, enrollment-prepare/sign, descriptor-prepare/sign, configure, request-prepare/sign, serve, call, inspect, recover, cleanup-socket"},
+		{&a.Action, "action", "", "identity-create, identity-public, enrollment-prepare/sign, descriptor-prepare/sign, configure, request-prepare/sign, serve, call, inspect, status, recover, continuation-review, continue, relay-serve, remote-call, cleanup-socket"},
 		{&a.Mode, "mode", "review", "review or run"}, {&a.Root, "root", "", "original private service root"},
 		{&a.Input, "input", "", "strict unsigned artifact or owner-only runtime config JSON"}, {&a.Output, "out", "", "immutable public output"},
 		{&a.Key, "key", "", "offline or participant signer seed; exactly 32 private bytes"}, {&a.Identity, "identity", "", "public service identity JSON"},
@@ -65,10 +69,18 @@ func runPruneServiceCLIContext(ctx context.Context, args []string, out io.Writer
 		{&a.Guard, "guard", "", "independent guard public key, hexadecimal"}, {&a.Nonce, "nonce", "", "request nonce, 32-byte hexadecimal"},
 		{&a.Expected, "expected-review-id", "", "exact preceding CLI review ID"}, {&a.ChallengeOut, "challenge-out", "", "retain the verified candidate challenge before signing"},
 		{&a.ApprovalOut, "approval-out", "", "retain the exact consumer approval before sending"},
+		{&a.ContinuationID, "continuation-id", "", "exact original-prefix continuation review ID"},
+		{&a.TransportKey, "transport-key", "", "private transport seed, separate from all protocol roles"},
+		{&a.TransportPublic, "transport-public-key", "", "independently retained local transport public key"},
+		{&a.RelayPublic, "relay-public-key", "", "independently retained remote relay public key"},
+		{&a.Clients, "client-transport-keys", "", "explicit comma-separated allowed client transport public keys"},
+		{&a.Address, "address", "", "remote relay multiaddress"},
+		{&a.Listen, "listen", "", "explicit relay listen multiaddresses, comma-separated"},
 		{&a.PositionOut, "position-out", "", "optional immutable initial or confirmed service cursor JSON"},
 	} {
 		f.StringVar(v.p, v.name, v.value, v.help)
 	}
+	f.DurationVar(&a.Timeout, "timeout", wire.ExchangeDeadline, "bounded network exchange timeout")
 	f.UintVar(&a.ParticipantUID, "participant-uid", 0, "separate unprivileged Linux participant UID")
 	if err := parsePruneFlags(f, args[1:]); err != nil {
 		return err
@@ -77,7 +89,7 @@ func runPruneServiceCLIContext(ctx context.Context, args []string, out io.Writer
 		return wire.ErrArtifact
 	}
 	// Unsupported serving never parses owner paths or loads any key.
-	if (a.Action == "serve" || a.Action == "call" || a.Action == "cleanup-socket") && runtime.GOOS != "linux" {
+	if (a.Action == "serve" || a.Action == "call" || a.Action == "cleanup-socket" || a.Action == "relay-serve") && runtime.GOOS != "linux" {
 		return errors.New("isolated Prune transport requires Linux peer credentials")
 	}
 	required := map[string][]string{
@@ -86,11 +98,16 @@ func runPruneServiceCLIContext(ctx context.Context, args []string, out io.Writer
 		"descriptor-prepare": {"root", "input", "participant-uid", "out"}, "descriptor-sign": {"input", "key", "out"},
 		"configure":       {"root", "input", "descriptor", "descriptor-id", "out"},
 		"request-prepare": {"descriptor", "descriptor-id", "nonce", "out"}, "request-sign": {"input", "descriptor", "descriptor-id", "key", "out"},
-		"serve":          {"root", "descriptor", "descriptor-id", "position", "socket"},
-		"call":           {"descriptor", "descriptor-id", "request", "socket", "key", "challenge-out", "approval-out", "out"},
-		"inspect":        {"descriptor", "descriptor-id", "request", "response", "out"},
-		"recover":        {"root", "descriptor", "descriptor-id", "position", "request", "out"},
-		"cleanup-socket": {"socket", "socket-id"},
+		"serve":               {"root", "descriptor", "descriptor-id", "position", "socket"},
+		"call":                {"descriptor", "descriptor-id", "request", "socket", "key", "challenge-out", "approval-out", "out"},
+		"inspect":             {"descriptor", "descriptor-id", "request", "response", "out"},
+		"recover":             {"root", "descriptor", "descriptor-id", "position", "request", "out"},
+		"cleanup-socket":      {"socket", "socket-id"},
+		"status":              {"root", "descriptor", "descriptor-id", "position", "request", "out"},
+		"continuation-review": {"root", "descriptor", "descriptor-id", "position", "request", "out"},
+		"continue":            {"root", "descriptor", "descriptor-id", "position", "request", "continuation-id", "out"},
+		"relay-serve":         {"descriptor", "descriptor-id", "socket", "transport-key", "transport-public-key", "client-transport-keys", "listen"},
+		"remote-call":         {"descriptor", "descriptor-id", "request", "address", "transport-key", "transport-public-key", "relay-public-key", "key", "challenge-out", "approval-out", "out"},
 	}
 	need, ok := required[a.Action]
 	if !ok {
@@ -100,10 +117,13 @@ func runPruneServiceCLIContext(ctx context.Context, args []string, out io.Writer
 	for _, name := range need {
 		allowed[name] = true
 	}
+	if a.Action == "relay-serve" || a.Action == "remote-call" {
+		allowed["timeout"] = true
+	}
 	if a.Action == "serve" {
 		allowed["request"] = true
 	}
-	if a.Action == "request-prepare" || a.Action == "inspect" || a.Action == "call" || a.Action == "recover" {
+	if a.Action == "request-prepare" || a.Action == "inspect" || a.Action == "call" || a.Action == "recover" || a.Action == "status" || a.Action == "continue" || a.Action == "remote-call" {
 		allowed["position-out"] = true
 	}
 	var wrong bool
@@ -321,14 +341,17 @@ func runPruneServiceCLIContext(ctx context.Context, args []string, out io.Writer
 	}
 	// Call's seed may be absent on historical replay. Its placement is reviewed,
 	// but the file is opened only after the complete verified challenge arrives.
-	if a.Key != "" {
-		v, err := custodyCommandOutput(a.Key)
+	for _, keyPath := range []*string{&a.Key, &a.TransportKey} {
+		if *keyPath == "" {
+			continue
+		}
+		v, err := custodyCommandOutput(*keyPath)
 		if err != nil {
 			return err
 		}
-		a.Key = v
+		*keyPath = v
 	}
-	publicPaths := []string{a.Input, a.Identity, a.Plan, a.Descriptor, a.Request, a.Response, a.Position, a.Output, a.Key, a.Socket, a.ChallengeOut, a.ApprovalOut, a.PositionOut}
+	publicPaths := []string{a.Input, a.Identity, a.Plan, a.Descriptor, a.Request, a.Response, a.Position, a.Output, a.Key, a.TransportKey, a.Socket, a.ChallengeOut, a.ApprovalOut, a.PositionOut}
 	for i, p := range publicPaths {
 		if p == "" {
 			continue
@@ -357,6 +380,11 @@ func runPruneServiceCLIContext(ctx context.Context, args []string, out io.Writer
 					}
 				}
 			}
+		}
+	}
+	if a.Action == "relay-serve" || a.Action == "remote-call" {
+		if err := validatePruneServiceNetwork(a, desc); err != nil {
+			return err
 		}
 	}
 	// Expected confirmation is not part of the plan it confirms.
@@ -406,6 +434,7 @@ func runPruneServiceCLIContext(ctx context.Context, args []string, out io.Writer
 		return err
 	}
 	var result []byte
+	var ownerSnapshot service.Snapshot
 	switch a.Action {
 	case "identity-create":
 		if b, e := readRegularArtifact(a.Output, 4096); e == nil {
@@ -530,7 +559,7 @@ func runPruneServiceCLIContext(ctx context.Context, args []string, out io.Writer
 				ExecutionGranted bool
 			}{p, response, false})
 		}
-	case "call":
+	case "call", "remote-call":
 		if b, e := readRegularArtifact(a.Output, wire.MaximumResponseBytes); e == nil {
 			r, e := wire.DecodeResponse(b)
 			if e != nil || r.Verify(desc, req) != nil {
@@ -541,14 +570,44 @@ func runPruneServiceCLIContext(ctx context.Context, args []string, out io.Writer
 			return e
 		} else {
 			var response wire.Response
-			response, err = client.Call(ctx, a.Socket, desc, req, func(approveCtx context.Context, ch wire.Challenge) (custodyfence.Command, error) {
+			approve := func(approveCtx context.Context, ch wire.Challenge) (custodyfence.Command, error) {
 				return approvePruneServiceChallenge(approveCtx, desc, req, ch, a.Key, a.ChallengeOut, a.ApprovalOut)
-			})
+			}
+			if a.Action == "remote-call" {
+				response, err = callRemotePruneService(ctx, a, desc, req, approve)
+			} else {
+				response, err = client.Call(ctx, a.Socket, desc, req, approve)
+			}
 			if err == nil {
 				result, err = response.CanonicalBytes()
 			}
 		}
-	case "serve", "recover":
+	case "relay-serve":
+		return servePruneServiceRelay(ctx, out, a, desc)
+	case "continuation-review":
+		var reviewed service.ContinuationReview
+		reviewed, err = service.ReviewContinuation(ctx, a.Root, did, position, req)
+		if err == nil {
+			var id types.Hash
+			id, err = reviewed.ID()
+			if err == nil {
+				result, err = json.Marshal(struct {
+					ReviewID         types.Hash
+					Review           service.ContinuationReview
+					ExecutionGranted bool
+				}{id, reviewed, false})
+			}
+		}
+	case "continue":
+		var id types.Hash
+		id, err = pruneExternalID("continuation-id", a.ContinuationID)
+		if err == nil {
+			ownerSnapshot, err = service.Continue(ctx, a.Root, did, position, req, id)
+		}
+		if err == nil {
+			result, err = json.Marshal(ownerSnapshot)
+		}
+	case "serve", "recover", "status":
 		var attempt *wire.Request
 		if a.Request != "" {
 			attempt = &req
@@ -562,6 +621,13 @@ func runPruneServiceCLIContext(ctx context.Context, args []string, out io.Writer
 			return service.Serve(ctx, owner, a.Socket, func(id types.Hash) error {
 				return writePruneOutputLine(out, fmt.Sprintf("prune_service_ready socket_id=%s execution_granted=false\n", id))
 			})
+		}
+		if a.Action == "status" {
+			ownerSnapshot, err = owner.Snapshot()
+			if err == nil {
+				result, err = json.Marshal(ownerSnapshot)
+			}
+			break
 		}
 		var response wire.Response
 		response, err = owner.Recover(ctx, req)
@@ -586,7 +652,9 @@ func runPruneServiceCLIContext(ctx context.Context, args []string, out io.Writer
 	}
 	if a.PositionOut != "" {
 		var p wire.Position
-		if a.Action == "inspect" {
+		if a.Action == "status" || a.Action == "continue" {
+			p = ownerSnapshot.Position
+		} else if a.Action == "inspect" {
 			p, err = response.Position()
 		} else if a.Action != "request-prepare" {
 			var r wire.Response
@@ -633,7 +701,7 @@ func pruneServiceArtifactID(action string, raw []byte) (types.Hash, error) {
 			return types.Hash{}, err
 		}
 		return v.ID()
-	case "call", "recover":
+	case "call", "remote-call", "recover":
 		v, err := wire.DecodeResponse(raw)
 		if err != nil {
 			return types.Hash{}, err

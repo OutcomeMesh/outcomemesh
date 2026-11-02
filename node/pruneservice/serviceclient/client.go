@@ -7,7 +7,9 @@ import (
 	"errors"
 	"net"
 	"path/filepath"
+	"time"
 
+	"github.com/outcomemesh/outcomemesh/node/custodyauthority/remotewire"
 	"github.com/outcomemesh/outcomemesh/node/custodyfence"
 	"github.com/outcomemesh/outcomemesh/node/custodygateway/gatewayclient"
 	wire "github.com/outcomemesh/outcomemesh/node/pruneservice/servicewire"
@@ -40,7 +42,36 @@ func Call(ctx context.Context, socket string, d wire.Descriptor, q wire.Request,
 	return exchange(bounded, unixConn, d, q, approve)
 }
 
-func exchange(ctx context.Context, conn *net.UnixConn, d wire.Descriptor, q wire.Request,
+// Exchange owns one already authenticated, independently peer-pinned stream.
+// It never retries or interprets a missing response as absence of an effect.
+func Exchange(ctx context.Context, stream remotewire.Stream, d wire.Descriptor, q wire.Request, timeout time.Duration,
+	approve func(context.Context, wire.Challenge) (custodyfence.Command, error),
+) (response wire.Response, returnErr error) {
+	if stream == nil {
+		return response, wire.ErrAccess
+	}
+	defer func() {
+		if err := stream.Close(); err != nil {
+			returnErr = errors.Join(remotewire.ErrUnconfirmed, returnErr, err)
+			response = wire.Response{}
+		}
+	}()
+	if q.Authorize(d) != nil || timeout > wire.ExchangeDeadline {
+		return response, wire.ErrAccess
+	}
+	run, done, err := remotewire.BoundStream(ctx, stream, timeout)
+	if err != nil {
+		return response, err
+	}
+	defer done()
+	r, err := exchange(run, stream, d, q, approve)
+	if err != nil {
+		return wire.Response{}, errors.Join(remotewire.ErrUnconfirmed, err)
+	}
+	return r, nil
+}
+
+func exchange(ctx context.Context, conn remotewire.Stream, d wire.Descriptor, q wire.Request,
 	approve func(context.Context, wire.Challenge) (custodyfence.Command, error),
 ) (wire.Response, error) {
 	if err := ctx.Err(); err != nil {
@@ -121,7 +152,7 @@ func exchange(ctx context.Context, conn *net.UnixConn, d wire.Descriptor, q wire
 	}
 }
 
-func finish(ctx context.Context, conn *net.UnixConn, d wire.Descriptor, q wire.Request, raw []byte) (wire.Response, error) {
+func finish(ctx context.Context, conn remotewire.Stream, d wire.Descriptor, q wire.Request, raw []byte) (wire.Response, error) {
 	if err := wire.RequireEOF(conn); err != nil {
 		return wire.Response{}, err
 	}

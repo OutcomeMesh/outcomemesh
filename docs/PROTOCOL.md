@@ -1246,3 +1246,19 @@ user IDs in addition to signatures. Full canonical vectors and substitution
 cases live in `servicewire/wire_test.go`; `FuzzWireCanonical` and `FuzzWireFrames`
 cover decoding. See [isolated ownership](PRUNE_ISOLATED_SERVICE.md) for local
 publication, cold recovery, shutdown and deployment requirements.
+
+The explicit QUIC relay registers `/outcomemesh/prune-service/0` only on operator
+request. Both transport identities are pinned; the receiver uses an explicit
+caller allowlist. Their keys cannot overlap enrolled service/custody roles.
+The canonical exchange bytes and version remain unchanged. The relay requires
+approval EOF before forwarding to the local owner, which authenticates the
+participant UID and independently verifies the complete approval. A transport
+failure is an unknown outcome, never an automatic retry permission.
+
+Owner-local continuation has domain
+`OMESH/prune-service/owner/continuation-review/v0`. The reviewed JSON record binds
+original native file identities, retained prefix, exact target and external
+request/cursor. It is a local comparison token, not a network artifact or permit.
+Appending its exact suffix cannot authorize deletion, replace an intent, reset
+accounting or manufacture an absent original signed outcome. Public request,
+response, fence and storage formats remain unchanged.
