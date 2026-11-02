@@ -1583,3 +1583,15 @@ a complete already signed outer response may be synchronized offline. Empty
 files do not establish which request ran, so the externally retained signed
 request is mandatory. Partial configuration and identity files remain blocked.
 SIGKILL coverage does not establish resilience to physical write-cache loss.
+
+
+Owner settlement requires the retained signed intent, full original quorum
+decision and exact review of the actual protected effect. Guard unavailability,
+loss of its reply and missing quorum cannot settle absent effects. Confirmed
+settlement publication retains the original executor locks and cannot release
+replica obligations. Each replica completes separately against the typed evidence.
+Fault injection is confined to test binaries; no network fault switch is exposed.
+
+QUIC transport copies the supplied private identity before giving it to the
+network library. The caller may erase its temporary buffer without modifying the
+live host. This is memory ownership hygiene, not hardware-backed key isolation.

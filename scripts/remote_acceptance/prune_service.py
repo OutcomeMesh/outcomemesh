@@ -72,8 +72,8 @@ class Host:
     def marker(self, name):
         self.write(self.root + '/control/' + name, b'true')
 
-    def wait_file(self, path, child):
-        until = time.monotonic() + 40
+    def wait_file(self, path, child, timeout=40):
+        until = time.monotonic() + timeout
         while time.monotonic() < until:
             if child.p.poll() is not None:
                 raise RuntimeError('child ended early: ' + self.read(child.log).decode(errors='replace'))
@@ -108,10 +108,13 @@ class Child:
 
 def run(receiver, sender, ip, scenario, report, direction):
     children = []
-    mode = 'held' if scenario == 'held' else 'completed'
+    failure = scenario if scenario in ('quorum-loss', 'guard-unavailable', 'guard-loss', 'result-write') else ''
+    mode = 'held' if scenario in ('held', 'quorum-loss', 'guard-unavailable', 'guard-loss') else 'completed'
     try:
         receiver.create(); sender.create()
         def child(host, role, work, extra=None):
+            extra = dict(extra or {})
+            if failure: extra[PREFIX + 'FAILURE'] = failure
             c = Child(host, role, mode, work, extra); children.append(c); return c
         owner = child(receiver, 'owner', 'owner')
         receiver.wait_file(receiver.root + '/public/ready-live', owner)
@@ -129,10 +132,15 @@ def run(receiver, sender, ip, scenario, report, direction):
         client = child(sender, 'network-client', 'client', extra); client.finish()
         receiver.marker('stop-live-relay'); relay.finish()
         receiver.marker('stop-live')
-        receiver.wait_file(receiver.root + '/public/offline-ready', owner)
+        # This phase includes the complete offline signing/collection workflow,
+        # stale-review checks and both original replica completions under -race.
+        # Keep it separate from startup and all actual protocol deadlines.
+        receiver.wait_file(receiver.root + '/public/offline-ready', owner,
+                           timeout=120 if scenario == 'result-write' else 40)
         final = receiver.read(receiver.root + '/public/manifest.json')
         state = json.loads(final)
         assert state['Position']['Sequence'] == (1 if mode == 'held' else 2)
+        if scenario == 'result-write': assert state['CompletedReplicas'] == 2
         sender.python("import os,sys;os.unlink(sys.argv[1])", sender.root + '/public/manifest.json')
         sender.write(sender.root + '/public/manifest.json', final)
         replay = child(receiver, 'replay-owner', 'owner')
@@ -146,8 +154,19 @@ def run(receiver, sender, ip, scenario, report, direction):
         receiver.marker('stop-replay-relay'); relay2.finish()
         receiver.marker('stop-replay'); replay.finish()
         receiver.marker('finish-owner'); owner.finish()
-        report.append({'direction': direction, 'scenario': scenario, 'passed': True, 'position': state['Position']['Sequence'], 'owner_uid': 60000, 'relay_uid': 65534, 'offline_cold_replay': True})
+        report.append({'direction': direction, 'scenario': scenario, 'passed': True, 'position': state['Position']['Sequence'], 'owner_uid': 60000, 'relay_uid': 65534, 'offline_cold_replay': True, 'completed_replicas': state.get('CompletedReplicas', 0)})
         print(json.dumps(report[-1]), flush=True)
+    except Exception:
+        # Keep bounded diagnostics before removing disposable private roots.
+        # Only test-helper logs are emitted, never fixture files or key material.
+        for c in children:
+            try:
+                print(json.dumps({'direction': direction, 'scenario': scenario,
+                                  'log': os.path.basename(c.log),
+                                  'output': c.host.read(c.log).decode(errors='replace')[-12000:]}), file=sys.stderr)
+            except Exception as error:
+                print('cannot read helper log: ' + str(error), file=sys.stderr)
+        raise
     finally:
         for c in reversed(children):
             if c.p.poll() is None: c.finish(wait=False)
@@ -159,6 +178,7 @@ def main():
     p.add_argument('--config')
     p.add_argument('--local-binary')
     p.add_argument('--out')
+    p.add_argument('--failures', action='store_true', help='quorum, guard and post-effect result-write failure cases')
     args = p.parse_args()
     if bool(args.config) == bool(args.local_binary): p.error('choose explicit hosts or a local executable')
     if args.local_binary:
@@ -169,7 +189,7 @@ def main():
         cfg = json.loads(Path(args.config).read_text())
     report = []
     for receiver, sender in [('a', 'b'), ('b', 'a')]:
-        for scenario in ['completed', 'held', 'lost-response']:
+        for scenario in (['quorum-loss', 'guard-unavailable', 'guard-loss', 'result-write'] if args.failures else ['completed', 'held', 'lost-response']):
             run(Host(cfg[receiver]), Host(cfg[sender]), cfg[receiver + '_ip'], scenario, report, sender + '-to-' + receiver)
     result = {'completed': True, 'runs': report, 'limitations': ['test keys', 'shared administration', 'guard and witnesses colocated with original owner', 'process death does not emulate power loss']}
     if args.out: Path(args.out).write_text(json.dumps(result, indent=2) + '\n')

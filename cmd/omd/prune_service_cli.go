@@ -38,6 +38,7 @@ type pruneServiceCLIFlags struct {
 	Descriptor, DescriptorID, Request, Response, Position, Socket, SocketID string
 	Issuer, Guard, Nonce, Expected, ChallengeOut, ApprovalOut, PositionOut  string
 	ContinuationID                                                          string
+	Settlement, SettlementID, SettlementReviewID, ProposalOut               string
 	TransportKey, TransportPublic, RelayPublic, Clients, Address, Listen    string
 	Timeout                                                                 time.Duration
 	ParticipantUID                                                          uint
@@ -57,7 +58,7 @@ func runPruneServiceCLIContext(ctx context.Context, args []string, out io.Writer
 		p                 *string
 		name, value, help string
 	}{
-		{&a.Action, "action", "", "identity-create, identity-public, enrollment-prepare/sign, descriptor-prepare/sign, configure, request-prepare/sign, serve, call, inspect, status, recover, continuation-review, continue, relay-serve, remote-call, cleanup-socket"},
+		{&a.Action, "action", "", "identity-create, identity-public, enrollment-prepare/sign, descriptor-prepare/sign, configure, request-prepare/sign, serve, call, inspect, status, recover, continuation-review, continue, settlement-review, settle, relay-serve, remote-call, cleanup-socket"},
 		{&a.Mode, "mode", "review", "review or run"}, {&a.Root, "root", "", "original private service root"},
 		{&a.Input, "input", "", "strict unsigned artifact or owner-only runtime config JSON"}, {&a.Output, "out", "", "immutable public output"},
 		{&a.Key, "key", "", "offline or participant signer seed; exactly 32 private bytes"}, {&a.Identity, "identity", "", "public service identity JSON"},
@@ -69,6 +70,10 @@ func runPruneServiceCLIContext(ctx context.Context, args []string, out io.Writer
 		{&a.Guard, "guard", "", "independent guard public key, hexadecimal"}, {&a.Nonce, "nonce", "", "request nonce, 32-byte hexadecimal"},
 		{&a.Expected, "expected-review-id", "", "exact preceding CLI review ID"}, {&a.ChallengeOut, "challenge-out", "", "retain the verified candidate challenge before signing"},
 		{&a.ApprovalOut, "approval-out", "", "retain the exact consumer approval before sending"},
+		{&a.ProposalOut, "proposal-out", "", "optional immutable unsigned settlement proposal"},
+		{&a.Settlement, "settlement", "", "complete original-witness settlement decision"},
+		{&a.SettlementID, "settlement-id", "", "independently retained settlement decision ID"},
+		{&a.SettlementReviewID, "settlement-review-id", "", "exact original-owner settlement review ID"},
 		{&a.ContinuationID, "continuation-id", "", "exact original-prefix continuation review ID"},
 		{&a.TransportKey, "transport-key", "", "private transport seed, separate from all protocol roles"},
 		{&a.TransportPublic, "transport-public-key", "", "independently retained local transport public key"},
@@ -103,6 +108,8 @@ func runPruneServiceCLIContext(ctx context.Context, args []string, out io.Writer
 		"inspect":             {"descriptor", "descriptor-id", "request", "response", "out"},
 		"recover":             {"root", "descriptor", "descriptor-id", "position", "request", "out"},
 		"cleanup-socket":      {"socket", "socket-id"},
+		"settlement-review":   {"root", "descriptor", "descriptor-id", "position", "request", "plan", "plan-id", "out"},
+		"settle":              {"root", "descriptor", "descriptor-id", "position", "request", "plan", "plan-id", "settlement", "settlement-id", "settlement-review-id", "out"},
 		"status":              {"root", "descriptor", "descriptor-id", "position", "request", "out"},
 		"continuation-review": {"root", "descriptor", "descriptor-id", "position", "request", "out"},
 		"continue":            {"root", "descriptor", "descriptor-id", "position", "request", "continuation-id", "out"},
@@ -120,10 +127,15 @@ func runPruneServiceCLIContext(ctx context.Context, args []string, out io.Writer
 	if a.Action == "relay-serve" || a.Action == "remote-call" {
 		allowed["timeout"] = true
 	}
+	if a.Action == "settlement-review" {
+		allowed["settlement"] = true
+		allowed["settlement-id"] = true
+		allowed["proposal-out"] = true
+	}
 	if a.Action == "serve" {
 		allowed["request"] = true
 	}
-	if a.Action == "request-prepare" || a.Action == "inspect" || a.Action == "call" || a.Action == "recover" || a.Action == "status" || a.Action == "continue" || a.Action == "remote-call" {
+	if a.Action == "request-prepare" || a.Action == "inspect" || a.Action == "call" || a.Action == "recover" || a.Action == "status" || a.Action == "continue" || a.Action == "remote-call" || a.Action == "settle" {
 		allowed["position-out"] = true
 	}
 	var wrong bool
@@ -208,7 +220,28 @@ func runPruneServiceCLIContext(ctx context.Context, args []string, out io.Writer
 			return err
 		}
 		got, _ := plan.ID()
-		if got != id || plan.FencePolicy != nil {
+		if got != id || (a.Action == "enrollment-prepare" && plan.FencePolicy != nil) {
+			return wire.ErrArtifact
+		}
+	}
+	if (a.Settlement == "") != (a.SettlementID == "") {
+		return wire.ErrArtifact
+	}
+	if a.Settlement != "" {
+		b, err := load(&a.Settlement, prunefence.MaximumSettlementBytes)
+		if err != nil {
+			return err
+		}
+		decision, err := prunefence.DecodeSettlement(b)
+		if err != nil {
+			return err
+		}
+		id, err := pruneExternalID("settlement-id", a.SettlementID)
+		if err != nil {
+			return err
+		}
+		got, _ := decision.ID()
+		if got != id {
 			return wire.ErrArtifact
 		}
 	}
@@ -330,7 +363,7 @@ func runPruneServiceCLIContext(ctx context.Context, args []string, out io.Writer
 		}
 		a.Socket = filepath.Clean(p)
 	}
-	for _, p := range []*string{&a.Output, &a.ChallengeOut, &a.ApprovalOut, &a.PositionOut} {
+	for _, p := range []*string{&a.Output, &a.ChallengeOut, &a.ApprovalOut, &a.PositionOut, &a.ProposalOut} {
 		if *p != "" {
 			v, err := custodyCommandOutput(*p)
 			if err != nil {
@@ -351,7 +384,7 @@ func runPruneServiceCLIContext(ctx context.Context, args []string, out io.Writer
 		}
 		*keyPath = v
 	}
-	publicPaths := []string{a.Input, a.Identity, a.Plan, a.Descriptor, a.Request, a.Response, a.Position, a.Output, a.Key, a.TransportKey, a.Socket, a.ChallengeOut, a.ApprovalOut, a.PositionOut}
+	publicPaths := []string{a.Input, a.Identity, a.Plan, a.Settlement, a.ProposalOut, a.Descriptor, a.Request, a.Response, a.Position, a.Output, a.Key, a.TransportKey, a.Socket, a.ChallengeOut, a.ApprovalOut, a.PositionOut}
 	for i, p := range publicPaths {
 		if p == "" {
 			continue
@@ -607,6 +640,8 @@ func runPruneServiceCLIContext(ctx context.Context, args []string, out io.Writer
 		if err == nil {
 			result, err = json.Marshal(ownerSnapshot)
 		}
+	case "settlement-review", "settle":
+		result, err = runPruneServiceSettlement(ctx, a, did, position, req)
 	case "serve", "recover", "status":
 		var attempt *wire.Request
 		if a.Request != "" {
@@ -701,7 +736,7 @@ func pruneServiceArtifactID(action string, raw []byte) (types.Hash, error) {
 			return types.Hash{}, err
 		}
 		return v.ID()
-	case "call", "remote-call", "recover":
+	case "call", "remote-call", "recover", "settle":
 		v, err := wire.DecodeResponse(raw)
 		if err != nil {
 			return types.Hash{}, err

@@ -253,7 +253,9 @@ func New(ctx context.Context, privateKey ed25519.PrivateKey, config Config, hand
 	if err := validateConfig(ctx, privateKey, config); err != nil {
 		return nil, err
 	}
-	key, err := libcrypto.UnmarshalEd25519PrivateKey(privateKey)
+	// The transport owns its identity for the full host lifetime. The decoder
+	// aliases 64-byte input; callers may erase their temporary key after New.
+	key, err := libcrypto.UnmarshalEd25519PrivateKey(append([]byte(nil), privateKey...))
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrIdentity, err)
 	}

@@ -1,6 +1,6 @@
 # Implementation status
 
-Updated: 2026-11-02
+Updated: 2026-11-03
 
 This file records evidence against `PLAN.md`. A milestone remains open until all
 of its exit gates pass; implementing most deliverables does not close it.
@@ -9,6 +9,40 @@ Full planned production readiness is approximately **44/100**, using the weighte
 [readiness baseline](PRODUCTION_READINESS.md). This is an engineering estimate,
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
+
+## 2026-11-03: Prune failure settlement and CI infrastructure recovery
+
+The original owner now exposes reviewed settlement preparation and application
+through `work-prune-service`. A full consumer/controller/witness decision binds
+the actual retained storage effect. Bare effects, unsigned proposals, foreign
+requests and stale reviews cannot settle an attempt. Application publishes a
+settlement response without recreating a session result or repeating deletion.
+Both original replica tickets still require their separate signed completion.
+
+Eight real two-host runs passed, with both hosts taking each role: lost quorum,
+unavailable guard, a committed guard choice whose reply is dropped, and failure
+to retain the final result after actual deletion. Every case includes cold offline
+replay. The first three preserve held work and all original accounting. The last
+uses the complete settlement CLI and completes both original replica tickets.
+Five additional SIGKILL boundaries cover confirmed settlement and outer response
+publication, including a repeated interrupted append and stale-review refusal.
+The process campaign is separate from the two-host network campaign. These are
+shared-administration fixtures, not independently operated protection domains or
+power-loss qualification. One initial WAN attempt timed out during QUIC dialing
+before approval; the complete repeated eight-case campaign passed.
+
+Transport now owns its private identity bytes instead of retaining the caller's
+mutable key buffer. Erasing a temporary input seed cannot corrupt a live QUIC
+host's identity. The new regression exchanges an authenticated stream after
+both caller buffers are erased.
+
+The repeated main CI failure was macOS runner allocation before checkout. CI now
+starts on the Intel pool; a bounded recovery workflow reruns the complete current
+run on the other pool only for that exact infrastructure failure. Test failures,
+started jobs, older heads and unknown failures are never retried automatically.
+No required check is bypassed. Public formats and release tags are unchanged;
+local CLI reviews must be regenerated after the new flags. Readiness remains
+**44/100**. Next: enrolled key continuity and independent operator deployment.
 
 ## 2026-11-02: Prune publication recovery and authenticated relay
 

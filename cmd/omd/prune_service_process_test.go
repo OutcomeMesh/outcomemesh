@@ -40,6 +40,8 @@ type pruneProcessManifest struct {
 	PrivatePaths        []string
 	Position            wire.Position
 	Held                bool
+	Failure             string
+	CompletedReplicas   int
 }
 
 type pruneUIDProcess struct {
@@ -322,13 +324,25 @@ func pruneUIDOwner(t *testing.T, ctx context.Context, public, control, mode stri
 		t.Fatal("bootstrap did not run under service UID")
 	}
 	f := preparePruneServiceOwnerCLI(t)
+	failure := os.Getenv(pruneProcessEnv + "FAILURE")
+	if failure != "" {
+		switch failure {
+		case "quorum-loss":
+			f.witnessServers[0].Close()
+			f.witnessServers[1].Close()
+		case "guard-unavailable", "guard-loss", "result-write":
+			f.fault.set(failure, filepath.Join(f.config.Runtime.ExecutorPinsPath, "pending"))
+		default:
+			t.Fatal("unknown failure case")
+		}
+	}
 	// Bootstrap signs the public request with a deterministic fixture key. Remove
 	// its seed artifact before the isolated owner starts accepting connections.
 	if err := os.Remove(f.consumerPath); err != nil {
 		t.Fatal(err)
 	}
 	before := pruneUIDObligations(t, f)
-	m := pruneProcessManifest{Root: f.root, Socket: filepath.Join(public, "live.sock"), Held: mode == "held"}
+	m := pruneProcessManifest{Root: f.root, Socket: filepath.Join(public, "live.sock"), Held: mode == "held", Failure: failure}
 	m.Descriptor, _ = f.descriptor.CanonicalBytes()
 	m.Request, _ = f.request.CanonicalBytes()
 	m.PrivatePaths = []string{filepath.Join(f.root, "key"), filepath.Join(f.root, "transport-key"), filepath.Join(f.root, "config"), f.config.Runtime.ExecutorPath, f.config.Runtime.ExecutorPinsPath, f.config.Runtime.ChainPath, f.config.Runtime.ChainPinsPath, f.config.Runtime.InventoryPath}
@@ -339,6 +353,45 @@ func pruneUIDOwner(t *testing.T, ctx context.Context, public, control, mode stri
 		t.Fatal(err)
 	}
 	stop()
+	if failure == "result-write" {
+		if err := os.Chmod(filepath.Join(f.config.Runtime.ExecutorPinsPath, "pending"), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f.fault.set("", "")
+	if failure != "" {
+		held, e := owner.Snapshot()
+		if e != nil || held.Position.Sequence != 1 || held.Response != nil {
+			t.Fatal("fault escaped held intent", e)
+		}
+		if _, e = owner.Recover(ctx, f.request); e == nil {
+			t.Fatal("fault invented missing final signature")
+		}
+		if failure == "result-write" {
+			s := pruneFailureSnapshot(t, f)
+			if s.Stage != store.PruneStarted || s.FenceResult != nil || s.FenceSettlement != nil || s.Protection.Pending != nil {
+				t.Fatal("unexpected unconfirmed result state")
+			}
+			owner.Close()
+			settlePruneServiceFixture(t, f, held.Position)
+			owner = f.open(t, held.Position, &f.request)
+		} else {
+			if _, ok := pruneFailureEffect(t, f); ok {
+				t.Fatal("failed quorum/guard changed storage")
+			}
+			if _, e = owner.ReviewSettlement(ctx, f.request, pruneFailureInput(t, f)); e == nil {
+				t.Fatal("no-effect failure settled")
+			}
+		}
+		gp, e := f.guard.Position()
+		want := uint32(0)
+		if failure == "guard-loss" || failure == "result-write" {
+			want = 1
+		}
+		if e != nil || gp.Sequence != want {
+			t.Fatal("guard choice not retained", e)
+		}
+	}
 	snapshot, err := owner.Snapshot()
 	if err != nil {
 		t.Fatal(err)
@@ -348,7 +401,7 @@ func pruneUIDOwner(t *testing.T, ctx context.Context, public, control, mode stri
 	}
 	m.Position = snapshot.Position
 	if mode == "completed" {
-		if snapshot.Response == nil || snapshot.Position.Sequence != 2 || snapshot.Response.Result == nil || snapshot.Response.Effect.Report.RemovedNodes == 0 {
+		if snapshot.Response == nil || snapshot.Position.Sequence != 2 || (snapshot.Response.Result == nil && snapshot.Response.Settlement == nil) || snapshot.Response.Effect.Report.RemovedNodes == 0 {
 			t.Fatal("real deletion did not complete")
 		}
 		if err = snapshot.Response.Verify(f.descriptor, f.request); err != nil {
@@ -375,6 +428,10 @@ func pruneUIDOwner(t *testing.T, ctx context.Context, public, control, mode stri
 		t.Fatal("Prune changed original pending or spent accounting")
 	}
 	f.assertObligations(t)
+	if failure == "result-write" {
+		completePruneServiceSettlement(t, f, *snapshot.Response, before)
+		m.CompletedReplicas = len(f.inventory.Replicas)
+	}
 	f.stopNetwork()
 	if _, err = os.Stat(f.consumerPath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("consumer seed reappeared in owner fixture", err)

@@ -29,6 +29,8 @@ type prunePublicationFixture struct {
 	Root, Request, Key, Stage, Marker string
 	DescriptorID, ContinuationID      types.Hash
 	Before                            wire.Position
+	Settlement                        *service.SettlementInput
+	SettlementReviewID                types.Hash
 }
 
 func prunePublicationBinary(t testing.TB) string {

@@ -39,6 +39,9 @@ type pruneServiceOwnerCLIFixture struct {
 	request                                                                           wire.Request
 	inventory                                                                         store.ScheduledPruneInventory
 	stopNetwork                                                                       func()
+	fault                                                                             *pruneGuardFault
+	guard                                                                             *custodyguard.Store
+	witnessServers                                                                    []*witnessnet.Service
 }
 
 func preparePruneServiceOwnerCLI(t testing.TB) *pruneServiceOwnerCLIFixture {
@@ -76,7 +79,9 @@ func preparePruneServiceOwnerCLI(t testing.TB) *pruneServiceOwnerCLIFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	guardHTTP := httptest.NewServer(custodyguard.Handler(guard))
+	f.guard = guard
+	f.fault = &pruneGuardFault{}
+	guardHTTP := httptest.NewServer(f.fault.handler(custodyguard.Handler(guard)))
 	t.Cleanup(func() { guardHTTP.Close(); guard.Close() })
 	guardPublic := guard.Identity().PublicKey
 
@@ -201,6 +206,7 @@ func preparePruneServiceOwnerCLI(t testing.TB) *pruneServiceOwnerCLIFixture {
 			Address   string `json:"address"`
 		}{hex.EncodeToString(fencefixture.Key(70 + i)[32:]), hex.EncodeToString(fencefixture.Key(90 + i)[32:]), server.Addresses()[0]})
 	}
+	f.witnessServers = witnessServers
 	f.stopNetwork = func() {
 		for _, s := range witnessServers {
 			s.Close()
