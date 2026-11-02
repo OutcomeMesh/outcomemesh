@@ -82,6 +82,14 @@ func TestCustodyScheduledPruneAfterRadixActivation(t *testing.T) {
 
 func newScheduledPruneFixture(t testing.TB, fence ...prunefence.Policy) *scheduledPruneFixture {
 	t.Helper()
+	return newScheduledPruneFixtureConfigured(t, func(v *ScheduledPruneInventory) {
+		if len(fence) == 1 {
+			v.FencePolicy = &fence[0]
+		}
+	})
+}
+func newScheduledPruneFixtureConfigured(t testing.TB, configure func(*ScheduledPruneInventory)) *scheduledPruneFixture {
+	t.Helper()
 	p, original, cp := scheduledQuorumFixture(t)
 	f := &scheduledPruneFixture{archive: p, path: filepath.Join(t.TempDir(), "scheduled.inventory")}
 	v := ScheduledPruneInventory{Checkpoint: cp, OriginalPolicy: p.policy.CheckpointPolicy, ReplicaPolicy: p.policy.ReplicaPolicy}
@@ -103,17 +111,6 @@ func newScheduledPruneFixture(t testing.TB, fence ...prunefence.Policy) *schedul
 		retain = min(retain, r.Original.RetainUntil)
 	}
 	v.Request = PruneRequest{AssignmentID: original[0].AssignmentID, ScheduleID: original[0].Schedule.ExpectedID, ConsumerPublicKey: testPublic(4), StorageID: p.f.request.StorageID, Boundary: workchain.CanonicalFloor{Pruned: true, RadixActivationHeight: cp.Statement.RadixActivationHeight, BaseID: cp.Statement.BaseID, Anchor: cp.Statement.Anchor, AncestryNodes: cp.Statement.AncestryNodes, AncestryRoot: cp.Statement.AncestryRoot, StatementID: sid, ManifestID: cp.Statement.ArchiveManifestID, AvailabilityID: bid, VerifiedAt: now, RetainUntil: retain}}
-	if len(fence) == 1 {
-		v.FencePolicy = &fence[0]
-		v.Request.FencePolicyID, _ = fence[0].ID()
-	}
-	rid, _ := v.Request.ID()
-	f.executor, err = CreatePinnedPruneExecutor(filepath.Join(t.TempDir(), "executor"), filepath.Join(t.TempDir(), "executor-pins"), original[0].Assignment, v.Request, rid)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { f.executor.Close() })
-	v.ExecutorBindingID = pruneSnapshot(t, f.executor).Protection.BindingID
 	review, err := p.f.chain.ReviewRadixSchedule(t.Context(), cp.Statement.RadixActivationHeight)
 	if err != nil {
 		t.Fatal(err)
@@ -127,6 +124,20 @@ func newScheduledPruneFixture(t testing.TB, fence ...prunefence.Policy) *schedul
 		t.Fatal(err)
 	}
 	v.StoragePairID = protection.PairID
+	configure(&v)
+	if v.FencePolicy != nil {
+		v.Request.FencePolicyID, _ = v.FencePolicy.ID()
+		if v.FencePolicy.Service != nil {
+			v.Request.ServiceEnrollmentID, _ = v.FencePolicy.Service.ID()
+		}
+	}
+	rid, _ := v.Request.ID()
+	f.executor, err = CreatePinnedPruneExecutor(filepath.Join(t.TempDir(), "executor"), filepath.Join(t.TempDir(), "executor-pins"), original[0].Assignment, v.Request, rid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { f.executor.Close() })
+	v.ExecutorBindingID = pruneSnapshot(t, f.executor).Protection.BindingID
 	for i, s := range original {
 		directory := filepath.Join(t.TempDir(), "radix-archive")
 		if _, _, err := workarchive.MigrateRadixArchiveDirectory(p.replicas[i].Directory, directory, p.policy.Checkpoint, cp, p.policy.CheckpointPolicy, p.f.base, p.f.parameters, workarchive.DefaultLimits()); err != nil {

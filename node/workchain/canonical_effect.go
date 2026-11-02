@@ -48,9 +48,12 @@ func (store *Store) VerifyContext(networkID uint32, activationHeight uint64, bas
 // request and enforce current authority; these unsigned fields confer no grant.
 // Boundary.PruneTicketID must be zero: only the committing store installs it.
 type CanonicalPruneOperation struct {
-	ScheduleID   types.Hash
-	AssignmentID types.Hash
-	TicketID     types.Hash
+	// ServiceEnrollmentID requires a live service permit. Zero preserves the
+	// earlier trusted-local operation format; it is not a grant to remote callers.
+	ServiceEnrollmentID types.Hash
+	ScheduleID          types.Hash
+	AssignmentID        types.Hash
+	TicketID            types.Hash
 	// StorageID is zero only for legacy unbound databases. Nonzero is a pinned
 	// local incarnation, not a hardware identity or a database rollback counter.
 	StorageID types.Hash
@@ -98,6 +101,9 @@ func (store *Store) PruneCanonicalPrefixFenced(operation CanonicalPruneOperation
 }
 
 func (store *Store) pruneCanonicalPrefixOnce(operation CanonicalPruneOperation, authorize func() (uint64, error), permit *prunefence.Permit) (CanonicalPruneCommit, error) {
+	if !operation.ServiceEnrollmentID.IsZero() && permit == nil {
+		return CanonicalPruneCommit{}, prunefence.ErrFence
+	}
 	if store == nil || authorize == nil || operation.validate() != nil {
 		return CanonicalPruneCommit{}, ErrCanonicalPrune
 	}
@@ -122,7 +128,7 @@ func (store *Store) pruneCanonicalPrefixOnce(operation CanonicalPruneOperation, 
 		if err != nil {
 			return CanonicalPruneCommit{}, err
 		}
-		if err := permit.Consume(id, protection.PairID); err != nil {
+		if err := permit.ConsumeProtected(id, protection.PairID, operation.ServiceEnrollmentID); err != nil {
 			return CanonicalPruneCommit{}, err
 		}
 	}
@@ -148,13 +154,16 @@ func (store *Store) pruneCanonicalPrefixOnce(operation CanonicalPruneOperation, 
 	return CanonicalPruneCommit{Applied: true, Effect: effect}, nil
 }
 
-// FenceOperationID binds all original deletion inputs without changing the
-// historical effect encoding or resetting any retained storage position.
+// FenceOperationID binds all original deletion inputs. Enrolled operations use
+// a distinct domain and effect version; earlier encodings remain unchanged.
 func (operation CanonicalPruneOperation) FenceOperationID() (types.Hash, error) {
 	if operation.validate() != nil || operation.ScheduleID.IsZero() {
 		return types.Hash{}, ErrCanonicalPrune
 	}
 	b, _ := operation.Boundary.CanonicalBytes()
+	if !operation.ServiceEnrollmentID.IsZero() {
+		return types.DomainHash("OMESH/prune-fence/operation/id/v1", operation.ServiceEnrollmentID[:], operation.AssignmentID[:], operation.TicketID[:], operation.StorageID[:], operation.ScheduleID[:], b), nil
+	}
 	return types.DomainHash("OMESH/prune-fence/operation/id/v0", operation.AssignmentID[:], operation.TicketID[:], operation.StorageID[:], operation.ScheduleID[:], b), nil
 }
 
@@ -176,7 +185,7 @@ func (store *Store) CanonicalPruneEffect(ticketID types.Hash) (CanonicalPruneEff
 }
 
 func (operation CanonicalPruneOperation) validate() error {
-	if (operation.ScheduleID.IsZero() != (operation.Boundary.RadixActivationHeight == 0)) || (!operation.ScheduleID.IsZero() && operation.StorageID.IsZero()) || operation.AssignmentID.IsZero() || operation.TicketID.IsZero() ||
+	if (!operation.ServiceEnrollmentID.IsZero() && operation.ScheduleID.IsZero()) || (operation.ScheduleID.IsZero() != (operation.Boundary.RadixActivationHeight == 0)) || (!operation.ScheduleID.IsZero() && operation.StorageID.IsZero()) || operation.AssignmentID.IsZero() || operation.TicketID.IsZero() ||
 		!operation.Boundary.PruneTicketID.IsZero() || operation.Boundary.validate() != nil {
 		return ErrCanonicalPrune
 	}
@@ -187,7 +196,7 @@ func equalPruneOperation(left, right CanonicalPruneOperation) bool {
 	l, le := encodeCanonicalFloor(left.Boundary)
 	r, re := encodeCanonicalFloor(right.Boundary)
 	return le == nil && re == nil && left.AssignmentID == right.AssignmentID &&
-		left.ScheduleID == right.ScheduleID && left.TicketID == right.TicketID && left.StorageID == right.StorageID && bytes.Equal(l, r)
+		left.ServiceEnrollmentID == right.ServiceEnrollmentID && left.ScheduleID == right.ScheduleID && left.TicketID == right.TicketID && left.StorageID == right.StorageID && bytes.Equal(l, r)
 }
 
 func (effect CanonicalPruneEffect) validate() error {
@@ -220,14 +229,20 @@ func (effect CanonicalPruneEffect) CanonicalBytes() ([]byte, error) {
 	if !effect.Operation.ScheduleID.IsZero() {
 		version = 2
 	}
+	if !effect.Operation.ServiceEnrollmentID.IsZero() {
+		version = 3
+	}
 	e.U16(version)
 	e.Fixed(effect.Operation.AssignmentID[:])
 	e.Fixed(effect.Operation.TicketID[:])
 	if version >= 1 {
 		e.Fixed(effect.Operation.StorageID[:])
 	}
-	if version == 2 {
+	if version >= 2 {
 		e.Fixed(effect.Operation.ScheduleID[:])
+	}
+	if version == 3 {
+		e.Fixed(effect.Operation.ServiceEnrollmentID[:])
 	}
 	e.BytesField(floor)
 	e.U64(effect.VerifiedAt)
@@ -255,6 +270,9 @@ func (effect CanonicalPruneEffect) ID() (types.Hash, error) {
 	if !effect.Operation.ScheduleID.IsZero() {
 		domain = "OMESH/workgraph/canonical-prune-effect/id/v2"
 	}
+	if !effect.Operation.ServiceEnrollmentID.IsZero() {
+		domain = "OMESH/workgraph/canonical-prune-effect/id/v3"
+	}
 	return types.DomainHash(domain, encoded), nil
 }
 
@@ -268,7 +286,7 @@ func DecodeCanonicalPruneEffect(input []byte) (CanonicalPruneEffect, error) {
 		return CanonicalPruneEffect{}, storage.ErrCorrupt
 	}
 	version, err := d.U16()
-	if err != nil || version > 2 {
+	if err != nil || version > 3 {
 		return CanonicalPruneEffect{}, storage.ErrCorrupt
 	}
 	var result CanonicalPruneEffect
@@ -289,13 +307,23 @@ func DecodeCanonicalPruneEffect(input []byte) (CanonicalPruneEffect, error) {
 			return CanonicalPruneEffect{}, storage.ErrCorrupt
 		}
 	}
-	if version == 2 {
+	if version >= 2 {
 		value, err := d.Fixed(types.HashSize)
 		if err != nil {
 			return CanonicalPruneEffect{}, storage.ErrCorrupt
 		}
 		copy(result.Operation.ScheduleID[:], value)
 		if result.Operation.ScheduleID.IsZero() {
+			return CanonicalPruneEffect{}, storage.ErrCorrupt
+		}
+	}
+	if version == 3 {
+		b, err := d.Fixed(types.HashSize)
+		if err != nil {
+			return CanonicalPruneEffect{}, storage.ErrCorrupt
+		}
+		copy(result.Operation.ServiceEnrollmentID[:], b)
+		if result.Operation.ServiceEnrollmentID.IsZero() {
 			return CanonicalPruneEffect{}, storage.ErrCorrupt
 		}
 	}

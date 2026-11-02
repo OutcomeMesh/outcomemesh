@@ -201,7 +201,7 @@ func (s *ScheduledPruneEffectService) run(ctx context.Context, mode string, expe
 		if s.inventory.Request.FencePolicyID.IsZero() && c.CollectPruneClaim != nil {
 			return result, prunefence.ErrFence
 		}
-		commit, err = s.executor.executeScheduledArchive(ctx, s.chain, c.InventoryPath, c.InventoryID, s.operations, c.Sources, c.Base, c.Parameters, c.Limits, c.CollectPruneClaim, s.decisions)
+		commit, err = s.executor.executeScheduledArchive(ctx, s.chain, c.InventoryPath, c.InventoryID, s.operations, c.Sources, c.Base, c.Parameters, c.Limits, c.CollectPruneClaim, s.decisions, c.ServiceIdentity)
 	} else {
 		commit, err = s.executor.Recover(ctx, s.chain)
 	}
@@ -417,6 +417,9 @@ func scheduledPruneRuntimeReview(config ScheduledPruneRuntimeConfig, v Scheduled
 			candidate, _ = review.Executor.FenceCandidate.CanonicalBytes()
 		}
 		e.BytesField(candidate)
+	}
+	if !v.Request.ServiceEnrollmentID.IsZero() {
+		reviewDomain = "OMESH/custody-prune/scheduled-runtime/review/v2"
 	}
 	review.ReviewID = types.DomainHash(reviewDomain, e.Bytes())
 	return review, nil

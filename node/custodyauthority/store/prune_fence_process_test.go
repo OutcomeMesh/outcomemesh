@@ -15,6 +15,7 @@ import (
 	"github.com/outcomemesh/outcomemesh/core/types"
 	f "github.com/outcomemesh/outcomemesh/internal/fencetest"
 	"github.com/outcomemesh/outcomemesh/node/custodyfence"
+	"github.com/outcomemesh/outcomemesh/node/prunefence"
 	"github.com/outcomemesh/outcomemesh/node/workchain"
 )
 
@@ -27,9 +28,20 @@ func pruneProcessClaim(_ context.Context, _ custodyfence.Scope, c custodyfence.C
 }
 
 func TestPruneFenceProcessDeathKeepsObligations(t *testing.T) {
+	testPruneFenceProcessDeath(t, false)
+}
+func TestPruneServiceProcessDeathKeepsObligations(t *testing.T) {
+	testPruneFenceProcessDeath(t, true)
+}
+func testPruneFenceProcessDeath(t *testing.T, service bool) {
 	for _, stage := range []string{"prune-fence-candidate-synced", "prune-fence-quorum-before-start", "prune-before-effect", "prune-after-effect", "prune-result-directory-synced"} {
 		t.Run(stage, func(t *testing.T) {
-			fixture := newScheduledPruneFixture(t, pruneFencePolicy())
+			var fixture *scheduledPruneFixture
+			if service {
+				fixture = newServicePruneFixture(t)
+			} else {
+				fixture = newScheduledPruneFixture(t, pruneFencePolicy())
+			}
 			config := fixture.runtimeConfig(t)
 			disk := config
 			disk.Base = workchain.Base{}
@@ -85,6 +97,14 @@ func TestPruneFenceProcessDeathKeepsObligations(t *testing.T) {
 				}
 			}
 			config.CollectPruneClaim = pruneProcessClaim
+			if service {
+				config.ServiceIdentity, err = prunefence.NewServiceIdentity(*fixture.inventory.FencePolicy.Service, testKey(90), new(pruneServiceGuard))
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer config.ServiceIdentity.Close()
+			}
+
 			if _, err := RunScheduledPrune(t.Context(), config, "execute", review.Review.ReviewID); err == nil {
 				t.Fatal("cold process repeated deletion")
 			}
@@ -135,6 +155,19 @@ func TestPruneFenceProcessDeathKeepsObligations(t *testing.T) {
 				if completed.Commit == nil || completed.Commit.Snapshot.Pending != 1 || len(completed.Commit.Snapshot.Operations) != 2 {
 					t.Fatal("SIGKILL settlement reset accounting")
 				}
+				if service {
+					for _, owner := range config.Authorities {
+						if owner.AssignmentID == primary.AssignmentID {
+							continue
+						}
+						other := withoutPruneSettlement(c)
+						other.AssignmentID, other.AuthorityPath, other.AuthorityPinsPath = owner.AssignmentID, owner.AuthorityPath, owner.AuthorityPinsPath
+						result := scheduledOperatorApply(t, scheduledOutcomeCompletion(t, other))
+						if result.Commit == nil || result.Commit.Snapshot.Pending != 1 || len(result.Commit.Snapshot.Operations) != 2 {
+							t.Fatal("secondary completion reset original accounting")
+						}
+					}
+				}
 			}
 		})
 	}
@@ -154,6 +187,17 @@ func TestPruneFenceProcessHelper(t *testing.T) {
 	}
 	c.Base, _, _ = pruneChainConfig()
 	c.CollectPruneClaim = pruneProcessClaim
+	v, err := LoadScheduledPruneInventory(c.InventoryPath, c.InventoryID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.FencePolicy.Service != nil {
+		c.ServiceIdentity, err = prunefence.NewServiceIdentity(*v.FencePolicy.Service, testKey(90), new(pruneServiceGuard))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer c.ServiceIdentity.Close()
+	}
 	r, err := RunScheduledPrune(t.Context(), c, "review", types.Hash{})
 	if err != nil {
 		t.Fatal(err)

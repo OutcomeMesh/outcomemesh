@@ -23,6 +23,9 @@ test-race:
 	GO="$(GO)" python3 scripts/ci.py all
 
 test-fuzz-smoke:
+	$(GO) test ./node/prunefence -run '^$$' -fuzz '^FuzzPruneServiceArtifacts$$' -fuzztime=$(FUZZTIME)
+	$(GO) test ./node/custodyauthority/store -run '^$$' -fuzz '^FuzzPruneServicePlan$$' -fuzztime=$(FUZZTIME)
+	$(GO) test ./node/custodyauthority/store -run '^$$' -fuzz '^FuzzPruneServiceEffect$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/prunefence -run '^$$' -fuzz '^FuzzPruneFenceArtifacts$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/prunefence -run '^$$' -fuzz '^FuzzPruneSettlementArtifacts$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyauthority/store -run '^$$' -fuzz '^FuzzDecodePruneSettlement$$' -fuzztime=$(FUZZTIME)
@@ -159,7 +162,7 @@ test-fuzz-smoke:
 
 test-process:
 	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestCustodyScheduledPruneProcessCrashRecovery$$' -count=1 -timeout=3m
-	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestPruneFenceProcessDeathKeepsObligations$$' -count=1 -timeout=3m
+	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestPrune(Fence|Service)ProcessDeathKeepsObligations$$' -count=1 -timeout=3m
 	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestProcessPruneScheduledOutcomes$$' -count=1 -timeout=3m
 	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestProcessPruneScheduledDelivery' -count=1 -timeout=3m
 	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessPruneScheduledDeliveryCLI' -count=1 -timeout=3m

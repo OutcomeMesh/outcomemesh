@@ -23,16 +23,17 @@ var (
 // StorageID optionally binds a local database incarnation. It is not a physical
 // database identity or rollback pin, and must be selected before admission.
 type PruneRequest struct {
-	FencePolicyID     types.Hash
-	ScheduleID        types.Hash
-	AssignmentID      types.Hash
-	ConsumerPublicKey [32]byte
-	StorageID         types.Hash
-	Boundary          workchain.CanonicalFloor
+	ServiceEnrollmentID types.Hash
+	FencePolicyID       types.Hash
+	ScheduleID          types.Hash
+	AssignmentID        types.Hash
+	ConsumerPublicKey   [32]byte
+	StorageID           types.Hash
+	Boundary            workchain.CanonicalFloor
 }
 
 func (request PruneRequest) CanonicalBytes() ([]byte, error) {
-	if !request.FencePolicyID.IsZero() && request.ScheduleID.IsZero() {
+	if (!request.ServiceEnrollmentID.IsZero() && request.FencePolicyID.IsZero()) || (!request.FencePolicyID.IsZero() && request.ScheduleID.IsZero()) {
 		return nil, ErrPruneRequest
 	}
 	if request.ScheduleID.IsZero() != (request.Boundary.RadixActivationHeight == 0) || (!request.ScheduleID.IsZero() && request.StorageID.IsZero()) || request.AssignmentID.IsZero() || request.ConsumerPublicKey == [32]byte{} || !request.Boundary.PruneTicketID.IsZero() {
@@ -54,6 +55,9 @@ func (request PruneRequest) CanonicalBytes() ([]byte, error) {
 	if !request.FencePolicyID.IsZero() {
 		version = 3
 	}
+	if !request.ServiceEnrollmentID.IsZero() {
+		version = 4
+	}
 	e.U16(version)
 	e.Fixed(request.AssignmentID[:])
 	e.Fixed(request.ConsumerPublicKey[:])
@@ -63,8 +67,11 @@ func (request PruneRequest) CanonicalBytes() ([]byte, error) {
 	if version >= 2 {
 		e.Fixed(request.ScheduleID[:])
 	}
-	if version == 3 {
+	if version >= 3 {
 		e.Fixed(request.FencePolicyID[:])
+	}
+	if version == 4 {
+		e.Fixed(request.ServiceEnrollmentID[:])
 	}
 	e.BytesField(floor)
 	if e.Len() > MaximumPruneRequestBytes {
@@ -88,6 +95,9 @@ func (request PruneRequest) ID() (types.Hash, error) {
 	if !request.FencePolicyID.IsZero() {
 		domain = "OMESH/custody-prune/request/id/v3"
 	}
+	if !request.ServiceEnrollmentID.IsZero() {
+		domain = "OMESH/custody-prune/request/id/v4"
+	}
 	return types.DomainHash(domain, encoded), nil
 }
 
@@ -101,7 +111,7 @@ func DecodePruneRequest(input []byte) (PruneRequest, error) {
 		return PruneRequest{}, ErrPruneRequest
 	}
 	version, err := d.U16()
-	if err != nil || version > 3 {
+	if err != nil || version > 4 {
 		return PruneRequest{}, ErrPruneRequest
 	}
 	var request PruneRequest
@@ -132,13 +142,23 @@ func DecodePruneRequest(input []byte) (PruneRequest, error) {
 			return PruneRequest{}, ErrPruneRequest
 		}
 	}
-	if version == 3 {
+	if version >= 3 {
 		value, err := d.Fixed(types.HashSize)
 		if err != nil {
 			return PruneRequest{}, ErrPruneRequest
 		}
 		copy(request.FencePolicyID[:], value)
 		if request.FencePolicyID.IsZero() {
+			return PruneRequest{}, ErrPruneRequest
+		}
+	}
+	if version == 4 {
+		value, err := d.Fixed(types.HashSize)
+		if err != nil {
+			return PruneRequest{}, ErrPruneRequest
+		}
+		copy(request.ServiceEnrollmentID[:], value)
+		if request.ServiceEnrollmentID.IsZero() {
 			return PruneRequest{}, ErrPruneRequest
 		}
 	}
@@ -196,7 +216,7 @@ func pruneAdmissionBinding(assignment custodyauthority.Assignment, request Prune
 func pruneEffectMatches(request PruneRequest, admission custodyauthority.Entry, effect workchain.CanonicalPruneEffect) bool {
 	ticket, err := admission.ID()
 	if err != nil || effect.Operation.AssignmentID != request.AssignmentID || effect.Operation.TicketID != ticket ||
-		effect.Operation.StorageID != request.StorageID || effect.Operation.ScheduleID != request.ScheduleID {
+		effect.Operation.ServiceEnrollmentID != request.ServiceEnrollmentID || effect.Operation.StorageID != request.StorageID || effect.Operation.ScheduleID != request.ScheduleID {
 		return false
 	}
 	if _, err := effect.ID(); err != nil {

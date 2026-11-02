@@ -104,8 +104,15 @@ Remaining work, in order:
    decisions across review, actual execution and drained shutdown. The one-shot
    CLI uses the same lifetime. Partial opening and process death preserve the
    original histories; unknown outcomes still require explicit disposition.
+   [Service-bound admission](PRUNE_SERVICE_ADMISSION.md) now commits an approved
+   service to new requests before admission. The actual effect requires that
+   enrollment, a signed volatile session and a fresh independent guard choice.
+   Legacy invocation cannot consume it; interrupted effects retain the original
+   obligations and full settlement path. This is a trusted local integration.
+   Next isolate its key and storage ownership, retain signed requests and service
+   cursors behind a bounded authenticated relay, and verify deployment failures.
    Independently protected remote execution remains open.
-   Next implement remote v1/profile-5 witness and execution transitions, including
+   Then implement remote v1/profile-5 witness and execution transitions, including
    this disposition and retained pins across independently operated failures.
    Unprepared/raw
    legacy paths remain gated; legacy prune transports remain unchanged.

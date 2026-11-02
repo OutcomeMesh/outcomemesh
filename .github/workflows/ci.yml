@@ -55,11 +55,14 @@ jobs:
       - name: Prune fence process recovery and decoder fuzzing
         run: |
           go test -tags=integration ./node/custodyauthority/store -run '^TestCustodyScheduledPruneProcessCrashRecovery$' -count=1 -timeout=3m
-          go test -tags=integration ./node/custodyauthority/store -run '^TestPruneFenceProcessDeathKeepsObligations$' -count=1 -timeout=3m
+          go test -tags=integration ./node/custodyauthority/store -run '^TestPrune(Fence|Service)ProcessDeathKeepsObligations$' -count=1 -timeout=3m
           go test -tags=integration ./node/custodyauthority/store -run '^TestProcessPruneScheduledOutcomes$' -count=1 -timeout=3m
           go test -tags=integration ./node/custodyauthority/store -run '^TestProcessPruneScheduledDelivery' -count=1 -timeout=3m
           go test -tags=integration ./cmd/omd -run '^TestProcessPruneScheduledDeliveryCLI' -count=1 -timeout=3m
           go test -tags=integration ./cmd/omd -run '^TestProcessPruneWANAcceptance$' -count=1 -timeout=5m
+          go test ./node/prunefence -run '^$' -fuzz '^FuzzPruneServiceArtifacts$' -fuzztime=10s
+          go test ./node/custodyauthority/store -run '^$' -fuzz '^FuzzPruneServicePlan$' -fuzztime=10s
+          go test ./node/custodyauthority/store -run '^$' -fuzz '^FuzzPruneServiceEffect$' -fuzztime=10s
           go test ./node/custodyauthority/scheduledwire -run '^$' -fuzz '^FuzzPruneScheduledFrames$' -fuzztime=10s
           go test ./node/custodyauthority/store -run '^$' -fuzz '^FuzzPruneScheduledDeliveryReceipt$' -fuzztime=10s
           go test ./node/custodyauthority/store -run '^$' -fuzz '^FuzzDecodePruneCancellation$' -fuzztime=10s

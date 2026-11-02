@@ -179,6 +179,9 @@ func (v ScheduledPruneInventory) canonicalMode(plan bool) ([]byte, error) {
 	if v.FencePolicy != nil {
 		version = 1
 	}
+	if !v.Request.ServiceEnrollmentID.IsZero() {
+		version = 2
+	}
 	e.U16(version)
 	request, _ := v.Request.CanonicalBytes()
 	e.BytesField(request)
@@ -244,7 +247,7 @@ func decodeScheduledPruneMode(raw []byte, plan bool) (ScheduledPruneInventory, e
 		return v, ErrScheduledPrune
 	}
 	version, err := d.U16()
-	if err != nil || version > 1 {
+	if err != nil || version > 2 {
 		return v, ErrScheduledPrune
 	}
 	r, err := d.BytesField(MaximumPruneRequestBytes)
@@ -255,7 +258,7 @@ func decodeScheduledPruneMode(raw []byte, plan bool) (ScheduledPruneInventory, e
 	if err != nil {
 		return v, err
 	}
-	if version == 1 {
+	if version >= 1 {
 		raw, err := d.BytesField(prunefence.MaximumPolicyBytes)
 		if err != nil {
 			return v, err
@@ -266,7 +269,7 @@ func decodeScheduledPruneMode(raw []byte, plan bool) (ScheduledPruneInventory, e
 		}
 		v.FencePolicy = &p
 	}
-	if (version == 1) != !v.Request.FencePolicyID.IsZero() {
+	if (version >= 1) != !v.Request.FencePolicyID.IsZero() || (version == 2) != !v.Request.ServiceEnrollmentID.IsZero() {
 		return v, ErrScheduledPrune
 	}
 	for _, id := range []*types.Hash{&v.ExecutorBindingID, &v.StoragePairID} {

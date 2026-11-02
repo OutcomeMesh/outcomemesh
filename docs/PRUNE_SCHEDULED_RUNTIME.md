@@ -7,8 +7,9 @@ writing output. There is no new listener, remote execution permission or journal
 format in this change.
 
 This lifetime is the prerequisite for placing the actual storage capability
-behind an isolated service. Profile-5 enrollment, current-version enforcement
-and remote Prune execution remain separate work. A delivery receipt, local
+behind an isolated service. The subsequent [service-bound admission](PRUNE_SERVICE_ADMISSION.md) path adds
+mandatory enrollment and a live guard check for explicitly versioned requests.
+Isolated ownership and remote Prune execution remain separate work. A delivery receipt, local
 review ID or historical custody signature cannot grant deletion permission.
 
 ## Ownership
@@ -40,7 +41,8 @@ become current owners through these local locks.
 journal state. It reloads the pinned inventory, checks original ownership and
 confirmed storage positions, and replays the custody journals. The existing
 scheduled-runtime scope/review domains and configured input ordering are
-unchanged. Review does not collect a claim or establish live receipt freshness.
+unchanged for existing request versions; service-bound requests use review v2.
+Review does not collect a claim or establish live receipt freshness.
 
 `Execute(ctx, reviewID)` calculates that review again while retaining every
 owner. A changed or zero ID is rejected. The existing scheduled executor then
