@@ -66,6 +66,12 @@ func TestPruneFenceCertifiedCancellationCLICompletion(t *testing.T) {
 }
 
 func scheduledPruneCLILifecycle(t *testing.T, cancelBeforeStart bool, fenced ...bool) {
+	scheduledPruneCLILifecycleWithDelivery(t, cancelBeforeStart, nil, fenced...)
+}
+
+// delivery substitutes the transport only. All original accounting and retained
+// outcome assertions below remain shared with the local operator lifecycle.
+func scheduledPruneCLILifecycleWithDelivery(t *testing.T, cancelBeforeStart bool, delivery func(*testing.T, []string, store.ScheduledPruneCommandResult), fenced ...bool) {
 	observed := len(fenced) > 2 && fenced[2]
 	f, cp, cpPath, sources := prepareCustodyScheduleQuorumCLI(t)
 	policy := f.inventory.Policy
@@ -151,9 +157,13 @@ func scheduledPruneCLILifecycle(t *testing.T, cancelBeforeStart bool, fenced ...
 		entry, eid := scheduledCLISign(t, signArgs)
 		args := append(common(s), "--entry", entry, "--entry-id", eid.String(), "--journal", s.Journal, "--max-challenge-lifetime-seconds", "60", "--max-proof-age-seconds", "100", "--max-renewal-term-seconds", "20000")
 		review := inspect(args)
+		if delivery != nil {
+			delivery(t, args, review)
+			review = inspect(args)
+		}
 		var applied store.ScheduledPruneCommandResult
 		scheduledCLIRun(t, append(append([]string{scheduledApplyCommand}, args...), "--mode", "apply", "--expected-review-id", review.Review.ReviewID.String()), &applied)
-		if applied.Commit == nil || !applied.Commit.Appended || applied.Commit.Snapshot.Pending != 2 {
+		if applied.Commit == nil || applied.Commit.Appended != (delivery == nil) || applied.Commit.Snapshot.Pending != 2 {
 			t.Fatal("admission reset original pending work")
 		}
 		retry := inspect(args)
@@ -328,6 +338,10 @@ func scheduledPruneCLILifecycle(t *testing.T, cancelBeforeStart bool, fenced ...
 		entry, eid := scheduledCLISign(t, []string{"--plan", planPath, "--plan-id", prepared.PlanID.String(), "--assignment-id", s.AssignmentID, "--kind", "complete", "--expected-sequence", strconv.FormatUint(before.Review.Authority.Confirmed.Sequence, 10), "--expected-head", before.Review.Authority.Confirmed.HeadID.String(), "--inventory", inventoryPath, "--inventory-id", packaged.InventoryID.String(), evidenceFlag, effectPath, idFlag, effectID.String()})
 		args = append(args, "--entry", entry, "--entry-id", eid.String())
 		review := inspect(args)
+		if delivery != nil {
+			delivery(t, args, review)
+			review = inspect(args)
+		}
 		appliedArgs := append(append([]string{scheduledApplyCommand}, args...), "--mode", "apply", "--expected-review-id", review.Review.ReviewID.String())
 		if err := runScheduledPruneOperator(t.Context(), appliedArgs, failedOutput); !errors.Is(err, io.ErrClosedPipe) {
 			t.Fatal("completion lost output", err)

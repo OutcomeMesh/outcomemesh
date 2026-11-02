@@ -110,6 +110,8 @@ func run(arguments []string) error {
 		return runScheduledPruneOperatorCLI(arguments)
 	case scheduledPruneCommand:
 		return runScheduledPruneCLI(arguments[1:])
+	case scheduledDeliveryPrepareCommand, scheduledDeliveryOutboxCommand, scheduledDeliveryCommand, scheduledDeliveryServeCommand:
+		return runScheduledDeliveryCLI(arguments)
 	case custodyScheduleQuorumCommand:
 		return runCustodyScheduleQuorumCLI(arguments[1:])
 	case custodyScheduleCommand:
@@ -1650,6 +1652,7 @@ func printUsage() {
 	fmt.Printf("migrated prune observation: omd %s [--mode review|publish|verify] [flags]\n", migratedPruneObservationCommand)
 	fmt.Printf("scheduled prune preparation: omd %s|%s|%s|%s|%s|%s [flags]\n", scheduledPlanCommand, scheduledSignCommand, scheduledCosignCommand, scheduledApplyCommand, scheduledInventoryCommand, scheduledEffectCommand)
 	fmt.Printf("scheduled prune outcomes: omd %s [flags]; review, cancel, recover, settle or export original outcomes\n", scheduledOutcomeCommand)
+	fmt.Printf("scheduled prune delivery: omd %s|%s|%s|%s [flags]\n", scheduledDeliveryPrepareCommand, scheduledDeliveryOutboxCommand, scheduledDeliveryCommand, scheduledDeliveryServeCommand)
 	fmt.Printf("scheduled archive cleanup: omd %s [flags]; review by default\n", scheduledPruneCommand)
 	fmt.Printf("observed-effect settlement: omd %s --mode review|sign|collect|verify [flags]\n", pruneSettlementCommand)
 	fmt.Printf("settlement witness scope: omd %s --mode review|publish [flags]\n", pruneSettlementScopeCommand)

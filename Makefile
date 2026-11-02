@@ -161,6 +161,7 @@ test-process:
 	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestPruneFenceProcessDeathKeepsObligations$$' -count=1 -timeout=3m
 	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestProcessPruneScheduledOutcomes$$' -count=1 -timeout=3m
 	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestProcessPruneScheduledDelivery' -count=1 -timeout=3m
+	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessPruneScheduledDeliveryCLI' -count=1 -timeout=3m
 	$(GO) test -tags=integration ./node/custodygateway -run '^TestProcessGuardedRetainedCoreRecovery$$' -count=1 -timeout=3m
 	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestProcessPruneMigrated(Recovery|Observation)$$' -count=1 -timeout=3m
 	$(GO) test -tags=integration ./node/custodyauthority/store -run '^TestProcess(ScheduledPruneOperatorRecovery|PruneScheduledOutcomes)$$' -count=1 -timeout=3m
