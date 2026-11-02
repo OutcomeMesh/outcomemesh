@@ -98,6 +98,13 @@ outputs. Paths and keys are operator inputs, not values supplied by remote peers
 
 ## Interruption and recovery
 
+The one-shot scheduled execution CLI now uses the
+[owned scheduled runtime](PRUNE_SCHEDULED_RUNTIME.md). Its original executor,
+authority pairs, protected chain and custody journal decisions remain held until
+the action drains and closes, including while collecting the claim. The same
+library service can retain this placement across explicit review and execution;
+it is not yet a remote profile-5 execution endpoint.
+
 | Retained state | Permitted continuation |
 | --- | --- |
 | No candidate and no start | Review and execute against the original enrollment. |

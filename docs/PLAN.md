@@ -99,6 +99,11 @@ Remaining work, in order:
    [delivery acceptance](PRUNE_DELIVERY_ACCEPTANCE.md). Both outcomes passed on
    the two existing hosts in both directions, with original accounting preserved
    across sixteen command stages. This does not establish independent operators.
+   The [owned scheduled runtime](PRUNE_SCHEDULED_RUNTIME.md) now retains the
+   original executor, every authority pair, protected chain and custody journal
+   decisions across review, actual execution and drained shutdown. The one-shot
+   CLI uses the same lifetime. Partial opening and process death preserve the
+   original histories; unknown outcomes still require explicit disposition.
    Independently protected remote execution remains open.
    Next implement remote v1/profile-5 witness and execution transitions, including
    this disposition and retained pins across independently operated failures.

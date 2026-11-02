@@ -27,7 +27,7 @@ type ScheduledPruneSource struct {
 // of an effect never authorizes another attempt. No obligation completes here.
 func (executor *PruneExecutor) ExecuteScheduledArchive(ctx context.Context, chain *workchain.Store, inventoryPath string, inventoryID types.Hash,
 	operations []RequiredOperation, sources []ScheduledPruneSource, base workchain.Base, parameters workblock.Parameters, limits workarchive.Limits) (workchain.CanonicalPruneCommit, error) {
-	return executor.executeScheduledArchive(ctx, chain, inventoryPath, inventoryID, operations, sources, base, parameters, limits, nil)
+	return executor.executeScheduledArchive(ctx, chain, inventoryPath, inventoryID, operations, sources, base, parameters, limits, nil, nil)
 }
 
 func (executor *PruneExecutor) ExecuteScheduledArchiveFenced(ctx context.Context, chain *workchain.Store, inventoryPath string, inventoryID types.Hash,
@@ -35,11 +35,11 @@ func (executor *PruneExecutor) ExecuteScheduledArchiveFenced(ctx context.Context
 	if collect == nil {
 		return workchain.CanonicalPruneCommit{}, ErrScheduledPrune
 	}
-	return executor.executeScheduledArchive(ctx, chain, inventoryPath, inventoryID, operations, sources, base, parameters, limits, collect)
+	return executor.executeScheduledArchive(ctx, chain, inventoryPath, inventoryID, operations, sources, base, parameters, limits, collect, nil)
 }
 
 func (executor *PruneExecutor) executeScheduledArchive(ctx context.Context, chain *workchain.Store, inventoryPath string, inventoryID types.Hash,
-	operations []RequiredOperation, sources []ScheduledPruneSource, base workchain.Base, parameters workblock.Parameters, limits workarchive.Limits, collect PruneClaimCollector) (workchain.CanonicalPruneCommit, error) {
+	operations []RequiredOperation, sources []ScheduledPruneSource, base workchain.Base, parameters workblock.Parameters, limits workarchive.Limits, collect PruneClaimCollector, owned map[types.Hash]*workarchive.CustodyJournalDecision) (workchain.CanonicalPruneCommit, error) {
 	if executor == nil || chain == nil {
 		return workchain.CanonicalPruneCommit{}, ErrClosed
 	}
@@ -160,6 +160,9 @@ func (executor *PruneExecutor) executeScheduledArchive(ctx context.Context, chai
 		}
 		var decisions []*workarchive.CustodyJournalDecision
 		defer func() {
+			if owned != nil {
+				return // The enclosing effect service owns the complete lifetime.
+			}
 			for i := len(decisions) - 1; i >= 0; i-- {
 				returnErr = errors.Join(returnErr, decisions[i].Close())
 			}
@@ -174,13 +177,21 @@ func (executor *PruneExecutor) executeScheduledArchive(ctx context.Context, chai
 			if !ok {
 				return ErrScheduledPrune
 			}
-			journal, _, err := workarchive.OpenScheduledCustodyJournal(ctx, source.JournalPath, s.Proof, s.Assignment, inventory.OriginalPolicy, source.CustodyPolicy, source.JournalLimits)
-			if err != nil {
-				return err
-			}
-			d, err := journal.AcquireDecision()
-			if err != nil {
-				return err
+			var d *workarchive.CustodyJournalDecision
+			if owned != nil {
+				d = owned[aid]
+				if len(owned) != len(inventory.Replicas) || d == nil {
+					return ErrScheduledPrune
+				}
+			} else {
+				journal, _, err := workarchive.OpenScheduledCustodyJournal(ctx, source.JournalPath, s.Proof, s.Assignment, inventory.OriginalPolicy, source.CustodyPolicy, source.JournalLimits)
+				if err != nil {
+					return err
+				}
+				d, err = journal.AcquireDecision()
+				if err != nil {
+					return err
+				}
 			}
 			decisions = append(decisions, d)
 			lineage, selected, err := d.ScheduleLineage(ctx, s.Proof, s.Assignment, inventory.OriginalPolicy)
