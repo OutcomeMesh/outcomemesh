@@ -17,7 +17,7 @@ import (
 )
 
 func TestCustodyScheduledPruneProcessCrashRecovery(t *testing.T) {
-	for _, stage := range []string{"scheduled-prune-before-start", "prune-before-effect", "prune-after-effect"} {
+	for _, stage := range []string{"scheduled-runtime-opened", "scheduled-prune-before-start", "prune-before-effect", "prune-after-effect"} {
 		t.Run(stage, func(t *testing.T) {
 			f := newScheduledPruneFixture(t)
 			c := f.runtimeConfig(t)
@@ -59,6 +59,7 @@ func TestCustodyScheduledPruneProcessCrashRecovery(t *testing.T) {
 			if _, err := RunScheduledPrune(t.Context(), c, "review", types.Hash{}); err == nil {
 				t.Fatal("second process acquired active owners")
 			}
+			assertScheduledEffectBusy(t, f, c)
 			if err := child.Process.Kill(); err != nil {
 				t.Fatal(err)
 			}
@@ -74,7 +75,7 @@ func TestCustodyScheduledPruneProcessCrashRecovery(t *testing.T) {
 					t.Fatal("crash discarded obligations")
 				}
 			}
-			if stage == "scheduled-prune-before-start" {
+			if stage == "scheduled-runtime-opened" || stage == "scheduled-prune-before-start" {
 				if review.Review.Executor.Stage != PruneAdmitted {
 					t.Fatal("unstarted operation consumed")
 				}

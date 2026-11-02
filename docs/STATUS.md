@@ -10,6 +10,24 @@ Full planned production readiness is approximately **44/100**, using the weighte
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
 
+## 2026-11-02: owned scheduled Prune execution
+
+The scheduled executor now has an explicit service lifetime that retains its
+original executor and pin journals, every authority pair, protected chain and
+all custody journal decisions through review, execution and shutdown. The
+one-shot CLI uses this same service and releases owners before reporting output.
+Execution reuses the held decisions and preserves full fenced results, original
+obligations and spent accounting. Close drains an accepted action; uncertain
+writes stay held through close and cold reopening.
+
+Configuration and reports are detached. Coverage includes competing owners and
+journal writers, partial-opening cleanup, cancelled contexts, changed inputs,
+concurrent execution/close and process death at opening and effect boundaries.
+See [owned scheduled execution](PRUNE_SCHEDULED_RUNTIME.md). Service enrollment,
+independent current-version enforcement and the remote profile-5 execution
+adapter remain open. No protocol format or public activation changed. Readiness
+remains **44/100**.
+
 ## 2026-11-02: scheduled Prune delivery across two hosts
 
 Four campaigns passed on the two existing Linux amd64 hosts, covering cancellation

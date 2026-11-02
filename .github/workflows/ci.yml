@@ -54,6 +54,7 @@ jobs:
           make test-remote-support
       - name: Prune fence process recovery and decoder fuzzing
         run: |
+          go test -tags=integration ./node/custodyauthority/store -run '^TestCustodyScheduledPruneProcessCrashRecovery$' -count=1 -timeout=3m
           go test -tags=integration ./node/custodyauthority/store -run '^TestPruneFenceProcessDeathKeepsObligations$' -count=1 -timeout=3m
           go test -tags=integration ./node/custodyauthority/store -run '^TestProcessPruneScheduledOutcomes$' -count=1 -timeout=3m
           go test -tags=integration ./node/custodyauthority/store -run '^TestProcessPruneScheduledDelivery' -count=1 -timeout=3m
