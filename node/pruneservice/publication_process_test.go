@@ -32,6 +32,8 @@ func TestPruneServicePublicationBarrier(t *testing.T) {
 		Root, Request, Key, Stage, Marker string
 		DescriptorID, ContinuationID      types.Hash
 		Before                            wire.Position
+		Settlement                        *SettlementInput
+		SettlementReviewID                types.Hash
 	}
 	if err = json.Unmarshal(raw, &c); err != nil {
 		t.Fatal(err)
@@ -82,12 +84,28 @@ func TestPruneServicePublicationBarrier(t *testing.T) {
 		_, err = continuePublication(ctx, c.Root, c.DescriptorID, c.Before, q, c.ContinuationID, h)
 		t.Fatal("escaped continuation barrier", err)
 	}
-	o, err := Open(ctx, c.Root, c.DescriptorID, wire.Position{}, nil)
+	var intent *wire.Request
+	if c.Settlement != nil {
+		intent = &q
+	}
+	o, err := Open(ctx, c.Root, c.DescriptorID, c.Before, intent)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer o.Close()
 	o.hooks = h
+	if c.Settlement != nil {
+		r, e := o.ReviewSettlement(ctx, q, *c.Settlement)
+		if e != nil || r.Review.ReviewID != c.SettlementReviewID {
+			raw, _ := json.Marshal(r.Review)
+			t.Fatalf("settlement fixture changed: %v expected=%s got=%s review=%s", e, c.SettlementReviewID, r.Review.ReviewID, raw)
+		}
+		_, err = o.Settle(ctx, q, *c.Settlement, c.SettlementReviewID)
+		if err == nil {
+			err = barrier("response-ready")
+		}
+		t.Fatal("escaped settlement barrier", err)
+	}
 	seed, err := os.ReadFile(c.Key)
 	if err != nil || len(seed) != ed25519.SeedSize {
 		t.Fatal("fixture consumer key", err)

@@ -74,7 +74,7 @@ into the runtime export. The guard URL is explicitly configured; the enrolled
 guard signature authenticates its choice.
 
 Use `--position-out FILE` with `request-prepare` to export the initial cursor;
-`call`, `remote-call`, `recover`, `status`, `continue` and `inspect` can export the confirmed cursor using the same
+`call`, `remote-call`, `recover`, `settle`, `status`, `continue` and `inspect` can export the confirmed cursor using the same
 flag. The initial position is sequence zero with a zero head. After an interrupted
 call, `serve --request` may reconcile that externally retained exact request
 against a later stored position. A different request or invented current cursor
@@ -223,3 +223,48 @@ Use the Linux integration test executable, not the production daemon. The
 runner uses fresh disposable directories and test keys, then stops its children
 and removes only those directories. It never changes firewall rules or existing
 service roots. Guards and witnesses in this fixture share the owner account.
+
+## Settlement after deletion without a retained final result
+
+Stop serving before local maintenance. Keep the original owner, executor, pins,
+authorities and protected chain. A retained intent with an actual storage effect
+and no final result cannot be retried as a new execution.
+
+1. Run `settlement-review` with `--root`, `--descriptor`, `--descriptor-id`,
+   `--position`, `--request`, `--plan`, `--plan-id`, `--out` and optional
+   `--proposal-out`. As with every action, first obtain its public CLI review,
+   then use `--mode run --expected-review-id ID`. Run mode opens the originals
+   but does not change accounting. The proposal is derived from their actual
+   protected effect, not caller-provided diagnostics.
+2. Use the existing `work-prune-settlement` workflow to sign the proposal in the
+   consumer and controller roles, export the settlement witness scope, and collect
+   the original policy's quorum. See [the full signing procedure](PRUNE_SETTLEMENT.md).
+   A proposal, even with both role signatures, is not the full decision.
+3. Repeat `settlement-review` with the full `--settlement` artifact and separately
+   retained `--settlement-id`. Retain the returned original-owner `Review.ReviewID`.
+4. Review `settle` with those same inputs, `--settlement-review-id` from step 3 and
+   a fresh `--out` path. Run with its own public `--expected-review-id`. These two
+   IDs have different purposes: one pins original state, the other the exact CLI
+   invocation. Optional `--position-out` exports the confirmed service cursor.
+5. Complete each original replica ticket through the scheduled completion CLI,
+   using the full typed `PruneSettlement` evidence. Settlement itself does not
+   release any ticket or reset previous spending.
+
+`settle` publishes a response containing the settlement decision, never a newly
+invented live-session result. An interrupted original transition requires its
+existing exact journal continuation first. If the original settlement is already
+confirmed but the outer response is absent or partial, use `continuation-review`
+and `continue`. These work with archive sources and witness network offline and
+preserve the original response prefix. A new original-state review is required
+after state advances; network retries cannot refresh it implicitly.
+
+The added CLI fields change local invocation review IDs. Regenerate public
+reviews before applying commands with this version. Persistent artifact formats,
+consensus rules and the relay protocol are unchanged.
+
+`make test-prune-service-publication` also covers five settlement publication
+boundaries. `make test-prune-service-network` also runs four failure scenarios
+in both directions. To reproduce only these on two hosts, add `--failures` to
+`scripts/remote_acceptance/prune_service.py --config HOSTS.json --out REPORT.json`.
+The failure controls exist only in the integration test executable. The runner
+preserves bounded test-helper logs on failure before removing disposable roots.

@@ -119,8 +119,9 @@ explicit bypass for exceptional maintenance; ordinary contribution flow uses
 pull requests. Squash merges and automatic deletion of merged branches keep the
 history readable. Version tags cannot be force-updated or deleted.
 
-GitHub Actions defaults to read-only permissions. Only the release job requests
-write access to releases and attestations. External actions are pinned to full
+GitHub Actions defaults to read-only permissions. The release job requests
+write access to releases and attestations. The separate CI infrastructure recovery
+workflow has Actions write access solely to rerun an eligible CI run. External actions are pinned to full
 commit IDs. Dependabot proposes weekly Go dependency and Actions updates; private
 vulnerability reporting, dependency security alerts and CodeQL analysis for
 Go, Python and Actions are enabled. Issues and
@@ -162,3 +163,27 @@ leaves partial output for inspection and creates no draft; use a fresh output
 directory on retry. The workflow never overwrites an existing draft or its assets.
 After a failed gate, rerun the Release workflow for the same unchanged tag once
 the current required checks succeed.
+
+## Hosted-runner allocation recovery
+
+The macOS gate starts on `macos-15-intel`. Attempt 2 uses `macos-15`; attempt 3
+returns to Intel. These are distinct [GitHub-hosted runner pools](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
+The automatic recovery workflow allows at most three complete CI attempts.
+
+Recovery requires all other CI jobs to have passed and the macOS job to have no
+runner, no steps and GitHub's exact hosted-runner allocation failure annotation.
+It checks the latest attempt and current main or same-repository PR head twice.
+A newer run, moved head, fork, test failure, started job or unfamiliar annotation
+refuses recovery. The full workflow is rerun, so required checks never combine
+successful jobs from different attempts. Exhausted attempts remain failed.
+
+The privileged workflow checks out protected `main`, never a triggering PR or its
+artifacts. It uses the ordinary Actions token, without repository administration
+rights. The controller is review-only unless called with `--apply`. Inspect with:
+
+```sh
+python3 scripts/ci_infrastructure.py --repo OutcomeMesh/outcomemesh --run-id RUN_ID
+```
+
+This handles a specific observed allocation outage. It cannot guarantee runner
+availability or turn a compiler, test or security failure into success.

@@ -51,6 +51,7 @@ jobs:
           go vet ./...
           python3 scripts/version.py check
           python3 -m unittest discover -s scripts -p 'test_release*.py'
+          python3 -m unittest discover -s scripts -p 'test_ci_infrastructure.py'
           make test-remote-support
       - name: Prune fence process recovery and decoder fuzzing
         run: |
@@ -60,10 +61,11 @@ jobs:
           go test -tags=integration ./node/custodyauthority/store -run '^TestProcessPruneScheduledDelivery' -count=1 -timeout=3m
           go test -tags=integration ./cmd/omd -run '^TestProcessPruneScheduledDeliveryCLI' -count=1 -timeout=3m
           go test -tags=integration ./cmd/omd -run '^TestProcessPruneWANAcceptance$' -count=1 -timeout=5m
-          go test -tags=integration ./cmd/omd -run '^TestProcessPruneServicePublicationRecovery$' -count=1 -timeout=5m
+          go test -tags=integration ./cmd/omd -run '^TestProcessPruneService(Publication|Settlement)Recovery$' -count=1 -timeout=5m
           go test -race -tags=integration -c ./cmd/omd -o "$RUNNER_TEMP/prune-service.test"
           sudo "$RUNNER_TEMP/prune-service.test" -test.run='^TestProcessPruneServiceUIDIsolation$' -test.count=1 -test.timeout=4m
           sudo python3 scripts/remote_acceptance/prune_service.py --local-binary "$RUNNER_TEMP/prune-service.test"
+          sudo python3 scripts/remote_acceptance/prune_service.py --local-binary "$RUNNER_TEMP/prune-service.test" --failures
           go test ./node/pruneservice/servicewire -run '^$' -fuzz '^FuzzWireCanonical$' -fuzztime=10s
           go test ./node/pruneservice/servicewire -run '^$' -fuzz '^FuzzWireFrames$' -fuzztime=10s
           go test ./node/pruneservice -run '^$' -fuzz '^FuzzPruneServiceConfig$' -fuzztime=10s
@@ -99,7 +101,8 @@ jobs:
         run: python3 scripts/ci.py "$GROUP"
 
   macos:
-    runs-on: macos-15
+    # Start on Intel; an infrastructure-only rerun uses the other hosted pool.
+    runs-on: ${{ github.run_attempt == 2 && 'macos-15' || 'macos-15-intel' }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

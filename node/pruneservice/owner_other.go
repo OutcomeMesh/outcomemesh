@@ -5,6 +5,7 @@ package pruneservice
 import (
 	"context"
 	"github.com/outcomemesh/outcomemesh/core/types"
+	store "github.com/outcomemesh/outcomemesh/node/custodyauthority/store"
 	"github.com/outcomemesh/outcomemesh/node/custodyfence"
 	wire "github.com/outcomemesh/outcomemesh/node/pruneservice/servicewire"
 )
@@ -38,4 +39,11 @@ func ReviewContinuation(context.Context, string, types.Hash, wire.Position, wire
 }
 func Continue(context.Context, string, types.Hash, wire.Position, wire.Request, types.Hash) (Snapshot, error) {
 	return Snapshot{}, ErrUnsupported
+}
+
+func (*Owner) ReviewSettlement(context.Context, wire.Request, SettlementInput) (store.ScheduledPruneCommandResult, error) {
+	return store.ScheduledPruneCommandResult{}, ErrUnsupported
+}
+func (*Owner) Settle(context.Context, wire.Request, SettlementInput, types.Hash) (wire.Response, error) {
+	return wire.Response{}, ErrUnsupported
 }

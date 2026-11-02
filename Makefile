@@ -258,7 +258,7 @@ test-prune-service-isolation:
 
 .PHONY: test-prune-service-publication test-prune-service-network
 test-prune-service-publication:
-	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessPruneServicePublicationRecovery$$' -count=1 -timeout=5m
+	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessPruneService(Publication|Settlement)Recovery$$' -count=1 -timeout=5m
 
 test-prune-service-network:
 	test "$$($(GO) env GOOS)" = linux
@@ -266,4 +266,5 @@ test-prune-service-network:
 	probe_dir=$$(mktemp -d); \
 	trap 'rm -rf "$$probe_dir"' EXIT; \
 	$(GO) test -race -tags=integration -c ./cmd/omd -o "$$probe_dir/prune-service.test"; \
-	sudo python3 scripts/remote_acceptance/prune_service.py --local-binary "$$probe_dir/prune-service.test"
+	sudo python3 scripts/remote_acceptance/prune_service.py --local-binary "$$probe_dir/prune-service.test"; \
+	sudo python3 scripts/remote_acceptance/prune_service.py --local-binary "$$probe_dir/prune-service.test" --failures

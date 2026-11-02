@@ -119,10 +119,14 @@ Remaining work, in order:
    denial, held disconnection and cold replay. Process cuts now cover outer
    intent/result publication and repeated interruption of reviewed prefix
    continuation. An authenticated, explicitly enabled relay forwards the exact
-   signed approval to the kernel-authenticated owner. Next extend the combined
-   remote campaign through interrupted original settlement and controlled
-   partition during quorum/guard decisions. Independently operated execution, transfer
-   of existing owners and enrolled key continuity stay open.
+   signed approval to the kernel-authenticated owner. The combined two-host campaign
+   now covers missing quorum, unavailable guard, loss of its committed reply and
+   failed final-result publication after deletion. Owner CLI settlement retains
+   the full original decision, with separate completion of both replica tickets.
+   Process cuts cover settlement confirmation and outer response publication,
+   including another interruption during continuation. Next address enrolled
+   service-key continuity without changing held obligations. Independently operated
+   execution and transfer of existing owners stay open.
    Then implement remote v1/profile-5 witness and execution transitions, including
    this disposition and retained pins across independently operated failures.
    Unprepared/raw

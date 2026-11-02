@@ -106,6 +106,31 @@ func pruneNetworkClient(t *testing.T, ctx context.Context, public, mode string, 
 	if address == "" {
 		t.Fatal("missing pinned route")
 	}
+	if m.Failure != "" && !replay {
+		cfg := libp2ptransport.DefaultConfig()
+		cfg.Listen = []string{"/ip4/0.0.0.0/udp/0/quic-v1"}
+		host, e := libp2ptransport.New(ctx, pruneCLIKey(191), cfg, nil)
+		if e != nil {
+			t.Fatal(e)
+		}
+		defer host.Close()
+		var local, remote [32]byte
+		copy(local[:], pruneCLIKey(191)[32:])
+		copy(remote[:], pruneCLIKey(190)[32:])
+		calls := 0
+		_, e = relay.Call(ctx, host, address, local, remote, d, q, 15*time.Second, func(_ context.Context, ch wire.Challenge) (custodyfence.Command, error) {
+			calls++
+			_, draft, err := ch.Candidate.Draft()
+			if err != nil {
+				return draft, err
+			}
+			return draft.Sign(pruneCLIKey(4))
+		})
+		if e == nil || calls != 1 {
+			t.Fatal("fault did not hold approved remote request", e, calls)
+		}
+		return
+	}
 	cwd, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
