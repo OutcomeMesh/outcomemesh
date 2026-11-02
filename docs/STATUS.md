@@ -10,6 +10,27 @@ Full planned production readiness is approximately **44/100**, using the weighte
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
 
+## 2026-11-02: service-bound Prune admission and consumption
+
+New scheduled requests can commit an issuer-signed execution enrollment before
+admission. It binds the original assignment, schedule, storage incarnation and
+Prune storage pair. The service signs a fresh session selected by the original
+witness quorum. Immediately before deletion, the actual storage path requires a
+fresh independent guard choice and the same enrollment. Legacy invocation,
+substituted bindings, revoked keys and cached guard replies cannot grant it.
+
+The effect and full signed result retain the new evidence. Refused or interrupted
+attempts preserve original obligations; cold recovery and observed-effect
+settlement do not repeat deletion. Explicit versions preserve earlier artifact
+bytes. Coverage includes malformed encodings, canonical vectors, fuzzing, actual
+storage, concurrent consumption, original guard revocation/restart and process
+cuts through full settlement. See [service-bound admission](PRUNE_SERVICE_ADMISSION.md).
+
+This is a trusted local execution path. Isolated service ownership, authenticated
+remote execution, replacement of an enrolled key without changing its admitted
+request, and independently operated deployment remain open. Readiness stays
+**44/100**.
+
 ## 2026-11-02: owned scheduled Prune execution
 
 The scheduled executor now has an explicit service lifetime that retains its

@@ -10,6 +10,7 @@ import (
 	"github.com/outcomemesh/outcomemesh/core/types"
 	"github.com/outcomemesh/outcomemesh/core/workblock"
 	"github.com/outcomemesh/outcomemesh/node/custodyauthority"
+	"github.com/outcomemesh/outcomemesh/node/prunefence"
 	"github.com/outcomemesh/outcomemesh/node/workarchive"
 	"github.com/outcomemesh/outcomemesh/node/workchain"
 )
@@ -27,7 +28,7 @@ type ScheduledPruneSource struct {
 // of an effect never authorizes another attempt. No obligation completes here.
 func (executor *PruneExecutor) ExecuteScheduledArchive(ctx context.Context, chain *workchain.Store, inventoryPath string, inventoryID types.Hash,
 	operations []RequiredOperation, sources []ScheduledPruneSource, base workchain.Base, parameters workblock.Parameters, limits workarchive.Limits) (workchain.CanonicalPruneCommit, error) {
-	return executor.executeScheduledArchive(ctx, chain, inventoryPath, inventoryID, operations, sources, base, parameters, limits, nil, nil)
+	return executor.executeScheduledArchive(ctx, chain, inventoryPath, inventoryID, operations, sources, base, parameters, limits, nil, nil, nil)
 }
 
 func (executor *PruneExecutor) ExecuteScheduledArchiveFenced(ctx context.Context, chain *workchain.Store, inventoryPath string, inventoryID types.Hash,
@@ -35,11 +36,11 @@ func (executor *PruneExecutor) ExecuteScheduledArchiveFenced(ctx context.Context
 	if collect == nil {
 		return workchain.CanonicalPruneCommit{}, ErrScheduledPrune
 	}
-	return executor.executeScheduledArchive(ctx, chain, inventoryPath, inventoryID, operations, sources, base, parameters, limits, collect, nil)
+	return executor.executeScheduledArchive(ctx, chain, inventoryPath, inventoryID, operations, sources, base, parameters, limits, collect, nil, nil)
 }
 
 func (executor *PruneExecutor) executeScheduledArchive(ctx context.Context, chain *workchain.Store, inventoryPath string, inventoryID types.Hash,
-	operations []RequiredOperation, sources []ScheduledPruneSource, base workchain.Base, parameters workblock.Parameters, limits workarchive.Limits, collect PruneClaimCollector, owned map[types.Hash]*workarchive.CustodyJournalDecision) (workchain.CanonicalPruneCommit, error) {
+	operations []RequiredOperation, sources []ScheduledPruneSource, base workchain.Base, parameters workblock.Parameters, limits workarchive.Limits, collect PruneClaimCollector, owned map[types.Hash]*workarchive.CustodyJournalDecision, service *prunefence.ServiceIdentity) (workchain.CanonicalPruneCommit, error) {
 	if executor == nil || chain == nil {
 		return workchain.CanonicalPruneCommit{}, ErrClosed
 	}
@@ -58,7 +59,7 @@ func (executor *PruneExecutor) executeScheduledArchive(ctx context.Context, chai
 	if err != nil {
 		return workchain.CanonicalPruneCommit{}, err
 	}
-	if (collect == nil) != executor.request.FencePolicyID.IsZero() {
+	if (collect == nil) != executor.request.FencePolicyID.IsZero() || (service == nil) != executor.request.ServiceEnrollmentID.IsZero() {
 		return workchain.CanonicalPruneCommit{}, ErrScheduledPrune
 	}
 	requestID, _ := inventory.Request.ID()
@@ -253,7 +254,7 @@ func (executor *PruneExecutor) executeScheduledArchive(ctx context.Context, chai
 			return err
 		}
 		if collect != nil {
-			result, err = executor.executeFencedInventory(ctx, chain, inventory, inventoryID, authorize, collect)
+			result, err = executor.executeFencedInventory(ctx, chain, inventory, inventoryID, authorize, collect, service)
 		} else {
 			result, err = executor.executeGuardedInventory(ctx, chain, primary, authorize, inventoryID)
 		}

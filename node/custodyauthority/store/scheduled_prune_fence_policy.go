@@ -13,6 +13,8 @@ func scheduledPruneArtifactID(raw []byte, plan bool) types.Hash {
 	}
 	if len(raw) >= 10 && raw[8] == 0 && raw[9] == 1 {
 		version = "v1"
+	} else if len(raw) >= 10 && raw[8] == 0 && raw[9] == 2 {
+		version = "v2"
 	}
 	return types.DomainHash("OMESH/custody-prune/scheduled-"+name+"/id/"+version, raw)
 }
@@ -22,12 +24,25 @@ func (v ScheduledPruneInventory) validateFencePolicy() error {
 		return prunefence.ErrFence
 	}
 	if v.FencePolicy == nil {
+		if !v.Request.ServiceEnrollmentID.IsZero() {
+			return prunefence.ErrFence
+		}
 		return nil
 	}
 	p := v.FencePolicy
 	id, err := p.ID()
 	if err != nil || id != v.Request.FencePolicyID || p.Owner != v.Request.ConsumerPublicKey {
 		return prunefence.ErrFence
+	}
+	if (p.Service == nil) != v.Request.ServiceEnrollmentID.IsZero() {
+		return prunefence.ErrFence
+	}
+	if p.Service != nil {
+		e := p.Service
+		id, err := e.ID()
+		if err != nil || id != v.Request.ServiceEnrollmentID || e.AssignmentID != v.Request.AssignmentID || e.ScheduleID != v.Request.ScheduleID || e.StorageID != v.Request.StorageID || e.StoragePairID != v.StoragePairID {
+			return prunefence.ErrFence
+		}
 	}
 	keys := append([][32]byte(nil), v.OriginalPolicy.TrustedAttestors...)
 	keys = append(keys, v.ReplicaPolicy.TrustedReplicas...)
@@ -49,6 +64,9 @@ func (v ScheduledPruneInventory) validateFencePolicy() error {
 	independent := append([][32]byte(nil), p.Witnesses...)
 	if p.Guard != ([32]byte{}) {
 		independent = append(independent, p.Guard)
+	}
+	if p.Service != nil {
+		independent = append(independent, p.Service.Service, p.Service.Issuer, p.Service.Guard)
 	}
 	for _, witness := range independent {
 		for _, key := range keys {
@@ -79,6 +97,9 @@ func (p ScheduledPrunePlan) WithFence(policy prunefence.Policy) (ScheduledPruneP
 	}
 	p.FencePolicy = &owned
 	p.Request.FencePolicyID, _ = owned.ID()
+	if owned.Service != nil {
+		p.Request.ServiceEnrollmentID, _ = owned.Service.ID()
+	}
 	raw, err = p.CanonicalBytes()
 	if err != nil {
 		return ScheduledPrunePlan{}, err

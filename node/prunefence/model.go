@@ -5,6 +5,7 @@ package prunefence
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"errors"
 
 	"github.com/outcomemesh/outcomemesh/core/codec"
@@ -13,10 +14,10 @@ import (
 )
 
 const (
-	MaximumPolicyBytes    = 640
-	MaximumCandidateBytes = 1024
+	MaximumPolicyBytes    = 1024
+	MaximumCandidateBytes = 1536
 	MaximumClaimBytes     = MaximumCandidateBytes + custodyfence.MaximumCertificateBytes + 32
-	MaximumResultBytes    = MaximumClaimBytes + 128
+	MaximumResultBytes    = MaximumClaimBytes + 256
 	domain                = "OMESH/prune-fence/"
 )
 
@@ -25,12 +26,16 @@ var ErrFence = errors.New("prune requires its original independent claim and liv
 // Policy is committed in the request before any authority admission. Keys and
 // locks belong to independent witnesses; participant backups must exclude them.
 type Policy struct {
+	Service                  *ServiceEnrollment
 	Owner, Controller, Guard [32]byte
 	Threshold                uint8
 	Witnesses                [][32]byte
 }
 
 func (p Policy) Scope(assignment, request types.Hash) (custodyfence.Scope, error) {
+	if p.Service != nil && p.Service.AssignmentID != assignment {
+		return custodyfence.Scope{}, ErrFence
+	}
 	id, err := p.ID()
 	if err != nil {
 		return custodyfence.Scope{}, err
@@ -49,7 +54,21 @@ func (p Policy) CanonicalBytes() ([]byte, error) {
 	}
 	e := codec.NewEncoder(MaximumPolicyBytes)
 	e.Fixed([]byte("OMPRFP00"))
-	e.U16(0)
+	version := uint16(0)
+	if p.Service != nil {
+		if _, err := p.Service.CanonicalBytes(); err != nil {
+			return nil, err
+		}
+		for _, key := range [][32]byte{p.Service.Service, p.Service.Issuer, p.Service.Guard} {
+			for _, other := range append([][32]byte{p.Owner, p.Controller, p.Guard}, p.Witnesses...) {
+				if key == other {
+					return nil, ErrFence
+				}
+			}
+		}
+		version = 1
+	}
+	e.U16(version)
 	for _, k := range [][32]byte{p.Owner, p.Controller, p.Guard} {
 		e.Fixed(k[:])
 	}
@@ -58,6 +77,10 @@ func (p Policy) CanonicalBytes() ([]byte, error) {
 	for _, k := range p.Witnesses {
 		e.Fixed(k[:])
 	}
+	if p.Service != nil {
+		raw, _ := p.Service.CanonicalBytes()
+		e.Fixed(raw)
+	}
 	return e.Bytes(), nil
 }
 func (p Policy) ID() (types.Hash, error) {
@@ -65,7 +88,11 @@ func (p Policy) ID() (types.Hash, error) {
 	if e != nil {
 		return types.Hash{}, e
 	}
-	return types.DomainHash(domain+"policy/id/v0", b), nil
+	v := "v0"
+	if p.Service != nil {
+		v = "v1"
+	}
+	return types.DomainHash(domain+"policy/id/"+v, b), nil
 }
 func DecodePolicy(raw []byte) (Policy, error) {
 	var p Policy
@@ -75,7 +102,7 @@ func DecodePolicy(raw []byte) (Policy, error) {
 	d := codec.NewDecoder(raw)
 	m, _ := d.Fixed(8)
 	v, _ := d.U16()
-	if string(m) != "OMPRFP00" || v != 0 {
+	if string(m) != "OMPRFP00" || v > 1 {
 		return p, ErrFence
 	}
 	for _, out := range [][]byte{p.Owner[:], p.Controller[:], p.Guard[:]} {
@@ -87,7 +114,7 @@ func DecodePolicy(raw []byte) (Policy, error) {
 	}
 	p.Threshold, _ = d.U8()
 	n, e := d.U8()
-	if e != nil || n > custodyfence.MaximumWitnesses || d.Remaining() != int(n)*32 {
+	if e != nil || n > custodyfence.MaximumWitnesses || d.Remaining() != int(n)*32+int(v)*ServiceEnrollmentBytes {
 		return Policy{}, ErrFence
 	}
 	for i := 0; i < int(n); i++ {
@@ -95,6 +122,14 @@ func DecodePolicy(raw []byte) (Policy, error) {
 		b, _ := d.Fixed(32)
 		copy(k[:], b)
 		p.Witnesses = append(p.Witnesses, k)
+	}
+	if v == 1 {
+		raw, _ := d.Fixed(ServiceEnrollmentBytes)
+		enrolled, err := DecodeServiceEnrollment(raw)
+		if err != nil {
+			return Policy{}, err
+		}
+		p.Service = &enrolled
 	}
 	b, e := p.CanonicalBytes()
 	if e != nil || d.Finish() != nil || !bytes.Equal(raw, b) {
@@ -129,12 +164,13 @@ func (b Binding) ID() (types.Hash, error) {
 }
 
 type Candidate struct {
-	Policy  Policy
-	Binding Binding
-	Session [32]byte
+	Policy           Policy
+	Binding          Binding
+	Session          [32]byte
+	ServiceSignature [64]byte
 }
 
-func (c Candidate) CanonicalBytes() ([]byte, error) {
+func (c Candidate) body() ([]byte, error) {
 	p, e := c.Policy.CanonicalBytes()
 	if e != nil {
 		return nil, e
@@ -150,11 +186,35 @@ func (c Candidate) CanonicalBytes() ([]byte, error) {
 	}
 	out := codec.NewEncoder(MaximumCandidateBytes)
 	out.Fixed([]byte("OMPRFC00"))
-	out.U16(0)
+	version := uint16(0)
+	if c.Policy.Service != nil {
+		s := c.Policy.Service
+		if c.Binding.AssignmentID != s.AssignmentID || c.Binding.StoragePairID != s.StoragePairID || c.Session == s.Service || c.Session == s.Issuer || c.Session == s.Guard {
+			return nil, ErrFence
+		}
+		version = 1
+	} else if c.ServiceSignature != ([64]byte{}) {
+		return nil, ErrFence
+	}
+	out.U16(version)
 	out.BytesField(p)
 	out.Fixed(b)
 	out.Fixed(c.Session[:])
 	return out.Bytes(), nil
+}
+func (c Candidate) CanonicalBytes() ([]byte, error) {
+	b, err := c.body()
+	if err != nil {
+		return nil, err
+	}
+	if c.Policy.Service != nil {
+		h := types.DomainHash(domain+"service-session/sign/v0", b)
+		if !ed25519.Verify(c.Policy.Service.Service[:], h[:], c.ServiceSignature[:]) {
+			return nil, ErrFence
+		}
+		b = append(b, c.ServiceSignature[:]...)
+	}
+	return b, nil
 }
 func DecodeCandidate(raw []byte) (Candidate, error) {
 	var c Candidate
@@ -164,7 +224,7 @@ func DecodeCandidate(raw []byte) (Candidate, error) {
 	d := codec.NewDecoder(raw)
 	m, _ := d.Fixed(8)
 	v, _ := d.U16()
-	if string(m) != "OMPRFC00" || v != 0 {
+	if string(m) != "OMPRFC00" || v > 1 {
 		return c, ErrFence
 	}
 	p, e := d.BytesField(MaximumPolicyBytes)
@@ -182,6 +242,16 @@ func DecodeCandidate(raw []byte) (Candidate, error) {
 		}
 		copy(out, b)
 	}
+	if (v == 1) != (c.Policy.Service != nil) {
+		return Candidate{}, ErrFence
+	}
+	if v == 1 {
+		sig, err := d.Fixed(64)
+		if err != nil {
+			return Candidate{}, ErrFence
+		}
+		copy(c.ServiceSignature[:], sig)
+	}
 	b, e := c.CanonicalBytes()
 	if e != nil || d.Finish() != nil || !bytes.Equal(raw, b) {
 		return Candidate{}, ErrFence
@@ -198,7 +268,11 @@ func (c Candidate) Draft() (custodyfence.Scope, custodyfence.Command, error) {
 		return s, custodyfence.Command{}, e
 	}
 	id, _ := s.ID()
-	return s, custodyfence.Command{Version: 1, ScopeID: id, ExpectedHead: id, Kind: custodyfence.Claim, EvidenceID: types.DomainHash(domain+"session/id/v0", raw)}, nil
+	version := "v0"
+	if c.Policy.Service != nil {
+		version = "v1"
+	}
+	return s, custodyfence.Command{Version: 1, ScopeID: id, ExpectedHead: id, Kind: custodyfence.Claim, EvidenceID: types.DomainHash(domain+"session/id/"+version, raw)}, nil
 }
 
 type Claim struct {

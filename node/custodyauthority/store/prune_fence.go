@@ -34,7 +34,7 @@ func pruneFenceOperation(s PruneExecution) (workchain.CanonicalPruneOperation, e
 	if err != nil {
 		return workchain.CanonicalPruneOperation{}, err
 	}
-	return workchain.CanonicalPruneOperation{AssignmentID: s.Request.AssignmentID, TicketID: ticket, StorageID: s.Request.StorageID, ScheduleID: s.Request.ScheduleID, Boundary: s.Request.Boundary}, nil
+	return workchain.CanonicalPruneOperation{ServiceEnrollmentID: s.Request.ServiceEnrollmentID, AssignmentID: s.Request.AssignmentID, TicketID: ticket, StorageID: s.Request.StorageID, ScheduleID: s.Request.ScheduleID, Boundary: s.Request.Boundary}, nil
 }
 func verifyPruneFenceCandidate(s PruneExecution, c prunefence.Candidate) error {
 	if _, err := c.CanonicalBytes(); err != nil {
@@ -47,6 +47,16 @@ func verifyPruneFenceCandidate(s PruneExecution, c prunefence.Candidate) error {
 	id, err := op.FenceOperationID()
 	if err != nil {
 		return err
+	}
+	var enrollment types.Hash
+	if c.Policy.Service != nil {
+		enrollment, _ = c.Policy.Service.ID()
+		if c.Policy.Service.StorageID != s.Request.StorageID || c.Policy.Service.ScheduleID != s.Request.ScheduleID {
+			return prunefence.ErrFence
+		}
+	}
+	if enrollment != s.Request.ServiceEnrollmentID {
+		return prunefence.ErrFence
 	}
 	policy, err := c.Policy.ID()
 	if err != nil || s.Request.FencePolicyID.IsZero() || policy != s.Request.FencePolicyID || c.Policy.Owner != s.Request.ConsumerPublicKey || c.Policy.Controller != s.Admission.AuthorityPublicKey || c.Binding.RequestID != s.RequestID || c.Binding.AssignmentID != s.Request.AssignmentID || c.Binding.OperationID != id {
@@ -203,7 +213,7 @@ func (e *PruneExecutor) checkFenceCandidate() error {
 	return nil
 }
 
-func (e *PruneExecutor) executeFencedInventory(ctx context.Context, chain *workchain.Store, v ScheduledPruneInventory, inventoryID types.Hash, authorize func() (uint64, error), collect PruneClaimCollector) (workchain.CanonicalPruneCommit, error) {
+func (e *PruneExecutor) executeFencedInventory(ctx context.Context, chain *workchain.Store, v ScheduledPruneInventory, inventoryID types.Hash, authorize func() (uint64, error), collect PruneClaimCollector, service *prunefence.ServiceIdentity) (workchain.CanonicalPruneCommit, error) {
 	var zero workchain.CanonicalPruneCommit
 	if collect == nil || v.FencePolicy == nil || e.fenceCandidate != nil {
 		return zero, prunefence.ErrFence
@@ -216,7 +226,15 @@ func (e *PruneExecutor) executeFencedInventory(ctx context.Context, chain *workc
 	if err != nil {
 		return zero, err
 	}
-	session, err := prunefence.NewSession(*v.FencePolicy, prunefence.Binding{RequestID: e.id, AssignmentID: e.request.AssignmentID, OperationID: operationID, InventoryID: inventoryID, ExecutorBindingID: e.pins.binding, StoragePairID: v.StoragePairID})
+	binding := prunefence.Binding{RequestID: e.id, AssignmentID: e.request.AssignmentID, OperationID: operationID, InventoryID: inventoryID, ExecutorBindingID: e.pins.binding, StoragePairID: v.StoragePairID}
+	var session *prunefence.Session
+	if v.FencePolicy.Service != nil {
+		session, err = service.NewSession(ctx, *v.FencePolicy, binding)
+	} else if service != nil {
+		return zero, prunefence.ErrFence
+	} else {
+		session, err = prunefence.NewSession(*v.FencePolicy, binding)
+	}
 	if err != nil {
 		return zero, err
 	}

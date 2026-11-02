@@ -12,7 +12,9 @@ import (
 )
 
 type ScheduledPruneRuntimeConfig struct {
-	CollectPruneClaim                                        PruneClaimCollector `json:"-"`
+	// ServiceIdentity is trusted local owner configuration, never decoded from a peer.
+	ServiceIdentity                                          *prunefence.ServiceIdentity `json:"-"`
+	CollectPruneClaim                                        PruneClaimCollector         `json:"-"`
 	InventoryPath                                            string
 	InventoryID, StorageMigrationID                          types.Hash
 	ExecutorPath, ExecutorPinsPath, ChainPath, ChainPinsPath string
