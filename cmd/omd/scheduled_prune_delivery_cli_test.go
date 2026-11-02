@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -102,10 +103,19 @@ func scheduledDeliveryLocalHarness(t *testing.T) scheduledDeliveryCLIHarness {
 }
 
 func scheduledDeliveryCLILifecycle(t *testing.T, h scheduledDeliveryCLIHarness, cancelled bool, fenced ...bool) {
+	admitted, completed := 0, 0
 	scheduledPruneCLILifecycleWithDelivery(t, cancelled, func(t *testing.T, ownerArgs []string, review store.ScheduledPruneCommandResult) {
 		values := map[string]string{}
 		for n := 0; n < len(ownerArgs); n += 2 {
 			values[ownerArgs[n]] = ownerArgs[n+1]
+		}
+		if values["--inventory"] == "" {
+			admitted++
+		} else {
+			completed++
+			if len(fenced) > 2 && fenced[2] && review.Executor.FenceSettlement == nil {
+				t.Fatal("settlement completion lost its full retained evidence")
+			}
 		}
 		pid, err := pruneExternalID("plan-id", values["--plan-id"])
 		if err != nil {
@@ -217,7 +227,11 @@ func scheduledDeliveryCLILifecycle(t *testing.T, h scheduledDeliveryCLIHarness, 
 		}
 		address, stop := h.start(serve)
 		deliver := []string{scheduledDeliveryCommand, "--assignment", assignment, "--assignment-id", aid.String(), "--intent-id", intentID, "--outbox", outbox, "--key", clientKey, "--peer", address}
-		unreachable := append(pruneCLISet(deliver, "peer", "/ip4/127.0.0.1/udp/1/quic-v1"), "--timeout", "100ms")
+		route := strings.SplitN(address, "/p2p/", 2)
+		if len(route) != 2 {
+			t.Fatal("readiness omitted the transport identity")
+		}
+		unreachable := append(pruneCLISet(deliver, "peer", "/ip4/127.0.0.1/udp/1/quic-v1/p2p/"+route[1]), "--timeout", "100ms")
 		if err := h.run(unreachable, io.Discard); err == nil {
 			t.Fatal("unavailable route asserted delivery")
 		}
@@ -254,6 +268,9 @@ func scheduledDeliveryCLILifecycle(t *testing.T, h scheduledDeliveryCLIHarness, 
 		_, stop = h.start(serve)
 		stop(false)
 	}, fenced...)
+	if admitted != 2 || completed != 2 {
+		t.Fatalf("incomplete delivery lifecycle: admissions=%d completions=%d", admitted, completed)
+	}
 }
 
 func TestPruneScheduledDeliveryCLICancellationLifecycle(t *testing.T) {
@@ -261,5 +278,5 @@ func TestPruneScheduledDeliveryCLICancellationLifecycle(t *testing.T) {
 }
 
 func TestPruneScheduledDeliveryCLIFullSettlementLifecycle(t *testing.T) {
-	scheduledDeliveryCLILifecycle(t, scheduledDeliveryLocalHarness(t), false, true, true, true)
+	scheduledDeliveryCLILifecycle(t, scheduledDeliveryLocalHarness(t), false, true, false, true)
 }
