@@ -72,8 +72,8 @@ class Host:
     def marker(self, name):
         self.write(self.root + '/control/' + name, b'true')
 
-    def wait_file(self, path, child):
-        until = time.monotonic() + 40
+    def wait_file(self, path, child, timeout=40):
+        until = time.monotonic() + timeout
         while time.monotonic() < until:
             if child.p.poll() is not None:
                 raise RuntimeError('child ended early: ' + self.read(child.log).decode(errors='replace'))
@@ -132,7 +132,11 @@ def run(receiver, sender, ip, scenario, report, direction):
         client = child(sender, 'network-client', 'client', extra); client.finish()
         receiver.marker('stop-live-relay'); relay.finish()
         receiver.marker('stop-live')
-        receiver.wait_file(receiver.root + '/public/offline-ready', owner)
+        # This phase includes the complete offline signing/collection workflow,
+        # stale-review checks and both original replica completions under -race.
+        # Keep it separate from startup and all actual protocol deadlines.
+        receiver.wait_file(receiver.root + '/public/offline-ready', owner,
+                           timeout=120 if scenario == 'result-write' else 40)
         final = receiver.read(receiver.root + '/public/manifest.json')
         state = json.loads(final)
         assert state['Position']['Sequence'] == (1 if mode == 'held' else 2)

@@ -268,3 +268,9 @@ in both directions. To reproduce only these on two hosts, add `--failures` to
 `scripts/remote_acceptance/prune_service.py --config HOSTS.json --out REPORT.json`.
 The failure controls exist only in the integration test executable. The runner
 preserves bounded test-helper logs on failure before removing disposable roots.
+
+The process runner gives startup and ordinary replay 40 seconds. Its explicit
+offline settlement phase has a separate 120-second bound because it includes
+role signing, quorum collection, refusal checks and both replica completions
+under the race detector. Child failure is still reported immediately. This does
+not extend any production transport, guard or witness deadline.
