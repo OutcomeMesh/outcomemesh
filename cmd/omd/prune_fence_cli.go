@@ -81,6 +81,8 @@ func runPruneFenceArtifactCLI(ctx context.Context, args []string, out io.Writer)
 	mode := f.String("mode", "review", "review or publish")
 	input := f.String("input", "", "policy JSON or existing canonical plan")
 	planID := f.String("plan-id", "", "scope: independently reviewed plan ID")
+	enrollmentPath := f.String("service-enrollment", "", "policy: signed service enrollment selected before admission")
+	enrollmentID := f.String("service-enrollment-id", "", "policy: independently retained service enrollment ID")
 	expected := f.String("expected-id", "", "publish: reviewed artifact ID")
 	destination := f.String("out", "", "publish: immutable public artifact")
 	if err := parsePruneFlags(f, args[1:]); err != nil {
@@ -90,6 +92,9 @@ func runPruneFenceArtifactCLI(ctx context.Context, args []string, out io.Writer)
 		return prunefence.ErrFence
 	}
 	if *mode == "review" && (*expected != "" || *destination != "") {
+		return prunefence.ErrFence
+	}
+	if (*enrollmentPath == "") != (*enrollmentID == "") || (*enrollmentPath != "" && args[0] != pruneFencePolicyCommand) {
 		return prunefence.ErrFence
 	}
 	var raw []byte
@@ -106,6 +111,28 @@ func runPruneFenceArtifactCLI(ctx context.Context, args []string, out io.Writer)
 		p, err := parsePruneFencePolicy(b)
 		if err != nil {
 			return err
+		}
+		if *enrollmentPath != "" {
+			pin, err := pruneExternalID("service-enrollment-id", *enrollmentID)
+			if err != nil {
+				return err
+			}
+			b, err := readRegularArtifact(*enrollmentPath, prunefence.ServiceEnrollmentBytes)
+			if err != nil {
+				return err
+			}
+			enrolled, err := prunefence.DecodeServiceEnrollment(b)
+			if err != nil {
+				return err
+			}
+			id, err := enrolled.ID()
+			if err != nil || id != pin {
+				return prunefence.ErrFence
+			}
+			p.Service = &enrolled
+			if _, err := p.CanonicalBytes(); err != nil {
+				return err
+			}
 		}
 		raw, _ = p.CanonicalBytes()
 		id, _ = p.ID()
@@ -139,7 +166,11 @@ func runPruneFenceArtifactCLI(ctx context.Context, args []string, out io.Writer)
 		if err != nil || want != id {
 			return prunefence.ErrFence
 		}
-		if err := scheduledOperatorOutput(*destination, []string{*input}, nil); err != nil {
+		inputs := []string{*input}
+		if *enrollmentPath != "" {
+			inputs = append(inputs, *enrollmentPath)
+		}
+		if err := scheduledOperatorOutput(*destination, inputs, nil); err != nil {
 			return err
 		}
 		if err := ctx.Err(); err != nil {

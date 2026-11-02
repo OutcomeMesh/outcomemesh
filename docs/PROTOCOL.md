@@ -1216,3 +1216,33 @@ inventory and storage review fields plus proposal/certificate IDs and certificat
 path. Existing encodings and reviews without this disposition remain unchanged.
 Older readers cannot reopen executors containing this terminal record. No
 consensus activation, witness transport upgrade or hardware isolation is implied.
+
+### Explicit isolated Prune exchange
+
+`node/pruneservice/servicewire` is a separate operator protocol; existing block,
+request, fence and effect encodings are unchanged. Its version-0 artifacts use
+magic values `OMPSDS00`, `OMPSRQ00`, `OMPSCH00` and `OMPSRS00` and domain prefix
+`OMESH/prune-service/v0/`. The descriptor embeds the entire service-enrolled
+policy and six original binding IDs. Issuer signatures approve its original
+root, scope, reviewed state, configuration hash, transport key and distinct user
+IDs. The request fixes the descriptor, initial cursor, nonzero nonce and consumer.
+
+A challenge embeds the complete fresh service candidate and binds it to request
+and intent position. The response contains the actual effect and exactly one
+full signed result or observed-effect settlement. It verifies the entire
+policy/binding, enrollment, operation, schedule and storage identity; a bare
+effect cannot be a response. Separate signatures bind challenge and response to
+the service key. Positions are zero/empty, one/request-ID and two/response-ID.
+No position authorizes a second execution.
+
+Frames contain one kind byte, a big-endian four-byte length and bounded canonical
+bytes. Request and approval input sizes are fixed. A fresh exchange requires
+request, challenge, signed consumer approval plus EOF, then response plus EOF.
+A confirmed replay returns response directly and requires client half-close.
+The overall two-minute ceiling does not alter existing witness limits.
+
+These public bytes carry no paths or private keys. Linux authenticates both peer
+user IDs in addition to signatures. Full canonical vectors and substitution
+cases live in `servicewire/wire_test.go`; `FuzzWireCanonical` and `FuzzWireFrames`
+cover decoding. See [isolated ownership](PRUNE_ISOLATED_SERVICE.md) for local
+publication, cold recovery, shutdown and deployment requirements.

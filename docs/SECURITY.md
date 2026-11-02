@@ -1546,3 +1546,24 @@ their original times and return their exact bytes after closure. They deliberate
 do not require today's source to equal a historical head and therefore must not
 be interpreted as current authority or current custody status. Reads cannot sign
 missing receipts, finalize pending Serve, release unknown work or reset spending.
+
+## Isolated Prune owner
+
+The explicit Prune owner keeps fresh service and transport keys under a separate
+operating-system identity. The consumer signs a complete verified candidate
+locally. Kernel peer credentials, issuer-approved descriptor bindings and
+consumer signatures are all required by the Linux Unix transport. No remote
+input selects paths, callbacks, witness endpoints or private configuration.
+
+Original roots are checked for aliases, foreign ownership and participant write
+access before opening. Keys and immutable owner artifacts retain their native
+placement identity. All original decisions remain owned through candidate
+publication, approval, quorum collection and actual guarded deletion. Durable
+intent prevents automatic re-execution after disconnection or restart. Cold
+recovery requires a confirmed full result or full observed-effect settlement.
+
+Administrators remain trusted. Native placement checks are not uncloneable
+hardware identity. Changing ownership does not revoke old file descriptors and
+is not a supported isolation handoff. Do not restore service and independent
+guard from the same rollback image. Full deployment and remote transport
+acceptance remain open; see [operating requirements](PRUNE_ISOLATED_SERVICE.md).

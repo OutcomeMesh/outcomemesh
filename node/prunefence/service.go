@@ -49,6 +49,15 @@ func (e ServiceEnrollment) Sign(key ed25519.PrivateKey) (ServiceEnrollment, erro
 	copy(e.Signature[:], ed25519.Sign(key, h[:]))
 	return e, nil
 }
+
+// ReviewID commits the complete public enrollment before opening the issuer key.
+func (e ServiceEnrollment) ReviewID() (types.Hash, error) {
+	b, err := e.body()
+	if err != nil {
+		return types.Hash{}, err
+	}
+	return types.DomainHash(domain+"service-enrollment/review/v0", b), nil
+}
 func (e ServiceEnrollment) CanonicalBytes() ([]byte, error) {
 	b, err := e.body()
 	if err != nil {

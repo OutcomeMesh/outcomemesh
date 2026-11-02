@@ -19,6 +19,12 @@ import (
 // receives no session key, cannot substitute the candidate and grants no effect.
 type PruneClaimCollector func(context.Context, custodyfence.Scope, custodyfence.Command) (custodyfence.Certificate, error)
 
+// PruneCandidateCollector receives the complete detached service-signed
+// candidate after it is durably retained. A trusted owner can obtain the original
+// consumer's signed command without importing that consumer's private key. It
+// must bound its I/O and cannot retain or recreate the live session capability.
+type PruneCandidateCollector func(context.Context, prunefence.Candidate) (custodyfence.Certificate, error)
+
 func pruneRecordLimit(request PruneRequest) int {
 	if request.FencePolicyID.IsZero() {
 		return workchain.MaximumCanonicalPruneEffectBytes
@@ -213,9 +219,12 @@ func (e *PruneExecutor) checkFenceCandidate() error {
 	return nil
 }
 
-func (e *PruneExecutor) executeFencedInventory(ctx context.Context, chain *workchain.Store, v ScheduledPruneInventory, inventoryID types.Hash, authorize func() (uint64, error), collect PruneClaimCollector, service *prunefence.ServiceIdentity) (workchain.CanonicalPruneCommit, error) {
+func (e *PruneExecutor) executeFencedInventory(ctx context.Context, chain *workchain.Store, v ScheduledPruneInventory, inventoryID types.Hash, authorize func() (uint64, error), collect PruneClaimCollector, service *prunefence.ServiceIdentity, collectCandidate PruneCandidateCollector) (workchain.CanonicalPruneCommit, error) {
 	var zero workchain.CanonicalPruneCommit
-	if collect == nil || v.FencePolicy == nil || e.fenceCandidate != nil {
+	if (collect == nil && collectCandidate == nil) || (collect != nil && collectCandidate != nil) || v.FencePolicy == nil || e.fenceCandidate != nil {
+		return zero, prunefence.ErrFence
+	}
+	if collectCandidate != nil && (service == nil || v.Request.ServiceEnrollmentID.IsZero()) {
 		return zero, prunefence.ErrFence
 	}
 	op, err := pruneFenceOperation(e.execution())
@@ -260,7 +269,16 @@ func (e *PruneExecutor) executeFencedInventory(ctx context.Context, chain *workc
 	if err != nil {
 		return zero, err
 	}
-	certificate, err := collect(ctx, scope, draft)
+	var certificate custodyfence.Certificate
+	if collectCandidate != nil {
+		owned, decodeErr := prunefence.DecodeCandidate(raw)
+		if decodeErr != nil {
+			return zero, decodeErr
+		}
+		certificate, err = collectCandidate(ctx, owned)
+	} else {
+		certificate, err = collect(ctx, scope, draft)
+	}
 	if err != nil {
 		return zero, err
 	}

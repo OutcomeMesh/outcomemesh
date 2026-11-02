@@ -318,3 +318,13 @@ fee delay 3, four trees and a 67,108,864-byte forest budget. The 72 bytes are:
 ```text
 4f4d574f524b000200000001010000000000000000000000000000000000000000000000000000000000000000000000000000020003000400000000040000000000000000000005
 ```
+
+## Isolated Prune artifacts
+
+`node/pruneservice/servicewire/wire_test.go` fixes descriptor, request, challenge,
+signed result response and observed-settlement response IDs. Independently
+constructed signature preimages exercise exact policy, binding, original effect
+and outer request substitution. The public effect seed is retained in
+`testdata/scheduled_effect.b64`. `FuzzWireCanonical` and `FuzzWireFrames` reject
+noncanonical, malformed and over-limit inputs. `FuzzPruneServiceConfig` verifies
+lossless canonical configuration round trips including base-state resources.

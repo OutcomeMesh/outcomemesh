@@ -23,6 +23,9 @@ test-race:
 	GO="$(GO)" python3 scripts/ci.py all
 
 test-fuzz-smoke:
+	$(GO) test ./node/pruneservice/servicewire -run '^$$' -fuzz '^FuzzWireCanonical$$' -fuzztime=$(FUZZTIME)
+	$(GO) test ./node/pruneservice/servicewire -run '^$$' -fuzz '^FuzzWireFrames$$' -fuzztime=$(FUZZTIME)
+	$(GO) test ./node/pruneservice -run '^$$' -fuzz '^FuzzPruneServiceConfig$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/prunefence -run '^$$' -fuzz '^FuzzPruneServiceArtifacts$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyauthority/store -run '^$$' -fuzz '^FuzzPruneServicePlan$$' -fuzztime=$(FUZZTIME)
 	$(GO) test ./node/custodyauthority/store -run '^$$' -fuzz '^FuzzPruneServiceEffect$$' -fuzztime=$(FUZZTIME)
@@ -241,3 +244,14 @@ test-all: fmt vet test-race
 
 release:
 	python3 scripts/release.py $(if $(VERSION),--version "$(VERSION)") --out "$(OUT)"
+
+# On Linux, this process probe needs root only to start separate disposable UIDs.
+# The service creates all original stores under its own UID before enrollment.
+.PHONY: test-prune-service-isolation
+test-prune-service-isolation:
+	test "$$($(GO) env GOOS)" = linux
+	@set -eu; \
+	probe_dir=$$(mktemp -d); \
+	trap 'rm -rf "$$probe_dir"' EXIT; \
+	$(GO) test -race -tags=integration -c ./cmd/omd -o "$$probe_dir/prune-service.test"; \
+	sudo "$$probe_dir/prune-service.test" -test.run='^TestProcessPruneServiceUIDIsolation$$' -test.count=1 -test.timeout=4m

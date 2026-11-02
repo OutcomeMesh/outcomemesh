@@ -68,6 +68,15 @@ func Collect(ctx context.Context, host *libp2ptransport.Host, key ed25519.Privat
 	return collect(ctx, host, key, local, endpoints, timeout, scope, draft, custodyfence.Claim, scope.Owner)
 }
 
+// CollectSignedClaim sends an already consumer-signed initial claim to the
+// independently configured witnesses. The isolated executor needs only its own
+// transport identity, not the consumer's private key. Its caller must first
+// compare this command with the exact service candidate's Draft; a valid scope
+// signature alone does not establish which candidate the caller intended.
+func CollectSignedClaim(ctx context.Context, host *libp2ptransport.Host, local [32]byte, endpoints []Endpoint, timeout time.Duration, scope custodyfence.Scope, command custodyfence.Command) (custodyfence.Certificate, error) {
+	return collectSigned(ctx, host, local, endpoints, timeout, scope, command, custodyfence.Claim)
+}
+
 // CollectClosure uses the original controller and initial scope pin. Partial
 // votes remain durable and cannot be reset or treated as a closure certificate.
 func CollectClosure(ctx context.Context, host *libp2ptransport.Host, key ed25519.PrivateKey, local [32]byte, endpoints []Endpoint, timeout time.Duration, intent prunefence.ClosureIntent) (prunefence.Closure, error) {
@@ -100,6 +109,37 @@ func collect(ctx context.Context, host *libp2ptransport.Host, key ed25519.Privat
 	if ctx == nil || host == nil || len(key) != 64 || !bytes.Equal(key, ed25519.NewKeyFromSeed(key[:32])) || !bytes.Equal(key[32:], signer[:]) {
 		return empty, prunefence.ErrFence
 	}
+	sid, err := scope.ID()
+	if err != nil {
+		return empty, err
+	}
+	if draft.Version != 1 || draft.Kind != kind || draft.ScopeID != sid || draft.ExpectedSequence != 0 || draft.ExpectedHead != sid || draft.Signature != ([64]byte{}) {
+		return empty, prunefence.ErrFence
+	}
+	command, err := draft.Sign(key)
+	if err != nil {
+		return empty, err
+	}
+	return collectSigned(ctx, host, local, endpoints, timeout, scope, command, kind)
+}
+
+func collectSigned(ctx context.Context, host *libp2ptransport.Host, local [32]byte, endpoints []Endpoint, timeout time.Duration, scope custodyfence.Scope, command custodyfence.Command, kind custodyfence.Kind) (custodyfence.Certificate, error) {
+	var empty custodyfence.Certificate
+	if ctx == nil || host == nil {
+		return empty, prunefence.ErrFence
+	}
+	if err := ctx.Err(); err != nil {
+		return empty, err
+	}
+	raw, err := scope.CanonicalBytes()
+	if err != nil {
+		return empty, err
+	}
+	scope, err = custodyfence.DecodeScope(raw)
+	if err != nil {
+		return empty, err
+	}
+	endpoints = append([]Endpoint(nil), endpoints...)
 	if err := Validate(scope, local, endpoints, timeout); err != nil {
 		return empty, err
 	}
@@ -108,11 +148,10 @@ func collect(ctx context.Context, host *libp2ptransport.Host, key ed25519.Privat
 		return empty, prunefence.ErrFence
 	}
 	sid, _ := scope.ID()
-	if draft.Version != 1 || draft.Kind != kind || draft.ScopeID != sid || draft.ExpectedSequence != 0 || draft.ExpectedHead != sid || draft.Signature != ([64]byte{}) {
+	if command.Version != 1 || command.Kind != kind || command.ScopeID != sid || command.ExpectedSequence != 0 || command.ExpectedHead != sid {
 		return empty, prunefence.ErrFence
 	}
-	command, err := draft.Sign(key)
-	if err != nil {
+	if err := command.Verify(scope); err != nil {
 		return empty, err
 	}
 	cid, _ := command.ID()

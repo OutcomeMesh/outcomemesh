@@ -1,0 +1,91 @@
+{
+  "version": 1,
+  "date": "2026-11-02",
+  "base_commit": "c057ec56958f0573e346cc16c203784273099858",
+  "status": "passed-separate-uid-local-campaigns",
+  "readiness": {
+    "approximate": 44,
+    "out_of": 100,
+    "weighted_gate_closed": false
+  },
+  "platform": "two Linux amd64 hosts; shared administration; a separate local Unix campaign on each",
+  "go_version": "1.27.3",
+  "integration_binary_sha256": "00a3dcfe23f2dde4d01f1446ab694ec05a0e9c2f019a7cb13228588c0edea536",
+  "changed_source_sha256": {
+    "cmd/omd/main.go": "4fd6b2dfe55438210d6f3cf8ac5921077c5d7468c0d4cb177179e16faa0cdeeb",
+    "cmd/omd/prune_fence_cli.go": "da312bd481b8764c618413a85d964bda7b1a13523789edb6657bdbe17c11c0a3",
+    "cmd/omd/prune_service_cli.go": "c9b43a369893002e5667fba910ce7bb646a14bfe28c98eb0c89d4086718c3fcd",
+    "cmd/omd/prune_service_cli_test.go": "00d1745ca18cf177eeb9b19abd3f25daa03a1aee88e663cac6495e18813d3f17",
+    "cmd/omd/prune_service_export_cli.go": "317bbace8ee61b0fe6299b4b444156aa979b607efc424febfe8f7b531dc3cf7b",
+    "cmd/omd/prune_service_owner_cli_test.go": "344f8c4351033ba973854dc120c345038db91ad7790b0aa3e2883c622ec00557",
+    "cmd/omd/prune_service_process_test.go": "8f4b2fa23e54f5d6717fb734f2972d4f5721e8b140ec3d77edbe180c9d73dc24",
+    "cmd/omd/scheduled_prune_cli.go": "7ea233319272dad1acc3a456eb280da7010996b904a2800c3ebd3e8d41eb044b",
+    "go.mod": "39e42d0bbe19f179ddee3a4cdb0d3a4c05aac895e4ee7429b9f8b1f1ba2fcc40",
+    "go.sum": "28c18a9f26ffc498199c12b5d0ff066c0b2003f95002edb2e8b773ef67d5400d",
+    "node/custodyauthority/store/prune_candidate_collector_test.go": "85c46f1abd85b50d390a3e33d69e0411992b4285fc662e382a463b1737e68bf3",
+    "node/custodyauthority/store/prune_fence.go": "2a3b8ea620bf6ef11e3ba24068332922446742c81d31b4f436780c16aa1c345b",
+    "node/custodyauthority/store/scheduled_prune_effect_service.go": "c0a9b03356a8faef6edc7f20eda898659ad2a7dc969a4d382be08971f6a52eca",
+    "node/custodyauthority/store/scheduled_prune_execute.go": "9c0330f1abe2c17934b65e609b94c668ea0388f768217de449c07038d46f3674",
+    "node/custodyauthority/store/scheduled_prune_runtime.go": "7b818162b308990223bea8298456c9572490987af80690449ba48c73937a6573",
+    "node/prunefence/prunenet/collect.go": "429edf513d17a00c9192584b536dba138574b60899f6cfeed003e1648c3cfc17",
+    "node/prunefence/prunenet/signed_claim_test.go": "3b042a3842356a2090f86fe53b5dc580cd3419833de366647be0b573a4b3e7d6",
+    "node/prunefence/service.go": "815e4bec737baab059a22c76ab8433480dceecc696921929946b3d7ce36a8c9c",
+    "node/pruneservice/config.go": "c6714027ea7e32c1e6c79a1e3b36f62d2c04db9ba8b3fd7621b822b156bb6832",
+    "node/pruneservice/config_test.go": "dbcab52ac3fa7842339cc77fd650e7c43f5f3248d30fe081900d935af18f53dd",
+    "node/pruneservice/files_unix.go": "385a55a47d108c53cee09b83d4c43aed8a00626459b7a06828e3bc6215b9438a",
+    "node/pruneservice/files_unix_test.go": "4223e5bf13ddd5991cb716a47e8b76968ba10227a22c1f9cf7829cb0726d1a78",
+    "node/pruneservice/owner_other.go": "3d26c2da3f305a996478f3ac8e8c76054d7964ac72cc457768c92377c763c2dd",
+    "node/pruneservice/owner_unix.go": "35ddb68d012614068b7f3fbd0c0b39fa7db86d12e0dd135c4c3ba49b8484ccb0",
+    "node/pruneservice/server_unix.go": "4b12c23f8da01b78cd8515430ac88ef424ad0d52247d7a02d1aeef3c506e15eb",
+    "node/pruneservice/server_unix_test.go": "62c8b9ce2de107d41354138245cd92bafd6ea9adcd8c576f7ea6974e84f457ac",
+    "node/pruneservice/serviceclient/client.go": "166703822059e84885131038e141ae418169e21b6de4130bfa7c17280c2c36f6",
+    "node/pruneservice/serviceclient/client_test.go": "05058a81f54df475a5076907452b0ab535f175318255bea84d24967cdcba2703",
+    "node/pruneservice/serviceclient/exchange_test.go": "5e03dd2e8bb866873beab620bdd190b828ceef6fe28688e55151efae75666b49",
+    "node/pruneservice/serviceclient/testdata/public_exchange.json": "35c9d101674f248e5a2297d49213e5c03e6f6c67b3dd725124570ac1b686c724",
+    "node/pruneservice/servicewire/frame.go": "b9a2a8f6469d5ac296ac345f623e9269ee403b861b59dabca952afece4499abd",
+    "node/pruneservice/servicewire/model.go": "4ea4240660b7af2b16ae0abae28d41d87372a7bd03a534b96d88f1b2631cde1b",
+    "node/pruneservice/servicewire/response.go": "4bfe7a9fd4b377f7336e538f80c573d88fa4110819b11c202e69158719858e38",
+    "node/pruneservice/servicewire/testdata/scheduled_effect.b64": "78d6554ba0c230a67791aaab26091e69e4ab946d40aefef2662b8827b083f7a0",
+    "node/pruneservice/servicewire/wire_test.go": "6842b12d70711602022823a0ce32a5ff6645e725dd8ad895ffa452327a5c6812"
+  },
+  "test": "TestProcessPruneServiceUIDIsolation",
+  "service_uid": 60000,
+  "participant_uid": 65534,
+  "original_stores_created_by_service_uid": true,
+  "participant_supplementary_groups": [],
+  "cases": [
+    {
+      "host": "A",
+      "completed": "passed",
+      "held": "passed",
+      "seconds": 10.1
+    },
+    {
+      "host": "B",
+      "completed": "passed",
+      "held": "passed",
+      "seconds": 6.2
+    }
+  ],
+  "checks": [
+    "actual guarded deletion and canonical floor",
+    "unchanged complete original authority snapshots",
+    "participant EACCES for owner keys, configuration, executor, chain and pins",
+    "wrong kernel UID rejected despite a valid signed request",
+    "consumer seed removed before serving",
+    "approval disconnection retains intent without effect",
+    "new owner process reopens exact retained position",
+    "archives, original runtime roots, guard and witnesses offline during replay",
+    "byte-identical historical response without approval",
+    "held retry never creates another session",
+    "shutdown drains handlers"
+  ],
+  "limitations": [
+    "These are local Unix exchanges on each host, not an authenticated cross-host Prune relay.",
+    "Guard and witness fixtures share the service account and use public test role keys; this is not an independent-operator proof.",
+    "The original stores are freshly created by the service UID; transferring existing owner placements is not covered.",
+    "The campaigns use orderly service shutdown and approval disconnection. Full process cuts at outer intent/result publication remain open.",
+    "Separate CLI tests construct a missing outer-response fixture after a confirmed original result; that is not a power-loss experiment or an operator repair procedure.",
+    "Remote binaries run without the race detector. CI runs the same UID campaign with the race detector."
+  ]
+}
