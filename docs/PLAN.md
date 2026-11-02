@@ -109,9 +109,17 @@ Remaining work, in order:
    enrollment, a signed volatile session and a fresh independent guard choice.
    Legacy invocation cannot consume it; interrupted effects retain the original
    obligations and full settlement path. This is a trusted local integration.
-   Next isolate its key and storage ownership, retain signed requests and service
-   cursors behind a bounded authenticated relay, and verify deployment failures.
-   Independently protected remote execution remains open.
+   An [isolated Prune owner](PRUNE_ISOLATED_SERVICE.md) now retains fresh service
+   and transport keys, an issuer-approved immutable descriptor, signed intent and
+   full response. A bounded Linux Unix exchange authenticates both kernel UID and
+   participant signature; the consumer signs the exact candidate locally. The
+   owner collects witnesses itself while original decisions remain locked.
+   Reopening an unknown attempt cannot create another session. Separate-user
+   Linux campaigns on both existing hosts cover actual deletion, private-file
+   denial, held disconnection and cold replay. Next extend process cuts through
+   outer intent/result publication and complete original settlement, then add
+   the authenticated remote relay. Independently operated execution, transfer
+   of existing owners and enrolled key continuity stay open.
    Then implement remote v1/profile-5 witness and execution transitions, including
    this disposition and retained pins across independently operated failures.
    Unprepared/raw

@@ -198,10 +198,10 @@ func (s *ScheduledPruneEffectService) run(ctx context.Context, mode string, expe
 	c := s.config
 	var commit workchain.CanonicalPruneCommit
 	if mode == "execute" {
-		if s.inventory.Request.FencePolicyID.IsZero() && c.CollectPruneClaim != nil {
+		if s.inventory.Request.FencePolicyID.IsZero() && (c.CollectPruneClaim != nil || c.CollectPruneCandidate != nil) {
 			return result, prunefence.ErrFence
 		}
-		commit, err = s.executor.executeScheduledArchive(ctx, s.chain, c.InventoryPath, c.InventoryID, s.operations, c.Sources, c.Base, c.Parameters, c.Limits, c.CollectPruneClaim, s.decisions, c.ServiceIdentity)
+		commit, err = s.executor.executeScheduledArchive(ctx, s.chain, c.InventoryPath, c.InventoryID, s.operations, c.Sources, c.Base, c.Parameters, c.Limits, c.CollectPruneClaim, s.decisions, c.ServiceIdentity, c.CollectPruneCandidate)
 	} else {
 		commit, err = s.executor.Recover(ctx, s.chain)
 	}
@@ -295,6 +295,9 @@ func prepareScheduledPruneRuntimeConfig(c ScheduledPruneRuntimeConfig) (Schedule
 	v, err := LoadScheduledPruneInventory(c.InventoryPath, c.InventoryID)
 	if err != nil {
 		return bad(err)
+	}
+	if (c.CollectPruneClaim != nil && c.CollectPruneCandidate != nil) || (c.CollectPruneCandidate != nil && (c.ServiceIdentity == nil || v.Request.ServiceEnrollmentID.IsZero())) {
+		return bad(prunefence.ErrFence)
 	}
 	if len(c.Authorities) != len(v.Replicas) || len(c.Sources) != len(v.Replicas) || c.Limits.Validate() != nil || c.Parameters.RadixActivationHeight != v.Request.Boundary.RadixActivationHeight {
 		return bad(nil)

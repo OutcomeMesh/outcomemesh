@@ -2,7 +2,8 @@
 
 This experimental local path binds the execution service before authority
 admission. It extends the [owned scheduled runtime](PRUNE_SCHEDULED_RUNTIME.md).
-It has no remote endpoint, default daemon registration or public activation.
+The separate [isolated owner](PRUNE_ISOLATED_SERVICE.md) exposes an explicit Linux
+Unix exchange. There is no default daemon registration or public activation.
 
 ## Enrollment and compatibility
 
@@ -41,8 +42,10 @@ The trusted storage owner supplies a `prunefence.ServiceIdentity` through local
 `ScheduledPruneRuntimeConfig.ServiceIdentity`. This field is excluded from JSON.
 It contains the enrolled service key and independently configured bounded guard
 client. The key and raw owner handles must never become request payloads.
-The existing CLI has no option to supply this capability; it refuses execution
-of a service-bound request and can still inspect or recover its retained result.
+The one-shot scheduled CLI has no option to supply this capability; it refuses
+execution of a service-bound request and can still inspect or recover its
+retained result. `work-prune-service` configures the isolated owner, which creates
+the live capability internally without receiving a consumer seed.
 
 The service signs a fresh volatile session over the full fence policy, original
 request, assignment, operation, inventory, executor binding and storage pair.
@@ -93,7 +96,7 @@ copied service attempts, cached seals, process termination and full settlement.
 They do not prove isolation against an administrator who can read both keys,
 change the program, access raw storage or roll back the guard machine.
 
-The next deployment stage must put the service key and original storage under
-an isolated owner, retain exact signed requests and service positions, configure
-guard and witness clients internally, and expose a bounded authenticated relay.
-Independent operators and protected monotone storage remain launch gates.
+The isolated owner retains signed requests and service positions and configures
+guard and witness clients internally. Its local authenticated Unix exchange is
+specified separately. A remote relay, ownership transfer for existing stores,
+independent operators and protected monotone storage remain launch gates.

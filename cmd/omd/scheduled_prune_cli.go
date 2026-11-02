@@ -59,6 +59,11 @@ func runScheduledPrune(ctx context.Context, args []string, out io.Writer) (retur
 	fenceOwner := f.String("fence-owner-key", "", "execute fenced request: private owner seed")
 	fenceTransport := f.String("fence-transport-key", "", "execute fenced request: separate private transport seed")
 	fenceTimeout := f.Duration("fence-timeout", 5*time.Second, "bounded time per independent witness")
+	runtimeConfigOut := f.String("runtime-config-out", "", "review only: immutable private isolated-service configuration")
+	serviceIdentity := f.String("service-identity", "", "export: fresh public isolated-service identity")
+	serviceGuard := f.String("service-guard-url", "", "export: independently operated enrollment guard")
+	serviceNetwork := f.String("service-witness-network", "", "export: original witnesses allowing the fresh service transport")
+	serviceTimeout := f.Duration("service-witness-timeout", 5*time.Second, "export: bounded time per independent witness")
 	custody := addArchiveCustodyPolicyFlags(f)
 	journal := addArchiveCustodyJournalLimitFlags(f)
 	defaults := workchain.DefaultPolicy()
@@ -78,6 +83,19 @@ func runScheduledPrune(ctx context.Context, args []string, out io.Writer) (retur
 		return store.ErrScheduledPrune
 	}
 	if (*mode == "review") != (*expected == "") || *checkpointKeep > uint(^uint32(0)) || *maxChunks > uint(^uint32(0)) || *canonicalRetention == 0 {
+		return store.ErrScheduledPrune
+	}
+	serviceFlags := false
+	exportFlag := false
+	f.Visit(func(flag *flag.Flag) {
+		if flag.Name == "runtime-config-out" {
+			exportFlag = true
+		}
+		if flag.Name == "service-identity" || flag.Name == "service-guard-url" || flag.Name == "service-witness-network" || flag.Name == "service-witness-timeout" {
+			serviceFlags = true
+		}
+	})
+	if (exportFlag && *runtimeConfigOut == "") || (*runtimeConfigOut != "" && (*mode != "review" || *serviceIdentity == "" || *serviceGuard == "" || *serviceNetwork == "")) || (serviceFlags && *runtimeConfigOut == "") {
 		return store.ErrScheduledPrune
 	}
 	if err := custody.validate(); err != nil {
@@ -210,6 +228,9 @@ func runScheduledPrune(ctx context.Context, args []string, out io.Writer) (retur
 		*maxHistory = profile.MaxHistoryBytes
 	}
 	config.StoragePolicy = workchain.Policy{MaxHistoryBytes: *maxHistory, ForkRetention: *forkRetention, CheckpointEvery: *checkpointEvery, CheckpointKeep: uint32(*checkpointKeep), CanonicalRetention: *canonicalRetention}
+	if *runtimeConfigOut != "" {
+		return exportPruneServiceRuntime(ctx, out, config, v, *runtimeConfigOut, *serviceIdentity, *serviceGuard, *serviceNetwork, *serviceTimeout, dataPath, *roots)
+	}
 	result, err := store.RunScheduledPrune(ctx, config, *mode, reviewID)
 	if err != nil {
 		return err

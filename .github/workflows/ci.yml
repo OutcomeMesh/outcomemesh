@@ -60,6 +60,11 @@ jobs:
           go test -tags=integration ./node/custodyauthority/store -run '^TestProcessPruneScheduledDelivery' -count=1 -timeout=3m
           go test -tags=integration ./cmd/omd -run '^TestProcessPruneScheduledDeliveryCLI' -count=1 -timeout=3m
           go test -tags=integration ./cmd/omd -run '^TestProcessPruneWANAcceptance$' -count=1 -timeout=5m
+          go test -race -tags=integration -c ./cmd/omd -o "$RUNNER_TEMP/prune-service.test"
+          sudo "$RUNNER_TEMP/prune-service.test" -test.run='^TestProcessPruneServiceUIDIsolation$' -test.count=1 -test.timeout=4m
+          go test ./node/pruneservice/servicewire -run '^$' -fuzz '^FuzzWireCanonical$' -fuzztime=10s
+          go test ./node/pruneservice/servicewire -run '^$' -fuzz '^FuzzWireFrames$' -fuzztime=10s
+          go test ./node/pruneservice -run '^$' -fuzz '^FuzzPruneServiceConfig$' -fuzztime=10s
           go test ./node/prunefence -run '^$' -fuzz '^FuzzPruneServiceArtifacts$' -fuzztime=10s
           go test ./node/custodyauthority/store -run '^$' -fuzz '^FuzzPruneServicePlan$' -fuzztime=10s
           go test ./node/custodyauthority/store -run '^$' -fuzz '^FuzzPruneServiceEffect$' -fuzztime=10s

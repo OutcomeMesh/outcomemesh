@@ -10,6 +10,31 @@ Full planned production readiness is approximately **44/100**, using the weighte
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
 
+## 2026-11-02: isolated Prune owner and explicit command workflow
+
+A separate owner now creates its service and transport keys before enrollment.
+The issuer approves a descriptor binding the original inventory, owner placement,
+review, witness configuration and allowed participant. The participant signs the
+complete service candidate through a bounded Unix exchange; its private key
+never enters the owner. The owner collects the original witness quorum and
+retains every original storage and journal lock through the guarded effect.
+
+The owner saves an exact signed intent before execution and a complete signed
+response before replying. A retained intent cannot start another session. Cold
+recovery exports only an already confirmed signed result or full observed-effect
+settlement. Exact responses replay without source archives, witnesses or guards.
+Private-placement checks reject aliases, foreign ownership and participant
+write access. Linux serving requires kernel peer credentials as well as signed
+requests. On each of the two existing hosts, separate service and participant
+processes passed actual deletion, denied private-file access, wrong-user refusal,
+held disconnection and offline replay through a newly started owner process.
+These are local Unix campaigns on each host, not a remote relay test. See
+[isolated Prune ownership](PRUNE_ISOLATED_SERVICE.md).
+
+Public artifacts are portable; this Unix serving path is Linux-only. Independent
+operator deployment, ownership transfer of existing placements, remote relay and
+service-key continuity for admitted work remain open. Readiness stays **44/100**.
+
 ## 2026-11-02: service-bound Prune admission and consumption
 
 New scheduled requests can commit an issuer-signed execution enrollment before
