@@ -10,6 +10,30 @@ Full planned production readiness is approximately **44/100**, using the weighte
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
 
+## 2026-11-02: scheduled Prune delivery across two hosts
+
+Four campaigns passed on the two existing Linux amd64 hosts, covering cancellation
+and full observed-effect settlement with each host acting as receiver. Sixteen
+original command stages retained old pending work and spent operation history.
+Controlled process cuts covered unconfirmed executor pins, a lost receiver reply,
+and sender termination before and after receipt publication. Pending writes
+required explicit reviewed CLI continuation. Cold retries and offline receipts
+preserved the original entries and outcomes.
+
+Production CLI commands and separate test-only crash barriers are distinguished
+in the [acceptance workflow](PRUNE_DELIVERY_ACCEPTANCE.md) and its sanitized
+[evidence record](evidence/prune-delivery-wan-20261102.json). CI now runs the same
+campaign in separate local processes for both outcomes. The full-settlement CLI
+test also requires two admissions and two completions; its previous fixture
+selection returned from a closure-only branch before completion. The runbook now
+uses the actual local command name, `work-prune-scheduled-command`.
+
+Original owner stores remained on the receiver. No production fault control,
+protocol format, default endpoint or deletion permission was added. Shared
+administration and public fixture keys do not establish independent copy fencing.
+Remote profile-5 Prune execution and public activation remain open. Readiness is
+**44/100**.
+
 ## 2026-11-02: scheduled Prune delivery through the CLI
 
 Operators can now review and publish a fixed delivery intent, create or inspect

@@ -92,6 +92,13 @@ Remaining work, in order:
    immutable outbox creation, offline inspection, one-shot delivery and supervised
    serving now cover this boundary. Receiver preflight validates original owners
    before listening; shutdown drains accepted calls without automatic recovery.
+   The two-host acceptance runner now covers both original replica tickets,
+   cancellation and full settlement, interrupted confirmations and receipts,
+   explicit local recovery and cold retries. Its production CLI exchanges are
+   distinct from the test-only barriers used for deterministic process cuts; see
+   [delivery acceptance](PRUNE_DELIVERY_ACCEPTANCE.md). Both outcomes passed on
+   the two existing hosts in both directions, with original accounting preserved
+   across sixteen command stages. This does not establish independent operators.
    Independently protected remote execution remains open.
    Next implement remote v1/profile-5 witness and execution transitions, including
    this disposition and retained pins across independently operated failures.

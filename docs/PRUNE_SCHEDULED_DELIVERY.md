@@ -3,6 +3,9 @@
 Status: experimental explicit CLI and library adapter. The default daemon does
 not register this endpoint. Independently protected remote execution remains open.
 
+The [two-host acceptance workflow](PRUNE_DELIVERY_ACCEPTANCE.md) covers original
+command accounting across process cuts, explicit recovery and cold retries.
+
 Scheduled admission and completion use `/outcomemesh/scheduled-prune-command/0`.
 Legacy admission and completion protocols continue to accept only their original
 version-0 entries. There is no negotiation or fallback between these families.
@@ -96,7 +99,7 @@ client identity. It grants no current execution or storage permission.
 The commands below require existing, independently pinned artifacts from the
 [scheduled operator workflow](PRUNE_SCHEDULED_OUTCOMES.md). Variables are operator
 inputs, not values to discover from an untrusted sender. In particular,
-`RECEIVER_REVIEW_ID` comes from local `work-prune-scheduled-apply` review with the
+`RECEIVER_REVIEW_ID` comes from local `work-prune-scheduled-command` review with the
 exact receiver paths, policy and journal limits that will be used for serving.
 The review also supplies the original executor binding. Changing those paths or
 limits requires a new review for a fresh command. Neither side refreshes it over

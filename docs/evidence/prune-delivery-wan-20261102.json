@@ -1,0 +1,360 @@
+{
+  "version": 1,
+  "date": "2026-11-02",
+  "base_commit": "6d4b77c011dab7882da323810a878c17cee05510",
+  "status": "passed-controlled-two-host-campaign",
+  "readiness": {
+    "approximate": 44,
+    "out_of": 100,
+    "weighted_gate_closed": false
+  },
+  "platform": "two Linux amd64 hosts; one administrator",
+  "go_version": "1.27.3",
+  "changed_source_sha256": {
+    "cmd/omd/prune_delivery_wan_fixture_test.go": "559ced0159820f8f079134cd325aace93b9dff652ab0b50b449b36c6e39f3196",
+    "cmd/omd/prune_delivery_wan_process_test.go": "bef3cea8dec2a825a58da4079480427a38d1e4c9706bd24948d6d4a419ffd109",
+    "cmd/omd/scheduled_prune_delivery_cli_test.go": "9fce07eb5a6cfddcade5462258380621143759f9ccf10e25c20e53db4c30771a",
+    "go.mod": "39e42d0bbe19f179ddee3a4cdb0d3a4c05aac895e4ee7429b9f8b1f1ba2fcc40",
+    "go.sum": "28c18a9f26ffc498199c12b5d0ff066c0b2003f95002edb2e8b773ef67d5400d",
+    "node/custodyauthority/store/prune_delivery_wan_barrier_test.go": "d3a630d812c549a76b86e90a0e5a736e0f58cede644d6a54f1d5fedfb20a01ec",
+    "scripts/remote_acceptance/prune_delivery.py": "914f174b1302cfb7a00340eb20d27f57c88772c9966c0b9bf6012dc12b999819",
+    "scripts/remote_acceptance/support.py": "8fbc1305bca033bac5519f304aa14da4e0546c1c4261bfc2ea1b1ac61d8e14bc",
+    "scripts/remote_acceptance/test_prune_delivery.py": "63e14ac113cfec9125005b293638141e82498959d6bb827ab9c5a93dcd29f0ae"
+  },
+  "installed_sha256": {
+    "omd": "e5c8f502525050da65786db0cb4913943b8ceef4124f372a02ae0141c60e784d",
+    "omd.test": "433a63088f490bcb5f9f4e7122b7a8fe600800ecbeebe385936dc62b67e7e6a8",
+    "store.test": "977918197034bf552c94571a3de54487c34f870470269de3e1bf8c2089881255",
+    "support.py": "8fbc1305bca033bac5519f304aa14da4e0546c1c4261bfc2ea1b1ac61d8e14bc"
+  },
+  "scope": {
+    "cases": 4,
+    "command_stages": 16,
+    "outcomes": [
+      "cancellation",
+      "observed-effect-settlement"
+    ],
+    "directions": [
+      "A receiver, B sender",
+      "B receiver, A sender"
+    ],
+    "production_cli": [
+      "prepare and publish intent",
+      "create and inspect original outbox",
+      "serve fixed command",
+      "one-shot delivery and cold historical retry",
+      "review and explicitly resume original pending writes"
+    ],
+    "test_only_barriers": [
+      "primary admission before executor-pin confirmation",
+      "confirmed receiver command before acknowledgement",
+      "sender reply verified before receipt publication",
+      "sender receipt visible after publication"
+    ]
+  },
+  "limitations": [
+    "Public fixture keys and shared administration do not establish independent copy fencing.",
+    "Receiver colocates the original primary executor and selected authority; this is not profile-5 remote deletion.",
+    "Settlement setup seeds a confirmed start using the existing CLI fixture, obtains a real witness claim and commits an actual storage effect. Original start publication is covered separately.",
+    "These are controlled process cuts and an unreachable route, not a packet-loss distribution, power-loss test or public-testnet stability period.",
+    "Historical delivery receipts confer no current execution permission."
+  ],
+  "cases": [
+    {
+      "case": "cancellation-ab",
+      "scenario": "cancellation",
+      "completed": true,
+      "children_drained": true,
+      "private_report_sha256": "32dc99564850280aeaa3e2611cfc17382e6e623a51acefa4a7dac3d6ab068893",
+      "steps": [
+        {
+          "step": 0,
+          "kind": "admit",
+          "intent_id": "fe8771f8f087694ced12e64ddb0adfe7c552124d1036897040867a366765a821",
+          "assignment_id": "6e6104d95fa799a39cb3d80220bd4d2b31114deaac8c5f7979a0d4f4d558733e",
+          "evidence_id": "0000000000000000000000000000000000000000000000000000000000000000",
+          "pending_before": 1,
+          "pending_after": 2,
+          "events": [
+            "unreachable-route",
+            "idle-sigterm",
+            "idle-sigkill",
+            "test-barrier-kill:pins-admission-confirm-before-publish",
+            "pending-startup-refused",
+            "explicit-local-resume",
+            "exact-original-retry",
+            "offline-receipt"
+          ],
+          "original_accounting_preserved": true
+        },
+        {
+          "step": 1,
+          "kind": "admit",
+          "intent_id": "fc36355a17a9623702ce93a638969bf3f70bc53e224a2d68fb47a896766e319e",
+          "assignment_id": "2b8e40d533821be7f78d68765f42d948b1998db83074b6b12563603d18b722d8",
+          "evidence_id": "0000000000000000000000000000000000000000000000000000000000000000",
+          "pending_before": 1,
+          "pending_after": 2,
+          "events": [
+            "test-barrier-kill:scheduled-delivery-confirmed",
+            "exact-original-retry",
+            "offline-receipt"
+          ],
+          "original_accounting_preserved": true
+        },
+        {
+          "step": 2,
+          "kind": "complete",
+          "intent_id": "d124a42d982b229400e650a4dc0bc085a48ad94f8354538f311a951e6bf62d79",
+          "assignment_id": "6e6104d95fa799a39cb3d80220bd4d2b31114deaac8c5f7979a0d4f4d558733e",
+          "evidence_id": "8dea8d00e671d948709f4b90b947f0379c84660e534ddf3bf13c01a4ac03d5bc",
+          "pending_before": 2,
+          "pending_after": 1,
+          "events": [
+            "test-barrier-kill:scheduled-outbox-reply-verified",
+            "exact-original-retry",
+            "offline-receipt"
+          ],
+          "original_accounting_preserved": true
+        },
+        {
+          "step": 3,
+          "kind": "complete",
+          "intent_id": "33a6faa2e259ffefdc8f169b954ff7fffa1ac2f3855f516c4a563b3c9e1be1b9",
+          "assignment_id": "2b8e40d533821be7f78d68765f42d948b1998db83074b6b12563603d18b722d8",
+          "evidence_id": "8dea8d00e671d948709f4b90b947f0379c84660e534ddf3bf13c01a4ac03d5bc",
+          "pending_before": 2,
+          "pending_after": 1,
+          "events": [
+            "test-barrier-kill:scheduled-outbox-after-publish",
+            "exact-original-retry",
+            "offline-receipt"
+          ],
+          "original_accounting_preserved": true
+        }
+      ]
+    },
+    {
+      "case": "settlement-ab",
+      "scenario": "settlement",
+      "completed": true,
+      "children_drained": true,
+      "private_report_sha256": "813172af727eac1961c3a267a1e815a71fc3da2ad49980bb88247a297c254087",
+      "steps": [
+        {
+          "step": 0,
+          "kind": "admit",
+          "intent_id": "7835e6aae7a8950ac131e77f5f78318841e1a213276bde94779e32416f913769",
+          "assignment_id": "941b631059044dc56b7f8d845edfbfc9b6260c0a3ee9f37cb25ab45963b7a93c",
+          "evidence_id": "0000000000000000000000000000000000000000000000000000000000000000",
+          "pending_before": 1,
+          "pending_after": 2,
+          "events": [
+            "unreachable-route",
+            "idle-sigterm",
+            "idle-sigkill",
+            "test-barrier-kill:pins-admission-confirm-before-publish",
+            "pending-startup-refused",
+            "explicit-local-resume",
+            "exact-original-retry",
+            "offline-receipt"
+          ],
+          "original_accounting_preserved": true
+        },
+        {
+          "step": 1,
+          "kind": "admit",
+          "intent_id": "fb48af8929eb9ac9e9c61aa6e718fc665b2176d396424ca4ded153f105daa9d7",
+          "assignment_id": "fdacb8e628d4c67d3132800ccb0fae19a695b11be84091d0675a88d57682ea2a",
+          "evidence_id": "0000000000000000000000000000000000000000000000000000000000000000",
+          "pending_before": 1,
+          "pending_after": 2,
+          "events": [
+            "test-barrier-kill:scheduled-delivery-confirmed",
+            "exact-original-retry",
+            "offline-receipt"
+          ],
+          "original_accounting_preserved": true
+        },
+        {
+          "step": 2,
+          "kind": "complete",
+          "intent_id": "d6f64eba700ecea49f17508150cef234b2b4d8f02be9e94c3f1e4dac15fde55c",
+          "assignment_id": "941b631059044dc56b7f8d845edfbfc9b6260c0a3ee9f37cb25ab45963b7a93c",
+          "evidence_id": "9bb68a96ce06ccaf64be8d8644e50da609414f5e398ea70b40c043fc94b7b1d4",
+          "pending_before": 2,
+          "pending_after": 1,
+          "events": [
+            "test-barrier-kill:scheduled-outbox-reply-verified",
+            "exact-original-retry",
+            "offline-receipt"
+          ],
+          "original_accounting_preserved": true
+        },
+        {
+          "step": 3,
+          "kind": "complete",
+          "intent_id": "4a2b0a8085c8321b03140eae0d2d51077c56eaef02d233d3b15a6ec8c181ec6c",
+          "assignment_id": "fdacb8e628d4c67d3132800ccb0fae19a695b11be84091d0675a88d57682ea2a",
+          "evidence_id": "9bb68a96ce06ccaf64be8d8644e50da609414f5e398ea70b40c043fc94b7b1d4",
+          "pending_before": 2,
+          "pending_after": 1,
+          "events": [
+            "test-barrier-kill:scheduled-outbox-after-publish",
+            "exact-original-retry",
+            "offline-receipt"
+          ],
+          "original_accounting_preserved": true
+        }
+      ]
+    },
+    {
+      "case": "cancellation-ba",
+      "scenario": "cancellation",
+      "completed": true,
+      "children_drained": true,
+      "private_report_sha256": "74c403b4c851e619b4c8747a91eea6e2dd01320712f037f8f4b65775df9f335b",
+      "steps": [
+        {
+          "step": 0,
+          "kind": "admit",
+          "intent_id": "69df1145ed6519f25f9a846eb3fb4e8047ec0200b194ac36b466ade9cc13a6fc",
+          "assignment_id": "9cbf922819582926f5b78d75b6d6ef0cb125853a003c2ca4d37393e81d15516c",
+          "evidence_id": "0000000000000000000000000000000000000000000000000000000000000000",
+          "pending_before": 1,
+          "pending_after": 2,
+          "events": [
+            "unreachable-route",
+            "idle-sigterm",
+            "idle-sigkill",
+            "test-barrier-kill:pins-admission-confirm-before-publish",
+            "pending-startup-refused",
+            "explicit-local-resume",
+            "exact-original-retry",
+            "offline-receipt"
+          ],
+          "original_accounting_preserved": true
+        },
+        {
+          "step": 1,
+          "kind": "admit",
+          "intent_id": "9f5170c4f7c35693fb47d6bb88e5685ec7e0a5bbf8e4d049e9c353a1fecdcf8e",
+          "assignment_id": "db08e031461d07d5998ed720eb2ea95c5368ee3341c399dd7c28441a20e19206",
+          "evidence_id": "0000000000000000000000000000000000000000000000000000000000000000",
+          "pending_before": 1,
+          "pending_after": 2,
+          "events": [
+            "test-barrier-kill:scheduled-delivery-confirmed",
+            "exact-original-retry",
+            "offline-receipt"
+          ],
+          "original_accounting_preserved": true
+        },
+        {
+          "step": 2,
+          "kind": "complete",
+          "intent_id": "07fcfa04c63bed0799d6bb2df690183f05f1bf5d256f35b291f839a0e089bc31",
+          "assignment_id": "9cbf922819582926f5b78d75b6d6ef0cb125853a003c2ca4d37393e81d15516c",
+          "evidence_id": "bc611f000ed4661901685fd6fde3401df6b0c06b8b45bef23f196eb242b5603f",
+          "pending_before": 2,
+          "pending_after": 1,
+          "events": [
+            "test-barrier-kill:scheduled-outbox-reply-verified",
+            "exact-original-retry",
+            "offline-receipt"
+          ],
+          "original_accounting_preserved": true
+        },
+        {
+          "step": 3,
+          "kind": "complete",
+          "intent_id": "c697fa3e08ce72c119c03742e04434311e4cee28aa98e72e8d28c695ce897945",
+          "assignment_id": "db08e031461d07d5998ed720eb2ea95c5368ee3341c399dd7c28441a20e19206",
+          "evidence_id": "bc611f000ed4661901685fd6fde3401df6b0c06b8b45bef23f196eb242b5603f",
+          "pending_before": 2,
+          "pending_after": 1,
+          "events": [
+            "test-barrier-kill:scheduled-outbox-after-publish",
+            "exact-original-retry",
+            "offline-receipt"
+          ],
+          "original_accounting_preserved": true
+        }
+      ]
+    },
+    {
+      "case": "settlement-ba",
+      "scenario": "settlement",
+      "completed": true,
+      "children_drained": true,
+      "private_report_sha256": "214695b541554ea77e3e986cd523b1877291d2a7a7c68773670f1f16c8bef5e6",
+      "steps": [
+        {
+          "step": 0,
+          "kind": "admit",
+          "intent_id": "9ae6f89c35567fcc83c1d899f99382dc8ebf191aafbf13e42cf649b8c7bd7fcc",
+          "assignment_id": "c051fa33ca1c405ea5d1ee1b616b832bf80f812c980797fec98cf85cf72a9dc7",
+          "evidence_id": "0000000000000000000000000000000000000000000000000000000000000000",
+          "pending_before": 1,
+          "pending_after": 2,
+          "events": [
+            "unreachable-route",
+            "idle-sigterm",
+            "idle-sigkill",
+            "test-barrier-kill:pins-admission-confirm-before-publish",
+            "pending-startup-refused",
+            "explicit-local-resume",
+            "exact-original-retry",
+            "offline-receipt"
+          ],
+          "original_accounting_preserved": true
+        },
+        {
+          "step": 1,
+          "kind": "admit",
+          "intent_id": "cb9cdc3d20bdf8bfa98a0409daa264f1d31f34327ad215c9f111b5e0373c994b",
+          "assignment_id": "0824b91e8750a95a6cbdf2bf6e9ea5cb7b660783b155fb8e194e4ac9d21ba366",
+          "evidence_id": "0000000000000000000000000000000000000000000000000000000000000000",
+          "pending_before": 1,
+          "pending_after": 2,
+          "events": [
+            "test-barrier-kill:scheduled-delivery-confirmed",
+            "exact-original-retry",
+            "offline-receipt"
+          ],
+          "original_accounting_preserved": true
+        },
+        {
+          "step": 2,
+          "kind": "complete",
+          "intent_id": "f10c42651b034d36efc4f1365b99a20635078a0ca105f8487844c9e7676a2fb3",
+          "assignment_id": "c051fa33ca1c405ea5d1ee1b616b832bf80f812c980797fec98cf85cf72a9dc7",
+          "evidence_id": "0fdd96dc3eb1afcba1e274175b99990c60467d5ecfe2c04d279f609a6a3b8dc3",
+          "pending_before": 2,
+          "pending_after": 1,
+          "events": [
+            "test-barrier-kill:scheduled-outbox-reply-verified",
+            "exact-original-retry",
+            "offline-receipt"
+          ],
+          "original_accounting_preserved": true
+        },
+        {
+          "step": 3,
+          "kind": "complete",
+          "intent_id": "7ffe08983d49d6481463721abb05274e7b05167252ed5d57fe793e1c3177d2c4",
+          "assignment_id": "0824b91e8750a95a6cbdf2bf6e9ea5cb7b660783b155fb8e194e4ac9d21ba366",
+          "evidence_id": "0fdd96dc3eb1afcba1e274175b99990c60467d5ecfe2c04d279f609a6a3b8dc3",
+          "pending_before": 2,
+          "pending_after": 1,
+          "events": [
+            "test-barrier-kill:scheduled-outbox-after-publish",
+            "exact-original-retry",
+            "offline-receipt"
+          ],
+          "original_accounting_preserved": true
+        }
+      ]
+    }
+  ]
+}
