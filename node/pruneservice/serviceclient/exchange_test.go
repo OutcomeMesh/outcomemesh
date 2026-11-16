@@ -18,6 +18,8 @@ import (
 	"github.com/outcomemesh/outcomemesh/internal/fencetest"
 	"github.com/outcomemesh/outcomemesh/node/custodyfence"
 	"github.com/outcomemesh/outcomemesh/node/custodygateway/gatewayclient"
+	"github.com/outcomemesh/outcomemesh/node/custodyguard"
+	"github.com/outcomemesh/outcomemesh/node/prunefence"
 	wire "github.com/outcomemesh/outcomemesh/node/pruneservice/servicewire"
 )
 
@@ -295,6 +297,46 @@ func TestExchangeRejectsAnotherSignedResponse(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("accepted another signed response")
+	}
+}
+
+func TestExchangeRejectsValidOutcomeForAnotherApprovedSession(t *testing.T) {
+	f := loadFixture(t)
+	identity, err := prunefence.NewServiceIdentity(*f.d.Policy.Service, fencetest.Key(90), custodyguard.Client{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer identity.Close()
+	session, err := identity.NewSession(t.Context(), f.d.Policy, f.d.Binding)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	ch := f.c
+	ch.Candidate, err = session.Candidate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch, err = ch.Sign(f.d, f.q, fencetest.Key(90))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, response := range []wire.Response{f.result, f.settlement} {
+		_, err = runExchange(t, t.Context(), f, approveCandidate, func(conn *net.UnixConn) error {
+			if err := sendArtifact(conn, wire.ChallengeFrame, ch); err != nil {
+				return err
+			}
+			if err := acceptApproval(conn, ch); err != nil {
+				return err
+			}
+			if err := sendArtifact(conn, wire.ResponseFrame, response); err != nil {
+				return err
+			}
+			return conn.CloseWrite()
+		})
+		if !errors.Is(err, wire.ErrAccess) {
+			t.Fatal("accepted signed response for a different approved session", err)
+		}
 	}
 }
 

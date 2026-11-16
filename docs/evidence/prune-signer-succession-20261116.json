@@ -1,0 +1,56 @@
+{
+  "date": "2026-11-16",
+  "platform": "two Linux amd64 hosts",
+  "go_version": "1.27.3",
+  "integration_binary_sha256": "e1a29e368a8401ecb58561437fd2dea4259164cf93cd00405e234b118548eea5",
+  "build": "CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go test -buildvcs=false -trimpath -tags=integration -c ./cmd/omd",
+  "completed": true,
+  "runs": [
+    {
+      "direction": "b-to-a",
+      "scenario": "successor-completed",
+      "passed": true,
+      "position": 2,
+      "owner_uid": 60000,
+      "relay_uid": 65534,
+      "offline_cold_replay": true,
+      "completed_replicas": 0
+    },
+    {
+      "direction": "b-to-a",
+      "scenario": "successor-settlement",
+      "passed": true,
+      "position": 2,
+      "owner_uid": 60000,
+      "relay_uid": 65534,
+      "offline_cold_replay": true,
+      "completed_replicas": 2
+    },
+    {
+      "direction": "a-to-b",
+      "scenario": "successor-completed",
+      "passed": true,
+      "position": 2,
+      "owner_uid": 60000,
+      "relay_uid": 65534,
+      "offline_cold_replay": true,
+      "completed_replicas": 0
+    },
+    {
+      "direction": "a-to-b",
+      "scenario": "successor-settlement",
+      "passed": true,
+      "position": 2,
+      "owner_uid": 60000,
+      "relay_uid": 65534,
+      "offline_cold_replay": true,
+      "completed_replicas": 2
+    }
+  ],
+  "limitations": [
+    "test keys",
+    "shared administration",
+    "guard and witnesses colocated with original owner",
+    "process death does not emulate power loss"
+  ]
+}

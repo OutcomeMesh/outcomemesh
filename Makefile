@@ -267,4 +267,5 @@ test-prune-service-network:
 	trap 'rm -rf "$$probe_dir"' EXIT; \
 	$(GO) test -race -tags=integration -c ./cmd/omd -o "$$probe_dir/prune-service.test"; \
 	sudo python3 scripts/remote_acceptance/prune_service.py --local-binary "$$probe_dir/prune-service.test"; \
-	sudo python3 scripts/remote_acceptance/prune_service.py --local-binary "$$probe_dir/prune-service.test" --failures
+	sudo python3 scripts/remote_acceptance/prune_service.py --local-binary "$$probe_dir/prune-service.test" --failures; \
+	sudo python3 scripts/remote_acceptance/prune_service.py --local-binary "$$probe_dir/prune-service.test" --successor

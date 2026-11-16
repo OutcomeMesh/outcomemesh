@@ -1,6 +1,8 @@
 package store
 
 import (
+	"slices"
+
 	"github.com/outcomemesh/outcomemesh/core/types"
 	"github.com/outcomemesh/outcomemesh/node/custodyfence"
 	"github.com/outcomemesh/outcomemesh/node/prunefence"
@@ -44,23 +46,16 @@ func (v ScheduledPruneInventory) validateFencePolicy() error {
 			return prunefence.ErrFence
 		}
 	}
-	keys := append([][32]byte(nil), v.OriginalPolicy.TrustedAttestors...)
-	keys = append(keys, v.ReplicaPolicy.TrustedReplicas...)
 	for _, r := range v.Replicas {
-		a := r.Assignment
-		aid, err := a.ID()
+		aid, err := r.Assignment.ID()
 		if err != nil {
 			return err
 		}
-		if aid == v.Request.AssignmentID && p.Controller != a.AuthorityPublicKey {
+		if aid == v.Request.AssignmentID && p.Controller != r.Assignment.AuthorityPublicKey {
 			return prunefence.ErrFence
 		}
-		keys = append(keys, a.AuthorityPublicKey, a.ReplicaPublicKey, a.RemoteControlPublicKey, a.RemoteTransportPublicKey)
-		keys = append(keys, a.Auditors...)
-		for _, c := range a.Consumers {
-			keys = append(keys, c.PublicKey)
-		}
 	}
+	keys := v.archiveRoleKeys()
 	independent := append([][32]byte(nil), p.Witnesses...)
 	if p.Guard != ([32]byte{}) {
 		independent = append(independent, p.Guard)
@@ -76,6 +71,38 @@ func (v ScheduledPruneInventory) validateFencePolicy() error {
 		}
 	}
 	return nil
+}
+
+func (v ScheduledPruneInventory) archiveRoleKeys() [][32]byte {
+	keys := append([][32]byte(nil), v.OriginalPolicy.TrustedAttestors...)
+	keys = append(keys, v.ReplicaPolicy.TrustedReplicas...)
+	for _, r := range v.Replicas {
+		a := r.Assignment
+		keys = append(keys, a.AuthorityPublicKey, a.ReplicaPublicKey, a.RemoteControlPublicKey, a.RemoteTransportPublicKey)
+		keys = append(keys, a.Auditors...)
+		for _, c := range a.Consumers {
+			keys = append(keys, c.PublicKey)
+		}
+	}
+	return keys
+}
+
+// CheckSuccessorRoles prevents a replacement from signing as an archive participant
+// on the same assignment. The fence verifies its own roster and the issuer signature.
+func (v ScheduledPruneInventory) CheckSuccessorRoles(s prunefence.ServiceSuccession) error {
+	keys := v.archiveRoleKeys()
+	r := s.Replacement.Request
+	if slices.Contains(keys, r.Successor) || slices.Contains(keys, r.Authority) {
+		return prunefence.ErrFence
+	}
+	return nil
+}
+
+func (v ScheduledPruneInventory) checkCandidateRoles(c prunefence.Candidate) error {
+	if c.Succession == nil {
+		return nil
+	}
+	return v.CheckSuccessorRoles(*c.Succession)
 }
 
 // WithFence selects the policy in a new plan before any admission. It cannot

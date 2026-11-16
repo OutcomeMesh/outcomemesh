@@ -250,7 +250,7 @@ func (c Challenge) body() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	e := encoder("OMPSCH00", MaximumChallengeBytes)
+	e := versionedEncoder("OMPSCH00", MaximumChallengeBytes, envelopeVersion(c.Candidate))
 	e.Fixed(c.DescriptorID[:])
 	e.Fixed(c.RequestID[:])
 	putPosition(e, c.Before)
@@ -269,14 +269,14 @@ func (c Challenge) check(d Descriptor, q Request) error {
 	return candidateMatches(d, c.Candidate)
 }
 func (c Challenge) Sign(d Descriptor, q Request, key ed25519.PrivateKey) (Challenge, error) {
-	if c.check(d, q) != nil || !keyMatches(key, d.Policy.Service.Service) {
+	if c.check(d, q) != nil || !keyMatches(key, c.Candidate.ServiceSigner()) {
 		return Challenge{}, ErrAccess
 	}
 	b, err := c.body()
 	if err != nil {
 		return Challenge{}, err
 	}
-	c.Signature = sign("challenge/sign", b, key)
+	c.Signature = sign(envelopeLabel(c.Candidate, "challenge/sign"), b, key)
 	return c, nil
 }
 func (c Challenge) CanonicalBytes() ([]byte, error) {
@@ -284,14 +284,14 @@ func (c Challenge) CanonicalBytes() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return signedBytes("challenge/sign", b, c.Signature, c.Candidate.Policy.Service.Service)
+	return signedBytes(envelopeLabel(c.Candidate, "challenge/sign"), b, c.Signature, c.Candidate.ServiceSigner())
 }
 func (c Challenge) ID() (types.Hash, error) {
 	b, err := c.CanonicalBytes()
 	if err != nil {
 		return types.Hash{}, err
 	}
-	return types.DomainHash(Domain+"challenge/id", b), nil
+	return types.DomainHash(Domain+envelopeLabel(c.Candidate, "challenge/id"), b), nil
 }
 func (c Challenge) Verify(d Descriptor, q Request) error {
 	if err := c.check(d, q); err != nil {
@@ -300,9 +300,15 @@ func (c Challenge) Verify(d Descriptor, q Request) error {
 	_, err := c.CanonicalBytes()
 	return err
 }
+
+// CheckSuccessorTransports checks keys known only to the transport against the
+// roles introduced by the verified successor candidate.
+func (c Challenge) CheckSuccessorTransports(transport ...[32]byte) error {
+	return checkSuccessorTransports(c.Candidate, transport)
+}
 func DecodeChallenge(raw []byte) (Challenge, error) {
 	var c Challenge
-	d, err := decoder(raw, "OMPSCH00", MaximumChallengeBytes)
+	d, err := versionedDecoder(raw, "OMPSCH00", MaximumChallengeBytes, 1)
 	if err != nil {
 		return c, err
 	}
@@ -340,19 +346,56 @@ func candidateMatches(d Descriptor, c prunefence.Candidate) error {
 	if err != nil || !bytes.Equal(a, b) || c.Binding != d.Binding {
 		return ErrAccess
 	}
+	if err := checkSuccessorTransports(c, [][32]byte{d.Transport}); err != nil {
+		return err
+	}
 	_, err = c.CanonicalBytes()
 	return err
 }
+
+func checkSuccessorTransports(c prunefence.Candidate, transport [][32]byte) error {
+	if c.Succession == nil {
+		return nil
+	}
+	for _, k := range transport {
+		if k == c.ServiceSigner() || k == c.Session || k == c.Succession.Replacement.Request.Authority {
+			return ErrAccess
+		}
+	}
+	return nil
+}
+
+// The candidate commits the full succession authorization. Deriving the outer
+// version and signer from it prevents rewrapping one claim under another key.
+func envelopeVersion(c prunefence.Candidate) uint16 {
+	if c.Succession != nil {
+		return 1
+	}
+	return 0
+}
+func envelopeLabel(c prunefence.Candidate, label string) string {
+	if c.Succession != nil {
+		return "successor/" + label
+	}
+	return label
+}
+
 func bindingHashes(b prunefence.Binding) []types.Hash {
 	return []types.Hash{b.RequestID, b.AssignmentID, b.OperationID, b.InventoryID, b.ExecutorBindingID, b.StoragePairID}
 }
 func encoder(magic string, capacity int) *codec.Encoder {
+	return versionedEncoder(magic, capacity, 0)
+}
+func versionedEncoder(magic string, capacity int, version uint16) *codec.Encoder {
 	e := codec.NewEncoder(capacity)
 	e.Fixed([]byte(magic))
-	e.U16(0)
+	e.U16(version)
 	return e
 }
 func decoder(raw []byte, magic string, limit int) (*codec.Decoder, error) {
+	return versionedDecoder(raw, magic, limit, 0)
+}
+func versionedDecoder(raw []byte, magic string, limit int, maxVersion uint16) (*codec.Decoder, error) {
 	if len(raw) > limit {
 		return nil, ErrArtifact
 	}
@@ -362,7 +405,7 @@ func decoder(raw []byte, magic string, limit int) (*codec.Decoder, error) {
 		return nil, ErrArtifact
 	}
 	v, err := d.U16()
-	if err != nil || v != 0 {
+	if err != nil || v > maxVersion {
 		return nil, ErrArtifact
 	}
 	return d, nil

@@ -99,6 +99,11 @@ jobs:
         env:
           GROUP: ${{ matrix.group }}
         run: python3 scripts/ci.py "$GROUP"
+      - name: Prune service successor execution and settlement
+        if: matrix.group == 'managed'
+        run: |
+          go test -race -tags=integration -c ./cmd/omd -o "$RUNNER_TEMP/prune-successor.test"
+          sudo python3 scripts/remote_acceptance/prune_service.py --local-binary "$RUNNER_TEMP/prune-successor.test" --successor
 
   macos:
     # Start on Intel; an infrastructure-only rerun uses the other hosted pool.

@@ -84,8 +84,13 @@ without the service key or another guard call. If the process dies after the
 storage effect but before its signed result is confirmed, use the existing full
 [observed-effect settlement](PRUNE_SETTLEMENT.md). The original witness decision
 and each separate replica completion remain necessary. A bare effect does not
-replace them. Service key replacement for an already admitted request is not
-implemented; do not rewrite its enrollment to make a recovery path pass.
+replace them. An untouched original admission can install one successor with
+a guard replacement receipt and the original issuer's signature over the exact
+policy, binding and receipt. The successor signs a version 2 candidate, obtains
+consumer approval and uses the original witness and guard slots. Original
+candidates retain version 1. The isolated challenge and response use version 1
+only for a successor candidate. See the [owner commands](PRUNE_ISOLATED_SERVICE.md#replace-a-revoked-signer-on-an-untouched-admission)
+for activation and compatibility. Started or held work stays on its original path.
 
 ## Deployment boundary
 
@@ -98,5 +103,6 @@ change the program, access raw storage or roll back the guard machine.
 
 The isolated owner retains signed requests and service positions and configures
 guard and witness clients internally. Its local authenticated Unix exchange is
-specified separately. A remote relay, ownership transfer for existing stores,
-independent operators and protected monotone storage remain launch gates.
+specified separately. The explicit relay carries the signed exchange across hosts. Ownership transfer
+for existing stores, independent operators and protected monotone storage remain
+launch gates.

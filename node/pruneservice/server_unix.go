@@ -24,7 +24,14 @@ import (
 // The participant may traverse public ancestors but cannot replace the socket
 // or any parent. A root-owned sticky temporary directory is the sole exception.
 func checkPruneSocketParent(path string) error {
-	if !filepath.IsAbs(path) || filepath.Clean(path) != path || len(path) > 100 {
+	if len(path) > 100 {
+		return ErrOwner
+	}
+	return checkNonreplaceableParent(path)
+}
+
+func checkNonreplaceableParent(path string) error {
+	if !filepath.IsAbs(path) || filepath.Clean(path) != path {
 		return ErrOwner
 	}
 	parent := filepath.Dir(path)

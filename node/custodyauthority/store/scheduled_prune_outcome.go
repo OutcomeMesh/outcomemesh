@@ -36,6 +36,9 @@ func (o ScheduledPruneOutcome) evidenceID(v ScheduledPruneInventory, inventoryID
 	if o.Settlement != nil {
 		rid, _ := v.Request.ID()
 		claim := o.Settlement.Decision.Proposal.Claim
+		if err := v.checkCandidateRoles(claim.Candidate); err != nil {
+			return types.Hash{}, err
+		}
 		state := PruneExecution{Request: v.Request, RequestID: rid, Admission: &primary, FenceClaim: &claim}
 		if err := verifyPruneSettlement(state, *o.Settlement); err != nil {
 			return types.Hash{}, err
@@ -209,6 +212,9 @@ func scheduledPruneExecutorBinding(v ScheduledPruneInventory, s PruneExecution) 
 	rid, re := v.Request.ID()
 	if err != nil || re != nil || s.Protection == nil || s.Protection.BindingID != v.ExecutorBindingID || s.RequestID != rid || !samePruneRequest(s.Request, v.Request) || s.Admission == nil || *s.Admission != primary {
 		return ErrScheduledPrune
+	}
+	if s.FenceClaim != nil {
+		return v.checkCandidateRoles(s.FenceClaim.Candidate)
 	}
 	return nil
 }

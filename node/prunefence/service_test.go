@@ -301,10 +301,22 @@ func FuzzPruneServiceArtifacts(fuzz *testing.F) {
 	for i, raw := range fixedServiceArtifacts(fuzz) {
 		fuzz.Add(byte(i), raw)
 	}
+	policy := servicePolicy(fuzz)
+	authorization := signSuccession(fuzz, policy, signedReceipt(fuzz, 90, 95, 92))
+	proof, err := authorization.CanonicalBytes(policy, binding())
+	if err != nil {
+		fuzz.Fatal(err)
+	}
+	candidate, err := fixedSuccessorCandidate(fuzz, policy, authorization, 250, 95).CanonicalBytes()
+	if err != nil {
+		fuzz.Fatal(err)
+	}
+	fuzz.Add(byte(2), candidate)
+	fuzz.Add(byte(5), proof)
 	fuzz.Fuzz(func(t *testing.T, kind byte, raw []byte) {
 		var encoded []byte
 		var err error
-		switch kind % 5 {
+		switch kind % 6 {
 		case 0:
 			v, e := p.DecodeServiceEnrollment(raw)
 			if e != nil {
@@ -335,6 +347,12 @@ func FuzzPruneServiceArtifacts(fuzz *testing.F) {
 				return
 			}
 			encoded, err = v.CanonicalBytes()
+		case 5:
+			v, e := p.DecodeServiceSuccession(raw, policy, binding())
+			if e != nil {
+				return
+			}
+			encoded, err = v.CanonicalBytes(policy, binding())
 		}
 		if err != nil || !bytes.Equal(raw, encoded) {
 			t.Fatal("noncanonical service artifact")

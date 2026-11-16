@@ -147,7 +147,7 @@ func resultFor(t testing.TB, claim prunefence.Claim, effect workchain.CanonicalP
 	}
 	e := c.Policy.Service
 	proof := prunefence.ServiceConsumption{Nonce: [32]byte(fencetest.Hash("consume-challenge"))}
-	q := guardwire.Request{Kind: guardwire.Gateway, Subject: e.Service,
+	q := guardwire.Request{Kind: guardwire.Gateway, Subject: c.ServiceSigner(),
 		Namespace: types.DomainHash("OMESH/prune-fence/service/namespace/v0", e.StorageID[:], e.StoragePairID[:], c.Binding.RequestID[:]),
 		Choice:    types.DomainHash("OMESH/prune-fence/service/consume/v0", raw, proof.Nonce[:])}
 	digest, err := q.SealDigest()
@@ -543,7 +543,7 @@ func TestResponseRequiresExactEffectAndOneCompleteProof(t *testing.T) {
 	c = signCandidate(t, c)
 	result := resultFor(t, claimFor(t, c), r.Effect)
 	r.Result = &result
-	b, err := r.body()
+	b, _, err := r.body()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -636,13 +636,21 @@ type noProgressReader struct{}
 func (noProgressReader) Read([]byte) (int, error) { return 0, nil }
 
 func FuzzWireCanonical(f *testing.F) {
-	artifacts := wireArtifacts(fixtureFor(f))
+	original := fixtureFor(f)
+	artifacts := wireArtifacts(original)
 	for i, a := range artifacts {
 		b, err := a.encode()
 		if err != nil {
 			f.Fatal(err)
 		}
 		f.Add(uint8(i), b)
+	}
+	for i, a := range wireArtifacts(successorWireFixture(f, original))[2:] {
+		b, err := a.encode()
+		if err != nil {
+			f.Fatal(err)
+		}
+		f.Add(uint8(i+2), b)
 	}
 	f.Add(uint8(0), []byte{})
 	f.Fuzz(func(t *testing.T, kind uint8, raw []byte) {
