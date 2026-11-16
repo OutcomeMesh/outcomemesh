@@ -34,6 +34,7 @@ func runPruneServiceCLI(args []string) error {
 }
 
 type pruneServiceCLIFlags struct {
+	Replacement, ReplacementID, Succession, SuccessionID                    string `json:",omitempty"`
 	Action, Mode, Root, Input, Output, Key, Identity, Plan, PlanID          string
 	Descriptor, DescriptorID, Request, Response, Position, Socket, SocketID string
 	Issuer, Guard, Nonce, Expected, ChallengeOut, ApprovalOut, PositionOut  string
@@ -58,7 +59,7 @@ func runPruneServiceCLIContext(ctx context.Context, args []string, out io.Writer
 		p                 *string
 		name, value, help string
 	}{
-		{&a.Action, "action", "", "identity-create, identity-public, enrollment-prepare/sign, descriptor-prepare/sign, configure, request-prepare/sign, serve, call, inspect, status, recover, continuation-review, continue, settlement-review, settle, relay-serve, remote-call, cleanup-socket"},
+		{&a.Action, "action", "", "identity-create, identity-public, enrollment-prepare/sign, descriptor-prepare/sign, configure, request-prepare/sign, serve, call, inspect, status, recover, continuation-review, continue, settlement-review, settle, successor-authorize, successor-activate, relay-serve, remote-call, cleanup-socket"},
 		{&a.Mode, "mode", "review", "review or run"}, {&a.Root, "root", "", "original private service root"},
 		{&a.Input, "input", "", "strict unsigned artifact or owner-only runtime config JSON"}, {&a.Output, "out", "", "immutable public output"},
 		{&a.Key, "key", "", "offline or participant signer seed; exactly 32 private bytes"}, {&a.Identity, "identity", "", "public service identity JSON"},
@@ -70,6 +71,10 @@ func runPruneServiceCLIContext(ctx context.Context, args []string, out io.Writer
 		{&a.Guard, "guard", "", "independent guard public key, hexadecimal"}, {&a.Nonce, "nonce", "", "request nonce, 32-byte hexadecimal"},
 		{&a.Expected, "expected-review-id", "", "exact preceding CLI review ID"}, {&a.ChallengeOut, "challenge-out", "", "retain the verified candidate challenge before signing"},
 		{&a.ApprovalOut, "approval-out", "", "retain the exact consumer approval before sending"},
+		{&a.Replacement, "replacement", "", "guard-signed service replacement receipt"},
+		{&a.ReplacementID, "replacement-id", "", "replacement artifact ID from the guard CLI"},
+		{&a.Succession, "succession", "", "issuer-approved Prune service succession"},
+		{&a.SuccessionID, "succession-id", "", "artifact ID from successor-authorize"},
 		{&a.ProposalOut, "proposal-out", "", "optional immutable unsigned settlement proposal"},
 		{&a.Settlement, "settlement", "", "complete original-witness settlement decision"},
 		{&a.SettlementID, "settlement-id", "", "independently retained settlement decision ID"},
@@ -97,6 +102,9 @@ func runPruneServiceCLIContext(ctx context.Context, args []string, out io.Writer
 	if (a.Action == "serve" || a.Action == "call" || a.Action == "cleanup-socket" || a.Action == "relay-serve") && runtime.GOOS != "linux" {
 		return errors.New("isolated Prune transport requires Linux peer credentials")
 	}
+	if a.Action == "successor-activate" && runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+		return errors.New("Prune successor activation requires a Linux or macOS owner")
+	}
 	required := map[string][]string{
 		"identity-create": {"root", "out"}, "identity-public": {"root", "out"},
 		"enrollment-prepare": {"identity", "plan", "plan-id", "issuer", "guard", "out"}, "enrollment-sign": {"input", "key", "out"},
@@ -108,6 +116,8 @@ func runPruneServiceCLIContext(ctx context.Context, args []string, out io.Writer
 		"inspect":             {"descriptor", "descriptor-id", "request", "response", "out"},
 		"recover":             {"root", "descriptor", "descriptor-id", "position", "request", "out"},
 		"cleanup-socket":      {"socket", "socket-id"},
+		"successor-authorize": {"descriptor", "descriptor-id", "replacement", "replacement-id", "key", "out"},
+		"successor-activate":  {"root", "descriptor", "descriptor-id", "position", "succession", "succession-id", "key", "out"},
 		"settlement-review":   {"root", "descriptor", "descriptor-id", "position", "request", "plan", "plan-id", "out"},
 		"settle":              {"root", "descriptor", "descriptor-id", "position", "request", "plan", "plan-id", "settlement", "settlement-id", "settlement-review-id", "out"},
 		"status":              {"root", "descriptor", "descriptor-id", "position", "request", "out"},
@@ -194,6 +204,14 @@ func runPruneServiceCLIContext(ctx context.Context, args []string, out io.Writer
 			return wire.ErrArtifact
 		}
 	}
+	var succession *prunefence.ServiceSuccession
+	if a.Action == "successor-authorize" || a.Action == "successor-activate" {
+		var err error
+		succession, err = reviewPruneServiceSuccession(&a, desc, load)
+		if err != nil {
+			return err
+		}
+	}
 	if a.Identity != "" {
 		b, err := load(&a.Identity, 4096)
 		if err != nil {
@@ -276,7 +294,7 @@ func runPruneServiceCLIContext(ctx context.Context, args []string, out io.Writer
 		if err != nil {
 			return err
 		}
-		if err = cutoverJSON(b, &position); err != nil || !position.Valid() {
+		if err = cutoverJSON(b, &position); err != nil || !position.Valid() || (a.Action == "successor-activate" && position != (wire.Position{})) {
 			return wire.ErrArtifact
 		}
 	}
@@ -384,7 +402,7 @@ func runPruneServiceCLIContext(ctx context.Context, args []string, out io.Writer
 		}
 		*keyPath = v
 	}
-	publicPaths := []string{a.Input, a.Identity, a.Plan, a.Settlement, a.ProposalOut, a.Descriptor, a.Request, a.Response, a.Position, a.Output, a.Key, a.TransportKey, a.Socket, a.ChallengeOut, a.ApprovalOut, a.PositionOut}
+	publicPaths := []string{a.Input, a.Identity, a.Plan, a.Settlement, a.Replacement, a.Succession, a.ProposalOut, a.Descriptor, a.Request, a.Response, a.Position, a.Output, a.Key, a.TransportKey, a.Socket, a.ChallengeOut, a.ApprovalOut, a.PositionOut}
 	for i, p := range publicPaths {
 		if p == "" {
 			continue
@@ -415,6 +433,11 @@ func runPruneServiceCLIContext(ctx context.Context, args []string, out io.Writer
 			}
 		}
 	}
+	if a.Action == "successor-activate" {
+		if err := service.ReviewSuccessorPaths(a.Root, desc.ConfigID, a.Output, a.Descriptor, a.Position, a.Succession, a.Key); err != nil {
+			return err
+		}
+	}
 	if a.Action == "relay-serve" || a.Action == "remote-call" {
 		if err := validatePruneServiceNetwork(a, desc); err != nil {
 			return err
@@ -426,13 +449,14 @@ func runPruneServiceCLIContext(ctx context.Context, args []string, out io.Writer
 	reviewFlags.Expected = ""
 	reviewed := struct {
 		Flags      pruneServiceCLIFlags
+		Succession *prunefence.ServiceSuccession `json:",omitempty"`
 		Inputs     map[string]string
 		Descriptor *wire.Descriptor              `json:",omitempty"`
 		Enrollment *prunefence.ServiceEnrollment `json:",omitempty"`
 		Identity   *service.Identity             `json:",omitempty"`
 		Request    *wire.Request                 `json:",omitempty"`
 		Position   *wire.Position                `json:",omitempty"`
-	}{Flags: reviewFlags, Inputs: inputs}
+	}{Flags: reviewFlags, Inputs: inputs, Succession: succession}
 	if a.Descriptor != "" {
 		reviewed.Descriptor = &desc
 	}
@@ -598,6 +622,15 @@ func runPruneServiceCLIContext(ctx context.Context, args []string, out io.Writer
 			if e != nil || r.Verify(desc, req) != nil {
 				return wire.ErrArtifact
 			}
+			if a.Action == "remote-call" {
+				local, remote, _, err := pruneServiceTransportKeys(a, desc)
+				if err != nil {
+					return err
+				}
+				if err = r.CheckSuccessorTransports(local, remote); err != nil {
+					return err
+				}
+			}
 			result = b
 		} else if !errors.Is(e, os.ErrNotExist) {
 			return e
@@ -640,6 +673,10 @@ func runPruneServiceCLIContext(ctx context.Context, args []string, out io.Writer
 		if err == nil {
 			result, err = json.Marshal(ownerSnapshot)
 		}
+	case "successor-authorize":
+		result, err = authorizePruneServiceSuccession(a, desc, *succession)
+	case "successor-activate":
+		result, err = activatePruneServiceSuccession(ctx, a, did, position, *succession)
 	case "settlement-review", "settle":
 		result, err = runPruneServiceSettlement(ctx, a, did, position, req)
 	case "serve", "recover", "status":
@@ -709,15 +746,21 @@ func runPruneServiceCLIContext(ctx context.Context, args []string, out io.Writer
 			return err
 		}
 	}
-	id, err := pruneServiceArtifactID(a.Action, result)
+	id, err := pruneServiceArtifactID(a.Action, result, desc)
 	if err != nil {
 		return err
 	}
 	return writePruneOutputLine(out, fmt.Sprintf("prune_service action=%s artifact_id=%s execution_granted=false\n", a.Action, id))
 }
 
-func pruneServiceArtifactID(action string, raw []byte) (types.Hash, error) {
+func pruneServiceArtifactID(action string, raw []byte, d wire.Descriptor) (types.Hash, error) {
 	switch action {
+	case "successor-authorize":
+		v, err := prunefence.DecodeServiceSuccession(raw, d.Policy, d.Binding)
+		if err != nil {
+			return types.Hash{}, err
+		}
+		return v.ID(d.Policy, d.Binding)
 	case "enrollment-sign":
 		v, err := prunefence.DecodeServiceEnrollment(raw)
 		if err != nil {

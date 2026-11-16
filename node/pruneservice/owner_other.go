@@ -4,9 +4,11 @@ package pruneservice
 
 import (
 	"context"
+	"crypto/ed25519"
 	"github.com/outcomemesh/outcomemesh/core/types"
 	store "github.com/outcomemesh/outcomemesh/node/custodyauthority/store"
 	"github.com/outcomemesh/outcomemesh/node/custodyfence"
+	"github.com/outcomemesh/outcomemesh/node/prunefence"
 	wire "github.com/outcomemesh/outcomemesh/node/pruneservice/servicewire"
 )
 
@@ -18,6 +20,10 @@ func Prepare(context.Context, string, Config, uint32) (wire.Descriptor, error) {
 	return wire.Descriptor{}, ErrUnsupported
 }
 func Configure(context.Context, string, wire.Descriptor, Config) error { return ErrUnsupported }
+func ReviewSuccessorPaths(string, types.Hash, string, ...string) error { return ErrUnsupported }
+func ActivateSuccessor(context.Context, string, types.Hash, wire.Position, prunefence.ServiceSuccession, ed25519.PrivateKey, ...string) error {
+	return ErrUnsupported
+}
 func Open(context.Context, string, types.Hash, wire.Position, *wire.Request) (*Owner, error) {
 	return nil, ErrUnsupported
 }

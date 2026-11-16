@@ -1,6 +1,6 @@
 # Implementation status
 
-Updated: 2026-11-03
+Updated: 2026-11-16
 
 This file records evidence against `PLAN.md`. A milestone remains open until all
 of its exit gates pass; implementing most deliverables does not close it.
@@ -9,6 +9,30 @@ Full planned production readiness is approximately **44/100**, using the weighte
 [readiness baseline](PRODUCTION_READINESS.md). This is an engineering estimate,
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
+
+## 2026-11-16: Prune service key succession before execution
+
+An issuer can authorize one guard-enrolled successor for the original policy
+and exact admitted execution binding. The isolated owner checks its original
+admission, storage, journals and pending work under lock. It installs the signer
+only before the first intent and before a candidate exists. The original key
+and descriptor remain part of the placement. The consumer approves the new
+candidate, witnesses select it in the same slot and the protected deletion
+requires a fresh choice from the original guard. A held attempt still requires
+its original evidence and settlement workflow.
+
+Four two-host runs passed with each Linux server taking the owner role. Normal
+execution and failed result publication after deletion both replayed the same
+response after a cold restart with sources offline. In each failure run the
+owner settled the observed effect and completed both original replica tickets
+separately. The relay ran under a separate user on each host. Both servers
+shared administration and used fixture keys. The [two-host report](evidence/prune-signer-succession-20261116.json)
+records the binary digest, final cursors and replica completions.
+
+The updated CLI, wire artifacts and compatibility limits are in the [Prune owner
+runbook](PRUNE_ISOLATED_SERVICE.md#replace-a-revoked-signer-on-an-untouched-admission).
+Independent operator deployment, transfer of existing placements, the public
+testnet and external audits remain open. Production readiness stays **44/100**.
 
 ## 2026-11-03: Prune failure settlement and CI infrastructure recovery
 

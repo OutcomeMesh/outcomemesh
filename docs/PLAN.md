@@ -124,9 +124,12 @@ Remaining work, in order:
    failed final-result publication after deletion. Owner CLI settlement retains
    the full original decision, with separate completion of both replica tickets.
    Process cuts cover settlement confirmation and outer response publication,
-   including another interruption during continuation. Next address enrolled
-   service-key continuity without changing held obligations. Independently operated
-   execution and transfer of existing owners stay open.
+   including another interruption during continuation. A revoked service key
+   on an untouched admission can now be replaced through the original guard
+   and issuer. The same request, tickets, witness slot and guard slot carry
+   through execution and settlement. Held operations keep their original path.
+   Next address transfer of existing protected owner placements and independent
+   operator deployment.
    Then implement remote v1/profile-5 witness and execution transitions, including
    this disposition and retained pins across independently operated failures.
    Unprepared/raw

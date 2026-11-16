@@ -42,6 +42,7 @@ type pruneProcessManifest struct {
 	Held                bool
 	Failure             string
 	CompletedReplicas   int
+	Successor           bool
 }
 
 type pruneUIDProcess struct {
@@ -323,7 +324,23 @@ func pruneUIDOwner(t *testing.T, ctx context.Context, public, control, mode stri
 	if os.Geteuid() != pruneProcessOwnerUID {
 		t.Fatal("bootstrap did not run under service UID")
 	}
-	f := preparePruneServiceOwnerCLI(t)
+	wantSuccessor := os.Getenv(pruneProcessEnv+"SUCCESSOR") == "1"
+	var f *pruneServiceOwnerCLIFixture
+	if wantSuccessor {
+		rotated, receipt := preparePruneServiceReplacement(t)
+		activate := pruneSuccessorCLIArgs(t, rotated, receipt)
+		pruneServiceCLIRun(t, activate)
+		for i, flag := range activate {
+			if flag == "--key" {
+				if err := os.Remove(activate[i+1]); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+		f = rotated
+	} else {
+		f = preparePruneServiceOwnerCLI(t)
+	}
 	failure := os.Getenv(pruneProcessEnv + "FAILURE")
 	if failure != "" {
 		switch failure {
@@ -342,10 +359,13 @@ func pruneUIDOwner(t *testing.T, ctx context.Context, public, control, mode stri
 		t.Fatal(err)
 	}
 	before := pruneUIDObligations(t, f)
-	m := pruneProcessManifest{Root: f.root, Socket: filepath.Join(public, "live.sock"), Held: mode == "held", Failure: failure}
+	m := pruneProcessManifest{Root: f.root, Socket: filepath.Join(public, "live.sock"), Held: mode == "held", Failure: failure, Successor: wantSuccessor}
 	m.Descriptor, _ = f.descriptor.CanonicalBytes()
 	m.Request, _ = f.request.CanonicalBytes()
 	m.PrivatePaths = []string{filepath.Join(f.root, "key"), filepath.Join(f.root, "transport-key"), filepath.Join(f.root, "config"), f.config.Runtime.ExecutorPath, f.config.Runtime.ExecutorPinsPath, f.config.Runtime.ChainPath, f.config.Runtime.ChainPinsPath, f.config.Runtime.InventoryPath}
+	if wantSuccessor {
+		m.PrivatePaths = append(m.PrivatePaths, filepath.Join(f.root, "signer-succession"))
+	}
 	pruneWriteProcessJSON(t, filepath.Join(public, "manifest.json"), m, 0644)
 	owner := f.open(t, wire.Position{}, nil)
 	stop := pruneUIDServe(t, ctx, owner, m.Socket, filepath.Join(public, "ready-live"))
@@ -388,6 +408,9 @@ func pruneUIDOwner(t *testing.T, ctx context.Context, public, control, mode stri
 		if failure == "guard-loss" || failure == "result-write" {
 			want = 1
 		}
+		if wantSuccessor {
+			want += 2 // revocation and replacement precede any guarded choice
+		}
 		if e != nil || gp.Sequence != want {
 			t.Fatal("guard choice not retained", e)
 		}
@@ -406,6 +429,18 @@ func pruneUIDOwner(t *testing.T, ctx context.Context, public, control, mode stri
 		}
 		if err = snapshot.Response.Verify(f.descriptor, f.request); err != nil {
 			t.Fatal(err)
+		}
+		if wantSuccessor {
+			var signer [32]byte
+			if snapshot.Response.Result != nil {
+				signer = snapshot.Response.Result.Claim.Candidate.ServiceSigner()
+			} else {
+				signer = snapshot.Response.Settlement.Proposal.Claim.Candidate.ServiceSigner()
+			}
+			expected := pruneCLIPublic(203)
+			if signer != expected {
+				t.Fatal("result did not identify the installed successor")
+			}
 		}
 		m.Response, err = snapshot.Response.CanonicalBytes()
 		if err != nil {

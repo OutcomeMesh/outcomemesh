@@ -263,6 +263,9 @@ func VerifyScheduledPruneSettlementProposal(plan ScheduledPrunePlan, v Scheduled
 	if _, err := p.CanonicalBytes(); err != nil {
 		return err
 	}
+	if err := v.checkCandidateRoles(p.Claim.Candidate); err != nil {
+		return err
+	}
 	primary, err := scheduledPrunePrimary(v)
 	if err != nil {
 		return err

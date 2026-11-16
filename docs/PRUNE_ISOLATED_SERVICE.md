@@ -47,6 +47,8 @@ retain the complete artifacts and their IDs outside the service root.
 | `descriptor-prepare` | `--root`, `--input`, `--participant-uid`, `--out`; opens and reviews original admitted owners |
 | `descriptor-sign` | `--input`, `--key`, `--out`; issuer approves the complete unsigned descriptor |
 | `configure` | `--root`, `--input`, `--descriptor`, `--descriptor-id`, `--out`; repeats preflight and retains immutable configuration |
+| `successor-authorize` | Issuer signs the guard replacement receipt and original execution binding |
+| `successor-activate` | Original owner installs the approved signer at the initial cursor |
 | `request-prepare` | `--descriptor`, `--descriptor-id`, `--nonce`, `--out`; prepares the single initial request |
 | `request-sign` | `--input`, `--descriptor`, `--descriptor-id`, `--key`, `--out`; consumer signs the exact request |
 | `serve` | `--root`, `--descriptor`, `--descriptor-id`, `--position`, `--socket`; serves as the isolated owner |
@@ -134,10 +136,8 @@ continuation path below. Copying
 the whole host or rolling back the independent guard remains outside this local
 placement guarantee.
 
-The independent operator campaign, safe ownership transfer for existing
-placements and replacement of an already enrolled service key remain
-separate work. The two existing hosts share administration and cannot establish
-operator independence.
+Independent operator deployment and transfer of existing owner placements
+remain open. The two campaign hosts share administration.
 
 ## Reproducible checks
 
@@ -180,6 +180,67 @@ result or observed-effect settlement, with the executor and pins held through
 publication. A complete valid outer response can be synchronized offline. A
 conflict, missing signature or unconfirmed original transition remains held.
 This workflow does not repair partial identity, key or configuration files.
+
+## Replace a revoked signer on an untouched admission
+
+Stop the owner and retain the original descriptor, initial service cursor, inventory
+and private stores. The original guard must have a revoker and replacement authority
+in its configuration. Follow the [guard replacement procedure](CUSTODY_KEY_REPLACEMENT.md)
+to revoke the old signer, register one successor and retain the guard-signed
+receipt. Keep both the receipt and the artifact ID printed by the guard CLI.
+
+The enrollment issuer then authorizes the new signer for the exact admitted
+operation. On the issuer's signing machine, review the following invocation.
+
+```sh
+omd work-prune-service --action successor-authorize \
+  --descriptor descriptor.bin --descriptor-id "$DESCRIPTOR_ID" \
+  --replacement replacement.bin --replacement-id "$REPLACEMENT_ID" \
+  --key issuer.seed --out succession.bin
+```
+
+Repeat it with `--mode run --expected-review-id "$REVIEW_ID"`. Retain the
+printed succession ID and the signed succession artifact. Transfer the public
+artifact to the original owner. Use the successor's 32-byte seed there.
+
+```sh
+omd work-prune-service --action successor-activate \
+  --root "$OWNER_ROOT" --descriptor descriptor.bin --descriptor-id "$DESCRIPTOR_ID" \
+  --position initial.json --succession succession.bin --succession-id "$SUCCESSION_ID" \
+  --key successor.seed --out activation.json
+```
+
+Review this invocation and run it with its own `--expected-review-id` and
+`--mode run`. Keep the signing seed, approval, descriptor, cursor and report
+outside all original stores and journals. Place the report in a directory
+controlled by the owner. The owner locks the original runtime, verifies the exact admission
+review, requires an empty service event history, and installs one private
+`signer-succession` file. The original service identity and transport key remain
+part of the owner placement. An exact activation retry before the first intent
+confirms the existing installation. A partially written installation blocks
+opening the owner. Preserve its bytes and the original guard journals.
+
+Start the owner with its original descriptor and submit the original signed
+request. The consumer approves the successor's candidate in the original witness
+slot. The storage operation still spends the original guard slot. The wire
+challenge and response identify the signer selected by that candidate. During a
+live exchange, the caller and relay match the command in the result to the
+exact approval returned for this challenge. An offline retry can verify an
+existing result without the consumer key.
+
+If the owner has recorded an intent, or the executor already has a candidate,
+start or outcome, activation is refused. Use the original held-outcome or
+settlement procedure. A completed successor operation can replay its original
+response offline. After a successor has started deletion, the same rules for a
+missing final result and separate replica completions apply. Revoking the
+successor ends its ability to obtain a new guarded deletion choice.
+
+Upgrade the owner, caller, relay and readers of the affected journals before
+opting in. Older binaries reject successor artifacts. Existing original-signer
+artifacts keep their prior encodings and IDs. The network campaign for these
+operations uses `scripts/remote_acceptance/prune_service.py --config HOSTS.json
+--successor --out REPORT.json` and runs execution, settlement and cold replay
+with each host taking the owner role.
 
 ## Authenticated relay
 
@@ -258,9 +319,8 @@ and `continue`. These work with archive sources and witness network offline and
 preserve the original response prefix. A new original-state review is required
 after state advances; network retries cannot refresh it implicitly.
 
-The added CLI fields change local invocation review IDs. Regenerate public
-reviews before applying commands with this version. Persistent artifact formats,
-consensus rules and the relay protocol are unchanged.
+Regenerate local invocation reviews created before the settlement flags were
+added. Settlement uses the existing consensus rules and retained effect records.
 
 `make test-prune-service-publication` also covers five settlement publication
 boundaries. `make test-prune-service-network` also runs four failure scenarios
@@ -269,8 +329,7 @@ in both directions. To reproduce only these on two hosts, add `--failures` to
 The failure controls exist only in the integration test executable. The runner
 preserves bounded test-helper logs on failure before removing disposable roots.
 
-The process runner gives startup and ordinary replay 40 seconds. Its explicit
-offline settlement phase has a separate 120-second bound because it includes
-role signing, quorum collection, refusal checks and both replica completions
-under the race detector. Child failure is still reported immediately. This does
-not extend any production transport, guard or witness deadline.
+The process runner allows 40 seconds for ordinary startup and replay. Successor
+setup and offline settlement each have a 120-second bound to cover role signing
+and journal operations under the race detector. The supervisor reports child
+failure immediately.

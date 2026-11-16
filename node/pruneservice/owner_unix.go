@@ -31,6 +31,8 @@ type Owner struct {
 	config            Config
 	inventory         store.ScheduledPruneInventory
 	key, transportKey ed25519.PrivateKey
+	succession        *prunefence.ServiceSuccession
+	signerFileHash    types.Hash
 	lock              *os.File
 	stamps            map[string]types.Hash
 	intent            *wire.Request
@@ -193,13 +195,17 @@ func checkLayout(root string, configured bool) error {
 	if err != nil {
 		return err
 	}
-	if len(entries) != len(want) {
-		return ErrOwner
-	}
 	for _, e := range entries {
+		if configured && e.Name() == signerFile {
+			continue
+		}
 		if !want[e.Name()] {
 			return ErrOwner
 		}
+		delete(want, e.Name())
+	}
+	if len(want) != 0 {
+		return ErrOwner
 	}
 	events, err := os.ReadDir(filepath.Join(root, "events"))
 	if err != nil {
@@ -285,6 +291,9 @@ func openConfigured(ctx context.Context, root string, descriptorID types.Hash) (
 	}
 	o.transportKey, err = readKey(filepath.Join(root, "transport-key"))
 	if err != nil {
+		return nil, err
+	}
+	if err = o.loadSuccessor(descriptorID); err != nil {
 		return nil, err
 	}
 	return o, nil
@@ -395,7 +404,7 @@ func (o *Owner) checkFiles() error {
 			return ErrOwner
 		}
 	}
-	return nil
+	return o.checkSignerFile()
 }
 func (o *Owner) check() error {
 	if err := o.checkFiles(); err != nil {
@@ -551,7 +560,7 @@ func (o *Owner) Execute(ctx context.Context, q wire.Request, approve func(contex
 	if err := validatePlacement(ctx, o.root, o.config); err != nil {
 		return wire.Response{}, err
 	}
-	identity, err := prunefence.NewServiceIdentity(*o.descriptor.Policy.Service, o.key, &custodyguard.Client{URL: o.config.GuardURL})
+	identity, err := o.serviceIdentity(&custodyguard.Client{URL: o.config.GuardURL})
 	if err != nil {
 		return wire.Response{}, err
 	}

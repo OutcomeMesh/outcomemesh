@@ -102,7 +102,7 @@ func exchange(ctx context.Context, conn remotewire.Stream, d wire.Descriptor, q 
 		if err := conn.CloseWrite(); err != nil {
 			return wire.Response{}, err
 		}
-		return finish(ctx, conn, d, q, raw)
+		return finish(ctx, conn, d, q, raw, nil)
 	case wire.ChallengeFrame:
 		challenge, err := wire.DecodeChallenge(raw)
 		if err != nil {
@@ -146,13 +146,13 @@ func exchange(ctx context.Context, conn remotewire.Stream, d wire.Descriptor, q 
 		if kind != wire.ResponseFrame {
 			return wire.Response{}, wire.ErrArtifact
 		}
-		return finish(ctx, conn, d, q, raw)
+		return finish(ctx, conn, d, q, raw, &command)
 	default:
 		return wire.Response{}, wire.ErrArtifact
 	}
 }
 
-func finish(ctx context.Context, conn remotewire.Stream, d wire.Descriptor, q wire.Request, raw []byte) (wire.Response, error) {
+func finish(ctx context.Context, conn remotewire.Stream, d wire.Descriptor, q wire.Request, raw []byte, approved *custodyfence.Command) (wire.Response, error) {
 	if err := wire.RequireEOF(conn); err != nil {
 		return wire.Response{}, err
 	}
@@ -162,6 +162,11 @@ func finish(ctx context.Context, conn remotewire.Stream, d wire.Descriptor, q wi
 	}
 	if err := r.Verify(d, q); err != nil {
 		return wire.Response{}, err
+	}
+	if approved != nil {
+		if err := r.CheckApproval(*approved); err != nil {
+			return wire.Response{}, err
+		}
 	}
 	if err := ctx.Err(); err != nil {
 		return wire.Response{}, err

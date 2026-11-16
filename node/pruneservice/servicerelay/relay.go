@@ -52,6 +52,7 @@ type Service struct {
 	closing    bool
 	closeErr   error
 	descriptor wire.Descriptor
+	transport  [][32]byte
 	timeout    time.Duration
 	slots      chan struct{}
 	forward    forwardCall // private test seam; production always uses Unix credentials
@@ -109,7 +110,7 @@ func start(ctx context.Context, d wire.Descriptor, key ed25519.PrivateKey, confi
 		cancel()
 		return nil, err
 	}
-	s := &Service{host: host, run: run, cancel: cancel, done: make(chan struct{}), descriptor: d, timeout: timeout, slots: make(chan struct{}, 8), forward: forward}
+	s := &Service{host: host, run: run, cancel: cancel, done: make(chan struct{}), descriptor: d, transport: append([][32]byte{local}, peers...), timeout: timeout, slots: make(chan struct{}, 8), forward: forward}
 	if err = host.SetPruneServiceHandler(ids, s.handle); err != nil {
 		cancel()
 		return nil, errors.Join(err, host.Close())
@@ -176,13 +177,17 @@ func (s *Service) exchange(ctx context.Context, stream remotewire.Stream) error 
 	if err != nil || q.Authorize(s.descriptor) != nil {
 		return wire.ErrAccess
 	}
-	approved := false
+	challenged := false
+	var approved *custodyfence.Command
 	r, err := s.forward(ctx, q, func(ctx context.Context, ch wire.Challenge) (custodyfence.Command, error) {
-		if approved || ctx.Err() != nil {
+		if challenged || ctx.Err() != nil {
 			return custodyfence.Command{}, wire.ErrAccess
 		}
-		approved = true
+		challenged = true
 		if err := ch.Verify(s.descriptor, q); err != nil {
+			return custodyfence.Command{}, err
+		}
+		if err := ch.CheckSuccessorTransports(s.transport...); err != nil {
 			return custodyfence.Command{}, err
 		}
 		scope, draft, err := ch.Candidate.Draft()
@@ -211,6 +216,7 @@ func (s *Service) exchange(ctx context.Context, stream remotewire.Stream) error 
 		if err = wire.RequireEOF(stream); err != nil {
 			return custodyfence.Command{}, err
 		}
+		approved = &command
 		return command, ctx.Err()
 	})
 	if err != nil {
@@ -222,6 +228,12 @@ func (s *Service) exchange(ctx context.Context, stream remotewire.Stream) error 
 	if err = r.Verify(s.descriptor, q); err != nil {
 		return err
 	}
+	if err = r.CheckSuccessorTransports(s.transport...); err != nil {
+		return err
+	}
+	if challenged && (approved == nil || r.CheckApproval(*approved) != nil) {
+		return wire.ErrAccess
+	}
 	raw, err = r.CanonicalBytes()
 	if err != nil {
 		return err
@@ -232,7 +244,7 @@ func (s *Service) exchange(ctx context.Context, stream remotewire.Stream) error 
 	if err = stream.CloseWrite(); err != nil {
 		return err
 	}
-	if !approved {
+	if !challenged {
 		return wire.RequireEOF(stream)
 	}
 	return nil
@@ -254,5 +266,20 @@ func Call(ctx context.Context, host *libp2ptransport.Host, address string, local
 		_ = stream.Reset()
 		return wire.Response{}, wire.ErrAccess
 	}
-	return client.Exchange(run, stream, d, q, timeout, approve)
+	r, err := client.Exchange(run, stream, d, q, timeout, func(ctx context.Context, ch wire.Challenge) (custodyfence.Command, error) {
+		if err := ch.CheckSuccessorTransports(local, remote); err != nil {
+			return custodyfence.Command{}, err
+		}
+		if approve == nil {
+			return custodyfence.Command{}, wire.ErrAccess
+		}
+		return approve(ctx, ch)
+	})
+	if err != nil {
+		return wire.Response{}, err
+	}
+	if err := r.CheckSuccessorTransports(local, remote); err != nil {
+		return wire.Response{}, errors.Join(remotewire.ErrUnconfirmed, err)
+	}
+	return r, nil
 }

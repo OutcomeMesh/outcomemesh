@@ -100,6 +100,7 @@ type ServiceIdentity struct {
 	enrollment ServiceEnrollment
 	key        ed25519.PrivateKey
 	guard      guardwire.Chooser
+	succession *ServiceSuccession
 }
 
 func NewServiceIdentity(e ServiceEnrollment, key ed25519.PrivateKey, guard guardwire.Chooser) (*ServiceIdentity, error) {
@@ -107,6 +108,21 @@ func NewServiceIdentity(e ServiceEnrollment, key ed25519.PrivateKey, guard guard
 		return nil, ErrFence
 	}
 	return &ServiceIdentity{enrollment: e, key: append(ed25519.PrivateKey(nil), key...), guard: guard}, nil
+}
+
+// NewSuccessorServiceIdentity retains the guard-approved replacement signer.
+// Each new session independently verifies the issuer's authorization against
+// the policy and binding of the actual admitted operation.
+func NewSuccessorServiceIdentity(e ServiceEnrollment, key ed25519.PrivateKey, guard guardwire.Chooser, succession ServiceSuccession) (*ServiceIdentity, error) {
+	if _, err := e.CanonicalBytes(); err != nil || guard == nil || len(key) != ed25519.PrivateKeySize || succession.IssuerSignature == ([64]byte{}) {
+		return nil, ErrFence
+	}
+	signer := succession.Replacement.Request.Successor
+	principal, err := succession.Replacement.Principal(e.Guard, signer)
+	if err != nil || principal != e.Service || signer == e.Issuer || !matchesSuccessionKey(key, signer) {
+		return nil, ErrFence
+	}
+	return &ServiceIdentity{enrollment: e, key: append(ed25519.PrivateKey(nil), key...), guard: guard, succession: &succession}, nil
 }
 func (s *ServiceIdentity) Close() {
 	if s == nil {
@@ -129,7 +145,7 @@ func (s *ServiceIdentity) NewSession(ctx context.Context, p Policy, b Binding) (
 	if len(s.key) != ed25519.PrivateKeySize || p.Service == nil || *p.Service != s.enrollment {
 		return nil, ErrFence
 	}
-	return newSession(p, b, s.key, s.guard, ctx)
+	return newSession(p, b, s.key, s.guard, ctx, s.succession)
 }
 
 // ServiceConsumption is historical evidence of a guard choice at the effect
@@ -145,7 +161,7 @@ func (c Candidate) serviceRequest(nonce [32]byte) (guardwire.Request, error) {
 		return guardwire.Request{}, ErrFence
 	}
 	e := c.Policy.Service
-	return guardwire.Request{Kind: guardwire.Gateway, Subject: e.Service,
+	return guardwire.Request{Kind: guardwire.Gateway, Subject: c.ServiceSigner(),
 		Namespace: types.DomainHash(domain+"service/namespace/v0", e.StorageID[:], e.StoragePairID[:], c.Binding.RequestID[:]),
 		Choice:    types.DomainHash(domain+"service/consume/v0", b, nonce[:])}, nil
 }

@@ -46,6 +46,11 @@ type pruneServiceOwnerCLIFixture struct {
 
 func preparePruneServiceOwnerCLI(t testing.TB) *pruneServiceOwnerCLIFixture {
 	t.Helper()
+	return preparePruneServiceOwnerWithGuard(t, custodyguard.Config{Limit: 16})
+}
+
+func preparePruneServiceOwnerWithGuard(t testing.TB, config custodyguard.Config) *pruneServiceOwnerCLIFixture {
+	t.Helper()
 	parent, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -75,7 +80,8 @@ func preparePruneServiceOwnerCLI(t testing.TB) *pruneServiceOwnerCLIFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	guard, err := custodyguard.Create(filepath.Join(guardParent, "guard"), custodyguard.Config{Subjects: [][32]byte{f.identity.Service}, Limit: 16})
+	config.Subjects = [][32]byte{f.identity.Service}
+	guard, err := custodyguard.Create(filepath.Join(guardParent, "guard"), config)
 	if err != nil {
 		t.Fatal(err)
 	}

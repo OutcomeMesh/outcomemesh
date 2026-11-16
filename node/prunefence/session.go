@@ -32,22 +32,23 @@ func NewSession(p Policy, b Binding) (*Session, error) {
 	if p.Service != nil {
 		return nil, ErrFence
 	}
-	return newSession(p, b, nil, nil, nil)
+	return newSession(p, b, nil, nil, nil, nil)
 }
-func newSession(p Policy, b Binding, serviceKey ed25519.PrivateKey, guard guardwire.Chooser, ctx context.Context) (*Session, error) {
+func newSession(p Policy, b Binding, serviceKey ed25519.PrivateKey, guard guardwire.Chooser, ctx context.Context, succession *ServiceSuccession) (*Session, error) {
 	pub, key, e := ed25519.GenerateKey(rand.Reader)
 	if e != nil {
 		return nil, e
 	}
-	c := Candidate{Policy: p, Binding: b}
+	c := Candidate{Policy: p, Binding: b, Succession: succession}
 	copy(c.Session[:], pub)
 	if p.Service != nil {
 		body, err := c.body()
-		if err != nil || len(serviceKey) != ed25519.PrivateKeySize || !bytes.Equal(serviceKey[32:], p.Service.Service[:]) {
+		signer := c.ServiceSigner()
+		if err != nil || len(serviceKey) != ed25519.PrivateKeySize || !bytes.Equal(serviceKey[32:], signer[:]) {
 			clear(key)
 			return nil, ErrFence
 		}
-		h := types.DomainHash(domain+"service-session/sign/v0", body)
+		h := c.serviceSigningHash(body)
 		copy(c.ServiceSignature[:], ed25519.Sign(serviceKey, h[:]))
 	}
 	raw, e := c.CanonicalBytes()

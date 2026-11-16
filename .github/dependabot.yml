@@ -7,6 +7,10 @@ updates:
       day: monday
     open-pull-requests-limit: 5
     labels: [dependencies]
+    ignore:
+      # This 2018 tag predates the module and lacks its current transport packages.
+      - dependency-name: github.com/libp2p/go-libp2p
+        versions: ['= 6.0.23+incompatible']
     groups:
       go-dependencies:
         patterns: ['*']

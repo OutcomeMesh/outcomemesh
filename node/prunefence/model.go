@@ -15,7 +15,7 @@ import (
 
 const (
 	MaximumPolicyBytes    = 1024
-	MaximumCandidateBytes = 1536
+	MaximumCandidateBytes = 1536 + SuccessionBytes
 	MaximumClaimBytes     = MaximumCandidateBytes + custodyfence.MaximumCertificateBytes + 32
 	MaximumResultBytes    = MaximumClaimBytes + 256
 	domain                = "OMESH/prune-fence/"
@@ -168,6 +168,26 @@ type Candidate struct {
 	Binding          Binding
 	Session          [32]byte
 	ServiceSignature [64]byte
+	Succession       *ServiceSuccession
+}
+
+// ServiceSigner identifies the actual signing key. Call CanonicalBytes or
+// verify the enclosing artifact before trusting it as a principal.
+func (c Candidate) ServiceSigner() [32]byte {
+	if c.Succession != nil {
+		return c.Succession.Replacement.Request.Successor
+	}
+	if c.Policy.Service != nil {
+		return c.Policy.Service.Service
+	}
+	return [32]byte{}
+}
+
+func (c Candidate) serviceSigningHash(body []byte) types.Hash {
+	if c.Succession != nil {
+		return types.DomainHash(domain+"service-session/sign/v2", body)
+	}
+	return types.DomainHash(domain+"service-session/sign/v0", body)
 }
 
 func (c Candidate) body() ([]byte, error) {
@@ -193,13 +213,25 @@ func (c Candidate) body() ([]byte, error) {
 			return nil, ErrFence
 		}
 		version = 1
-	} else if c.ServiceSignature != ([64]byte{}) {
+	} else if c.ServiceSignature != ([64]byte{}) || c.Succession != nil {
 		return nil, ErrFence
+	}
+	var succession []byte
+	if c.Succession != nil {
+		if c.Session == c.ServiceSigner() {
+			return nil, ErrFence
+		}
+		succession, e = c.Succession.CanonicalBytes(c.Policy, c.Binding)
+		if e != nil {
+			return nil, e
+		}
+		version = 2
 	}
 	out.U16(version)
 	out.BytesField(p)
 	out.Fixed(b)
 	out.Fixed(c.Session[:])
+	out.Fixed(succession)
 	return out.Bytes(), nil
 }
 func (c Candidate) CanonicalBytes() ([]byte, error) {
@@ -208,8 +240,9 @@ func (c Candidate) CanonicalBytes() ([]byte, error) {
 		return nil, err
 	}
 	if c.Policy.Service != nil {
-		h := types.DomainHash(domain+"service-session/sign/v0", b)
-		if !ed25519.Verify(c.Policy.Service.Service[:], h[:], c.ServiceSignature[:]) {
+		h := c.serviceSigningHash(b)
+		signer := c.ServiceSigner()
+		if !ed25519.Verify(signer[:], h[:], c.ServiceSignature[:]) {
 			return nil, ErrFence
 		}
 		b = append(b, c.ServiceSignature[:]...)
@@ -224,7 +257,7 @@ func DecodeCandidate(raw []byte) (Candidate, error) {
 	d := codec.NewDecoder(raw)
 	m, _ := d.Fixed(8)
 	v, _ := d.U16()
-	if string(m) != "OMPRFC00" || v > 1 {
+	if string(m) != "OMPRFC00" || v > 2 {
 		return c, ErrFence
 	}
 	p, e := d.BytesField(MaximumPolicyBytes)
@@ -242,10 +275,21 @@ func DecodeCandidate(raw []byte) (Candidate, error) {
 		}
 		copy(out, b)
 	}
-	if (v == 1) != (c.Policy.Service != nil) {
+	if (v >= 1) != (c.Policy.Service != nil) {
 		return Candidate{}, ErrFence
 	}
-	if v == 1 {
+	if v == 2 {
+		proof, err := d.Fixed(SuccessionBytes)
+		if err != nil {
+			return Candidate{}, ErrFence
+		}
+		s, err := DecodeServiceSuccession(proof, c.Policy, c.Binding)
+		if err != nil {
+			return Candidate{}, err
+		}
+		c.Succession = &s
+	}
+	if v >= 1 {
 		sig, err := d.Fixed(64)
 		if err != nil {
 			return Candidate{}, ErrFence
@@ -271,6 +315,9 @@ func (c Candidate) Draft() (custodyfence.Scope, custodyfence.Command, error) {
 	version := "v0"
 	if c.Policy.Service != nil {
 		version = "v1"
+	}
+	if c.Succession != nil {
+		version = "v2"
 	}
 	return s, custodyfence.Command{Version: 1, ScopeID: id, ExpectedHead: id, Kind: custodyfence.Claim, EvidenceID: types.DomainHash(domain+"session/id/"+version, raw)}, nil
 }

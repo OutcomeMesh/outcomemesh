@@ -252,6 +252,9 @@ func (e *PruneExecutor) executeFencedInventory(ctx context.Context, chain *workc
 	if err != nil {
 		return zero, err
 	}
+	if err := v.checkCandidateRoles(c); err != nil {
+		return zero, err
+	}
 	raw, _ := c.CanonicalBytes()
 	if err := writeExclusive(filepath.Join(e.path, "fence", "candidate"), raw); err != nil {
 		return zero, e.poison(err)
