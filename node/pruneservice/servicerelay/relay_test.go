@@ -67,11 +67,13 @@ func clientHost(t testing.TB, k byte) *libp2ptransport.Host {
 }
 
 func TestPruneServiceRelaySignedApprovalReplayAndRestart(t *testing.T) {
+	// The race build performs the complete signed exchange on loopback.
+	const exchangeTimeout = 5 * time.Second
 	f := loadFixture(t)
 	host := clientHost(t, 121)
 	var forwarded atomic.Int32
 	startRelay := func(fresh bool) *Service {
-		s, e := start(t.Context(), f.d, fencetest.Key(120), relayConfig(), [][32]byte{fencetest.Public(121)}, time.Second, func(ctx context.Context, q wire.Request, a approval) (wire.Response, error) {
+		s, e := start(t.Context(), f.d, fencetest.Key(120), relayConfig(), [][32]byte{fencetest.Public(121)}, exchangeTimeout, func(ctx context.Context, q wire.Request, a approval) (wire.Response, error) {
 			forwarded.Add(1)
 			if q != f.q {
 				return wire.Response{}, wire.ErrAccess
@@ -97,7 +99,7 @@ func TestPruneServiceRelaySignedApprovalReplayAndRestart(t *testing.T) {
 	}
 	s := startRelay(true)
 	calls := 0
-	r, err := Call(t.Context(), host, s.Addresses()[0], fencetest.Public(121), fencetest.Public(120), f.d, f.q, time.Second, func(_ context.Context, ch wire.Challenge) (custodyfence.Command, error) {
+	r, err := Call(t.Context(), host, s.Addresses()[0], fencetest.Public(121), fencetest.Public(120), f.d, f.q, exchangeTimeout, func(_ context.Context, ch wire.Challenge) (custodyfence.Command, error) {
 		calls++
 		if err := ch.Verify(f.d, f.q); err != nil {
 			return custodyfence.Command{}, err
@@ -117,7 +119,7 @@ func TestPruneServiceRelaySignedApprovalReplayAndRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	s = startRelay(false)
-	r, err = Call(t.Context(), host, s.Addresses()[0], fencetest.Public(121), fencetest.Public(120), f.d, f.q, time.Second, func(context.Context, wire.Challenge) (custodyfence.Command, error) {
+	r, err = Call(t.Context(), host, s.Addresses()[0], fencetest.Public(121), fencetest.Public(120), f.d, f.q, exchangeTimeout, func(context.Context, wire.Challenge) (custodyfence.Command, error) {
 		t.Error("replay requested signature")
 		return custodyfence.Command{}, io.ErrClosedPipe
 	})

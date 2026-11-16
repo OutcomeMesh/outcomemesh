@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"io"
 	"path/filepath"
 	"sort"
 	"sync"
@@ -34,6 +35,7 @@ type ScheduledPruneEffectService struct {
 	acquiredDecisions []*workarchive.CustodyJournalDecision
 	closed            bool
 	failure, closeErr error
+	transferPins      io.Closer
 	hooks             storeHooks
 }
 
@@ -171,11 +173,11 @@ func (s *ScheduledPruneEffectService) run(ctx context.Context, mode string, expe
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	defer func() {
-		if !s.closed && s.failure == nil && (errors.Is(returnErr, ErrUncertain) || errors.Is(returnErr, workchain.ErrUncertain) || errors.Is(returnErr, ErrClosed)) {
+		if !s.closed && s.transferPins == nil && s.failure == nil && (errors.Is(returnErr, ErrUncertain) || errors.Is(returnErr, workchain.ErrUncertain) || errors.Is(returnErr, ErrClosed)) {
 			s.failure = returnErr
 		}
 	}()
-	if s.closed {
+	if s.closed || s.transferPins != nil {
 		return result, errors.Join(ErrClosed, s.closeErr)
 	}
 	if s.failure != nil {
@@ -261,6 +263,9 @@ func (s *ScheduledPruneEffectService) closeOwners() (err error) {
 	if s.chain != nil {
 		err = errors.Join(err, s.chain.Close())
 	}
+	if s.transferPins != nil {
+		err = errors.Join(err, s.transferPins.Close())
+	}
 	for i := len(s.acquired) - 1; i >= 0; i-- {
 		err = errors.Join(err, s.acquired[i].Close())
 	}
@@ -268,6 +273,39 @@ func (s *ScheduledPruneEffectService) closeOwners() (err error) {
 		err = errors.Join(err, s.executor.Close())
 	}
 	return err
+}
+
+// QuiesceForTransfer waits for any in-flight action and closes Pebble while
+// keeping the original independent storage lock, executor, custody journals
+// and authority locks until Close. No further review or execution is possible.
+func (s *ScheduledPruneEffectService) QuiesceForTransfer() error {
+	if s == nil {
+		return ErrClosed
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed || s.chain == nil || s.failure != nil {
+		return errors.Join(ErrClosed, s.failure)
+	}
+	lock, err := s.chain.CloseForPositionTransfer()
+	if err != nil {
+		s.failure = err
+		return err
+	}
+	s.transferPins, s.chain = lock, nil
+	return nil
+}
+
+// ReviewAtOriginalPlacement recomputes the comparison against an authenticated
+// pre-transfer configuration using the current positions of all original
+// stores. Execute continues to require the review of its current physical paths.
+func (r ScheduledPruneReview) ReviewAtOriginalPlacement(c ScheduledPruneRuntimeConfig, v ScheduledPruneInventory) (ScheduledPruneReview, error) {
+	id, err := v.ID()
+	if err != nil || id != r.InventoryID || id != c.InventoryID || r.Executor.Protection == nil ||
+		c.Base.State == nil || len(r.Authorities) != len(c.Authorities) || len(r.Journals) != len(c.Sources) {
+		return ScheduledPruneReview{}, errors.Join(ErrScheduledPrune, err)
+	}
+	return scheduledPruneRuntimeReview(c, v, r)
 }
 
 // Close drains the synchronous accepted action before releasing any owner. A

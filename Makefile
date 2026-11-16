@@ -257,6 +257,15 @@ test-prune-service-isolation:
 	sudo "$$probe_dir/prune-service.test" -test.run='^TestProcessPruneServiceUIDIsolation$$' -test.count=1 -test.timeout=4m
 
 .PHONY: test-prune-service-publication test-prune-service-network
+.PHONY: test-prune-service-transfer
+test-prune-service-transfer:
+	@set -eu; \
+	probe_dir=$$(mktemp -d); \
+	trap 'rm -rf "$$probe_dir"' EXIT; \
+	$(GO) test -race -tags=integration -c ./node/pruneservice -o "$$probe_dir/prune-transfer-owner.test"; \
+	OUTCOMEMESH_PRUNE_SERVICE_TEST_BINARY="$$probe_dir/prune-transfer-owner.test" \
+	  $(GO) test -race -tags=integration ./cmd/omd -run '^TestProcessPruneServiceTransferRecovery$$' -count=1 -timeout=15m
+
 test-prune-service-publication:
 	$(GO) test -tags=integration ./cmd/omd -run '^TestProcessPruneService(Publication|Settlement)Recovery$$' -count=1 -timeout=5m
 

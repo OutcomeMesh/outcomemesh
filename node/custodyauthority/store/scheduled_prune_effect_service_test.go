@@ -472,3 +472,27 @@ func TestPruneScheduledEffectServiceRetainsUncertainWrites(t *testing.T) {
 		t.Fatal("pending work executed")
 	}
 }
+
+func TestPruneStorageTransferQuiescenceRetainsAllGuards(t *testing.T) {
+	f := newScheduledPruneFixture(t)
+	c := f.runtimeConfig(t)
+	s := openScheduledEffect(t, c)
+	review := scheduledEffectReview(t, s)
+	if err := s.QuiesceForTransfer(); err != nil {
+		t.Fatal(err)
+	}
+	assertScheduledEffectBusy(t, f, c)
+	if _, err := s.Review(t.Context()); !errors.Is(err, ErrClosed) {
+		t.Fatal("quiesced owner reviewed", err)
+	}
+	if _, err := s.Execute(t.Context(), review.ReviewID); !errors.Is(err, ErrClosed) {
+		t.Fatal("quiesced owner executed", err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	cold := openScheduledEffect(t, c)
+	if !reflect.DeepEqual(review, scheduledEffectReview(t, cold)) {
+		t.Fatal("quiescence advanced an original journal")
+	}
+}

@@ -21,7 +21,15 @@ var ErrOwner = errors.New("custody gateway owner blocked")
 // PlacementID pins canonical paths and native identities. It is a local
 // replacement detector, not an uncloneable hardware identity.
 func PlacementID(path string, directory bool) (types.Hash, error) {
-	if !filepath.IsAbs(path) || filepath.Clean(path) != path {
+	return PlacementIDAt(path, path, directory)
+}
+
+// PlacementIDAt verifies the actual file and all its ancestors at path but
+// hashes the supplied canonical name. A relocation verifier can thereby compare
+// its native identity against an already authenticated, pre-rename placement.
+// Ordinary admission and new placements use PlacementID.
+func PlacementIDAt(path, original string, directory bool) (types.Hash, error) {
+	if !filepath.IsAbs(original) || filepath.Clean(original) != original || !filepath.IsAbs(path) || filepath.Clean(path) != path {
 		return types.Hash{}, ErrOwner
 	}
 	resolved, e := filepath.EvalSymlinks(path)
@@ -58,7 +66,7 @@ func PlacementID(path string, directory bool) (types.Hash, error) {
 			return types.Hash{}, e
 		}
 	}
-	raw := fmt.Sprintf("%s\n%d/%d/%d/%d/%d/%d", path, native.Dev, native.Ino, native.Uid, st.Mode(), sec, ns)
+	raw := fmt.Sprintf("%s\n%d/%d/%d/%d/%d/%d", original, native.Dev, native.Ino, native.Uid, st.Mode(), sec, ns)
 	return types.DomainHash("OMESH/custody-gateway/v1/placement", []byte(raw)), nil
 }
 func privateRead(path string, limit int) ([]byte, error) {

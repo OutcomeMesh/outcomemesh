@@ -34,6 +34,7 @@ func runPruneServiceCLI(args []string) error {
 }
 
 type pruneServiceCLIFlags struct {
+	Destination, TransferID, StorageRoot, StorageDestination                string `json:",omitempty"`
 	Replacement, ReplacementID, Succession, SuccessionID                    string `json:",omitempty"`
 	Action, Mode, Root, Input, Output, Key, Identity, Plan, PlanID          string
 	Descriptor, DescriptorID, Request, Response, Position, Socket, SocketID string
@@ -59,8 +60,12 @@ func runPruneServiceCLIContext(ctx context.Context, args []string, out io.Writer
 		p                 *string
 		name, value, help string
 	}{
-		{&a.Action, "action", "", "identity-create, identity-public, enrollment-prepare/sign, descriptor-prepare/sign, configure, request-prepare/sign, serve, call, inspect, status, recover, continuation-review, continue, settlement-review, settle, successor-authorize, successor-activate, relay-serve, remote-call, cleanup-socket"},
+		{&a.Action, "action", "", "identity-create, identity-public, enrollment-prepare/sign, descriptor-prepare/sign, configure, request-prepare/sign, serve, call, inspect, status, recover, continuation-review, continue, settlement-review, settle, successor-authorize, successor-activate, transfer-review, transfer, relay-serve, remote-call, cleanup-socket"},
 		{&a.Mode, "mode", "review", "review or run"}, {&a.Root, "root", "", "original private service root"},
+		{&a.Destination, "destination", "", "new private owner placement on the same filesystem"},
+		{&a.TransferID, "transfer-id", "", "exact owner transfer review ID"},
+		{&a.StorageRoot, "storage-root", "", "original directory containing the owner and its protected stores"},
+		{&a.StorageDestination, "storage-destination", "", "new location for the complete protected directory"},
 		{&a.Input, "input", "", "strict unsigned artifact or owner-only runtime config JSON"}, {&a.Output, "out", "", "immutable public output"},
 		{&a.Key, "key", "", "offline or participant signer seed; exactly 32 private bytes"}, {&a.Identity, "identity", "", "public service identity JSON"},
 		{&a.Plan, "plan", "", "original scheduled plan before service binding"}, {&a.PlanID, "plan-id", "", "independently retained plan ID"},
@@ -105,6 +110,9 @@ func runPruneServiceCLIContext(ctx context.Context, args []string, out io.Writer
 	if a.Action == "successor-activate" && runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
 		return errors.New("Prune successor activation requires a Linux or macOS owner")
 	}
+	if (a.Action == "transfer-review" || a.Action == "transfer") && runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+		return errors.New("Prune owner transfer requires Linux or macOS")
+	}
 	required := map[string][]string{
 		"identity-create": {"root", "out"}, "identity-public": {"root", "out"},
 		"enrollment-prepare": {"identity", "plan", "plan-id", "issuer", "guard", "out"}, "enrollment-sign": {"input", "key", "out"},
@@ -118,6 +126,8 @@ func runPruneServiceCLIContext(ctx context.Context, args []string, out io.Writer
 		"cleanup-socket":      {"socket", "socket-id"},
 		"successor-authorize": {"descriptor", "descriptor-id", "replacement", "replacement-id", "key", "out"},
 		"successor-activate":  {"root", "descriptor", "descriptor-id", "position", "succession", "succession-id", "key", "out"},
+		"transfer-review":     {"root", "destination", "descriptor", "descriptor-id", "position", "out"},
+		"transfer":            {"root", "destination", "descriptor", "descriptor-id", "position", "transfer-id", "out"},
 		"settlement-review":   {"root", "descriptor", "descriptor-id", "position", "request", "plan", "plan-id", "out"},
 		"settle":              {"root", "descriptor", "descriptor-id", "position", "request", "plan", "plan-id", "settlement", "settlement-id", "settlement-review-id", "out"},
 		"status":              {"root", "descriptor", "descriptor-id", "position", "request", "out"},
@@ -142,6 +152,10 @@ func runPruneServiceCLIContext(ctx context.Context, args []string, out io.Writer
 		allowed["settlement-id"] = true
 		allowed["proposal-out"] = true
 	}
+	if a.Action == "transfer-review" || a.Action == "transfer" {
+		allowed["storage-root"] = true
+		allowed["storage-destination"] = true
+	}
 	if a.Action == "serve" {
 		allowed["request"] = true
 	}
@@ -150,7 +164,7 @@ func runPruneServiceCLIContext(ctx context.Context, args []string, out io.Writer
 	}
 	var wrong bool
 	f.Visit(func(v *flag.Flag) {
-		if !allowed[v.Name] {
+		if !allowed[v.Name] || (v.Name == "storage-root" || v.Name == "storage-destination") && v.Value.String() == "" {
 			wrong = true
 		}
 	})
@@ -361,25 +375,18 @@ func runPruneServiceCLIContext(ctx context.Context, args []string, out io.Writer
 		}
 		req = wire.Request{DescriptorID: did, Actor: desc.Policy.Owner, Nonce: [32]byte(nonce)}
 	}
-	if a.Root != "" {
-		if !utf8.ValidString(a.Root) || strings.ContainsRune(a.Root, 0) {
+	for _, path := range []*string{&a.Root, &a.Destination, &a.StorageRoot, &a.StorageDestination, &a.Socket} {
+		if *path == "" {
+			continue
+		}
+		if !utf8.ValidString(*path) || strings.ContainsRune(*path, 0) {
 			return wire.ErrArtifact
 		}
-		p, err := filepath.Abs(a.Root)
+		p, err := filepath.Abs(*path)
 		if err != nil {
 			return err
 		}
-		a.Root = filepath.Clean(p)
-	}
-	if a.Socket != "" {
-		if !utf8.ValidString(a.Socket) || strings.ContainsRune(a.Socket, 0) {
-			return wire.ErrArtifact
-		}
-		p, err := filepath.Abs(a.Socket)
-		if err != nil {
-			return err
-		}
-		a.Socket = filepath.Clean(p)
+		*path = filepath.Clean(p)
 	}
 	for _, p := range []*string{&a.Output, &a.ChallengeOut, &a.ApprovalOut, &a.PositionOut, &a.ProposalOut} {
 		if *p != "" {
@@ -413,10 +420,13 @@ func runPruneServiceCLIContext(ctx context.Context, args []string, out io.Writer
 			}
 		}
 	}
-	if a.Root != "" {
+	for _, root := range []string{a.Root, a.Destination, a.StorageRoot, a.StorageDestination} {
+		if root == "" {
+			continue
+		}
 		for _, p := range publicPaths {
 			if p != "" {
-				if err := witnessOutside(a.Root, p); err != nil {
+				if err := witnessOutside(root, p); err != nil {
 					return err
 				}
 			}
@@ -435,6 +445,11 @@ func runPruneServiceCLIContext(ctx context.Context, args []string, out io.Writer
 	}
 	if a.Action == "successor-activate" {
 		if err := service.ReviewSuccessorPaths(a.Root, desc.ConfigID, a.Output, a.Descriptor, a.Position, a.Succession, a.Key); err != nil {
+			return err
+		}
+	}
+	if a.Action == "transfer-review" || a.Action == "transfer" {
+		if err := validatePruneServiceTransfer(a); err != nil {
 			return err
 		}
 	}
@@ -677,6 +692,8 @@ func runPruneServiceCLIContext(ctx context.Context, args []string, out io.Writer
 		result, err = authorizePruneServiceSuccession(a, desc, *succession)
 	case "successor-activate":
 		result, err = activatePruneServiceSuccession(ctx, a, did, position, *succession)
+	case "transfer-review", "transfer":
+		result, err = runPruneServiceTransfer(ctx, a, did, position)
 	case "settlement-review", "settle":
 		result, err = runPruneServiceSettlement(ctx, a, did, position, req)
 	case "serve", "recover", "status":
@@ -755,6 +772,16 @@ func runPruneServiceCLIContext(ctx context.Context, args []string, out io.Writer
 
 func pruneServiceArtifactID(action string, raw []byte, d wire.Descriptor) (types.Hash, error) {
 	switch action {
+	case "transfer-review":
+		var r pruneServiceTransferReviewReport
+		if err := cutoverJSON(raw, &r); err != nil {
+			return types.Hash{}, err
+		}
+		id, err := r.Review.ID()
+		if err != nil || r.ReviewID != id.String() || r.ExecutionGranted {
+			return types.Hash{}, wire.ErrArtifact
+		}
+		return id, nil
 	case "successor-authorize":
 		v, err := prunefence.DecodeServiceSuccession(raw, d.Policy, d.Binding)
 		if err != nil {

@@ -1,0 +1,86 @@
+{
+  "date": "2026-11-16",
+  "operation": "separate same-mount transfers on two Linux hosts",
+  "platform": "Linux amd64",
+  "go_version": "1.27.3",
+  "binary_sha256": {
+    "cli": "7c9e7514345bd756885c5f9a2505b7716b12561f9b259a3810724c5cb4b107d9",
+    "owner": "99c4e4dfc67b01748836e116e6587af062e51dcee94cf75b9421ff90dbf1adca"
+  },
+  "runs": [
+    {
+      "host": "a",
+      "user_id": 60000,
+      "completed": true,
+      "tests": [
+        "TestPruneStorageBundleRefusesOtherMount",
+        "TestPruneStorageBundleRefusesCopiedArchive",
+        "TestPruneStorageBundleTransfer",
+        "TestPruneServiceOwnerTransferCLI",
+        "TestPruneTransferRejectsLossOfRetainedOwnerHistory",
+        "TestPruneTransferAllowsSubsequentSignerAndEvents",
+        "TestProcessPruneServiceTransferRecovery"
+      ],
+      "crash_cases": [
+        "TestProcessPruneServiceTransferRecovery/transfer-before-record",
+        "TestProcessPruneServiceTransferRecovery/transfer-record-created",
+        "TestProcessPruneServiceTransferRecovery/transfer-record-partial",
+        "TestProcessPruneServiceTransferRecovery/transfer-record-written",
+        "TestProcessPruneServiceTransferRecovery/transfer-record-file-synced",
+        "TestProcessPruneServiceTransferRecovery/transfer-record-durable",
+        "TestProcessPruneServiceTransferRecovery/transfer-before-rename",
+        "TestProcessPruneServiceTransferRecovery/transfer-renamed",
+        "TestProcessPruneServiceTransferRecovery/transfer-destination-synced",
+        "TestProcessPruneServiceTransferRecovery/transfer-source-synced",
+        "TestProcessPruneServiceTransferRecovery/transfer-committed-created",
+        "TestProcessPruneServiceTransferRecovery/transfer-committed-durable",
+        "TestProcessPruneServiceTransferRecovery/storage/transfer-before-rename",
+        "TestProcessPruneServiceTransferRecovery/storage/transfer-renamed",
+        "TestProcessPruneServiceTransferRecovery/storage/transfer-source-synced"
+      ],
+      "killed_processes": 16
+    },
+    {
+      "host": "b",
+      "user_id": 60000,
+      "completed": true,
+      "tests": [
+        "TestPruneStorageBundleRefusesOtherMount",
+        "TestPruneStorageBundleRefusesCopiedArchive",
+        "TestPruneStorageBundleTransfer",
+        "TestPruneServiceOwnerTransferCLI",
+        "TestPruneTransferRejectsLossOfRetainedOwnerHistory",
+        "TestPruneTransferAllowsSubsequentSignerAndEvents",
+        "TestProcessPruneServiceTransferRecovery"
+      ],
+      "crash_cases": [
+        "TestProcessPruneServiceTransferRecovery/transfer-before-record",
+        "TestProcessPruneServiceTransferRecovery/transfer-record-created",
+        "TestProcessPruneServiceTransferRecovery/transfer-record-partial",
+        "TestProcessPruneServiceTransferRecovery/transfer-record-written",
+        "TestProcessPruneServiceTransferRecovery/transfer-record-file-synced",
+        "TestProcessPruneServiceTransferRecovery/transfer-record-durable",
+        "TestProcessPruneServiceTransferRecovery/transfer-before-rename",
+        "TestProcessPruneServiceTransferRecovery/transfer-renamed",
+        "TestProcessPruneServiceTransferRecovery/transfer-destination-synced",
+        "TestProcessPruneServiceTransferRecovery/transfer-source-synced",
+        "TestProcessPruneServiceTransferRecovery/transfer-committed-created",
+        "TestProcessPruneServiceTransferRecovery/transfer-committed-durable",
+        "TestProcessPruneServiceTransferRecovery/storage/transfer-before-rename",
+        "TestProcessPruneServiceTransferRecovery/storage/transfer-renamed",
+        "TestProcessPruneServiceTransferRecovery/storage/transfer-source-synced"
+      ],
+      "killed_processes": 16
+    }
+  ],
+  "builds": {
+    "cli": "CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go test -buildvcs=false -trimpath -tags=integration -c ./cmd/omd",
+    "owner": "CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go test -buildvcs=false -trimpath -tags=integration -c ./node/pruneservice"
+  },
+  "limitations": [
+    "disposable placements and keys under a single UID on each host",
+    "both hosts share administration",
+    "no transfer between hosts or mounted filesystems",
+    "process death does not emulate physical power loss"
+  ]
+}

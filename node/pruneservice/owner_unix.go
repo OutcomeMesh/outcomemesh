@@ -26,6 +26,10 @@ import (
 type Owner struct {
 	mu                sync.Mutex
 	root              string
+	origin            string
+	moving            bool
+	originalConfig    *Config
+	transferred       *TransferReview
 	identity          Identity
 	descriptor        wire.Descriptor
 	config            Config
@@ -195,8 +199,16 @@ func checkLayout(root string, configured bool) error {
 	if err != nil {
 		return err
 	}
+	transferSeen := false
 	for _, e := range entries {
-		if configured && e.Name() == signerFile {
+		if configured && transferRecordName(e.Name()) {
+			if transferSeen {
+				return ErrOwner
+			}
+			transferSeen = true
+			continue
+		}
+		if configured && (e.Name() == signerFile || e.Name() == transferCommitted) {
 			continue
 		}
 		if !want[e.Name()] {
@@ -219,13 +231,26 @@ func checkLayout(root string, configured bool) error {
 	return nil
 }
 
-func openConfigured(ctx context.Context, root string, descriptorID types.Hash) (_ *Owner, returnErr error) {
+func openConfigured(ctx context.Context, root string, descriptorID types.Hash) (*Owner, error) {
+	return openConfiguredAt(ctx, root, descriptorID, nil)
+}
+
+// During a reviewed move only its repair path may open an uncommitted owner.
+func openConfiguredAt(ctx context.Context, root string, descriptorID types.Hash, moving *TransferReview) (*Owner, error) {
+	return openConfiguredWithLock(ctx, root, descriptorID, moving, nil)
+}
+
+func openConfiguredWithLock(ctx context.Context, root string, descriptorID types.Hash, moving *TransferReview, held *os.File) (_ *Owner, returnErr error) {
 	if ctx == nil || ctx.Err() != nil || descriptorID.IsZero() {
 		return nil, ErrOwner
 	}
 	o := &Owner{root: root, stamps: make(map[string]types.Hash)}
 	var err error
-	o.lock, err = lockRoot(root)
+	if held == nil {
+		o.lock, err = lockRoot(root)
+	} else {
+		o.lock, err = duplicateTransferLock(root, held)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -234,7 +259,19 @@ func openConfigured(ctx context.Context, root string, descriptorID types.Hash) (
 			returnErr = errors.Join(returnErr, o.Close())
 		}
 	}()
-	o.identity, err = ReadIdentity(root)
+	record, err := transferForOpen(root, moving)
+	if err != nil {
+		return nil, err
+	}
+	o.origin, o.moving = root, moving != nil
+	if record != nil {
+		if err = record.checkOwnerFiles(root); err != nil {
+			return nil, err
+		}
+		o.transferred = record
+		o.origin = record.Source
+	}
+	o.identity, err = readIdentityAt(root, o.origin)
 	if err != nil {
 		return nil, err
 	}
@@ -265,6 +302,27 @@ func openConfigured(ctx context.Context, root string, descriptorID types.Hash) (
 	cid, _, err := configID(o.config)
 	if err != nil || cid != d.ConfigID {
 		return nil, ErrOwner
+	}
+	if record != nil {
+		if record.DescriptorID != descriptorID || record.RootID != d.RootID {
+			return nil, ErrOwner
+		}
+		if record.Bundle != (TransferBundle{}) {
+			original := o.config
+			o.originalConfig = &original
+			o.config, err = relocatedConfig(original, record.Bundle)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if moving == nil {
+			recordID, _ := record.ID()
+			for _, name := range []string{transferPrefix + recordID.String(), transferCommitted} {
+				if err = o.capture(name); err != nil {
+					return nil, err
+				}
+			}
+		}
 	}
 	if err = validateNetwork(o.config, d); err != nil {
 		return nil, err
@@ -391,7 +449,16 @@ func (o *Owner) checkFiles() error {
 	if o.failure != nil {
 		return o.failure
 	}
-	id, err := rootID(o.root)
+	origin := o.origin
+	if origin == "" {
+		origin = o.root
+	}
+	if !o.moving && origin == o.root {
+		if err := requireNoTransfer(o.root); err != nil {
+			return err
+		}
+	}
+	id, err := rootIDAt(o.root, origin)
 	if err != nil || id != o.identity.RootID {
 		return ErrOwner
 	}
@@ -557,6 +624,9 @@ func (o *Owner) Execute(ctx context.Context, q wire.Request, approve func(contex
 	if approve == nil {
 		return wire.Response{}, ErrOwner
 	}
+	if err := o.checkTransferredRuntime(); err != nil {
+		return wire.Response{}, err
+	}
 	if err := validatePlacement(ctx, o.root, o.config); err != nil {
 		return wire.Response{}, err
 	}
@@ -623,6 +693,14 @@ func (o *Owner) Execute(ctx context.Context, q wire.Request, approve func(contex
 	if err != nil {
 		return wire.Response{}, err
 	}
+	if err = o.checkTransferredRuntime(); err != nil {
+		return wire.Response{}, err
+	}
+	liveReviewID := review.ReviewID
+	review, err = o.originalReview(review)
+	if err != nil {
+		return wire.Response{}, err
+	}
 	if review.ScopeID != o.descriptor.ScopeID || review.ReviewID != o.descriptor.ReviewID {
 		return wire.Response{}, ErrPosition
 	}
@@ -641,7 +719,7 @@ func (o *Owner) Execute(ctx context.Context, q wire.Request, approve func(contex
 	if err = o.hooks.reach("intent-confirmed"); err != nil {
 		return wire.Response{}, errors.Join(ErrHeld, err)
 	}
-	result, err := s.Execute(ctx, o.descriptor.ReviewID)
+	result, err := s.Execute(ctx, liveReviewID)
 	if err != nil {
 		return wire.Response{}, errors.Join(ErrHeld, err)
 	}
@@ -682,6 +760,9 @@ func (o *Owner) Recover(ctx context.Context, q wire.Request) (_ wire.Response, r
 
 // Keep the original executor and pin owners until the caller's publication ends.
 func (o *Owner) withRetainedResponse(ctx context.Context, q wire.Request, use func(wire.Response) (wire.Response, error)) (_ wire.Response, returnErr error) {
+	if err := o.checkTransferredExecutor(); err != nil {
+		return wire.Response{}, err
+	}
 	c := o.config.Runtime
 	for _, p := range []string{c.ExecutorPath, c.ExecutorPinsPath} {
 		if err := privateTreeContext(ctx, p); err != nil {
@@ -700,6 +781,9 @@ func (o *Owner) withRetainedResponse(ctx context.Context, q wire.Request, use fu
 		return wire.Response{}, err
 	}
 	defer func() { returnErr = errors.Join(returnErr, executor.Close()) }()
+	if err = o.checkTransferredExecutor(); err != nil {
+		return wire.Response{}, err
+	}
 	snapshot, err := executor.Snapshot()
 	if err != nil {
 		return wire.Response{}, err

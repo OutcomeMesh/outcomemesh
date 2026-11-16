@@ -129,12 +129,16 @@ func lockRoot(root string) (*os.File, error) {
 }
 
 func rootID(root string) (types.Hash, error) {
+	return rootIDAt(root, root)
+}
+
+func rootIDAt(root, original string) (types.Hash, error) {
 	var raw []byte
-	for _, v := range []struct {
-		path string
+	for _, entry := range []struct {
+		name string
 		dir  bool
-	}{{root, true}, {filepath.Join(root, "lock"), false}, {filepath.Join(root, "key"), false}, {filepath.Join(root, "transport-key"), false}, {filepath.Join(root, "events"), true}} {
-		id, err := custodygateway.PlacementID(v.path, v.dir)
+	}{{"", true}, {"lock", false}, {"key", false}, {"transport-key", false}, {"events", true}} {
+		id, err := custodygateway.PlacementIDAt(filepath.Join(root, entry.name), filepath.Join(original, entry.name), entry.dir)
 		if err != nil {
 			return types.Hash{}, err
 		}
@@ -211,6 +215,21 @@ func readKey(path string) (ed25519.PrivateKey, error) {
 }
 
 func ReadIdentity(root string) (Identity, error) {
+	record, err := activeTransfer(root)
+	if err != nil {
+		return Identity{}, err
+	}
+	origin := root
+	if record != nil {
+		if err = record.checkOwnerFiles(root); err != nil {
+			return Identity{}, err
+		}
+		origin = record.Source
+	}
+	return readIdentityAt(root, origin)
+}
+
+func readIdentityAt(root, origin string) (Identity, error) {
 	var id Identity
 	raw, err := privateRead(filepath.Join(root, "identity"), 1024)
 	if err != nil {
@@ -220,7 +239,7 @@ func ReadIdentity(root string) (Identity, error) {
 		return Identity{}, err
 	}
 	canonical, _ := json.Marshal(id)
-	actual, err := rootID(root)
+	actual, err := rootIDAt(root, origin)
 	if err != nil || actual != id.RootID || id.OwnerUID != uint32(os.Geteuid()) || !bytes.Equal(raw, canonical) {
 		return Identity{}, ErrOwner
 	}

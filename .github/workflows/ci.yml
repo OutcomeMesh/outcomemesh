@@ -104,6 +104,12 @@ jobs:
         run: |
           go test -race -tags=integration -c ./cmd/omd -o "$RUNNER_TEMP/prune-successor.test"
           sudo python3 scripts/remote_acceptance/prune_service.py --local-binary "$RUNNER_TEMP/prune-successor.test" --successor
+      - name: Prune storage transfer across process restarts
+        if: matrix.group == 'managed'
+        run: |
+          go test -race -tags=integration -c ./node/pruneservice -o "$RUNNER_TEMP/prune-transfer-owner.test"
+          OUTCOMEMESH_PRUNE_SERVICE_TEST_BINARY="$RUNNER_TEMP/prune-transfer-owner.test" \
+            "$RUNNER_TEMP/prune-successor.test" -test.run '^TestProcessPruneServiceTransferRecovery$' -test.count=1 -test.timeout=15m
 
   macos:
     # Start on Intel; an infrastructure-only rerun uses the other hosted pool.

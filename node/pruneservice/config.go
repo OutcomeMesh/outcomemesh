@@ -84,13 +84,22 @@ func EncodeConfig(c Config) ([]byte, error) {
 }
 
 func originalPaths(c Config) []string {
-	r := c.Runtime
-	paths := []string{r.InventoryPath, r.ExecutorPath, r.ExecutorPinsPath, r.ChainPath, r.ChainPinsPath}
-	for _, v := range r.Authorities {
-		paths = append(paths, v.AuthorityPath, v.AuthorityPinsPath)
+	var paths []string
+	for _, p := range runtimePaths(&c.Runtime) {
+		paths = append(paths, *p)
 	}
-	for _, v := range r.Sources {
-		paths = append(paths, v.Directory, v.JournalPath)
+	return paths
+}
+
+func runtimePaths(r *store.ScheduledPruneRuntimeConfig) []*string {
+	paths := []*string{&r.InventoryPath, &r.ExecutorPath, &r.ExecutorPinsPath, &r.ChainPath, &r.ChainPinsPath}
+	for i := range r.Authorities {
+		a := &r.Authorities[i]
+		paths = append(paths, &a.AuthorityPath, &a.AuthorityPinsPath)
+	}
+	for i := range r.Sources {
+		s := &r.Sources[i]
+		paths = append(paths, &s.Directory, &s.JournalPath)
 	}
 	return paths
 }

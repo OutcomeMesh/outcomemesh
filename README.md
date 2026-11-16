@@ -72,6 +72,9 @@ preparation, separate signatures, admission, execution and per-replica completio
 [Scheduled outcomes](docs/PRUNE_SCHEDULED_OUTCOMES.md) support explicit cancellation
 before start and recovery of committed results while archive sources are offline.
 Original obligations and spent operation IDs remain in their existing journals.
+The [storage transfer procedure](docs/PRUNE_ISOLATED_SERVICE.md#move-an-existing-protected-placement)
+moves a stopped Prune owner and its protected stores together on the same
+mounted filesystem. Existing requests keep their original admissions and results.
 [Original Prune outcomes](docs/PRUNE_MIGRATED_OUTCOMES.md) can be resolved after
 migration using their retained results or an explicit cancellation before start.
 Unresolved starts have a separate CLI inspection report; missing records leave

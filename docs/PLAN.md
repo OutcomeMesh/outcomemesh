@@ -128,8 +128,11 @@ Remaining work, in order:
    on an untouched admission can now be replaced through the original guard
    and issuer. The same request, tickets, witness slot and guard slot carry
    through execution and settlement. Held operations keep their original path.
-   Next address transfer of existing protected owner placements and independent
-   operator deployment.
+   A stopped protected placement can move once on the same mount and user.
+   One exclusive rename carries the original owner, database, independent pin
+   files, authority journals and archives together. Held work and replica
+   accounting survive interruption and cold restart. Next address transfer
+   across machines and independently operated protection domains.
    Then implement remote v1/profile-5 witness and execution transitions, including
    this disposition and retained pins across independently operated failures.
    Unprepared/raw
