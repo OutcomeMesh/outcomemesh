@@ -1564,7 +1564,10 @@ recovery requires a confirmed full result or full observed-effect settlement.
 
 Administrators remain trusted. Native placement checks are not uncloneable
 hardware identity. Changing ownership does not revoke old file descriptors and
-is not a supported isolation handoff. Do not restore service and independent
+is not a supported isolation handoff. A reviewed transfer can relocate the
+original service and data together under the same account and mount. Its
+private intent and exclusive rename preserve the original files and require
+the destination to verify their identities before accepting work. Do not restore service and independent
 guard from the same rollback image. Independently operated deployment remains
 open; see [operating requirements](PRUNE_ISOLATED_SERVICE.md).
 

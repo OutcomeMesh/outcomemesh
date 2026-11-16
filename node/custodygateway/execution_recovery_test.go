@@ -30,6 +30,10 @@ func (f recoveryChooser) Choose(ctx context.Context, q guard.Request) ([64]byte,
 func interruptedCoreFixture(t testing.TB, stage string, guarded bool) (*protectedFixture, custodyfence.Certificate, wire.Request, []byte, types.Hash) {
 	t.Helper()
 	x := newProtectedFixture(t, guarded, true, true)
+	// A valid proof can be signed well after issuance, even on a fast runner.
+	challenge := x.c.Plan.Challenge
+	respondedAt := challenge.IssuedAt + (challenge.ExpiresAt-challenge.IssuedAt)/2
+	x.b.clock = func() uint64 { return respondedAt }
 	claim := x.claim(t)
 	raw, _ := claim.CanonicalBytes()
 	fault := errors.New("execution interrupted")
@@ -58,7 +62,8 @@ func reopenCoreTarget(t testing.TB, x *protectedFixture, q wire.Request) {
 	x.b, err = Open(x.broot, did, pos, &q)
 	fixture.Require(t, err)
 	x.b.SetGuard(x.guard)
-	x.b.clock = func() uint64 { return x.c.Plan.Challenge.IssuedAt + x.c.CustodyPolicy.MaximumProofAge + 30 }
+	// A proof signed at the latest valid time must also have expired.
+	x.b.clock = func() uint64 { return x.c.Plan.Challenge.ExpiresAt + x.c.CustodyPolicy.MaximumProofAge + 1 }
 	x.b.executionHook = func(stage string) error {
 		if stage == "consumed-before-read" || stage == "source-before-result" {
 			return fmt.Errorf("recovery repeated execution at %s", stage)

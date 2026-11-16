@@ -24,6 +24,9 @@ func (o *Owner) settlementConfig(ctx context.Context, q wire.Request, in Settlem
 	if err := o.check(); err != nil {
 		return c, err
 	}
+	if err := o.checkTransferredSettlement(); err != nil {
+		return c, err
+	}
 	if q.Authorize(o.descriptor) != nil || o.intent == nil || q != *o.intent {
 		return c, ErrPosition
 	}

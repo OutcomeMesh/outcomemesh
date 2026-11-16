@@ -10,6 +10,28 @@ Full planned production readiness is approximately **44/100**, using the weighte
 not an audit, task-count percentage or launch authorization. M5 and M6–10 remain
 gated; local tests do not satisfy the public-testnet stability period.
 
+## 2026-11-16: Transfer of an existing protected Prune placement
+
+A stopped owner can now move once with its protected database, executor,
+authority and custody journals, pins, archives and inventory. The command
+drains the database, keeps the original locks through the rename and verifies
+native file identities and journal heads before the destination can serve.
+A preexisting signed admission remains executable at the new path. A deletion
+that lost its final signature can still settle against its actual effect and
+complete the two original replica tickets separately.
+
+On each of two Linux amd64 hosts, 15 scenarios killed 16 processes during
+transfer and recovery. Three of those scenarios moved the entire storage
+directory. After a cold restart the owner rejected a missing pre-transfer
+intent or signer, and accepted new events under the original admission.
+The [two-host report](evidence/prune-storage-transfer-20261116.json) identifies
+the binaries and the crash points exercised on each host.
+
+The [operator procedure](PRUNE_ISOLATED_SERVICE.md#move-an-existing-protected-placement)
+covers review, transfer and restart. The supported boundary is one mounted
+filesystem and one operating-system user. Cross-host and cross-operator
+handoff, power-loss qualification and external audits remain open.
+
 ## 2026-11-16: Prune service key succession before execution
 
 An issuer can authorize one guard-enrolled successor for the original policy

@@ -13,9 +13,9 @@ keys. The participant must be a different, non-root Linux user. The issuer,
 consumer, controller, service, protection and witness roles remain distinct.
 
 Create the original private stores under that service user from the outset.
-Changing ownership of an existing store does not revoke open file descriptors
-held by its old owner and is not a supported transfer procedure. There is no
-automatic import, repair, key replacement or recreation of missing pin journals.
+The [reviewed storage transfer](#move-an-existing-protected-placement) moves a
+stopped placement under the same operating-system user. Changing file ownership
+leaves previously opened descriptors usable and cannot transfer that authority.
 
 The owner checks canonical absolute paths, native ownership, permissions and
 original key placement. Original roots must be private. Descendants may have
@@ -49,6 +49,8 @@ retain the complete artifacts and their IDs outside the service root.
 | `configure` | `--root`, `--input`, `--descriptor`, `--descriptor-id`, `--out`; repeats preflight and retains immutable configuration |
 | `successor-authorize` | Issuer signs the guard replacement receipt and original execution binding |
 | `successor-activate` | Original owner installs the approved signer at the initial cursor |
+| `transfer-review` | Checks the stopped owner, current cursor, destination and original journals, then exports their transfer ID |
+| `transfer` | Moves the reviewed directories and publishes a receipt after verifying the original state at the destination |
 | `request-prepare` | `--descriptor`, `--descriptor-id`, `--nonce`, `--out`; prepares the single initial request |
 | `request-sign` | `--input`, `--descriptor`, `--descriptor-id`, `--key`, `--out`; consumer signs the exact request |
 | `serve` | `--root`, `--descriptor`, `--descriptor-id`, `--position`, `--socket`; serves as the isolated owner |
@@ -136,8 +138,77 @@ continuation path below. Copying
 the whole host or rolling back the independent guard remains outside this local
 placement guarantee.
 
-Independent operator deployment and transfer of existing owner placements
-remain open. The two campaign hosts share administration.
+Independent operator deployment and transfer between machines remain open.
+The two campaign hosts share administration.
+
+## Move an existing protected placement
+
+Stop and drain the service. Run the following commands as its existing owner
+on Linux or macOS. Use a private source directory containing the service owner,
+inventory, executor, protected chain, both sets of pins, all authority roots,
+archives and custody journals. The destination must be absent on the same
+mount. Keep the public descriptor, current service cursor and command reports
+outside both directories. Independently operated guards and witnesses stay
+at their enrolled endpoints.
+
+For example, a service at `/srv/prune-a/owner` can move with its entire
+storage directory to `/srv/prune-b/owner`. In a Bash shell:
+
+```bash
+placement=(
+  --root /srv/prune-a/owner --destination /srv/prune-b/owner
+  --storage-root /srv/prune-a --storage-destination /srv/prune-b
+  --descriptor descriptor.bin --descriptor-id "$DESCRIPTOR_ID"
+  --position current-position.json
+)
+omd work-prune-service --action transfer-review "${placement[@]}" --out review.json
+omd work-prune-service --action transfer-review "${placement[@]}" --out review.json \
+  --mode run --expected-review-id "$CLI_REVIEW_ID"
+```
+
+The first invocation prints the CLI review ID. The second locks the current
+placement, reads its journal positions and writes `review.json`. Retain its
+`ReviewID` as `TRANSFER_ID`. Obtain a fresh CLI review for the move itself:
+
+```bash
+omd work-prune-service --action transfer "${placement[@]}" \
+  --transfer-id "$TRANSFER_ID" --out moved.json
+omd work-prune-service --action transfer "${placement[@]}" \
+  --transfer-id "$TRANSFER_ID" --out moved.json \
+  --mode run --expected-review-id "$MOVE_CLI_REVIEW_ID"
+```
+
+The owner closes the database while retaining the original position lock and
+all execution, authority and journal locks. It reserves the transfer in a file
+whose name contains the reviewed ID. A single exclusive rename moves the whole
+directory. After syncing both parents the owner reopens the original stores,
+compares their native identities and journal positions, and commits the move.
+The local transfer record is signed with the owner's transport identity in a
+separate signing domain. It grants no authority to spend or delete.
+
+After interruption, retain both paths, the cursor and the original transfer
+ID. Repeat the same reviewed `transfer` invocation. A partial reservation
+can be finished only for the same transfer. A changed journal, replacement
+inode, occupied destination or conflicting receipt stops recovery. An
+interruption before the reservation leaves the original placement usable.
+From reservation until commitment, both placements refuse normal service.
+After commitment, serve from the destination with the original signed
+descriptor and current cursor. On restart, the owner checks the original
+intent, response and signer record when they existed at the time of transfer.
+An older cursor cannot conceal their loss. New events and an authorized
+successor can be recorded after transfer under the usual admission rules.
+An existing held attempt continues through its original recovery or settlement
+workflow. Each replica retains its own pending and spent entries.
+Keep the successful receipt before resuming work. A later journal advance
+invalidates the state comparison for another transfer retry.
+
+For deployments with scattered backing stores, omitting both storage flags
+moves only the private owner directory; its original runtime paths stay in
+use. A placement supports one committed move. Hardware or UID changes, copies
+to another volume, repeated moves and independent operator handoff require a
+separate protocol. Incident recovery from physical power loss remains open.
+
+Run `make test-prune-service-transfer` for the process-death campaign.
 
 ## Reproducible checks
 

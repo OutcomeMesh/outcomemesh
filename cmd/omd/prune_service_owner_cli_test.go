@@ -51,9 +51,17 @@ func preparePruneServiceOwnerCLI(t testing.TB) *pruneServiceOwnerCLIFixture {
 
 func preparePruneServiceOwnerWithGuard(t testing.TB, config custodyguard.Config) *pruneServiceOwnerCLIFixture {
 	t.Helper()
+	return preparePruneServiceOwnerAt(t, config, "")
+}
+
+func preparePruneServiceOwnerAt(t testing.TB, config custodyguard.Config, bundle string) *pruneServiceOwnerCLIFixture {
+	t.Helper()
 	parent, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
+	}
+	if bundle != "" {
+		parent = bundle
 	}
 	f := &pruneServiceOwnerCLIFixture{root: filepath.Join(parent, "owner"), public: t.TempDir()}
 	f.identityPath = filepath.Join(f.public, "identity.json")
@@ -264,6 +272,9 @@ func preparePruneServiceOwnerWithGuard(t testing.TB, config custodyguard.Config)
 	}
 	if err = runScheduledPrune(t.Context(), export, io.Discard); err != nil {
 		t.Fatal("exact runtime export", err)
+	}
+	if bundle != "" {
+		stagePruneBundleForEnrollment(t, f, bundle)
 	}
 	draftPath := filepath.Join(f.public, "descriptor.json")
 	f.descriptorPath = filepath.Join(f.public, "descriptor")

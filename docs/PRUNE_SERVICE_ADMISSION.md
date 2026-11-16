@@ -103,6 +103,8 @@ change the program, access raw storage or roll back the guard machine.
 
 The isolated owner retains signed requests and service positions and configures
 guard and witness clients internally. Its local authenticated Unix exchange is
-specified separately. The explicit relay carries the signed exchange across hosts. Ownership transfer
-for existing stores, independent operators and protected monotone storage remain
+specified separately. The explicit relay carries the signed exchange across hosts.
+A [reviewed local move](PRUNE_ISOLATED_SERVICE.md#move-an-existing-protected-placement)
+preserves an existing admission and its journals on the same mount and UID.
+Transfer between operators and independently protected monotone storage remain
 launch gates.

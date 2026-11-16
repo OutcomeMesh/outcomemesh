@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -72,6 +73,32 @@ type storagePositionPins struct {
 	confirmed       StoragePosition
 	pending         *StoragePosition
 	hook            func(string) error // per-instance local test seam, never an external flag
+}
+
+// CloseForPositionTransfer shuts down the database and transfers ownership of
+// the still-locked pin file to the caller. The store cannot be used again.
+// The caller keeps the lock through the directory rename and parent sync.
+func (store *Store) CloseForPositionTransfer() (io.Closer, error) {
+	if store == nil {
+		return nil, ErrStoragePosition
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if err := store.positionErrorLocked(); err != nil {
+		return nil, err
+	}
+	p := store.persistence
+	if err := p.pins.checkTail(); err != nil {
+		return nil, err
+	}
+	if p.pins.pending != nil || p.position != p.pins.confirmed {
+		return nil, ErrStoragePinPending
+	}
+	store.closed = true
+	if err := p.db.Close(); err != nil {
+		return nil, errors.Join(err, p.pins.lock.Close())
+	}
+	return p.pins.lock, nil
 }
 
 // CreatePositionPinnedWithPolicy creates TWO NEW disjoint trusted-owner roots.

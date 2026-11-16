@@ -53,3 +53,10 @@ func (*Owner) ReviewSettlement(context.Context, wire.Request, SettlementInput) (
 func (*Owner) Settle(context.Context, wire.Request, SettlementInput, types.Hash) (wire.Response, error) {
 	return wire.Response{}, ErrUnsupported
 }
+
+func ReviewTransfer(context.Context, string, string, types.Hash, wire.Position, TransferBundle, string, ...string) (TransferReview, error) {
+	return TransferReview{}, ErrUnsupported
+}
+func Transfer(context.Context, string, string, types.Hash, wire.Position, types.Hash, TransferBundle, string, ...string) (TransferReview, error) {
+	return TransferReview{}, ErrUnsupported
+}

@@ -137,16 +137,23 @@ func ReviewSuccessorPaths(root string, configID types.Hash, report string, input
 	if err != nil {
 		return err
 	}
+	config, err = effectiveTransferConfig(root, config)
+	if err != nil {
+		return err
+	}
 	return checkSuccessorPaths(root, config, report, inputs)
 }
 
 func checkSuccessorPaths(root string, config Config, report string, inputs []string) error {
+	return checkExternalPaths(append(originalPaths(config), root), report, inputs)
+}
+
+func checkExternalPaths(protected []string, report string, inputs []string) error {
 	// The CLI publishes this file after the owner releases its lock. A peer
 	// must not be able to redirect publication by replacing a public ancestor.
 	if err := checkNonreplaceableParent(report); err != nil {
 		return err
 	}
-	protected := append(originalPaths(config), root)
 	placements := make([]os.FileInfo, 0, len(protected))
 	for _, path := range protected {
 		info, err := os.Stat(path)
@@ -230,6 +237,9 @@ func ActivateSuccessor(ctx context.Context, root string, did types.Hash, pin wir
 	if err = o.verifySignerRoles(s); err != nil {
 		return err
 	}
+	if err = o.checkTransferredRuntime(); err != nil {
+		return err
+	}
 	if err = validatePlacement(ctx, root, o.config); err != nil {
 		return err
 	}
@@ -239,6 +249,13 @@ func ActivateSuccessor(ctx context.Context, root string, did types.Hash, pin wir
 	}
 	defer func() { returnErr = errors.Join(returnErr, runtime.Close()) }()
 	r, err := runtime.Review(ctx)
+	if err != nil {
+		return err
+	}
+	if err = o.checkTransferredRuntime(); err != nil {
+		return err
+	}
+	r, err = o.originalReview(r)
 	if err != nil {
 		return err
 	}
